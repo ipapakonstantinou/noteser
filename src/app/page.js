@@ -1,100 +1,61 @@
 "use client";
 
-import Sidebar from '../components/Sidebar';
-import Editor from '../components/Editor';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
+import Sidebar from "../components/Sidebar";
+import Editor from "../components/Editor";
 
 export default function Home() {
   const [notes, setNotes] = useState([]);
   const [selectedNote, setSelectedNote] = useState(null);
-  const [isEditing, setIsEditing] = useState(true); // Toggle between edit and preview mode
+  const [isEditing, setIsEditing] = useState(true);
 
   // Load notes from localStorage when the component mounts
   useEffect(() => {
-    const savedNotes = JSON.parse(localStorage.getItem('notes')) || [];
+    const savedNotes = JSON.parse(localStorage.getItem("notes")) || [];
     setNotes(savedNotes);
   }, []);
 
   // Save notes to localStorage whenever they change
   useEffect(() => {
-    localStorage.setItem('notes', JSON.stringify(notes));
+    localStorage.setItem("notes", JSON.stringify(notes));
   }, [notes]);
 
-  // Handle selecting a note from the sidebar
-  const handleSelectNote = (note) => {
-    setSelectedNote(note);
-    setIsEditing(true); // Default to editing mode when selecting a note
+  const addNewNote = () => {
+    const newNote = {
+      id: Date.now(),
+      title: "Untitled Note",
+      content: "",
+    };
+    setNotes([...notes, newNote]);
+    setSelectedNote(newNote);
+    setIsEditing(true);
   };
 
-  // Handle editing the selected note's content
-  const handleEditNote = (newContent) => {
-    const updatedNote = { ...selectedNote, content: newContent };
-    setSelectedNote(updatedNote);
+  const handleSelectNote = (note) => {
+    setSelectedNote(note);
+    setIsEditing(true);
+  };
 
-    // Update the notes array with the edited note
+  const handleEditNote = (updatedNote) => {
     setNotes((prevNotes) =>
       prevNotes.map((note) =>
         note.id === updatedNote.id ? updatedNote : note
       )
     );
-  };
-
-  // Handle renaming a note's title
-  const handleRenameNote = (id, newTitle) => {
-    const updatedNotes = notes.map((note) =>
-      note.id === id ? { ...note, title: newTitle } : note
-    );
-    setNotes(updatedNotes);
-
-    // If the renamed note is currently selected, update its title as well
-    if (selectedNote?.id === id) {
-      setSelectedNote({ ...selectedNote, title: newTitle });
-    }
-  };
-
-  // Add a new note
-  const addNewNote = () => {
-    const newNote = {
-      id: Date.now(), // Unique ID based on timestamp
-      title: 'Untitled Note',
-      content: '',
-    };
-    setNotes([...notes, newNote]);
-    setSelectedNote(newNote); // Automatically select the new note for editing
-    setIsEditing(true); // Default to editing mode for new notes
-  };
-
-  // Delete a note
-  const deleteNote = (id) => {
-    const updatedNotes = notes.filter((note) => note.id !== id);
-    setNotes(updatedNotes);
-
-    // If the deleted note is currently selected, clear the editor
-    if (selectedNote?.id === id) {
-      setSelectedNote(null);
-    }
+    setSelectedNote(updatedNote);
   };
 
   return (
-    <div style={{ display: 'flex', height: '100vh' }}>
+    <div className="flex h-screen">
       {/* Sidebar */}
-      <Sidebar
-        notes={notes}
-        onSelectNote={handleSelectNote}
-        onAddNewNote={addNewNote}
-        onDeleteNote={deleteNote}
-        onRenameNote={handleRenameNote} // Pass rename handler to Sidebar
-      />
+      <Sidebar notes={notes} onAddNewNote={addNewNote} onSelectNote={handleSelectNote} />
 
       {/* Editor */}
       <Editor
         note={selectedNote}
         isEditing={isEditing}
         onEditNote={handleEditNote}
-        onRenameNote={(newTitle) =>
-          handleRenameNote(selectedNote?.id, newTitle)
-        } // Pass rename handler to Editor
-        onToggleMode={() => setIsEditing(!isEditing)} // Toggle between edit and preview mode
+        onToggleMode={() => setIsEditing(!isEditing)}
       />
     </div>
   );

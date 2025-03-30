@@ -1,52 +1,52 @@
 "use client";
 
-import React from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const Editor = ({ note, isEditing, onEditNote, onToggleMode }) => {
   return (
-    <div style={{ flex: 1, padding: '10px' }}>
+    <div className="flex-1 p-6 bg-gray-900 text-white">
       {note ? (
         <>
-          <h3>{note.title}</h3>
+          {/* Title Input */}
+          <div className="flex items-center justify-between mb-6">
+            <input
+              type="text"
+              value={note.title}
+              onChange={(e) =>
+                onEditNote({ ...note, title: e.target.value })
+              }
+              className="bg-transparent text-xl font-bold border-b border-gray-600 outline-none w-full"
+              placeholder="Enter note title..."
+            />
+            <button
+              onClick={onToggleMode}
+              className="ml-4 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded"
+            >
+              {isEditing ? "Preview Markdown" : "Edit Note"}
+            </button>
+          </div>
 
-          {/* Toggle Button */}
-          <button
-            onClick={onToggleMode}
-            style={{
-              marginBottom: '10px',
-              padding: '10px',
-              backgroundColor: '#007bff',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-            }}
-          >
-            {isEditing ? 'Preview Markdown' : 'Edit Note'}
-          </button>
-
-          {/* Edit Mode */}
+          {/* Content Section */}
           {isEditing ? (
             <textarea
               value={note.content}
-              onChange={(e) => onEditNote(e.target.value)}
-              style={{
-                width: '100%',
-                height: '90%',
-                fontSize: '16px',
-                padding: '10px',
-              }}
+              onChange={(e) =>
+                onEditNote({ ...note, content: e.target.value })
+              }
+              className="w-full h-[calc(100vh-200px)] bg-gray-800 text-white border border-gray-600 rounded p-4 resize-none"
+              placeholder="Write your note here..."
             />
           ) : (
-            /* Preview Mode */
-            <div style={{ padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }}>
-              <ReactMarkdown>{note.content}</ReactMarkdown>
+            <div className="prose prose-invert max-w-none bg-gray-800 p-6 rounded border border-gray-600">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {note.content}
+              </ReactMarkdown>
             </div>
           )}
         </>
       ) : (
-        <p>Select a note to view or edit.</p>
+        <p className="text-gray-400">Select a note to start editing.</p>
       )}
     </div>
   );

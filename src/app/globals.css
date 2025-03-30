@@ -1,42 +1,38 @@
-@import "tailwindcss";
+/* Tailwind CSS directives */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-/* :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* Custom styles */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-} */
+  font-family: 'Inter', sans-serif; /* Use a clean and modern font */
+  background-color: #1b1b1b; /* Obsidian-like dark background */
+  color: #ffffff; /* White text for readability */
+  margin: 0; /* Remove default margin */
+}
 
-body {
-  font-family: Arial, sans-serif;
+h1, h2, h3, h4, h5, h6 {
+  color: #ffffff; /* Ensure all headers are styled in white */
+}
+
+button {
+  transition: all 0.2s ease-in-out; /* Smooth hover effect */
+}
+
+button:hover {
+  transform: scale(1.05); /* Slight zoom effect on hover */
+}
+
+input[type="text"] {
+  background-color: transparent;
+  color: #ffffff;
+  border-bottom: 1px solid #444444;
+  outline: none;
 }
 
 textarea {
-  border-radius: 4px;
-}
-
-ul li:hover {
-  background-color: #eee;
-}
-
-h3 {
-  color: #333;
+  background-color: #242424; /* Darker background for textarea */
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 10px;
 }
