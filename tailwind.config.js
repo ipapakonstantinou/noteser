@@ -4,8 +4,9 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        obsidianDark: "#1b1b1b",
-        obsidianGray: "#242424",
+        obsidianBlack: "#1b1b1b", // Dark black for background
+        obsidianGray: "#242424", // Gray for sidebar
+        obsidianAccent: "#3a3a3a", // Accent gray for hover states
       },
     },
   },

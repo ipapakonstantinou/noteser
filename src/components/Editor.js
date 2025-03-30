@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 
 const Editor = ({ note, isEditing, onEditNote, onToggleMode }) => {
   return (
-    <div className="flex-1 p-6 bg-gray-900 text-white">
+    <div className="flex-1 p-6 bg-obsidianBlack text-white">
       {note ? (
         <>
           {/* Title Input */}
@@ -21,7 +21,7 @@ const Editor = ({ note, isEditing, onEditNote, onToggleMode }) => {
             />
             <button
               onClick={onToggleMode}
-              className="ml-4 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded"
+              className="ml-4 bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded"
             >
               {isEditing ? "Preview Markdown" : "Edit Note"}
             </button>
