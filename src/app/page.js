@@ -1,47 +1,23 @@
 // src/app/page.js
 'use client'
-import { useState, useEffect } from 'react'
-import Sidebar from '../components/Sidebar'
-import Editor from '../components/Editor'
+import { useState } from 'react'
+import Sidebar from '../components/sidebar/Sidebar'
+import Editor from '../components/editor/Editor'
+import useNotesStorage from '../hooks/useNotesStorage'
 
 export default function Home() {
-  const [notes, setNotes] = useState([])
-  const [folders, setFolders] = useState([])
+  const {
+    notes,
+    setNotes,
+    folders,
+    setFolders,
+    sidebarCollapsed,
+    setSidebarCollapsed
+  } = useNotesStorage()
+
   const [selectedNote, setSelectedNote] = useState(null)
   const [activeFolder, setActiveFolder] = useState(null)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
-  // Load data from localStorage
-  useEffect(() => {
-    const savedNotes = JSON.parse(localStorage.getItem('notes')) || []
-    const savedFolders = JSON.parse(localStorage.getItem('folders')) || []
-    const sidebarState = localStorage.getItem('sidebarCollapsed') === 'true'
-
-    setNotes(savedNotes)
-    setFolders(savedFolders)
-    setSidebarCollapsed(sidebarState)
-  }, [])
-
-  // Save sidebar state
-  useEffect(() => {
-    localStorage.setItem('sidebarCollapsed', sidebarCollapsed)
-  }, [sidebarCollapsed])
-
-  // Save notes to localStorage
-  useEffect(() => {
-    if (notes.length > 0) {
-      localStorage.setItem('notes', JSON.stringify(notes))
-    }
-  }, [notes])
-
-  // Save folders to localStorage
-  useEffect(() => {
-    if (folders.length > 0) {
-      localStorage.setItem('folders', JSON.stringify(folders))
-    }
-  }, [folders])
-
-  // Note operations
   const addNewNote = () => {
     const newNote = {
       id: Date.now(),
@@ -53,28 +29,6 @@ export default function Home() {
     setSelectedNote(newNote)
   }
 
-  const handleEditNote = updatedNote => {
-    setNotes(prev => prev.map(n => (n.id === updatedNote.id ? updatedNote : n)))
-    setSelectedNote(updatedNote)
-  }
-
-  // Rename operations
-  const renameNote = (noteId, newTitle) => {
-    setNotes(prev =>
-      prev.map(n => (n.id === noteId ? { ...n, title: newTitle } : n))
-    )
-    if (selectedNote && selectedNote.id === noteId) {
-      setSelectedNote(prev => ({ ...prev, title: newTitle }))
-    }
-  }
-
-  const renameFolder = (folderId, newName) => {
-    setFolders(prev =>
-      prev.map(f => (f.id === folderId ? { ...f, name: newName } : f))
-    )
-  }
-
-  // Folder operations
   const addNewFolder = () => {
     const newFolder = {
       id: Date.now(),
@@ -85,21 +39,40 @@ export default function Home() {
     setActiveFolder(newFolder)
   }
 
-  const toggleSidebar = () => {
-    setSidebarCollapsed(!sidebarCollapsed)
+  const handleEditNote = updatedNote => {
+    setNotes(prev => prev.map(n => (n.id === updatedNote.id ? updatedNote : n)))
+    setSelectedNote(updatedNote)
+  }
+
+  const renameNote = (noteId, newTitle) => {
+    setNotes(prev =>
+      prev.map(n => (n.id === noteId ? { ...n, title: newTitle } : n))
+    )
+    if (selectedNote?.id === noteId) {
+      setSelectedNote(prev => ({ ...prev, title: newTitle }))
+    }
+  }
+
+  const renameFolder = (folderId, newName) => {
+    setFolders(prev =>
+      prev.map(f => (f.id === folderId ? { ...f, name: newName } : f))
+    )
   }
 
   const deleteNote = id => {
-    setNotes(prevNotes => prevNotes.filter(note => note.id !== id))
+    setNotes(prev => prev.filter(note => note.id !== id))
   }
 
   const deleteFolder = id => {
-    setFolders(prevFolders => prevFolders.filter(folder => folder.id !== id))
+    setFolders(prev => prev.filter(folder => folder.id !== id))
+  }
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed(prev => !prev)
   }
 
   return (
     <div className="flex h-screen w-screen bg-obsidianBlack text-obsidianText overflow-hidden">
-      {/* Sidebar with fixed width */}
       <div
         className={`transition-all duration-300 flex-none ${
           sidebarCollapsed ? 'w-[50px]' : 'w-64'
@@ -118,12 +91,11 @@ export default function Home() {
           selectedNote={selectedNote}
           isCollapsed={sidebarCollapsed}
           toggleSidebar={toggleSidebar}
-          onDeleteNote={deleteNote} // Pass delete note handler
-          onDeleteFolder={deleteFolder} // Pass delete folder handler
+          onDeleteNote={deleteNote}
+          onDeleteFolder={deleteFolder}
         />
       </div>
 
-      {/* Editor container - use absolute width calculation */}
       <div
         className="h-full overflow-hidden"
         style={{

@@ -1,7 +1,8 @@
+// src/components/Sidebar.js
 import { useState } from 'react'
 import SideHeader from './SideHeader'
-import SideFolderSection from './SideFolderSection'
 import SideContextMenu from './SideContextMenu'
+import FolderTree from './FolderTree'
 
 const Sidebar = ({
   folders,
@@ -43,9 +44,9 @@ const Sidebar = ({
       className={`obsidian-sidebar h-full overflow-y-auto transition-all duration-300 ${
         isCollapsed ? 'w-[50px]' : 'w-64'
       }`}
-      onClick={closeContextMenu} // Close context menu when clicking outside
+      onClick={closeContextMenu}
     >
-      {/* Sidebar Header */}
+      {/* Header */}
       <SideHeader
         isCollapsed={isCollapsed}
         toggleSidebar={toggleSidebar}
@@ -53,8 +54,8 @@ const Sidebar = ({
         onAddNewFolder={onAddNewFolder}
       />
 
-      {/* Folders Section */}
-      <SideFolderSection
+      {/* Folder + Note List */}
+      <FolderTree
         folders={folders}
         notes={notes}
         expandedFolders={expandedFolders}
@@ -69,7 +70,7 @@ const Sidebar = ({
         isCollapsed={isCollapsed}
       />
 
-      {/* Context Menu */}
+      {/* Right-click menu */}
       {contextMenu && (
         <SideContextMenu
           contextMenu={contextMenu}

@@ -1,27 +1,39 @@
-/* src/styles/globals.css */
+/* Tailwind Base Configuration */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* Custom Component Styles */
 @layer components {
+  /* Sidebar Styling */
   .obsidian-sidebar {
     @apply bg-obsidianGray border-r border-obsidianBorder h-screen overflow-y-auto;
   }
+
+  /* Button Styling */
   .obsidian-button {
     @apply p-1.5 rounded hover:bg-obsidianHighlight text-obsidianSecondaryText 
            hover:text-obsidianText transition-colors;
   }
+
+  /* Icon Styling */
   .obsidian-icon {
     @apply w-5 h-5;
   }
+
+  /* File Item Styling */
   .obsidian-file-item {
     @apply px-3 py-1 text-sm text-obsidianText hover:bg-obsidianHighlight 
            cursor-pointer rounded transition-colors flex items-center;
   }
+
+  /* Folder Item Styling */
   .obsidian-folder-item {
     @apply px-2 py-1 text-sm text-obsidianSecondaryText hover:bg-obsidianHighlight 
            cursor-pointer rounded transition-colors flex items-center;
   }
+
+  /* Markdown Content (Prose) Styling */
   .prose {
     @apply prose-headings:text-obsidianText prose-p:text-obsidianText 
            prose-a:text-obsidianAccentPurple prose-strong:text-obsidianText
@@ -32,17 +44,15 @@
   }
 }
 
+/* Global Body Styles */
 body {
-  font-family:
-    'Inter',
-    -apple-system,
-    BlinkMacSystemFont,
-    sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   background-color: theme('colors.obsidianBlack');
   color: theme('colors.obsidianText');
   margin: 0;
 }
 
+/* Scrollbar Customization */
 * {
   scrollbar-width: thin;
   scrollbar-color: theme('colors.obsidianAccent') transparent;
@@ -62,7 +72,7 @@ body {
   border-radius: 3px;
 }
 
-/* For react-resizable */
+/* React Resizable Handle Styling */
 .react-resizable-handle {
   position: absolute;
   width: 10px;
@@ -72,7 +82,6 @@ body {
   box-sizing: border-box;
   background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2IDYiIHN0eWxlPSJiYWNrZ3JvdW5kLWNvbG9yOiNmZmZmZmYwMCIgeD0iMHB4IiB5PSIwcHgiIHdpZHRoPSI2cHgiIGhlaWdodD0iNnB4Ij48ZyBvcGFjaXR5PSIwLjMwMiI+PHBhdGggZD0iTSA2IDYgTCAwIDYgTCAwIDQuMiBMIDQgNC4yIEwgNC4yIDQuMiBMIDQuMiAwIEwgNiAwIEwgNiA2IEwgNiA2IFoiIGZpbGw9IiM4ODg4ODgiLz48L2c+PC9zdmc+');
   background-position: bottom right;
-  padding: 0 3px 3px 0;
 }
 
 .react-resizable-handle-se {
@@ -81,36 +90,15 @@ body {
   cursor: se-resize;
 }
 
-/* For react-resplit */
+/* React Resplit Splitter Styling */
 .splitter:hover,
 .splitter:active {
   background-color: hsl(254, 80%, 68%);
 }
 
-/* globals.css */
+/* Utility Classes */
 .cursor-col-resize {
   cursor: col-resize;
-}
-
-.obsidian-sidebar {
-  background-color: #242424;
-}
-
-.obsidian-folder-item:hover {
-  background-color: #333333;
-  cursor: pointer;
-}
-
-/* globals.css */
-.obsidian-sidebar {
-  background-color: #242424;
-  overflow-y: auto;
-}
-
-.obsidian-folder-item:hover,
-.obsidian-file-item:hover {
-  background-color: #333333;
-  cursor: pointer;
 }
 
 .transition-all.duration-300 {
@@ -122,29 +110,27 @@ body {
 }
 
 .bg-obsidianHighlight:hover {
-  background-color: #444444;
+  background-color: #444444; /* Highlight color for hover state */
 }
 
-/* Add spacing for top section */
+/* Sidebar Top Section Spacing */
 .obsidian-sidebar .top-section {
   padding: 0.5rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid var(--tw-border-opacity);
 }
 
-/* Add to globals.css */
+/* Editor Container and Content Styling */
 .editor-container {
   width: 100%;
   height: 100%;
   display: flex;
-  flex-direction: column;
+  flex-direction: column; /* Vertical layout for editor sections */
 }
 
 .editor-content {
-  flex: 1;
+  flex: 1; /* Take up remaining space */
   width: 100%;
-  height: 100%;
-  overflow: auto;
+  height: auto; /* Allow scrolling if content overflows */
 }
