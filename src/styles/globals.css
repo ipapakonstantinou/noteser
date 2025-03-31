@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Components */
+@layer components {
+  .obsidian-sidebar {
+    @apply bg-obsidianGray border-r border-obsidianBorder h-screen overflow-y-auto;
+  }
+
+  .obsidian-button {
+    @apply p-1.5 rounded hover:bg-obsidianHighlight text-obsidianSecondaryText hover:text-obsidianText transition-colors;
+  }
+
+  .obsidian-icon {
+    @apply w-5 h-5;
+  }
+
+  .obsidian-file-item {
+    @apply px-3 py-1 text-sm text-obsidianText hover:bg-obsidianHighlight cursor-pointer rounded transition-colors flex items-center;
+  }
+
+  .obsidian-folder-item {
+    @apply px-2 py-1 text-sm text-obsidianSecondaryText hover:bg-obsidianHighlight cursor-pointer rounded transition-colors flex items-center;
+  }
+
+  .prose {
+    @apply prose-headings:text-obsidianText prose-p:text-obsidianText 
+           prose-a:text-obsidianAccentPurple prose-strong:text-obsidianText
+           prose-code:text-obsidianText prose-pre:bg-obsidianDarkGray
+           prose-pre:border prose-pre:border-obsidianBorder
+           prose-blockquote:text-obsidianSecondaryText
+           prose-blockquote:border-obsidianAccent;
+  }
+}
+
+/* Utilities */
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: theme('colors.obsidianBlack');
+  color: theme('colors.obsidianText');
+  margin: 0;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: theme('colors.obsidianAccent') transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: theme('colors.obsidianAccent');
+  border-radius: 3px;
+}
+
+.react-resizable-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background-repeat: no-repeat;
+  background-origin: content-box;
+  box-sizing: border-box;
+  background-image: url('data:image/svg+xml;base64,...');
+  background-position: bottom right;
+}
+
+.react-resizable-handle-se {
+  bottom: 0;
+  right: 0;
+  cursor: se-resize;
+}
+
+.splitter:hover,
+.splitter:active {
+  background-color: hsl(254, 80%, 68%);
+}
