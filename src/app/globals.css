@@ -1,38 +1,97 @@
-/* Tailwind CSS directives */
+/* src/styles/globals.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Custom styles */
+@layer components {
+  .obsidian-sidebar {
+    @apply bg-obsidianGray border-r border-obsidianBorder h-screen overflow-y-auto;
+  }
+  .obsidian-button {
+    @apply p-1.5 rounded hover:bg-obsidianHighlight text-obsidianSecondaryText 
+           hover:text-obsidianText transition-colors;
+  }
+  .obsidian-icon {
+    @apply w-5 h-5;
+  }
+  .obsidian-file-item {
+    @apply px-3 py-1 text-sm text-obsidianText hover:bg-obsidianHighlight 
+           cursor-pointer rounded transition-colors flex items-center;
+  }
+  .obsidian-folder-item {
+    @apply px-2 py-1 text-sm text-obsidianSecondaryText hover:bg-obsidianHighlight 
+           cursor-pointer rounded transition-colors flex items-center;
+  }
+  .prose {
+    @apply prose-headings:text-obsidianText prose-p:text-obsidianText 
+           prose-a:text-obsidianAccentPurple prose-strong:text-obsidianText
+           prose-code:text-obsidianText prose-pre:bg-obsidianDarkGray
+           prose-pre:border prose-pre:border-obsidianBorder
+           prose-blockquote:text-obsidianSecondaryText
+           prose-blockquote:border-obsidianAccent;
+  }
+}
+
 body {
-  font-family: 'Inter', sans-serif; /* Use a clean and modern font */
-  background-color: #1b1b1b; /* Obsidian-like dark background */
-  color: #ffffff; /* White text for readability */
-  margin: 0; /* Remove default margin */
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: theme('colors.obsidianBlack');
+  color: theme('colors.obsidianText');
+  margin: 0;
 }
 
-h1, h2, h3, h4, h5, h6 {
-  color: #ffffff; /* Ensure all headers are styled in white */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: theme('colors.obsidianAccent') transparent;
 }
 
-button {
-  transition: all 0.2s ease-in-out; /* Smooth hover effect */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
 
-button:hover {
-  transform: scale(1.05); /* Slight zoom effect on hover */
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-input[type="text"] {
-  background-color: transparent;
-  color: #ffffff;
-  border-bottom: 1px solid #444444;
-  outline: none;
+::-webkit-scrollbar-thumb {
+  background-color: theme('colors.obsidianAccent');
+  border-radius: 3px;
 }
 
-textarea {
-  background-color: #242424; /* Darker background for textarea */
-  color: #ffffff;
-  border-radius: 8px;
-  padding: 10px;
+/* For react-resizable */
+.react-resizable-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background-repeat: no-repeat;
+  background-origin: content-box;
+  box-sizing: border-box;
+  background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2IDYiIHN0eWxlPSJiYWNrZ3JvdW5kLWNvbG9yOiNmZmZmZmYwMCIgeD0iMHB4IiB5PSIwcHgiIHdpZHRoPSI2cHgiIGhlaWdodD0iNnB4Ij48ZyBvcGFjaXR5PSIwLjMwMiI+PHBhdGggZD0iTSA2IDYgTCAwIDYgTCAwIDQuMiBMIDQgNC4yIEwgNC4yIDQuMiBMIDQuMiAwIEwgNiAwIEwgNiA2IEwgNiA2IFoiIGZpbGw9IiM4ODg4ODgiLz48L2c+PC9zdmc+');
+  background-position: bottom right;
+  padding: 0 3px 3px 0;
+}
+
+.react-resizable-handle-se {
+  bottom: 0;
+  right: 0;
+  cursor: se-resize;
+}
+
+/* For react-resplit */
+.splitter:hover, .splitter:active {
+  background-color: hsl(254, 80%, 68%);
+}
+
+/* globals.css */
+.cursor-col-resize {
+  cursor: col-resize;
+}
+
+.obsidian-sidebar {
+  background-color: #242424;
+}
+
+.obsidian-folder-item:hover {
+   background-color: #333333;
+   cursor:pointer;
 }

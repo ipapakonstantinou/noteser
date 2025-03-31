@@ -1,61 +1,135 @@
-"use client";
+// src/components/Sidebar.js
+import { useState } from "react";
+import { 
+  PlusIcon, 
+  FolderPlusIcon, 
+  ChevronDownIcon, 
+  ChevronRightIcon,
+  DocumentTextIcon
+} from "@heroicons/react/24/outline";
+import EditableText from "./EditableText";
 
-import { PlusIcon, PencilIcon, FolderIcon, ArrowUpTrayIcon, Squares2X2Icon } from "@heroicons/react/24/outline";
+const Sidebar = ({
+  folders,
+  notes,
+  onAddNewNote,
+  onAddNewFolder,
+  onSelectNote,
+  onRenameNote,
+  onRenameFolder,
+  activeFolder,
+  setActiveFolder,
+  selectedNote
+}) => {
+  const [expandedFolders, setExpandedFolders] = useState({});
 
-const Sidebar = ({ notes, onAddNewNote, onSelectNote }) => {
+  const toggleFolder = (folderId, e) => {
+    e.stopPropagation();
+    setExpandedFolders((prev) => ({
+      ...prev,
+      [folderId]: !prev[folderId],
+    }));
+  };
+
+  const handleFolderClick = (folder) => {
+    setActiveFolder(folder);
+  };
+
   return (
-    <div className="w-64 h-screen bg-gray-800 text-white flex flex-col p-4">
-      {/* Title */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold mb-4">Noteser</h1>
-        {/* Icon Actions */}
-        <div className="flex flex-col space-y-3">
-          <button
-            onClick={onAddNewNote}
-            className="p-1 rounded hover:bg-gray-700 flex justify-center items-center"
-            title="Add New Note"
-          >
-            <PlusIcon className="w-5 h-5 text-gray-300 hover:text-white" />
-          </button>
-          <button
-            className="p-1 rounded hover:bg-gray-700 flex justify-center items-center"
-            title="Edit Note"
-          >
-            <PencilIcon className="w-5 h-5 text-gray-300 hover:text-white" />
-          </button>
-          <button
-            className="p-1 rounded hover:bg-gray-700 flex justify-center items-center"
-            title="Folders"
-          >
-            <FolderIcon className="w-5 h-5 text-gray-300 hover:text-white" />
-          </button>
-          <button
-            className="p-1 rounded hover:bg-gray-700 flex justify-center items-center"
-            title="Upload"
-          >
-            <ArrowUpTrayIcon className="w-5 h-5 text-gray-300 hover:text-white" />
-          </button>
-          <button
-            className="p-1 rounded hover:bg-gray-700 flex justify-center items-center"
-            title="View Grid"
-          >
-            <Squares2X2Icon className="w-5 h-5 text-gray-300 hover:text-white" />
-          </button>
-        </div>
+    <div className="obsidian-sidebar w-full p-2 h-full overflow-y-auto">
+      {/* App Title */}
+      <div className="flex items-center justify-between mb-2 px-2">
+        <h2 className="text-lg font-medium">Noteser</h2>
       </div>
 
-      {/* Notes List */}
-      <ul className="space-y-3">
-        {notes.map((note) => (
-          <li
-            key={note.id}
-            className="p-3 bg-gray-700 rounded hover:bg-gray-600 cursor-pointer"
-            onClick={() => onSelectNote(note)}
-          >
-            {note.title || "Untitled Note"}
-          </li>
+      {/* Action Icons */}
+      <div className="flex items-center justify-end mb-3 px-2">
+        <button 
+          className="obsidian-button" 
+          onClick={onAddNewNote}
+          title="New note"
+        >
+          <PlusIcon className="obsidian-icon" />
+        </button>
+        <button 
+          className="obsidian-button ml-1" 
+          onClick={onAddNewFolder}
+          title="New folder"
+        >
+          <FolderPlusIcon className="obsidian-icon" />
+        </button>
+      </div>
+
+      {/* Folders Section */}
+      <div>
+        {folders.map((folder) => (
+          <div key={folder.id} className="mb-1">
+            <div
+              className={`obsidian-folder-item ${
+                activeFolder?.id === folder.id ? "bg-obsidianHighlight" : ""
+              }`}
+              onClick={() => handleFolderClick(folder)}
+            >
+              <button 
+                className="mr-1 focus:outline-none"
+                onClick={(e) => toggleFolder(folder.id, e)}
+              >
+                {expandedFolders[folder.id] ? (
+                  <ChevronDownIcon className="w-3.5 h-3.5" />
+                ) : (
+                  <ChevronRightIcon className="w-3.5 h-3.5" />
+                )}
+              </button>
+              <EditableText
+                value={folder.name}
+                onSave={(newName) => onRenameFolder(folder.id, newName)}
+              />
+            </div>
+
+            {/* Notes within folder */}
+            {expandedFolders[folder.id] &&
+              notes.filter((note) => note.folderId === folder.id).map((note) => (
+                <div 
+                  key={note.id} 
+                  className={`obsidian-file-item ml-5 ${
+                    selectedNote?.id === note.id ? "bg-obsidianHighlight" : ""
+                  }`}
+                  onClick={() => onSelectNote(note)}
+                >
+                  <DocumentTextIcon className="w-4 h-4 mr-2" />
+                  <EditableText
+                    value={note.title}
+                    onSave={(newTitle) => onRenameNote(note.id, newTitle)}
+                  />
+                </div>
+              ))}
+          </div>
         ))}
-      </ul>
+
+        {/* Uncategorized Notes */}
+        <div className="mt-4">
+          <div className="flex items-center justify-between px-2 py-1 text-xs text-obsidianSecondaryText">
+            <span>UNCATEGORIZED</span>
+          </div>
+          {notes
+            .filter(note => !note.folderId)
+            .map(note => (
+              <div 
+                key={note.id}
+                className={`obsidian-file-item ${
+                  selectedNote?.id === note.id ? "bg-obsidianHighlight" : ""
+                }`}
+                onClick={() => onSelectNote(note)}
+              >
+                <DocumentTextIcon className="w-4 h-4 mr-2" />
+                <EditableText
+                  value={note.title}
+                  onSave={(newTitle) => onRenameNote(note.id, newTitle)}
+                />
+              </div>
+            ))}
+        </div>
+      </div>
     </div>
   );
 };
