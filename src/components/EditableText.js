@@ -1,63 +1,63 @@
 // src/components/EditableText.js
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from 'react'
 
-const EditableText = ({ value, onSave, className = "" }) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [text, setText] = useState(value);
-  const inputRef = useRef(null);
+const EditableText = ({ value, onSave, className = '' }) => {
+  const [isEditing, setIsEditing] = useState(false)
+  const [text, setText] = useState(value)
+  const inputRef = useRef(null)
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
-      inputRef.current.focus();
+      inputRef.current.focus()
     }
-  }, [isEditing]);
+  }, [isEditing])
 
   useEffect(() => {
-    setText(value);
-  }, [value]);
+    setText(value)
+  }, [value])
 
-  const handleDoubleClick = (e) => {
-    e.stopPropagation();
-    setIsEditing(true);
-  };
+  const handleDoubleClick = e => {
+    e.stopPropagation()
+    setIsEditing(true)
+  }
 
   const handleBlur = () => {
-    setIsEditing(false);
+    setIsEditing(false)
     if (text.trim() !== value) {
-      onSave(text);
+      onSave(text)
     }
-  };
+  }
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = e => {
     if (e.key === 'Enter') {
-      setIsEditing(false);
-      onSave(text);
+      setIsEditing(false)
+      onSave(text)
     } else if (e.key === 'Escape') {
-      setIsEditing(false);
-      setText(value);
+      setIsEditing(false)
+      setText(value)
     }
-  };
+  }
 
   return isEditing ? (
     <input
       ref={inputRef}
       type="text"
       value={text}
-      onChange={(e) => setText(e.target.value)}
+      onChange={e => setText(e.target.value)}
       onBlur={handleBlur}
       onKeyDown={handleKeyDown}
-      onClick={(e) => e.stopPropagation()}
+      onClick={e => e.stopPropagation()}
       className="bg-obsidianDarkGray border border-obsidianBorder rounded px-1 py-0 text-sm focus:outline-none w-full"
       autoFocus
     />
   ) : (
-    <span 
+    <span
       className={`${className} truncate cursor-pointer`}
       onDoubleClick={handleDoubleClick}
     >
       {value}
     </span>
-  );
-};
+  )
+}
 
-export default EditableText;
+export default EditableText

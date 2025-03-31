@@ -1,7 +1,7 @@
-import { useState } from "react";
-import SideHeader from "./SideHeader";
-import SideFolderSection from "./SideFolderSection";
-import SideContextMenu from "./SideContextMenu";
+import { useState } from 'react'
+import SideHeader from './SideHeader'
+import SideFolderSection from './SideFolderSection'
+import SideContextMenu from './SideContextMenu'
 
 const Sidebar = ({
   folders,
@@ -19,29 +19,29 @@ const Sidebar = ({
   isCollapsed,
   toggleSidebar
 }) => {
-  const [expandedFolders, setExpandedFolders] = useState({});
-  const [contextMenu, setContextMenu] = useState(null);
+  const [expandedFolders, setExpandedFolders] = useState({})
+  const [contextMenu, setContextMenu] = useState(null)
 
-  const toggleFolder = (folderId) => {
-    setExpandedFolders((prev) => ({
+  const toggleFolder = folderId => {
+    setExpandedFolders(prev => ({
       ...prev,
-      [folderId]: !prev[folderId],
-    }));
-  };
+      [folderId]: !prev[folderId]
+    }))
+  }
 
   const handleRightClick = (e, type, id) => {
-    e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, type, id });
-  };
+    e.preventDefault()
+    setContextMenu({ x: e.clientX, y: e.clientY, type, id })
+  }
 
   const closeContextMenu = () => {
-    setContextMenu(null);
-  };
+    setContextMenu(null)
+  }
 
   return (
     <div
       className={`obsidian-sidebar h-full overflow-y-auto transition-all duration-300 ${
-        isCollapsed ? "w-[50px]" : "w-64"
+        isCollapsed ? 'w-[50px]' : 'w-64'
       }`}
       onClick={closeContextMenu} // Close context menu when clicking outside
     >
@@ -79,7 +79,7 @@ const Sidebar = ({
         />
       )}
     </div>
-  );
-};
+  )
+}
 
-export default Sidebar;
+export default Sidebar

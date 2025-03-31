@@ -1,5 +1,5 @@
 // src/components/ShortcutsModal.js
-import { XMarkIcon } from "@heroicons/react/24/outline";
+import { XMarkIcon } from '@heroicons/react/24/outline'
 
 const ShortcutsModal = ({ isOpen, onClose }) => {
   return isOpen ? (
@@ -24,7 +24,7 @@ const ShortcutsModal = ({ isOpen, onClose }) => {
         </div>
       </div>
     </div>
-  ) : null;
-};
+  ) : null
+}
 
-export default ShortcutsModal;
+export default ShortcutsModal

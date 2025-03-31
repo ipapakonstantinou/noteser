@@ -33,7 +33,11 @@
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   background-color: theme('colors.obsidianBlack');
   color: theme('colors.obsidianText');
   margin: 0;
@@ -78,7 +82,8 @@ body {
 }
 
 /* For react-resplit */
-.splitter:hover, .splitter:active {
+.splitter:hover,
+.splitter:active {
   background-color: hsl(254, 80%, 68%);
 }
 
@@ -92,8 +97,8 @@ body {
 }
 
 .obsidian-folder-item:hover {
-   background-color: #333333;
-   cursor:pointer;
+  background-color: #333333;
+  cursor: pointer;
 }
 
 /* globals.css */
@@ -109,7 +114,7 @@ body {
 }
 
 .transition-all.duration-300 {
-  transition: all ease-in-out .3s;
+  transition: all ease-in-out 0.3s;
 }
 
 .flex-grow {

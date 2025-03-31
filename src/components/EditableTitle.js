@@ -1,42 +1,42 @@
 // Add this component: src/components/EditableTitle.js
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from 'react'
 
 const EditableTitle = ({ value, onRename }) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [title, setTitle] = useState(value);
-  const inputRef = useRef(null);
+  const [isEditing, setIsEditing] = useState(false)
+  const [title, setTitle] = useState(value)
+  const inputRef = useRef(null)
 
   // Focus input when editing starts
   useEffect(() => {
     if (isEditing && inputRef.current) {
-      inputRef.current.focus();
+      inputRef.current.focus()
     }
-  }, [isEditing]);
+  }, [isEditing])
 
   const handleDoubleClick = () => {
-    setIsEditing(true);
-  };
+    setIsEditing(true)
+  }
 
-  const handleChange = (e) => {
-    setTitle(e.target.value);
-  };
+  const handleChange = e => {
+    setTitle(e.target.value)
+  }
 
   const handleBlur = () => {
-    setIsEditing(false);
+    setIsEditing(false)
     if (title.trim() !== value) {
-      onRename(title);
+      onRename(title)
     }
-  };
+  }
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = e => {
     if (e.key === 'Enter') {
-      setIsEditing(false);
-      onRename(title);
+      setIsEditing(false)
+      onRename(title)
     } else if (e.key === 'Escape') {
-      setIsEditing(false);
-      setTitle(value); // Reset to original
+      setIsEditing(false)
+      setTitle(value) // Reset to original
     }
-  };
+  }
 
   return isEditing ? (
     <input
@@ -50,13 +50,13 @@ const EditableTitle = ({ value, onRename }) => {
       autoFocus
     />
   ) : (
-    <h1 
+    <h1
       className="text-xl font-medium cursor-pointer hover:text-obsidianAccentPurple"
       onDoubleClick={handleDoubleClick}
     >
       {value}
     </h1>
-  );
-};
+  )
+}
 
-export default EditableTitle;
+export default EditableTitle
