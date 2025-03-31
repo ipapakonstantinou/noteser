@@ -91,13 +91,20 @@ export default function Home() {
     setSidebarCollapsed(!sidebarCollapsed);
   };
 
+  const deleteNote = (id) => {
+    setNotes((prevNotes) => prevNotes.filter((note) => note.id !== id));
+  };
+
+  const deleteFolder = (id) => {
+    setFolders((prevFolders) => prevFolders.filter((folder) => folder.id !== id));
+  };
+
   return (
     <div className="flex h-screen w-screen bg-obsidianBlack text-obsidianText overflow-hidden">
       {/* Sidebar with fixed width */}
-      <div 
-        className={`transition-all duration-300 flex-none ${
-          sidebarCollapsed ? 'w-[50px]' : 'w-64'
-        }`}
+      <div
+        className={`transition-all duration-300 flex-none ${sidebarCollapsed ? 'w-[50px]' : 'w-64'
+          }`}
       >
         <Sidebar
           notes={notes}
@@ -112,14 +119,16 @@ export default function Home() {
           selectedNote={selectedNote}
           isCollapsed={sidebarCollapsed}
           toggleSidebar={toggleSidebar}
+          onDeleteNote={deleteNote} // Pass delete note handler
+          onDeleteFolder={deleteFolder} // Pass delete folder handler
         />
       </div>
-      
+
       {/* Editor container - use absolute width calculation */}
-      <div 
+      <div
         className="h-full overflow-hidden"
-        style={{ 
-          width: `calc(100vw - ${sidebarCollapsed ? '50px' : '16rem'})` 
+        style={{
+          width: `calc(100vw - ${sidebarCollapsed ? '50px' : '16rem'})`
         }}
       >
         <Editor note={selectedNote} onEditNote={handleEditNote} />

@@ -1,4 +1,3 @@
-// src/components/Sidebar.js
 import { useState } from "react";
 import { 
   PlusIcon, 
@@ -19,6 +18,8 @@ const Sidebar = ({
   onSelectNote,
   onRenameNote,
   onRenameFolder,
+  onDeleteNote, // Delete note handler
+  onDeleteFolder, // Delete folder handler
   activeFolder,
   setActiveFolder,
   selectedNote,
@@ -26,6 +27,7 @@ const Sidebar = ({
   toggleSidebar
 }) => {
   const [expandedFolders, setExpandedFolders] = useState({});
+  const [contextMenu, setContextMenu] = useState(null); // State for context menu
 
   const toggleFolder = (folderId) => {
     setExpandedFolders((prev) => ({
@@ -34,11 +36,21 @@ const Sidebar = ({
     }));
   };
 
+  const handleRightClick = (e, type, id) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, type, id });
+  };
+
+  const closeContextMenu = () => {
+    setContextMenu(null);
+  };
+
   return (
     <div
       className={`obsidian-sidebar h-full overflow-y-auto transition-all duration-300 ${
         isCollapsed ? "w-[50px]" : "w-64"
       }`}
+      onClick={closeContextMenu} // Close context menu when clicking outside
     >
       {/* App Title */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-obsidianBorder">
@@ -89,6 +101,7 @@ const Sidebar = ({
                 activeFolder?.id === folder.id ? "bg-obsidianHighlight" : ""
               }`}
               onClick={() => setActiveFolder(folder)}
+              onContextMenu={(e) => handleRightClick(e, "folder", folder.id)} // Right-click handler for folders
             >
               {!isCollapsed && (
                 <>
@@ -123,6 +136,7 @@ const Sidebar = ({
                     selectedNote?.id === note.id ? "bg-obsidianHighlight" : ""
                   }`}
                   onClick={() => onSelectNote(note)}
+                  onContextMenu={(e) => handleRightClick(e, "note", note.id)} // Right-click handler for notes
                 >
                   <DocumentTextIcon className="w-4 h-4 mr-2" />
                   <EditableText
@@ -144,6 +158,7 @@ const Sidebar = ({
               selectedNote?.id === note.id ? "bg-obsidianHighlight" : ""
             }`}
             onClick={() => onSelectNote(note)}
+            onContextMenu={(e) => handleRightClick(e, "note", note.id)} // Right-click handler for uncategorized notes
           >
             <DocumentTextIcon className="w-4 h-4 mr-2" />
             <EditableText
@@ -152,6 +167,50 @@ const Sidebar = ({
             />
           </div>
         ))}
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div
+          style={{
+            position: "absolute",
+            top: contextMenu.y,
+            left: contextMenu.x,
+            backgroundColor: "#333",
+            color: "#fff",
+            padding: "0.5rem",
+            borderRadius: "0.25rem",
+            boxShadow: "0px 4px 6px rgba(0,0,0,0.1)",
+            zIndex: 1000,
+          }}
+        >
+          {contextMenu.type === "note" && (
+            <>
+              <button
+                className="block w-full text-left hover:bg-gray-700 px-2 py-1"
+                onClick={() => {
+                  onDeleteNote(contextMenu.id);
+                  closeContextMenu();
+                }}
+              >
+                Delete Note
+              </button>
+            </>
+          )}
+          {contextMenu.type === "folder" && (
+            <>
+              <button
+                className="block w-full text-left hover:bg-gray-700 px-2 py-1"
+                onClick={() => {
+                  onDeleteFolder(contextMenu.id);
+                  closeContextMenu();
+                }}
+              >
+                Delete Folder
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 };
