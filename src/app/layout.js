@@ -1,5 +1,5 @@
-// app/layout.js
-import './globals.css';
+// src/app/layout.js
+import '../styles/globals.css'
 
 export const metadata = {
     title: 'Noteser',
