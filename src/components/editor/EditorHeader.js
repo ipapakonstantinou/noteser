@@ -1,5 +1,5 @@
 // --- components/editor/EditorHeader.js ---
-import { PencilIcon, EyeIcon } from '@heroicons/react/24/outline'
+import { EyeIcon, PencilIcon } from '@heroicons/react/24/outline'
 
 const EditorHeader = ({ title, isPreviewMode, onTogglePreview, onTitleChange }) => {
   return (
@@ -12,14 +12,10 @@ const EditorHeader = ({ title, isPreviewMode, onTogglePreview, onTitleChange }) 
       />
       <button
         onClick={onTogglePreview}
-        className="obsidian-button"
-        title={isPreviewMode ? 'Edit mode' : 'Preview mode'}
+        className="obsidian-button ml-2"
+        title={isPreviewMode ? 'Edit note' : 'Preview note'}
       >
-        {isPreviewMode ? (
-          <PencilIcon className="w-5 h-5" />
-        ) : (
-          <EyeIcon className="w-5 h-5" />
-        )}
+        {isPreviewMode ? <PencilIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
       </button>
     </div>
   )
