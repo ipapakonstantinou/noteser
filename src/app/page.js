@@ -3,30 +3,34 @@
 import { useState, useEffect } from "react";
 import Sidebar from "../components/Sidebar";
 import Editor from "../components/Editor";
-import SaveIndicator from "../components/SaveIndicator";
-import Resizable from "react-resizable-layout";
 
 export default function Home() {
   const [notes, setNotes] = useState([]);
   const [folders, setFolders] = useState([]);
   const [selectedNote, setSelectedNote] = useState(null);
   const [activeFolder, setActiveFolder] = useState(null);
-  const [recentlySaved, setRecentlySaved] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Load data from localStorage
   useEffect(() => {
     const savedNotes = JSON.parse(localStorage.getItem("notes")) || [];
     const savedFolders = JSON.parse(localStorage.getItem("folders")) || [];
+    const sidebarState = localStorage.getItem("sidebarCollapsed") === "true";
+
     setNotes(savedNotes);
     setFolders(savedFolders);
+    setSidebarCollapsed(sidebarState);
   }, []);
+
+  // Save sidebar state
+  useEffect(() => {
+    localStorage.setItem("sidebarCollapsed", sidebarCollapsed);
+  }, [sidebarCollapsed]);
 
   // Save notes to localStorage
   useEffect(() => {
     if (notes.length > 0) {
       localStorage.setItem("notes", JSON.stringify(notes));
-      setRecentlySaved(true);
-      setTimeout(() => setRecentlySaved(false), 2000);
     }
   }, [notes]);
 
@@ -83,40 +87,43 @@ export default function Home() {
     setActiveFolder(newFolder);
   };
 
+  const toggleSidebar = () => {
+    setSidebarCollapsed(!sidebarCollapsed);
+  };
+
   return (
-    <Resizable axis="x" initial={300} min={200} max={500}>
-      {({ position, separatorProps }) => (
-        <div className="flex h-screen bg-obsidianBlack text-obsidianText">
-          {/* Sidebar */}
-          <div style={{ width: position }} className="obsidian-sidebar">
-            <Sidebar
-              notes={notes}
-              folders={folders}
-              onAddNewNote={addNewNote}
-              onAddNewFolder={addNewFolder}
-              onSelectNote={setSelectedNote}
-              onRenameNote={renameNote}
-              onRenameFolder={renameFolder}
-              activeFolder={activeFolder}
-              setActiveFolder={setActiveFolder}
-            />
-          </div>
-
-          {/* Resizable Separator */}
-          <div
-            {...separatorProps}
-            className="w-1 bg-obsidianBorder hover:bg-obsidianAccentPurple cursor-col-resize"
-          />
-
-          {/* Editor */}
-          <div className="flex-1">
-            <Editor note={selectedNote} onEditNote={handleEditNote} />
-          </div>
-
-          {/* Save Indicator */}
-          <SaveIndicator isSaved={recentlySaved} />
-        </div>
-      )}
-    </Resizable>
+    <div className="flex h-screen w-screen bg-obsidianBlack text-obsidianText overflow-hidden">
+      {/* Sidebar with fixed width */}
+      <div 
+        className={`transition-all duration-300 flex-none ${
+          sidebarCollapsed ? 'w-[50px]' : 'w-64'
+        }`}
+      >
+        <Sidebar
+          notes={notes}
+          folders={folders}
+          onAddNewNote={addNewNote}
+          onAddNewFolder={addNewFolder}
+          onSelectNote={setSelectedNote}
+          onRenameNote={renameNote}
+          onRenameFolder={renameFolder}
+          activeFolder={activeFolder}
+          setActiveFolder={setActiveFolder}
+          selectedNote={selectedNote}
+          isCollapsed={sidebarCollapsed}
+          toggleSidebar={toggleSidebar}
+        />
+      </div>
+      
+      {/* Editor container - use absolute width calculation */}
+      <div 
+        className="h-full overflow-hidden"
+        style={{ 
+          width: `calc(100vw - ${sidebarCollapsed ? '50px' : '16rem'})` 
+        }}
+      >
+        <Editor note={selectedNote} onEditNote={handleEditNote} />
+      </div>
+    </div>
   );
 }

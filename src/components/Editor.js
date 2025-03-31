@@ -3,41 +3,40 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { PencilIcon, EyeIcon } from "@heroicons/react/24/outline";
-import EditableTitle from "./EditableTitle";
+import EditableText from "./EditableText";
 
 const Editor = ({ note, onEditNote }) => {
   const [isPreviewMode, setIsPreviewMode] = useState(false);
 
   if (!note) {
     return (
-      <div className="flex-1 flex items-center justify-center text-obsidianSecondaryText">
+      <div className="flex-1 flex items-center justify-center text-obsidianSecondaryText h-full">
         Select a note to start editing
       </div>
     );
   }
 
-  
   const handleContentChange = (e) => {
-    // Access value from the event object correctly
     onEditNote({...note, content: e.target.value});
   };
-  
-  // Inside Editor component
+
   const handleTitleRename = (newTitle) => {
     onEditNote({...note, title: newTitle});
   };
-  
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full w-full overflow-hidden">
       {/* Note Header with Editable Title */}
       <div className="flex justify-between items-center p-4 border-b border-obsidianBorder">
-        <EditableTitle 
+        <EditableText 
           value={note.title} 
-          onRename={handleTitleRename} 
+          onSave={handleTitleRename}
+          className="text-xl font-medium" 
         />
         <button 
           onClick={() => setIsPreviewMode(!isPreviewMode)}
           className="obsidian-button"
+          title={isPreviewMode ? "Edit mode" : "Preview mode"}
         >
           {isPreviewMode ? 
             <PencilIcon className="w-5 h-5" /> : 
@@ -65,6 +64,6 @@ const Editor = ({ note, onEditNote }) => {
       </div>
     </div>
   );
-};
+}
 
 export default Editor;

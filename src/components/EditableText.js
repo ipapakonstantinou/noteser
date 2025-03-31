@@ -1,4 +1,4 @@
-// Create or update EditableText.js for more generic use
+// src/components/EditableText.js
 import { useState, useRef, useEffect } from "react";
 
 const EditableText = ({ value, onSave, className = "" }) => {
@@ -12,8 +12,12 @@ const EditableText = ({ value, onSave, className = "" }) => {
     }
   }, [isEditing]);
 
+  useEffect(() => {
+    setText(value);
+  }, [value]);
+
   const handleDoubleClick = (e) => {
-    e.stopPropagation(); // Prevent folder toggle
+    e.stopPropagation();
     setIsEditing(true);
   };
 
@@ -43,12 +47,12 @@ const EditableText = ({ value, onSave, className = "" }) => {
       onBlur={handleBlur}
       onKeyDown={handleKeyDown}
       onClick={(e) => e.stopPropagation()}
-      className="bg-obsidianDarkGray border border-obsidianBorder rounded px-1 py-0 text-sm focus:outline-none"
+      className="bg-obsidianDarkGray border border-obsidianBorder rounded px-1 py-0 text-sm focus:outline-none w-full"
       autoFocus
     />
   ) : (
     <span 
-      className={`${className} cursor-pointer`}
+      className={`${className} truncate cursor-pointer`}
       onDoubleClick={handleDoubleClick}
     >
       {value}

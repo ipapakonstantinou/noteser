@@ -5,7 +5,9 @@ import {
   FolderPlusIcon, 
   ChevronDownIcon, 
   ChevronRightIcon,
-  DocumentTextIcon
+  DocumentTextIcon,
+  ChevronDoubleLeftIcon,
+  ChevronDoubleRightIcon
 } from "@heroicons/react/24/outline";
 import EditableText from "./EditableText";
 
@@ -19,79 +21,105 @@ const Sidebar = ({
   onRenameFolder,
   activeFolder,
   setActiveFolder,
-  selectedNote
+  selectedNote,
+  isCollapsed,
+  toggleSidebar
 }) => {
   const [expandedFolders, setExpandedFolders] = useState({});
 
-  const toggleFolder = (folderId, e) => {
-    e.stopPropagation();
+  const toggleFolder = (folderId) => {
     setExpandedFolders((prev) => ({
       ...prev,
       [folderId]: !prev[folderId],
     }));
   };
 
-  const handleFolderClick = (folder) => {
-    setActiveFolder(folder);
-  };
-
   return (
-    <div className="obsidian-sidebar w-full p-2 h-full overflow-y-auto">
+    <div
+      className={`obsidian-sidebar h-full overflow-y-auto transition-all duration-300 ${
+        isCollapsed ? "w-[50px]" : "w-64"
+      }`}
+    >
       {/* App Title */}
-      <div className="flex items-center justify-between mb-2 px-2">
-        <h2 className="text-lg font-medium">Noteser</h2>
+      <div className="flex items-center justify-between px-4 py-2 border-b border-obsidianBorder">
+        <h2 className={`text-lg font-medium ${isCollapsed ? "hidden" : "block"}`}>
+          Noteser
+        </h2>
       </div>
 
-      {/* Action Icons */}
-      <div className="flex items-center justify-end mb-3 px-2">
-        <button 
-          className="obsidian-button" 
-          onClick={onAddNewNote}
-          title="New note"
+      {/* Action Buttons Row */}
+      <div className="flex items-center justify-between px-4 py-2 border-b border-obsidianBorder">
+        <button
+          className="obsidian-button"
+          onClick={toggleSidebar}
+          title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
-          <PlusIcon className="obsidian-icon" />
+          {isCollapsed ? (
+            <ChevronDoubleRightIcon className="w-4 h-4" />
+          ) : (
+            <ChevronDoubleLeftIcon className="w-4 h-4" />
+          )}
         </button>
-        <button 
-          className="obsidian-button ml-1" 
-          onClick={onAddNewFolder}
-          title="New folder"
-        >
-          <FolderPlusIcon className="obsidian-icon" />
-        </button>
+        {!isCollapsed && (
+          <>
+            <button 
+              className="obsidian-button" 
+              onClick={onAddNewNote}
+              title="New note"
+            >
+              <PlusIcon className="obsidian-icon" />
+            </button>
+            <button 
+              className="obsidian-button" 
+              onClick={onAddNewFolder}
+              title="New folder"
+            >
+              <FolderPlusIcon className="obsidian-icon" />
+            </button>
+          </>
+        )}
       </div>
 
       {/* Folders Section */}
-      <div>
+      <div className="mt-2">
         {folders.map((folder) => (
           <div key={folder.id} className="mb-1">
             <div
               className={`obsidian-folder-item ${
                 activeFolder?.id === folder.id ? "bg-obsidianHighlight" : ""
               }`}
-              onClick={() => handleFolderClick(folder)}
+              onClick={() => setActiveFolder(folder)}
             >
-              <button 
-                className="mr-1 focus:outline-none"
-                onClick={(e) => toggleFolder(folder.id, e)}
-              >
-                {expandedFolders[folder.id] ? (
-                  <ChevronDownIcon className="w-3.5 h-3.5" />
-                ) : (
-                  <ChevronRightIcon className="w-3.5 h-3.5" />
-                )}
-              </button>
-              <EditableText
-                value={folder.name}
-                onSave={(newName) => onRenameFolder(folder.id, newName)}
-              />
+              {!isCollapsed && (
+                <>
+                  <button
+                    className="mr-1 focus:outline-none"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFolder(folder.id);
+                    }}
+                  >
+                    {expandedFolders[folder.id] ? (
+                      <ChevronDownIcon className="w-3.5 h-3.5" />
+                    ) : (
+                      <ChevronRightIcon className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                  <EditableText
+                    value={folder.name}
+                    onSave={(newName) => onRenameFolder(folder.id, newName)}
+                  />
+                </>
+              )}
             </div>
 
             {/* Notes within folder */}
-            {expandedFolders[folder.id] &&
+            {!isCollapsed &&
+              expandedFolders[folder.id] &&
               notes.filter((note) => note.folderId === folder.id).map((note) => (
-                <div 
-                  key={note.id} 
-                  className={`obsidian-file-item ml-5 ${
+                <div
+                  key={note.id}
+                  className={`ml-5 obsidian-file-item ${
                     selectedNote?.id === note.id ? "bg-obsidianHighlight" : ""
                   }`}
                   onClick={() => onSelectNote(note)}
@@ -105,31 +133,25 @@ const Sidebar = ({
               ))}
           </div>
         ))}
-
-        {/* Uncategorized Notes */}
-        <div className="mt-4">
-          <div className="flex items-center justify-between px-2 py-1 text-xs text-obsidianSecondaryText">
-            <span>UNCATEGORIZED</span>
-          </div>
-          {notes
-            .filter(note => !note.folderId)
-            .map(note => (
-              <div 
-                key={note.id}
-                className={`obsidian-file-item ${
-                  selectedNote?.id === note.id ? "bg-obsidianHighlight" : ""
-                }`}
-                onClick={() => onSelectNote(note)}
-              >
-                <DocumentTextIcon className="w-4 h-4 mr-2" />
-                <EditableText
-                  value={note.title}
-                  onSave={(newTitle) => onRenameNote(note.id, newTitle)}
-                />
-              </div>
-            ))}
-        </div>
       </div>
+
+      {/* Notes outside folders */}
+      {!isCollapsed &&
+        notes.filter((note) => !note.folderId).map((note) => (
+          <div
+            key={note.id}
+            className={`obsidian-file-item ${
+              selectedNote?.id === note.id ? "bg-obsidianHighlight" : ""
+            }`}
+            onClick={() => onSelectNote(note)}
+          >
+            <DocumentTextIcon className="w-4 h-4 mr-2" />
+            <EditableText
+              value={note.title}
+              onSave={(newTitle) => onRenameNote(note.id, newTitle)}
+            />
+          </div>
+        ))}
     </div>
   );
 };
