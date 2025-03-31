@@ -1,9 +1,5 @@
-import EditableText from './EditableText'
-import {
-  ChevronDownIcon,
-  ChevronRightIcon,
-  DocumentTextIcon
-} from '@heroicons/react/24/outline'
+import EditableText from "./EditableText";
+import { ChevronDownIcon, ChevronRightIcon, DocumentTextIcon } from "@heroicons/react/24/outline";
 
 const SideFolderSection = ({
   folders,
@@ -21,23 +17,24 @@ const SideFolderSection = ({
 }) => {
   return (
     <div className="mt-2">
-      {folders.map(folder => (
+      {/* Render folders */}
+      {folders.map((folder) => (
         <div key={folder.id} className="mb-1">
           {/* Folder */}
           <div
             className={`obsidian-folder-item ${
-              activeFolder?.id === folder.id ? 'bg-obsidianHighlight' : ''
+              activeFolder?.id === folder.id ? "bg-obsidianHighlight" : ""
             }`}
             onClick={() => setActiveFolder(folder)}
-            onContextMenu={e => handleRightClick(e, 'folder', folder.id)} // Right-click handler for folders
+            onContextMenu={(e) => handleRightClick(e, "folder", folder.id)} // Right-click handler for folders
           >
             {!isCollapsed && (
               <>
                 <button
                   className="mr-1 focus:outline-none"
-                  onClick={e => {
-                    e.stopPropagation()
-                    toggleFolder(folder.id)
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleFolder(folder.id);
                   }}
                 >
                   {expandedFolders[folder.id] ? (
@@ -48,7 +45,7 @@ const SideFolderSection = ({
                 </button>
                 <EditableText
                   value={folder.name}
-                  onSave={newName => onRenameFolder(folder.id, newName)}
+                  onSave={(newName) => onRenameFolder(folder.id, newName)}
                 />
               </>
             )}
@@ -57,28 +54,45 @@ const SideFolderSection = ({
           {/* Notes within folder */}
           {!isCollapsed &&
             expandedFolders[folder.id] &&
-            notes
-              .filter(note => note.folderId === folder.id)
-              .map(note => (
-                <div
-                  key={note.id}
-                  className={`ml-5 obsidian-file-item ${
-                    selectedNote?.id === note.id ? 'bg-obsidianHighlight' : ''
-                  }`}
-                  onClick={() => onSelectNote(note)}
-                  onContextMenu={e => handleRightClick(e, 'note', note.id)} // Right-click handler for notes
-                >
-                  <DocumentTextIcon className="w-4 h-4 mr-2" />
-                  <EditableText
-                    value={note.title}
-                    onSave={newTitle => onRenameNote(note.id, newTitle)}
-                  />
-                </div>
-              ))}
+            notes.filter((note) => note.folderId === folder.id).map((note) => (
+              <div
+                key={note.id}
+                className={`ml-5 obsidian-file-item ${
+                  selectedNote?.id === note.id ? "bg-obsidianHighlight" : ""
+                }`}
+                onClick={() => onSelectNote(note)}
+                onContextMenu={(e) => handleRightClick(e, "note", note.id)} // Right-click handler for notes
+              >
+                <DocumentTextIcon className="w-4 h-4 mr-2" />
+                <EditableText
+                  value={note.title}
+                  onSave={(newTitle) => onRenameNote(note.id, newTitle)}
+                />
+              </div>
+            ))}
         </div>
       ))}
-    </div>
-  )
-}
 
-export default SideFolderSection
+      {/* Render uncategorized notes (notes without a folderId) */}
+      {!isCollapsed &&
+        notes.filter((note) => !note.folderId).map((note) => (
+          <div
+            key={note.id}
+            className={`obsidian-file-item ${
+              selectedNote?.id === note.id ? "bg-obsidianHighlight" : ""
+            }`}
+            onClick={() => onSelectNote(note)}
+            onContextMenu={(e) => handleRightClick(e, "note", note.id)} // Right-click handler for uncategorized notes
+          >
+            <DocumentTextIcon className="w-4 h-4 mr-2" />
+            <EditableText
+              value={note.title}
+              onSave={(newTitle) => onRenameNote(note.id, newTitle)}
+            />
+          </div>
+        ))}
+    </div>
+  );
+};
+
+export default SideFolderSection;
