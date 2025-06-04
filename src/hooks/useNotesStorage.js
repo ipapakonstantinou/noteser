@@ -21,15 +21,11 @@ const useNotesStorage = () => {
   }, [sidebarCollapsed])
 
   useEffect(() => {
-    if (notes.length > 0) {
-      localStorage.setItem('notes', JSON.stringify(notes))
-    }
+    localStorage.setItem('notes', JSON.stringify(notes))
   }, [notes])
 
   useEffect(() => {
-    if (folders.length > 0) {
-      localStorage.setItem('folders', JSON.stringify(folders))
-    }
+    localStorage.setItem('folders', JSON.stringify(folders))
   }, [folders])
 
   return {
