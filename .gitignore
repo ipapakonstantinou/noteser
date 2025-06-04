@@ -30,6 +30,32 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# logs
+logs
+*.log
+lerna-debug.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# cache directories
+.cache/
+.parcel-cache/
+.next/cache
+
+# package manager caches
+.npm/
+.eslintcache
+.stylelintcache
+.node_repl_history
+
+# IDEs
+.idea/
+
 # env files (can opt-in for committing if needed)
 .env*
 
