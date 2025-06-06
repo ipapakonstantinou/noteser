@@ -9,6 +9,7 @@ const Sidebar = ({
   notes,
   onAddNewNote,
   onAddNewFolder,
+  onOpenFolder,
   onSelectNote,
   onRenameNote,
   onRenameFolder,
@@ -52,6 +53,7 @@ const Sidebar = ({
         toggleSidebar={toggleSidebar}
         onAddNewNote={onAddNewNote}
         onAddNewFolder={onAddNewFolder}
+        onOpenFolder={onOpenFolder}
       />
 
       {/* Folder + Note List */}
