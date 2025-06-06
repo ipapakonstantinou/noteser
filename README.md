@@ -4,11 +4,12 @@ Noteser is a simple note‑taking application built with Next.js and React. It l
 
 ## Setup
 
-1. Install dependencies:
+1. Ensure you are using **Node.js 18** or newer. The project relies on modern JavaScript syntax that isn't supported in older Node versions.
+2. Install dependencies:
    ```bash
    npm install
    ```
-2. Start the development server:
+3. Start the development server:
    ```bash
    npm run dev
    ```
