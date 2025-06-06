@@ -67,6 +67,24 @@ export default function Home() {
     setFolders(prev => prev.filter(folder => folder.id !== id))
   }
 
+  const openLocalFolder = async () => {
+    if (!window.showDirectoryPicker) return
+    try {
+      const dir = await window.showDirectoryPicker()
+      const loaded = []
+      for await (const [name, handle] of dir.entries()) {
+        if (name.endsWith('.md')) {
+          const file = await handle.getFile()
+          const text = await file.text()
+          loaded.push({ id: name, title: name.replace(/\.md$/, ''), content: text })
+        }
+      }
+      setNotes(loaded)
+    } catch (err) {
+      console.error('Failed to open folder', err)
+    }
+  }
+
   const toggleSidebar = () => {
     setSidebarCollapsed(prev => !prev)
   }
@@ -83,6 +101,7 @@ export default function Home() {
           folders={folders}
           onAddNewNote={addNewNote}
           onAddNewFolder={addNewFolder}
+          onOpenFolder={openLocalFolder}
           onSelectNote={setSelectedNote}
           onRenameNote={renameNote}
           onRenameFolder={renameFolder}

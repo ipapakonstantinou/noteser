@@ -2,14 +2,16 @@ import {
   ChevronDoubleLeftIcon,
   ChevronDoubleRightIcon,
   PlusIcon,
-  FolderPlusIcon
+  FolderPlusIcon,
+  FolderOpenIcon
 } from '@heroicons/react/24/outline'
 
 const SideHeader = ({
   isCollapsed,
   toggleSidebar,
   onAddNewNote,
-  onAddNewFolder
+  onAddNewFolder,
+  onOpenFolder
 }) => {
   return (
     <>
@@ -50,6 +52,13 @@ const SideHeader = ({
               title="New folder"
             >
               <FolderPlusIcon className="obsidian-icon" />
+            </button>
+            <button
+              className="obsidian-button"
+              onClick={onOpenFolder}
+              title="Open folder"
+            >
+              <FolderOpenIcon className="obsidian-icon" />
             </button>
           </>
         )}
