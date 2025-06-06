@@ -1,25 +1,26 @@
-## Getting Started
+# Noteser
 
-First, run the development server:
+Noteser is a simple note‑taking application built with Next.js and React. It lets you organise notes in folders and write using Markdown.
 
-```bash
-# Initial Setup
-npm install
-# Develop
-npm run dev
-```
+## Setup
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+1. Ensure you are using **Node.js 18** or newer. The project relies on modern JavaScript syntax that isn't supported in older Node versions.
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Start the development server:
+   ```bash
+   npm run dev
+   ```
+   Then open [http://localhost:3001](http://localhost:3001) in your browser.
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+## Features
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Create, rename and delete notes
+- Organise notes in folders
+- Markdown editing with live preview
+- Toggleable sidebar for navigation
+- Data is stored in local storage
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Start editing the application by modifying `src/app/page.js` and related components.
