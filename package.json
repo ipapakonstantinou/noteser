@@ -17,6 +17,7 @@
     "@tailwindcss/typography": "^0.5.16",
     "framer-motion": "^12.6.2",
     "next": "15.2.4",
+    "node": "^22.16.0",
     "prettier": "^3.5.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
