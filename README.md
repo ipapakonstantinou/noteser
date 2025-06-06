@@ -23,4 +23,9 @@ Noteser is a simple note‑taking application built with Next.js and React. It l
 - Toggleable sidebar for navigation
 - Data is stored in local storage
 
+## Keyboard Shortcuts
+
+- **Ctrl+Shift+7**: Insert a numbered list item (`1. `) at the cursor.
+- **Ctrl+Shift+T**: Insert a todo item (`- [ ] `).
+
 Start editing the application by modifying `src/app/page.js` and related components.
