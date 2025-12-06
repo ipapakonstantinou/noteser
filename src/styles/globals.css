@@ -2,6 +2,46 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Base styles */
+@layer base {
+  * {
+    @apply border-obsidianBorder;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  /* Scrollbar styling */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.obsidianAccent') transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: theme('colors.obsidianAccent');
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: theme('colors.obsidianHighlight');
+  }
+
+  /* Selection */
+  ::selection {
+    background-color: theme('colors.obsidianAccentPurple / 30%');
+  }
+}
+
 /* Components */
 @layer components {
   .obsidian-sidebar {
@@ -9,7 +49,7 @@
   }
 
   .obsidian-button {
-    @apply p-1.5 rounded hover:bg-obsidianHighlight text-obsidianSecondaryText hover:text-obsidianText transition-colors;
+    @apply p-1.5 rounded hover:bg-obsidianHighlight text-obsidianSecondaryText hover:text-obsidianText transition-colors focus:outline-none focus:ring-2 focus:ring-obsidianAccentPurple focus:ring-offset-1 focus:ring-offset-obsidianBlack;
   }
 
   .obsidian-icon {
@@ -17,66 +57,165 @@
   }
 
   .obsidian-file-item {
-    @apply px-3 py-1 text-sm text-obsidianText hover:bg-obsidianHighlight cursor-pointer rounded transition-colors flex items-center;
+    @apply px-3 py-1.5 text-sm text-obsidianText hover:bg-obsidianHighlight cursor-pointer rounded transition-colors flex items-center;
   }
 
   .obsidian-folder-item {
-    @apply px-2 py-1 text-sm text-obsidianSecondaryText hover:bg-obsidianHighlight cursor-pointer rounded transition-colors flex items-center;
+    @apply px-2 py-1.5 text-sm text-obsidianSecondaryText hover:bg-obsidianHighlight cursor-pointer rounded transition-colors flex items-center;
   }
 
+  /* Prose styles for markdown preview */
   .prose {
-    @apply prose-headings:text-obsidianText prose-p:text-obsidianText 
-           prose-a:text-obsidianAccentPurple prose-strong:text-obsidianText
-           prose-code:text-obsidianText prose-pre:bg-obsidianDarkGray
-           prose-pre:border prose-pre:border-obsidianBorder
-           prose-blockquote:text-obsidianSecondaryText
-           prose-blockquote:border-obsidianAccent;
+    @apply text-obsidianText max-w-none;
+  }
+
+  .prose h1,
+  .prose h2,
+  .prose h3,
+  .prose h4,
+  .prose h5,
+  .prose h6 {
+    @apply text-obsidianText font-semibold;
+  }
+
+  .prose h1 {
+    @apply text-2xl mt-6 mb-4;
+  }
+
+  .prose h2 {
+    @apply text-xl mt-5 mb-3;
+  }
+
+  .prose h3 {
+    @apply text-lg mt-4 mb-2;
+  }
+
+  .prose p {
+    @apply text-obsidianText mb-4 leading-relaxed;
+  }
+
+  .prose a {
+    @apply text-obsidianAccentPurple hover:underline;
+  }
+
+  .prose strong {
+    @apply text-obsidianText font-semibold;
+  }
+
+  .prose em {
+    @apply italic;
+  }
+
+  .prose code {
+    @apply text-obsidianText bg-obsidianDarkGray px-1.5 py-0.5 rounded text-sm font-mono;
+  }
+
+  .prose pre {
+    @apply bg-obsidianDarkGray border border-obsidianBorder rounded-lg p-4 overflow-x-auto my-4;
+  }
+
+  .prose pre code {
+    @apply bg-transparent p-0;
+  }
+
+  .prose blockquote {
+    @apply border-l-4 border-obsidianAccentPurple pl-4 italic text-obsidianSecondaryText my-4;
+  }
+
+  .prose ul,
+  .prose ol {
+    @apply pl-6 mb-4;
+  }
+
+  .prose ul {
+    @apply list-disc;
+  }
+
+  .prose ol {
+    @apply list-decimal;
+  }
+
+  .prose li {
+    @apply mb-1;
+  }
+
+  .prose hr {
+    @apply border-obsidianBorder my-6;
+  }
+
+  .prose table {
+    @apply w-full border-collapse my-4;
+  }
+
+  .prose th,
+  .prose td {
+    @apply border border-obsidianBorder px-3 py-2 text-left;
+  }
+
+  .prose th {
+    @apply bg-obsidianDarkGray font-semibold;
+  }
+
+  .prose img {
+    @apply rounded-lg max-w-full my-4;
+  }
+
+  /* Task list styling */
+  .prose input[type='checkbox'] {
+    @apply mr-2 accent-obsidianAccentPurple;
   }
 }
 
 /* Utilities */
-body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  background-color: theme('colors.obsidianBlack');
-  color: theme('colors.obsidianText');
-  margin: 0;
+@layer utilities {
+  .shadow-obsidian {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  }
+
+  /* Animation for collaborator cursors */
+  @keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+  }
+
+  .cursor-blink {
+    animation: blink 1s infinite;
+  }
+
+  /* Fade in animation */
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  /* Slide in from right */
+  @keyframes slideInRight {
+    from { opacity: 0; transform: translateX(20px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  .animate-slide-in-right {
+    animation: slideInRight 0.2s ease-out;
+  }
 }
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: theme('colors.obsidianAccent') transparent;
+/* Focus visible for accessibility */
+:focus-visible {
+  @apply outline-none ring-2 ring-obsidianAccentPurple ring-offset-2 ring-offset-obsidianBlack;
 }
 
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background-color: theme('colors.obsidianAccent');
-  border-radius: 3px;
-}
+/* Print styles */
+@media print {
+  .obsidian-sidebar,
+  .obsidian-button {
+    display: none !important;
+  }
 
-.react-resizable-handle {
-  position: absolute;
-  width: 10px;
-  height: 10px;
-  background-repeat: no-repeat;
-  background-origin: content-box;
-  box-sizing: border-box;
-  background-image: url('data:image/svg+xml;base64,...');
-  background-position: bottom right;
-}
-
-.react-resizable-handle-se {
-  bottom: 0;
-  right: 0;
-  cursor: se-resize;
-}
-
-.splitter:hover,
-.splitter:active {
-  background-color: hsl(254, 80%, 68%);
+  .prose {
+    @apply text-black;
+  }
 }
