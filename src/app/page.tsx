@@ -10,13 +10,17 @@ import {
   TemplatesModal,
   ExportModal
 } from '@/components/modals'
-import { useKeyboardShortcuts } from '@/hooks'
+import { useKeyboardShortcuts, useHydration } from '@/hooks'
 import { useUIStore, useNoteStore, useFolderStore } from '@/stores'
 
 export default function Home() {
+  const hydrated = useHydration()
   const { sidebarCollapsed } = useUIStore()
   const { addNote } = useNoteStore()
   const { addFolder, activeFolderId } = useFolderStore()
+
+  // Use default value during SSR to avoid hydration mismatch
+  const isSidebarCollapsed = hydrated ? sidebarCollapsed : false
 
   // Set up keyboard shortcuts
   useKeyboardShortcuts({
@@ -34,7 +38,7 @@ export default function Home() {
       {/* Sidebar */}
       <div
         className={`flex-none transition-all duration-300 ${
-          sidebarCollapsed ? 'w-[50px]' : 'w-64'
+          isSidebarCollapsed ? 'w-[50px]' : 'w-64'
         }`}
       >
         <Sidebar />
@@ -44,7 +48,7 @@ export default function Home() {
       <div
         className="flex-1 h-full overflow-hidden"
         style={{
-          width: `calc(100vw - ${sidebarCollapsed ? '50px' : '16rem'})`
+          width: `calc(100vw - ${isSidebarCollapsed ? '50px' : '16rem'})`
         }}
       >
         <Editor />
