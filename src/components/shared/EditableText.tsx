@@ -32,6 +32,12 @@ export const EditableText = ({
 
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation()
+    e.preventDefault()
+    setIsEditing(true)
+  }
+
+  // Allow external trigger for editing (e.g., from context menu or F2)
+  const startEditing = () => {
     setIsEditing(true)
   }
 
@@ -75,7 +81,7 @@ export const EditableText = ({
     <span
       className={`truncate cursor-pointer hover:text-obsidianAccentPurple transition-colors ${className}`}
       onDoubleClick={handleDoubleClick}
-      title="Double-click to edit"
+      title="Double-click to rename"
     >
       {value || placeholder}
     </span>
