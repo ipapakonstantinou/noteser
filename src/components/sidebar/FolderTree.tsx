@@ -10,6 +10,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
 import { useNoteStore, useFolderStore, useUIStore, useTagStore } from '@/stores'
+import { useHydration } from '@/hooks'
 import { EditableText } from '../shared/EditableText'
 import { Badge } from '../ui'
 
@@ -18,6 +19,7 @@ interface FolderTreeProps {
 }
 
 export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
+  const hydrated = useHydration()
   const { currentView } = useUIStore()
   const {
     notes,
@@ -43,10 +45,11 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   } = useFolderStore()
   const { tags, getTagById } = useTagStore()
 
-  const rootFolders = useMemo(() => getRootFolders(), [folders])
-  const activeNotes = useMemo(() => getActiveNotes(), [notes])
-  const deletedNotes = useMemo(() => getDeletedNotes(), [notes])
-  const recentNotes = useMemo(() => getRecentNotes(10), [notes])
+  // Use empty arrays during SSR to avoid hydration mismatch
+  const rootFolders = useMemo(() => hydrated ? getRootFolders() : [], [folders, hydrated])
+  const activeNotes = useMemo(() => hydrated ? getActiveNotes() : [], [notes, hydrated])
+  const deletedNotes = useMemo(() => hydrated ? getDeletedNotes() : [], [notes, hydrated])
+  const recentNotes = useMemo(() => hydrated ? getRecentNotes(10) : [], [notes, hydrated])
 
   // Render note item
   const NoteItem = ({ note, className = '' }: { note: typeof notes[0]; className?: string }) => {
