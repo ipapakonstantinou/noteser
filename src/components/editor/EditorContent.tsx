@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism'
 import { useDebouncedCallback } from '@/hooks/useDebounce'
+import { useUIStore } from '@/stores'
 import type { Note } from '@/types'
 
 interface EditorContentProps {
@@ -19,15 +20,13 @@ export const EditorContent = ({
   isPreviewMode,
   onContentChange
 }: EditorContentProps) => {
+  const { togglePreview } = useUIStore()
   const [localContent, setLocalContent] = useState(note.content)
-  const [showPreview, setShowPreview] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const previewTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Sync local content with note
   useEffect(() => {
     setLocalContent(note.content)
-    setShowPreview(false)
   }, [note.id, note.content])
 
   // Debounced save
@@ -38,28 +37,10 @@ export const EditorContent = ({
     300
   )
 
-  // Show preview after typing stops
-  useEffect(() => {
-    return () => {
-      if (previewTimeoutRef.current) {
-        clearTimeout(previewTimeoutRef.current)
-      }
-    }
-  }, [])
-
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newContent = e.target.value
     setLocalContent(newContent)
-    setShowPreview(false)
     debouncedSave(newContent)
-
-    // Show preview after 800ms of no typing
-    if (previewTimeoutRef.current) {
-      clearTimeout(previewTimeoutRef.current)
-    }
-    previewTimeoutRef.current = setTimeout(() => {
-      setShowPreview(true)
-    }, 800)
   }, [debouncedSave])
 
   const insertAtCursor = useCallback((text: string) => {
@@ -71,7 +52,6 @@ export const EditorContent = ({
     const newContent = localContent.slice(0, start) + text + localContent.slice(end)
 
     setLocalContent(newContent)
-    setShowPreview(false)
     debouncedSave(newContent)
 
     // Restore cursor position
@@ -188,12 +168,12 @@ export const EditorContent = ({
     )
   }
 
-  // Preview mode
-  if (isPreviewMode && showPreview) {
+  // Preview mode - show immediately when toggled (Obsidian-like behavior)
+  if (isPreviewMode) {
     return (
       <div
         className="flex-1 overflow-auto p-4 cursor-text"
-        onClick={() => setShowPreview(false)}
+        onClick={togglePreview}
       >
         <div className="prose prose-invert max-w-none">
           <ReactMarkdown

@@ -14,11 +14,13 @@ import {
   Cog6ToothIcon
 } from '@heroicons/react/24/outline'
 import { useUIStore, useNoteStore, useFolderStore } from '@/stores'
+import { useHydration } from '@/hooks'
 import { FolderTree } from './FolderTree'
 import { ContextMenu } from './ContextMenu'
 import type { ContextMenuState } from '@/types'
 
 export const Sidebar = () => {
+  const hydrated = useHydration()
   const {
     sidebarCollapsed,
     toggleSidebar,
@@ -33,9 +35,10 @@ export const Sidebar = () => {
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
 
-  const deletedNotes = getDeletedNotes()
-  const recentNotes = getRecentNotes(5)
-  const pinnedNotes = getPinnedNotes()
+  // Use default values during SSR/hydration to avoid mismatch
+  const deletedNotes = hydrated ? getDeletedNotes() : []
+  const recentNotes = hydrated ? getRecentNotes(5) : []
+  const pinnedNotes = hydrated ? getPinnedNotes() : []
 
   const handleAddNote = () => {
     addNote({ folderId: activeFolderId })
