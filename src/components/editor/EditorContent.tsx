@@ -39,6 +39,7 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
   const cmViewRef = useRef<EditorView | null>(null)
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isPreviewModeRef = useRef(isPreviewMode)
+  const prevPreviewRef = useRef<boolean | undefined>(undefined)
   const previewContainerRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => { isPreviewModeRef.current = isPreviewMode }, [isPreviewMode])
 
@@ -123,6 +124,21 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
     setCursorOffset(newPos)
     setCursorLine(doc.lineAt(newPos).number)
   }, [])
+
+  // When exiting preview (via click or keypress), start the idle timer
+  // so the user goes back to preview if they don't continue editing.
+  useEffect(() => {
+    const prev = prevPreviewRef.current
+    prevPreviewRef.current = isPreviewMode
+    if (prev === true && !isPreviewMode) {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
+      idleTimerRef.current = setTimeout(() => {
+        if (!isPreviewModeRef.current) enterPreview()
+      }, IDLE_MS)
+    }
+  // enterPreview is recreated each render but captures stable refs; safe to ignore.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPreviewMode])
 
   // Preview-mode keyboard handler.
   useEffect(() => {
@@ -361,11 +377,15 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
     pre: wrapBlock('pre'),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     li: (props: any) => {
-      const { node, className, children, checked, ...rest } = props
+      const { node, className, children, ...rest } = props
+      // react-markdown v10 doesn't pass `checked` — derive it from the HAST node.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const checkbox = node?.children?.find((c: any) => c?.type === 'element' && c?.tagName === 'input')
+      const isChecked = checkbox?.properties?.checked === true
       const cls = [
         className,
         isCursorBlock(node) ? 'preview-cursor-block' : '',
-        checked === true ? 'preview-task-done' : '',
+        isChecked ? 'preview-task-done' : '',
       ].filter(Boolean).join(' ')
       return <li className={cls || undefined} {...rest}>{children}</li>
     },
