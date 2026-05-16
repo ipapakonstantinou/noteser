@@ -1,0 +1,225 @@
+'use client'
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
+import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
+import { EditorView, keymap } from '@codemirror/view'
+import { useDebouncedCallback } from '@/hooks/useDebounce'
+import { markdownLivePreview } from './markdownLivePreview'
+import { getActiveWikilinkQuery } from '@/utils/wikilinks'
+import { WikilinkAutocomplete } from './WikilinkAutocomplete'
+import type { Note } from '@/types'
+
+interface WikilinkState {
+  query: string
+  start: number
+  position: { top: number; left: number }
+}
+
+interface CodeMirrorEditorProps {
+  noteId: string
+  initialContent: string
+  activeNotes: Note[]
+  onSave: (content: string) => void
+  onWikilinkNavigate: (note: Note) => void
+}
+
+const obsidianTheme = EditorView.theme({
+  '&': { height: '100%', backgroundColor: 'transparent', color: '#dadada', fontSize: '14px' },
+  '&.cm-focused': { outline: 'none' },
+  '.cm-scroller': { overflow: 'auto', height: '100%' },
+  '.cm-content': {
+    fontFamily: 'ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace',
+    lineHeight: '1.7',
+    padding: '16px',
+    caretColor: '#dadada',
+    minHeight: '100%',
+  },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#dadada' },
+  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: '#4d4d4d' },
+  '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,0.025)' },
+  '.cm-gutters': { display: 'none' },
+  '.cm-placeholder': { color: '#6b7280' },
+})
+
+export function CodeMirrorEditor({
+  noteId,
+  initialContent,
+  activeNotes,
+  onSave,
+  onWikilinkNavigate,
+}: CodeMirrorEditorProps) {
+  const cmRef = useRef<ReactCodeMirrorRef>(null)
+  const [wikilinkState, setWikilinkState] = useState<WikilinkState | null>(null)
+
+  // Stable refs so extension callbacks always see the latest values
+  const activeNotesRef = useRef(activeNotes)
+  const navigateRef = useRef(onWikilinkNavigate)
+  useEffect(() => { activeNotesRef.current = activeNotes }, [activeNotes])
+  useEffect(() => { navigateRef.current = onWikilinkNavigate }, [onWikilinkNavigate])
+
+  const debouncedSave = useDebouncedCallback(onSave, 300)
+
+  // Extensions are stable (created once) — callbacks reach out to refs for fresh values
+  const extensions = useMemo(() => [
+    markdown({ base: markdownLanguage }),
+    markdownLivePreview,
+    obsidianTheme,
+    EditorView.lineWrapping,
+    keymap.of([{
+      key: 'Alt-l',
+      run(view) {
+        const { state } = view
+        const { head } = state.selection.main
+        const line = state.doc.lineAt(head)
+        const taskMatch = line.text.match(/^(\s*)([-*+]\s+\[[ xX]\]\s+)/)
+        if (taskMatch) {
+          // Toggle off: remove the task marker
+          const indent = taskMatch[1].length
+          const markerLen = taskMatch[2].length
+          view.dispatch({
+            changes: { from: line.from + indent, to: line.from + indent + markerLen, insert: '' },
+            selection: { anchor: Math.max(line.from, head - markerLen) },
+          })
+        } else {
+          // Toggle on: prepend "- [ ] " (preserving any indentation)
+          const indent = line.text.match(/^(\s*)/)![1].length
+          const insertAt = line.from + indent
+          view.dispatch({
+            changes: { from: insertAt, to: insertAt, insert: '- [ ] ' },
+            selection: { anchor: head + 6 },
+          })
+        }
+        return true
+      },
+    }]),
+    EditorView.domEventHandlers({
+      mousedown(event, view) {
+        const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
+        if (pos == null) return false
+
+        // ── Checkbox toggle ──────────────────────────────────────────────────
+        const line = view.state.doc.lineAt(pos)
+        const cbMatch = line.text.match(/^(\s*(?:[-*+]|\d+\.)\s+)\[([ xX])\]/)
+        if (cbMatch) {
+          const cbStart = line.from + cbMatch[1].length // index of '['
+          const cbEnd   = cbStart + 3                   // index after ']'
+          // Only toggle if the click landed on or near the [ ] glyph
+          if (pos >= cbStart && pos <= cbEnd) {
+            const isChecked = cbMatch[2].toLowerCase() === 'x'
+            view.dispatch({
+              changes: { from: cbStart + 1, to: cbStart + 2, insert: isChecked ? ' ' : 'x' },
+            })
+            event.preventDefault()
+            return true
+          }
+        }
+
+        // ── Ctrl/Cmd+Click wikilink navigation ───────────────────────────────
+        if (event.ctrlKey || event.metaKey) {
+          const content = view.state.doc.toString()
+          const before = content.slice(0, pos)
+          const after  = content.slice(pos)
+          const openIdx  = before.lastIndexOf('[[')
+          const closeIdx = after.indexOf(']]')
+          if (openIdx !== -1 && closeIdx !== -1) {
+            const rawTitle = content.slice(openIdx + 2, pos + closeIdx)
+            if (!rawTitle.includes('\n') && !rawTitle.includes('[[')) {
+              const title = rawTitle.split('|')[0].trim()
+              const note = activeNotesRef.current.find(
+                n => n.title.toLowerCase() === title.toLowerCase()
+              )
+              if (note) {
+                event.preventDefault()
+                navigateRef.current(note)
+                return true
+              }
+            }
+          }
+        }
+
+        return false
+      },
+    }),
+  ], [])
+
+  const updateWikilinkState = useCallback((content: string) => {
+    const view = cmRef.current?.view
+    if (!view) return
+    const cursorPos = view.state.selection.main.head
+    const active = getActiveWikilinkQuery(content, cursorPos)
+    if (!active) { setWikilinkState(null); return }
+    const coords = view.coordsAtPos(cursorPos)
+    if (!coords) return
+    setWikilinkState({
+      query: active.query,
+      start: active.start,
+      position: { top: coords.bottom + 4, left: coords.left },
+    })
+  }, [])
+
+  const handleChange = useCallback((value: string) => {
+    debouncedSave(value)
+    updateWikilinkState(value)
+  }, [debouncedSave, updateWikilinkState])
+
+  const handleWikilinkSelect = useCallback((note: Note) => {
+    if (!wikilinkState) return
+    const view = cmRef.current?.view
+    if (!view) return
+    const cursorPos = view.state.selection.main.head
+    const insertion = `[[${note.title}]]`
+    view.dispatch({
+      changes: { from: wikilinkState.start, to: cursorPos, insert: insertion },
+      selection: { anchor: wikilinkState.start + insertion.length },
+    })
+    setWikilinkState(null)
+    view.focus()
+    navigateRef.current(note)
+  }, [wikilinkState])
+
+  return (
+    <div className="flex-1 overflow-hidden h-full relative bg-obsidianBlack">
+      <CodeMirror
+        key={noteId}
+        ref={cmRef}
+        value={initialContent}
+        extensions={extensions}
+        onChange={handleChange}
+        placeholder="Start writing…  Markdown and [[wikilinks]] supported"
+        height="100%"
+        className="h-full"
+        basicSetup={{
+          lineNumbers: false,
+          foldGutter: false,
+          dropCursor: false,
+          allowMultipleSelections: false,
+          indentOnInput: false,
+          bracketMatching: false,
+          closeBrackets: false,
+          autocompletion: false,
+          rectangularSelection: false,
+          crosshairCursor: false,
+          highlightActiveLine: true,
+          highlightSelectionMatches: false,
+          closeBracketsKeymap: false,
+          defaultKeymap: true,
+          searchKeymap: false,
+          historyKeymap: true,
+          foldKeymap: false,
+          completionKeymap: false,
+          lintKeymap: false,
+        }}
+      />
+      {wikilinkState && (
+        <WikilinkAutocomplete
+          query={wikilinkState.query}
+          notes={activeNotes}
+          position={wikilinkState.position}
+          onSelect={handleWikilinkSelect}
+          onClose={() => setWikilinkState(null)}
+        />
+      )}
+    </div>
+  )
+}
