@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback, createElement } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism'
+import type { EditorView } from '@codemirror/view'
 import { useUIStore, useNoteStore } from '@/stores'
 import { renderWikilinks } from '@/utils/wikilinks'
 import { CodeMirrorEditor } from './CodeMirrorEditor'
@@ -16,22 +17,269 @@ interface EditorContentProps {
   onContentChange: (content: string) => void
 }
 
+const IDLE_MS = 2000
+
 export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorContentProps) => {
-  const { togglePreview } = useUIStore()
+  const { setPreviewMode } = useUIStore()
   const { selectNote, getActiveNotes } = useNoteStore()
 
-  // Keep a local copy for the preview renderer so it reflects unsaved edits immediately
+  // Local copy so the preview overlay reflects unsaved edits immediately.
   const [previewContent, setPreviewContent] = useState(note.content)
-
   useEffect(() => {
     setPreviewContent(note.content)
   }, [note.id, note.content])
 
+  // Editor cursor state mirrored to drive the preview indicator.
+  const [cursorLine, setCursorLine] = useState<number | null>(null)
+  const [cursorOffset, setCursorOffset] = useState<number | null>(null)
+
   const activeNotes = getActiveNotes().filter(n => n.id !== note.id)
+
+  // Refs that survive renders.
+  const cmViewRef = useRef<EditorView | null>(null)
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isPreviewModeRef = useRef(isPreviewMode)
+  const previewContainerRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => { isPreviewModeRef.current = isPreviewMode }, [isPreviewMode])
+
+  // Cleanup any pending switch on unmount / note change.
+  useEffect(() => () => {
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
+  }, [])
+  useEffect(() => {
+    if (idleTimerRef.current) {
+      clearTimeout(idleTimerRef.current)
+      idleTimerRef.current = null
+    }
+  }, [note.id])
+
+  // Snapshot the current document into the preview overlay before showing it.
+  const enterPreview = () => {
+    const view = cmViewRef.current
+    if (view) {
+      const pos = view.state.selection.main.head
+      setPreviewContent(view.state.doc.toString())
+      setCursorOffset(pos)
+      setCursorLine(view.state.doc.lineAt(pos).number)
+      view.contentDOM.blur()
+    }
+    setPreviewMode(true)
+  }
+
+  const exitPreviewAndFocus = (insertText?: string) => {
+    setCursorLine(null)
+    setCursorOffset(null)
+    setPreviewMode(false)
+    requestAnimationFrame(() => {
+      const view = cmViewRef.current
+      if (!view) return
+      view.focus()
+      if (insertText) {
+        const pos = view.state.selection.main.head
+        view.dispatch({
+          changes: { from: pos, insert: insertText },
+          selection: { anchor: pos + insertText.length },
+        })
+      }
+    })
+  }
+
+  // Toggle the task at a specific 1-indexed source line.
+  const toggleTaskAt = useCallback((sourceLine: number) => {
+    const view = cmViewRef.current
+    if (!view) return
+    if (sourceLine < 1 || sourceLine > view.state.doc.lines) return
+    const line = view.state.doc.line(sourceLine)
+    const match = line.text.match(/^(\s*(?:[-*+]|\d+\.)\s+)\[([ xX])\]/)
+    if (!match) return
+    const isChecked = match[2].toLowerCase() === 'x'
+    const boxStart = line.from + match[1].length + 1
+    view.dispatch({
+      changes: { from: boxStart, to: boxStart + 1, insert: isChecked ? ' ' : 'x' },
+    })
+    setPreviewContent(view.state.doc.toString())
+  }, [])
+
+  // Move the editor cursor without leaving preview.
+  const moveCursorByKey = useCallback((key: string) => {
+    const view = cmViewRef.current
+    if (!view) return
+    const head = view.state.selection.main.head
+    const doc = view.state.doc
+    let newPos = head
+    if (key === 'ArrowLeft')  newPos = Math.max(0, head - 1)
+    else if (key === 'ArrowRight') newPos = Math.min(doc.length, head + 1)
+    else if (key === 'Home') newPos = doc.lineAt(head).from
+    else if (key === 'End')  newPos = doc.lineAt(head).to
+    else if (key === 'ArrowUp' || key === 'ArrowDown') {
+      const line = doc.lineAt(head)
+      const col = head - line.from
+      const targetLineNum = key === 'ArrowUp' ? line.number - 1 : line.number + 1
+      if (targetLineNum < 1 || targetLineNum > doc.lines) return
+      const targetLine = doc.line(targetLineNum)
+      newPos = Math.min(targetLine.from + col, targetLine.to)
+    } else return
+    view.dispatch({ selection: { anchor: newPos } })
+    setCursorOffset(newPos)
+    setCursorLine(doc.lineAt(newPos).number)
+  }, [])
+
+  // Preview-mode keyboard handler.
+  useEffect(() => {
+    if (!isPreviewMode) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.isComposing) return
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+
+      // Navigation: move CM cursor, stay in preview.
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) {
+        e.preventDefault()
+        moveCursorByKey(e.key)
+        return
+      }
+
+      // Alt+L: toggle task at cursor line.
+      if (e.altKey && (e.key === 'l' || e.key === 'L')) {
+        if (cursorLine != null) {
+          e.preventDefault()
+          toggleTaskAt(cursorLine)
+        }
+        return
+      }
+
+      // Skip shortcuts (so Ctrl/Cmd+key combos pass through).
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+
+      // Typing keys → exit preview and forward the character.
+      let insert: string | undefined
+      if (e.key.length === 1) insert = e.key
+      else if (e.key === 'Enter') insert = '\n'
+      else if (e.key === 'Backspace' || e.key === 'Delete') insert = undefined
+      else return
+
+      e.preventDefault()
+      exitPreviewAndFocus(insert)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPreviewMode, cursorLine, moveCursorByKey, toggleTaskAt])
+
+  // Place a visual cursor marker inside the preview block after each render.
+  useEffect(() => {
+    if (!isPreviewMode || cursorOffset == null) return
+    const container = previewContainerRef.current
+    if (!container) return
+
+    // Clear any previous marker.
+    container.querySelectorAll('.preview-cursor-marker').forEach(el => el.remove())
+
+    const block = container.querySelector('.preview-cursor-block') as HTMLElement | null
+    if (!block) return
+
+    const view = cmViewRef.current
+    if (!view) return
+    const line = view.state.doc.lineAt(cursorOffset)
+    const col = cursorOffset - line.from
+
+    // Walk text nodes inside the cursor block, counting characters,
+    // approximating column-in-source ≈ offset-in-rendered-text.
+    const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT)
+    let remaining = col
+    let targetNode: Text | null = null
+    let targetOffset = 0
+    let lastNode: Text | null = null
+    let lastLen = 0
+    while (true) {
+      const n = walker.nextNode() as Text | null
+      if (!n) break
+      lastNode = n
+      lastLen = n.nodeValue?.length ?? 0
+      if (remaining <= lastLen) {
+        targetNode = n
+        targetOffset = remaining
+        break
+      }
+      remaining -= lastLen
+    }
+    if (!targetNode && lastNode) {
+      targetNode = lastNode
+      targetOffset = lastLen
+    }
+    if (!targetNode) {
+      // Empty block — place the marker as a child of the block itself.
+      const span = document.createElement('span')
+      span.className = 'preview-cursor-marker'
+      span.setAttribute('aria-hidden', 'true')
+      block.appendChild(span)
+      return
+    }
+    const range = document.createRange()
+    range.setStart(targetNode, targetOffset)
+    range.setEnd(targetNode, targetOffset)
+    const span = document.createElement('span')
+    span.className = 'preview-cursor-marker'
+    span.setAttribute('aria-hidden', 'true')
+    range.insertNode(span)
+  }, [isPreviewMode, cursorOffset, cursorLine, previewContent])
+
+  // Wire up checkbox click handlers — remark-gfm renders inputs as `disabled`.
+  // Match rendered checkboxes to source task lines in document order.
+  useEffect(() => {
+    if (!isPreviewMode) return
+    const container = previewContainerRef.current
+    if (!container) return
+    const view = cmViewRef.current
+    if (!view) return
+
+    const source = view.state.doc.toString()
+    const taskLines: number[] = []
+    source.split('\n').forEach((text, idx) => {
+      if (/^(\s*(?:[-*+]|\d+\.)\s+)\[[ xX]\]/.test(text)) taskLines.push(idx + 1)
+    })
+
+    const boxes = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+    const handlers: Array<[HTMLInputElement, (e: Event) => void]> = []
+    boxes.forEach((box, i) => {
+      if (i >= taskLines.length) return
+      const lineNum = taskLines[i]
+      box.disabled = false
+      box.style.cursor = 'pointer'
+      const handler = (e: Event) => {
+        e.preventDefault()
+        e.stopPropagation()
+        toggleTaskAt(lineNum)
+      }
+      box.addEventListener('click', handler)
+      handlers.push([box, handler])
+    })
+    return () => {
+      handlers.forEach(([box, handler]) => box.removeEventListener('click', handler))
+    }
+  }, [isPreviewMode, previewContent, toggleTaskAt])
+
+  // Reset the auto-switch timer whenever the user keys into the editor area.
+  const handleEditorKeyDown = (e: React.KeyboardEvent) => {
+    if (isPreviewModeRef.current) return
+    if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') return
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
+    idleTimerRef.current = setTimeout(() => {
+      if (!isPreviewModeRef.current) enterPreview()
+    }, IDLE_MS)
+  }
 
   const handleChange = (content: string) => {
     setPreviewContent(content)
     onContentChange(content)
+  }
+
+  // Helper: does this rendered block contain the editor's cursor line?
+  const isCursorBlock = (node: { position?: { start?: { line?: number }; end?: { line?: number } } } | undefined): boolean => {
+    if (cursorLine == null) return false
+    const start = node?.position?.start?.line
+    const end = node?.position?.end?.line
+    return start != null && end != null && cursorLine >= start && cursorLine <= end
   }
 
   // Custom code block renderer with syntax highlighting
@@ -91,34 +339,70 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
     )
   }
 
-  // Reading mode — full rendered Markdown
-  if (isPreviewMode) {
-    return (
-      <div className="flex-1 overflow-auto p-4 cursor-text" onClick={togglePreview}>
-        <div className="prose prose-invert max-w-none">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={{
-              code: CodeBlock as React.ComponentType<{ className?: string; children?: React.ReactNode }>,
-              a: WikilinkAnchor as React.ComponentType<{ href?: string; children?: React.ReactNode }>,
-            }}
-          >
-            {renderWikilinks(previewContent) || '*Start writing...*'}
-          </ReactMarkdown>
-        </div>
-      </div>
-    )
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const wrapBlock = (Tag: keyof React.JSX.IntrinsicElements) => (props: any) => {
+    const { node, className, children, ...rest } = props
+    const cls = [className, isCursorBlock(node) ? 'preview-cursor-block' : '']
+      .filter(Boolean).join(' ')
+    return createElement(Tag, { ...rest, className: cls || undefined }, children)
   }
 
-  // Live preview editing mode — CodeMirror
+  const components = {
+    code: CodeBlock as React.ComponentType<{ className?: string; children?: React.ReactNode }>,
+    a: WikilinkAnchor as React.ComponentType<{ href?: string; children?: React.ReactNode }>,
+    p: wrapBlock('p'),
+    h1: wrapBlock('h1'),
+    h2: wrapBlock('h2'),
+    h3: wrapBlock('h3'),
+    h4: wrapBlock('h4'),
+    h5: wrapBlock('h5'),
+    h6: wrapBlock('h6'),
+    blockquote: wrapBlock('blockquote'),
+    pre: wrapBlock('pre'),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    li: (props: any) => {
+      const { node, className, children, checked, ...rest } = props
+      const cls = [
+        className,
+        isCursorBlock(node) ? 'preview-cursor-block' : '',
+        checked === true ? 'preview-task-done' : '',
+      ].filter(Boolean).join(' ')
+      return <li className={cls || undefined} {...rest}>{children}</li>
+    },
+  }
+
   return (
-    <CodeMirrorEditor
-      noteId={note.id}
-      initialContent={note.content}
-      activeNotes={activeNotes}
-      onSave={handleChange}
-      onWikilinkNavigate={(n) => selectNote(n.id)}
-    />
+    <div className="relative flex-1 h-full overflow-hidden" onKeyDown={handleEditorKeyDown}>
+      <CodeMirrorEditor
+        noteId={note.id}
+        initialContent={note.content}
+        activeNotes={activeNotes}
+        onSave={handleChange}
+        onWikilinkNavigate={(n) => selectNote(n.id)}
+        viewRef={cmViewRef}
+      />
+      {isPreviewMode && (
+        <div
+          ref={previewContainerRef}
+          className="absolute inset-0 overflow-auto p-4 cursor-text bg-obsidianBlack z-10"
+          onClick={(e) => {
+            // Don't exit preview when clicking interactive elements (checkboxes, links).
+            const target = e.target as HTMLElement
+            if (target.closest('input, a, [data-keep-preview]')) return
+            exitPreviewAndFocus()
+          }}
+        >
+          <div className="prose prose-invert max-w-none">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={components}
+            >
+              {renderWikilinks(previewContent) || '*Start writing...*'}
+            </ReactMarkdown>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 

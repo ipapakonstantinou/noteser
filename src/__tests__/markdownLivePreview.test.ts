@@ -11,7 +11,7 @@
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import { markdownLivePreview } from '../components/editor/markdownLivePreview'
+import { markdownLivePreview, markdownLivePreviewField } from '../components/editor/markdownLivePreview'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -28,11 +28,12 @@ function makeState(doc: string, cursorPos = 0): EditorState {
 
 /** Iterate the decoration set and return plain objects for easy assertion. */
 function collectDecos(state: EditorState): Array<{ from: number; to: number; class: string }> {
-  const decos = state.field(markdownLivePreview)
+  const decos = state.field(markdownLivePreviewField)
   const result: Array<{ from: number; to: number; class: string }> = []
   const cursor = decos.iter()
   while (cursor.value !== null) {
     const cls: string =
+      cursor.value.spec?.class ??
       cursor.value.spec?.attributes?.class ??
       cursor.value.spec?.attributes?.style ??
       '(unknown)'

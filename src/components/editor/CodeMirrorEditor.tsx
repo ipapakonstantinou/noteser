@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { EditorView, keymap } from '@codemirror/view'
+import { Prec } from '@codemirror/state'
 import { useDebouncedCallback } from '@/hooks/useDebounce'
 import { markdownLivePreview } from './markdownLivePreview'
 import { getActiveWikilinkQuery } from '@/utils/wikilinks'
@@ -22,6 +23,7 @@ interface CodeMirrorEditorProps {
   activeNotes: Note[]
   onSave: (content: string) => void
   onWikilinkNavigate: (note: Note) => void
+  viewRef?: React.MutableRefObject<EditorView | null>
 }
 
 const obsidianTheme = EditorView.theme({
@@ -48,6 +50,7 @@ export function CodeMirrorEditor({
   activeNotes,
   onSave,
   onWikilinkNavigate,
+  viewRef,
 }: CodeMirrorEditorProps) {
   const cmRef = useRef<ReactCodeMirrorRef>(null)
   const [wikilinkState, setWikilinkState] = useState<WikilinkState | null>(null)
@@ -66,8 +69,10 @@ export function CodeMirrorEditor({
     markdownLivePreview,
     obsidianTheme,
     EditorView.lineWrapping,
-    keymap.of([{
+    // Prec.highest ensures our Alt-l binding wins over any conflicting default keymap.
+    Prec.highest(keymap.of([{
       key: 'Alt-l',
+      preventDefault: true,
       run(view) {
         const { state } = view
         const { head } = state.selection.main
@@ -92,7 +97,7 @@ export function CodeMirrorEditor({
         }
         return true
       },
-    }]),
+    }])),
     EditorView.domEventHandlers({
       mousedown(event, view) {
         const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
@@ -186,6 +191,9 @@ export function CodeMirrorEditor({
         value={initialContent}
         extensions={extensions}
         onChange={handleChange}
+        onCreateEditor={(view) => {
+          if (viewRef) viewRef.current = view
+        }}
         placeholder="Start writing…  Markdown and [[wikilinks]] supported"
         height="100%"
         className="h-full"

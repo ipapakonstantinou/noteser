@@ -166,6 +166,35 @@
   }
 }
 
+/* Preview mode: cursor indicator + completed-task strikethrough */
+.preview-cursor-block {
+  border-left: 3px solid theme('colors.obsidianAccentPurple');
+  padding-left: 0.75rem;
+  margin-left: -0.95rem;
+}
+
+.preview-cursor-marker {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  background: theme('colors.obsidianAccentPurple');
+  vertical-align: text-bottom;
+  margin: 0 -1px;
+  border-radius: 1px;
+  animation: cursor-blink 1.05s steps(2, end) infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 50%   { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.preview-task-done,
+.preview-task-done > * {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+
 /* CodeMirror container — force dark background regardless of default theme */
 .cm-editor,
 .cm-editor .cm-scroller,
@@ -174,23 +203,6 @@
   background-color: transparent !important;
   color: inherit;
 }
-
-/* CodeMirror Live Preview decorations */
-.cm-lp-hidden { font-size: 0 !important; width: 0; }
-.cm-lp-h1 { font-size: 1.75em; font-weight: 700; line-height: 1.3; color: #dadada; }
-.cm-lp-h2 { font-size: 1.4em;  font-weight: 700; line-height: 1.35; color: #dadada; }
-.cm-lp-h3 { font-size: 1.2em;  font-weight: 600; line-height: 1.4; color: #dadada; }
-.cm-lp-h4 { font-size: 1.05em; font-weight: 600; color: #dadada; }
-.cm-lp-bold   { font-weight: 700; }
-.cm-lp-italic { font-style: italic; }
-.cm-lp-code {
-  font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
-  background: #333333;
-  border-radius: 3px;
-  padding: 1px 4px;
-  font-size: 0.88em;
-}
-.cm-lp-strike { text-decoration: line-through; opacity: 0.7; }
 
 /* Utilities */
 @layer utilities {
