@@ -21,7 +21,7 @@ interface UIState {
   modal: ModalState
 
   // View
-  currentView: 'notes' | 'trash' | 'tags' | 'templates' | 'recent'
+  currentView: 'notes' | 'trash' | 'tags' | 'templates' | 'recent' | 'calendar'
 
   // Collaboration
   showCollaborators: boolean

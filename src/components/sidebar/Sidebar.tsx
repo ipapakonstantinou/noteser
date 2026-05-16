@@ -11,11 +11,13 @@ import {
   ClockIcon,
   TagIcon,
   DocumentDuplicateIcon,
-  Cog6ToothIcon
+  Cog6ToothIcon,
+  CalendarDaysIcon,
 } from '@heroicons/react/24/outline'
 import { useUIStore, useNoteStore, useFolderStore } from '@/stores'
 import { useHydration } from '@/hooks'
 import { FolderTree } from './FolderTree'
+import { CalendarView } from './CalendarView'
 import { ContextMenu } from './ContextMenu'
 import type { ContextMenuState } from '@/types'
 
@@ -184,13 +186,26 @@ export const Sidebar = () => {
               </span>
             )}
           </button>
+          <button
+            onClick={() => setCurrentView('calendar')}
+            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${
+              currentView === 'calendar'
+                ? 'bg-obsidianHighlight text-obsidianText'
+                : 'text-obsidianSecondaryText hover:bg-obsidianDarkGray'
+            }`}
+          >
+            <CalendarDaysIcon className="w-4 h-4" />
+            Calendar
+          </button>
         </div>
       )}
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-2 py-2">
         {!sidebarCollapsed && (
-          <FolderTree onRightClick={handleRightClick} />
+          currentView === 'calendar'
+            ? <CalendarView />
+            : <FolderTree onRightClick={handleRightClick} />
         )}
       </div>
 

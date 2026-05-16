@@ -1,20 +1,16 @@
 'use client'
 
-import { useMemo } from 'react'
 import { DocumentTextIcon } from '@heroicons/react/24/outline'
 import { useNoteStore, useUIStore } from '@/stores'
 import { EditorHeader } from './EditorHeader'
 import { EditorContent } from './EditorContent'
-import { CollaboratorAvatars } from './CollaboratorAvatars'
 import { EmptyState } from '@/components/ui'
 
 export const Editor = () => {
-  const { selectedNoteId, getNoteById, updateNote } = useNoteStore()
+  const { selectedNoteId, notes, updateNote } = useNoteStore()
   const { isPreviewMode } = useUIStore()
 
-  const note = useMemo(() => {
-    return selectedNoteId ? getNoteById(selectedNoteId) : null
-  }, [selectedNoteId, getNoteById])
+  const note = selectedNoteId ? (notes.find(n => n.id === selectedNoteId) ?? null) : null
 
   if (!note) {
     return (
