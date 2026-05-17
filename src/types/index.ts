@@ -104,7 +104,7 @@ export type ContextMenuState = {
 } | null
 
 export interface ModalState {
-  type: 'delete' | 'template' | 'export' | 'import' | 'settings' | 'shortcuts' | 'github-auth' | null
+  type: 'delete' | 'template' | 'export' | 'import' | 'settings' | 'shortcuts' | 'github-auth' | 'github-repo' | null
   data?: Record<string, unknown>
 }
 
@@ -113,6 +113,24 @@ export interface GitHubUser {
   login: string
   name: string | null
   avatar_url: string
+}
+
+// A repo selected as the sync target. 1 vault = 1 repo, notes at the repo root.
+export interface SyncRepo {
+  owner: string
+  name: string
+  branch: string
+  isPrivate: boolean
+}
+
+export interface GitHubRepo {
+  id: number
+  name: string
+  full_name: string
+  owner: { login: string }
+  private: boolean
+  default_branch: string
+  updated_at: string
 }
 
 // Keyboard shortcuts
