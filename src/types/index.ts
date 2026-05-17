@@ -104,8 +104,15 @@ export type ContextMenuState = {
 } | null
 
 export interface ModalState {
-  type: 'delete' | 'template' | 'export' | 'import' | 'settings' | 'shortcuts' | null
+  type: 'delete' | 'template' | 'export' | 'import' | 'settings' | 'shortcuts' | 'github-auth' | null
   data?: Record<string, unknown>
+}
+
+export interface GitHubUser {
+  id: number
+  login: string
+  name: string | null
+  avatar_url: string
 }
 
 // Keyboard shortcuts
