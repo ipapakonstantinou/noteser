@@ -8,10 +8,10 @@ import {
   DocumentTextIcon
 } from '@heroicons/react/24/outline'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
-import { useNoteStore, useFolderStore, useUIStore, useTagStore, useWorkspaceStore } from '@/stores'
+import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore } from '@/stores'
 import { useHydration } from '@/hooks'
 import { EditableText } from '../shared/EditableText'
-import { Badge } from '../ui'
+import { collectAllTags } from '@/utils/tags'
 
 interface FolderTreeProps {
   onRightClick: (e: React.MouseEvent, type: 'note' | 'folder', id: string) => void
@@ -30,7 +30,6 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     getActiveNotes,
     getDeletedNotes,
     getRecentNotes,
-    getNotesByTag,
     restoreNote,
     permanentlyDeleteNote,
     emptyTrash
@@ -46,13 +45,16 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     getRootFolders,
     getChildFolders
   } = useFolderStore()
-  const { tags, getTagById } = useTagStore()
 
   // Use empty arrays during SSR to avoid hydration mismatch
   const rootFolders = useMemo(() => hydrated ? getRootFolders() : [], [folders, hydrated])
   const activeNotes = useMemo(() => hydrated ? getActiveNotes() : [], [notes, hydrated])
   const deletedNotes = useMemo(() => hydrated ? getDeletedNotes() : [], [notes, hydrated])
   const recentNotes = useMemo(() => hydrated ? getRecentNotes(10) : [], [notes, hydrated])
+
+  // Tags are derived from #word patterns in note bodies — recomputed when
+  // notes change. No more entity store.
+  const tagCounts = useMemo(() => collectAllTags(activeNotes), [activeNotes])
 
   // ── Drag & drop state ───────────────────────────────────────────────────
   // The id of the note currently being dragged (null when nothing is held);
@@ -118,8 +120,6 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
 
   // Render note item
   const NoteItem = ({ note, className = '' }: { note: typeof notes[0]; className?: string }) => {
-    const noteTags = note.tags.map(tagId => getTagById(tagId)).filter(Boolean)
-
     return (
       <div
         className={`obsidian-file-item ${
@@ -149,20 +149,6 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
               />
             )}
           </div>
-          {noteTags.length > 0 && (
-            <div className="flex gap-1 mt-1 flex-wrap">
-              {noteTags.slice(0, 2).map(tag => tag && (
-                <Badge key={tag.id} color={tag.color} className="text-[10px] px-1 py-0">
-                  {tag.name}
-                </Badge>
-              ))}
-              {noteTags.length > 2 && (
-                <span className="text-[10px] text-obsidianSecondaryText">
-                  +{noteTags.length - 2}
-                </span>
-              )}
-            </div>
-          )}
         </div>
       </div>
     )
@@ -319,37 +305,30 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     )
   }
 
-  // Render tags view
+  // Render tags view — derived from #word patterns in note bodies.
   if (currentView === 'tags') {
+    const sortedTags = Array.from(tagCounts.entries()).sort((a, b) => a[0].localeCompare(b[0]))
     return (
       <div>
         <h3 className="text-xs font-medium text-obsidianSecondaryText uppercase tracking-wide mb-2">
           Tags
         </h3>
-        {tags.length === 0 ? (
+        {sortedTags.length === 0 ? (
           <div className="text-center py-8 text-obsidianSecondaryText">
             <p className="text-sm">No tags yet</p>
-            <p className="text-xs mt-1">Add tags to notes to organize them</p>
+            <p className="text-xs mt-1">Type <code className="text-obsidianAccentPurple">#tagname</code> anywhere in a note</p>
           </div>
         ) : (
-          <div className="space-y-2">
-            {tags.map(tag => {
-              const tagNotes = getNotesByTag(tag.id)
-              return (
-                <div key={tag.id}>
-                  <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-obsidianDarkGray">
-                    <div
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: tag.color }}
-                    />
-                    <span className="text-sm text-obsidianText">{tag.name}</span>
-                    <span className="ml-auto text-xs text-obsidianSecondaryText">
-                      {tagNotes.length}
-                    </span>
-                  </div>
-                </div>
-              )
-            })}
+          <div className="space-y-1">
+            {sortedTags.map(([name, count]) => (
+              <div
+                key={name}
+                className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-obsidianDarkGray cursor-default"
+              >
+                <span className="text-sm text-obsidianAccentPurple font-medium">#{name}</span>
+                <span className="ml-auto text-xs text-obsidianSecondaryText">{count}</span>
+              </div>
+            ))}
           </div>
         )}
       </div>

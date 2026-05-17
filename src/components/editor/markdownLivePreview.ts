@@ -36,6 +36,13 @@ const hidden     = Decoration.mark({ class: 'cm-lp-hidden' })
 const listMark   = Decoration.mark({ class: 'cm-lp-list-mark' })
 const taskUnchecked = Decoration.mark({ class: 'cm-lp-task-unchecked' })
 const taskChecked   = Decoration.mark({ class: 'cm-lp-task-checked' })
+const inlineTag  = Decoration.mark({ class: 'cm-lp-tag' })
+
+// Match Obsidian-style #tags: hash + [A-Za-z0-9_/-]+, NOT preceded by a word
+// character (so we don't accidentally style `foo#bar`). We run this in a
+// scanning pass over the document content; tag spans are mark decorations,
+// not block ones.
+const TAG_RE = /(^|[^\w#/-])(#[A-Za-z0-9_/-]+)(?![\w/-])/g
 
 function childrenNamed(node: SyntaxNode, name: string): SyntaxNode[] {
   const out: SyntaxNode[] = []
@@ -142,6 +149,18 @@ function buildDecorations(state: EditorState): DecorationSet {
       },
     })
 
+    // ── #tag pass ──────────────────────────────────────────────────────────
+    // Scan the document text for Obsidian-style tags. We do this outside the
+    // syntax-tree walk because the markdown grammar doesn't have a tag node.
+    const text = doc.toString()
+    let m: RegExpExecArray | null
+    TAG_RE.lastIndex = 0
+    while ((m = TAG_RE.exec(text)) !== null) {
+      const tagStart = m.index + m[1].length
+      const tagEnd = tagStart + m[2].length
+      specs.push([tagStart, tagEnd, inlineTag])
+    }
+
     // RangeSetBuilder needs sorted, non-overlapping ranges.
     specs.sort((a, b) => a[0] - b[0] || a[1] - b[1])
 
@@ -200,6 +219,13 @@ const livePreviewTheme = EditorView.baseTheme({
   '.cm-lp-task-unchecked': { color: '#8b6dd9' },
   '.cm-lp-task-checked':   { color: '#8b6dd9' },
   '.cm-lp-task-done': { textDecoration: 'line-through', opacity: '0.55' },
+  '.cm-lp-tag': {
+    color: '#8b6dd9',
+    background: 'rgba(139, 109, 217, 0.1)',
+    borderRadius: '3px',
+    padding: '0 3px',
+    fontWeight: '500',
+  },
 })
 
 export const markdownLivePreview = [markdownLivePreviewField, livePreviewTheme]

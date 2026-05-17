@@ -276,6 +276,54 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
     }
   }, [isPreviewMode, previewContent, toggleTaskAt])
 
+  // Style #tags in the rendered preview by walking text nodes and wrapping
+  // matches in styled spans. Re-runs whenever the rendered content changes.
+  useEffect(() => {
+    if (!isPreviewMode) return
+    const container = previewContainerRef.current
+    if (!container) return
+
+    const TAG_PATTERN = /(^|[^\w#/-])(#[A-Za-z0-9_/-]+)(?![\w/-])/g
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) => {
+        // Skip text already inside <code>, <pre>, or our own .preview-tag spans.
+        let p: Node | null = node.parentNode
+        while (p && p !== container) {
+          const el = p as HTMLElement
+          if (el.tagName === 'CODE' || el.tagName === 'PRE') return NodeFilter.FILTER_REJECT
+          if (el.classList?.contains('preview-tag')) return NodeFilter.FILTER_REJECT
+          p = p.parentNode
+        }
+        return NodeFilter.FILTER_ACCEPT
+      },
+    })
+    const targets: Text[] = []
+    let n: Node | null
+    while ((n = walker.nextNode())) targets.push(n as Text)
+
+    for (const node of targets) {
+      const text = node.nodeValue ?? ''
+      TAG_PATTERN.lastIndex = 0
+      if (!TAG_PATTERN.test(text)) continue
+      TAG_PATTERN.lastIndex = 0
+      const frag = document.createDocumentFragment()
+      let lastIdx = 0
+      let m: RegExpExecArray | null
+      while ((m = TAG_PATTERN.exec(text)) !== null) {
+        const before = text.slice(lastIdx, m.index + m[1].length)
+        if (before) frag.appendChild(document.createTextNode(before))
+        const span = document.createElement('span')
+        span.className = 'preview-tag'
+        span.textContent = m[2]
+        frag.appendChild(span)
+        lastIdx = m.index + m[1].length + m[2].length
+      }
+      const after = text.slice(lastIdx)
+      if (after) frag.appendChild(document.createTextNode(after))
+      node.parentNode?.replaceChild(frag, node)
+    }
+  }, [isPreviewMode, previewContent])
+
   // Reset the auto-switch timer whenever the user keys into the editor area.
   const handleEditorKeyDown = (e: React.KeyboardEvent) => {
     if (isPreviewModeRef.current) return
