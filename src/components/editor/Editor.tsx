@@ -1,78 +1,63 @@
 'use client'
 
-import { DocumentTextIcon } from '@heroicons/react/24/outline'
-import { useNoteStore, useUIStore, useWorkspaceStore } from '@/stores'
-import { EditorHeader } from './EditorHeader'
-import { EditorContent } from './EditorContent'
-import { TabBar } from './TabBar'
-import { MergeEditorView } from './MergeEditorView'
-import { EmptyState } from '@/components/ui'
+import { useRef, useState } from 'react'
+import { useWorkspaceStore } from '@/stores'
+import { Pane } from './Pane'
+
+// Renders the workspace's panes side by side. For v1 we cap at 2 panes
+// (horizontal split). The divider between them is draggable to resize.
+
+const DEFAULT_LEFT_RATIO = 0.5
 
 export const Editor = () => {
-  const { notes, updateNote } = useNoteStore()
-  const { isPreviewMode } = useUIStore()
-  const tabs = useWorkspaceStore(s => s.tabs)
-  const activeTabId = useWorkspaceStore(s => s.activeTabId)
-  const promoteTab = useWorkspaceStore(s => s.promoteTab)
-  const activeTab = tabs.find(t => t.id === activeTabId) ?? null
+  const panes = useWorkspaceStore(s => s.panes)
+  const [leftRatio, setLeftRatio] = useState(DEFAULT_LEFT_RATIO)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{ startX: number; startRatio: number } | null>(null)
 
-  if (!activeTab) {
+  // Single pane: no divider, full width.
+  if (panes.length <= 1) {
     return (
-      <div className="flex flex-col h-full w-full overflow-hidden bg-obsidianBlack">
-        <TabBar />
-        <div className="flex-1 flex items-center justify-center">
-          <EmptyState
-            icon={<DocumentTextIcon className="w-16 h-16" />}
-            title="No note selected"
-            description="Select a note from the sidebar or create a new one to get started"
-          />
-        </div>
+      <div className="flex h-full w-full overflow-hidden">
+        <Pane pane={panes[0]} allowSplitDropZone={true} />
       </div>
     )
   }
 
-  if (activeTab.kind === 'merge-conflict') {
-    return (
-      <div className="flex flex-col h-full w-full overflow-hidden bg-obsidianBlack">
-        <TabBar />
-        <MergeEditorView tabId={activeTab.id} conflict={activeTab.conflict} />
-      </div>
-    )
-  }
-
-  const note = notes.find(n => n.id === activeTab.noteId) ?? null
-  if (!note) {
-    // Note was deleted while the tab was open — render nothing useful but
-    // keep the tab bar so the user can close the dead tab.
-    return (
-      <div className="flex flex-col h-full w-full overflow-hidden bg-obsidianBlack">
-        <TabBar />
-        <div className="flex-1 flex items-center justify-center text-obsidianSecondaryText text-sm">
-          This note no longer exists.
-        </div>
-      </div>
-    )
-  }
-
-  const handleTitleChange = (title: string) => {
-    updateNote(note.id, { title })
-    // Editing a preview tab promotes it to pinned (VS Code behaviour).
-    if (activeTab?.kind === 'note' && activeTab.isPreview) promoteTab(activeTab.id)
-  }
-  const handleContentChange = (content: string) => {
-    updateNote(note.id, { content })
-    if (activeTab?.kind === 'note' && activeTab.isPreview) promoteTab(activeTab.id)
+  // Two panes: horizontal split with draggable divider.
+  const onDividerMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+    dragRef.current = { startX: e.clientX, startRatio: leftRatio }
+    const handleMove = (ev: MouseEvent) => {
+      if (!containerRef.current || !dragRef.current) return
+      const rect = containerRef.current.getBoundingClientRect()
+      const delta = (ev.clientX - dragRef.current.startX) / rect.width
+      const next = dragRef.current.startRatio + delta
+      // Clamp so neither pane vanishes.
+      setLeftRatio(Math.min(0.85, Math.max(0.15, next)))
+    }
+    const handleUp = () => {
+      dragRef.current = null
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
   }
 
   return (
-    <div className="flex flex-col h-full w-full overflow-hidden bg-obsidianBlack">
-      <TabBar />
-      <EditorHeader note={note} onTitleChange={handleTitleChange} />
-      <EditorContent
-        note={note}
-        isPreviewMode={isPreviewMode}
-        onContentChange={handleContentChange}
+    <div ref={containerRef} className="flex h-full w-full overflow-hidden">
+      <div style={{ width: `${leftRatio * 100}%` }} className="flex min-w-0 flex-shrink-0">
+        <Pane pane={panes[0]} allowSplitDropZone={false} />
+      </div>
+      <div
+        onMouseDown={onDividerMouseDown}
+        className="w-1 cursor-col-resize bg-obsidianBorder hover:bg-obsidianAccentPurple/60 flex-shrink-0 transition-colors"
+        title="Drag to resize"
       />
+      <div style={{ width: `${(1 - leftRatio) * 100}%` }} className="flex min-w-0 flex-shrink-0">
+        <Pane pane={panes[1]} allowSplitDropZone={false} />
+      </div>
     </div>
   )
 }
