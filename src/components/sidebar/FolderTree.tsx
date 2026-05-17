@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -25,6 +25,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     selectedNoteId,
     selectNote,
     updateNote,
+    moveNoteToFolder,
     getActiveNotes,
     getDeletedNotes,
     getRecentNotes,
@@ -51,6 +52,48 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   const deletedNotes = useMemo(() => hydrated ? getDeletedNotes() : [], [notes, hydrated])
   const recentNotes = useMemo(() => hydrated ? getRecentNotes(10) : [], [notes, hydrated])
 
+  // ── Drag & drop state ───────────────────────────────────────────────────
+  // The id of the note currently being dragged (null when nothing is held);
+  // kept in a ref so dragstart doesn't trigger a re-render.
+  const draggedNoteIdRef = useRef<string | null>(null)
+  // Visual highlight target: folder id, or '__root__' for the root drop zone.
+  const [dragOverTarget, setDragOverTarget] = useState<string | null>(null)
+
+  const beginNoteDrag = (e: React.DragEvent, noteId: string) => {
+    draggedNoteIdRef.current = noteId
+    // Required for Firefox to register the drag; also exposes the id to drop.
+    e.dataTransfer.setData('application/x-noteser-note', noteId)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+  const endNoteDrag = () => {
+    draggedNoteIdRef.current = null
+    setDragOverTarget(null)
+  }
+  const onFolderDragOver = (e: React.DragEvent, folderId: string) => {
+    if (!draggedNoteIdRef.current) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (dragOverTarget !== folderId) setDragOverTarget(folderId)
+  }
+  const onFolderDrop = (e: React.DragEvent, folderId: string) => {
+    e.preventDefault()
+    const id = draggedNoteIdRef.current
+    if (id) moveNoteToFolder(id, folderId)
+    endNoteDrag()
+  }
+  const onRootDragOver = (e: React.DragEvent) => {
+    if (!draggedNoteIdRef.current) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (dragOverTarget !== '__root__') setDragOverTarget('__root__')
+  }
+  const onRootDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    const id = draggedNoteIdRef.current
+    if (id) moveNoteToFolder(id, null)
+    endNoteDrag()
+  }
+
   // Render note item
   const NoteItem = ({ note, className = '' }: { note: typeof notes[0]; className?: string }) => {
     const noteTags = note.tags.map(tagId => getTagById(tagId)).filter(Boolean)
@@ -60,6 +103,9 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
         className={`obsidian-file-item ${
           selectedNoteId === note.id ? 'bg-obsidianHighlight' : ''
         } ${className}`}
+        draggable={currentView !== 'trash'}
+        onDragStart={e => beginNoteDrag(e, note.id)}
+        onDragEnd={endNoteDrag}
         onClick={() => selectNote(note.id)}
         onContextMenu={e => onRightClick(e, 'note', note.id)}
       >
@@ -105,15 +151,19 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     const childFolders = hydrated ? getChildFolders(folder.id) : []
     const childCount = folderNotes.length + childFolders.length
 
+    const isDropTarget = dragOverTarget === folder.id
     return (
       <div className="mb-0.5">
         <div
           className={`obsidian-folder-item ${
             isActive ? 'bg-obsidianHighlight' : ''
-          }`}
+          } ${isDropTarget ? 'outline outline-2 outline-obsidianAccentPurple bg-obsidianAccentPurple/10' : ''}`}
           style={{ paddingLeft: depth > 0 ? `${depth * 12 + 8}px` : undefined }}
           onClick={() => setActiveFolder(folder.id)}
           onContextMenu={e => onRightClick(e, 'folder', folder.id)}
+          onDragOver={e => onFolderDragOver(e, folder.id)}
+          onDragLeave={() => { if (dragOverTarget === folder.id) setDragOverTarget(null) }}
+          onDrop={e => onFolderDrop(e, folder.id)}
         >
           <button
             className="mr-1 focus:outline-none"
@@ -287,15 +337,31 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
 
   if (rootFolders.length === 0 && rootNotes.length === 0) {
     return (
-      <div className="text-center py-8 text-obsidianSecondaryText">
+      <div
+        className={`text-center py-8 text-obsidianSecondaryText min-h-full ${
+          dragOverTarget === '__root__' ? 'outline outline-2 outline-obsidianAccentPurple' : ''
+        }`}
+        onDragOver={onRootDragOver}
+        onDragLeave={() => { if (dragOverTarget === '__root__') setDragOverTarget(null) }}
+        onDrop={onRootDrop}
+      >
         <p className="text-sm">No notes yet</p>
         <p className="text-xs mt-1">Click + to create your first note</p>
       </div>
     )
   }
 
+  const rootHighlighted = dragOverTarget === '__root__'
   return (
-    <div>
+    <div
+      className={`min-h-full ${rootHighlighted ? 'outline outline-2 outline-obsidianAccentPurple rounded' : ''}`}
+      onDragOver={onRootDragOver}
+      onDragLeave={(e) => {
+        // Only clear when leaving the wrapper itself, not when crossing children.
+        if (e.currentTarget === e.target && dragOverTarget === '__root__') setDragOverTarget(null)
+      }}
+      onDrop={onRootDrop}
+    >
       {pinnedRootNotes.map(note => (
         <NoteItem key={note.id} note={note} />
       ))}

@@ -45,29 +45,23 @@ export function notePath(note: Note, folders: Folder[]): string {
   return dir ? `${dir}/${file}` : file
 }
 
-// ── Frontmatter serialization ───────────────────────────────────────────────
-// Format chosen to be Obsidian-compatible: YAML frontmatter, body is raw
-// markdown. The `id` field is what enables round-tripping (Phase 4 pull will
-// match by id even if the filename changed on GitHub).
+// ── Note serialization ──────────────────────────────────────────────────────
+// Obsidian convention: a .md file is just the body, with an optional YAML
+// frontmatter block at the top *only* when there's something to put in it.
+// Today the only field we round-trip is `tags`. No id/title/dates — the
+// filename is the title and round-tripping (Phase 4 pull) matches by path.
 
 function yamlList(items: string[]): string {
-  if (items.length === 0) return '[]'
-  return `[${items.map(s => `"${s.replace(/"/g, '\\"')}"`).join(', ')}]`
+  return `[${items.map(s => (/^[A-Za-z0-9_-]+$/.test(s) ? s : JSON.stringify(s))).join(', ')}]`
 }
 
 export function serializeNote(note: Note, tagNamesById: Map<string, string>): string {
   const tagNames = note.tags
     .map(id => tagNamesById.get(id))
     .filter((n): n is string => !!n)
-  const fm: string[] = ['---']
-  fm.push(`id: ${note.id}`)
-  fm.push(`title: ${JSON.stringify(note.title)}`)
-  fm.push(`tags: ${yamlList(tagNames)}`)
-  fm.push(`created: ${new Date(note.createdAt).toISOString()}`)
-  fm.push(`updated: ${new Date(note.updatedAt).toISOString()}`)
-  if (note.isPinned) fm.push('pinned: true')
-  fm.push('---', '')
-  return fm.join('\n') + (note.content ?? '')
+  const body = note.content ?? ''
+  if (tagNames.length === 0) return body
+  return `---\ntags: ${yamlList(tagNames)}\n---\n\n${body}`
 }
 
 // ── Sync orchestrator ───────────────────────────────────────────────────────
