@@ -1,102 +1,73 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  ExclamationTriangleIcon,
-  CheckCircleIcon,
-} from '@heroicons/react/24/outline'
+import { ExclamationTriangleIcon, CheckCircleIcon } from '@heroicons/react/24/outline'
 import { Button } from '@/components/ui'
 import { useWorkspaceStore } from '@/stores'
 import { applyConflictResolution, applyMergedConflict } from '@/utils/syncApply'
 import { diffByLine, composeMerged, type DiffHunk } from '@/utils/lineDiff'
 import type { ConflictTabData } from '@/stores/workspaceStore'
 
-// Module-level signal so the sidebar's sync hook can pick up where we left
-// off after Apply. Same convention as the old conflict modal.
+// The sidebar still listens for this for backwards compatibility, but the
+// workspace store also fires it itself when the last merge tab closes. Kept
+// exported so nothing breaks if external code imports it.
 export const SYNC_REQUEST_EVENT = 'noteser:sync-request'
 
 type HunkChoice = 'local' | 'remote' | 'both' | 'skip'
-type ChoiceMap = Record<string, Record<number, HunkChoice>>
 
 interface Props {
   tabId: string
-  conflicts: ConflictTabData[]
+  conflict: ConflictTabData
 }
 
-export const MergeEditorView = ({ tabId, conflicts }: Props) => {
+export const MergeEditorView = ({ tabId, conflict }: Props) => {
   const closeTab = useWorkspaceStore(s => s.closeTab)
+  const recordMergeApplied = useWorkspaceStore(s => s.recordMergeApplied)
 
-  const [currentIdx, setCurrentIdx] = useState(0)
-  const [choices, setChoices] = useState<ChoiceMap>({})
-  const [deletedChoice, setDeletedChoice] = useState<Record<string, 'local' | 'remote'>>({})
+  const [choices, setChoices] = useState<Record<number, HunkChoice>>({})
+  const [deletedChoice, setDeletedChoice] = useState<'local' | 'remote' | null>(null)
 
-  // Reset when a new conflict batch arrives.
+  // Reset whenever the conflict changes (new sync, fresh tab).
   useEffect(() => {
-    setCurrentIdx(0)
     setChoices({})
-    setDeletedChoice({})
-  }, [conflicts])
+    setDeletedChoice(null)
+  }, [conflict])
 
-  const current = conflicts[currentIdx]
   const hunks: DiffHunk[] = useMemo(() => {
-    if (!current || current.kind !== 'conflict') return []
-    return diffByLine(current.localContent, current.remoteContent)
-  }, [current])
+    if (conflict.kind !== 'conflict') return []
+    return diffByLine(conflict.localContent, conflict.remoteContent)
+  }, [conflict])
   const changeHunkIndices = useMemo(
     () => hunks.flatMap((h, i) => h.type === 'change' ? [i] : []),
     [hunks],
   )
 
-  const currentChoices = current ? (choices[current.path] ?? {}) : {}
-  const currentResolved = current && (
-    current.kind === 'conflictDeleted'
-      ? !!deletedChoice[current.path]
-      : changeHunkIndices.every(i => currentChoices[i] != null)
-  )
+  const resolved = conflict.kind === 'conflictDeleted'
+    ? deletedChoice != null
+    : changeHunkIndices.every(i => choices[i] != null)
 
-  const totalResolved = conflicts.filter(c =>
-    c.kind === 'conflictDeleted'
-      ? !!deletedChoice[c.path]
-      : (() => {
-          const cs = choices[c.path] ?? {}
-          const h = diffByLine(c.localContent, c.remoteContent)
-          return h.every((hh, i) => hh.type === 'equal' || cs[i] != null)
-        })(),
-  ).length
-  const allResolved = totalResolved === conflicts.length && conflicts.length > 0
-
-  const setHunkChoice = (path: string, hunkIdx: number, choice: HunkChoice | null) => {
+  const setHunkChoice = (hunkIdx: number, choice: HunkChoice | null) => {
     setChoices(prev => {
-      const next = { ...(prev[path] ?? {}) }
+      const next = { ...prev }
       if (choice == null) delete next[hunkIdx]
       else next[hunkIdx] = choice
-      return { ...prev, [path]: next }
+      return next
     })
   }
 
-  const applyAll = () => {
-    for (const c of conflicts) {
-      if (c.kind === 'conflictDeleted') {
-        const choice = deletedChoice[c.path]
-        if (choice) applyConflictResolution(c, choice)
-        continue
+  const applyAndClose = () => {
+    if (conflict.kind === 'conflictDeleted') {
+      if (deletedChoice) {
+        applyConflictResolution(conflict, deletedChoice)
+        recordMergeApplied()
       }
-      const h = diffByLine(c.localContent, c.remoteContent)
-      const merged = composeMerged(h, choices[c.path] ?? {})
-      applyMergedConflict(c, merged)
+    } else {
+      const merged = composeMerged(hunks, choices)
+      applyMergedConflict(conflict, merged)
+      recordMergeApplied()
     }
+    // The workspace store will fire sync-request when this is the last merge tab.
     closeTab(tabId)
-    window.dispatchEvent(new Event(SYNC_REQUEST_EVENT))
-  }
-
-  if (!current) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-obsidianSecondaryText">
-        No conflicts to resolve.
-      </div>
-    )
   }
 
   return (
@@ -106,45 +77,27 @@ export const MergeEditorView = ({ tabId, conflicts }: Props) => {
         <div className="flex items-start gap-2 px-3 py-2 bg-amber-900/20 border border-amber-900/40 rounded text-sm text-amber-200">
           <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
           <span>
-            Use the action links above each conflict to pick a side. Resolved regions collapse to the
-            chosen content; hover them to revert.
+            Use the action links above each conflict region to pick a side. Resolved regions
+            collapse; hover them to revert.
           </span>
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setCurrentIdx(i => Math.max(0, i - 1))}
-            disabled={currentIdx === 0}
-            className="p-1 text-obsidianSecondaryText hover:text-obsidianText disabled:opacity-30"
-            aria-label="Previous conflict"
-          >
-            <ChevronLeftIcon className="w-4 h-4" />
-          </button>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <code className="text-sm text-obsidianText truncate">{current.path}</code>
-              {currentResolved && <CheckCircleIcon className="w-4 h-4 text-green-500 flex-shrink-0" />}
+              <code className="text-sm text-obsidianText truncate">{conflict.path}</code>
+              {resolved && <CheckCircleIcon className="w-4 h-4 text-green-500 flex-shrink-0" />}
             </div>
             <div className="text-xs text-obsidianSecondaryText">
-              Conflict {currentIdx + 1} of {conflicts.length}
-              {current.kind === 'conflict' && (
-                <span> · {changeHunkIndices.length} region{changeHunkIndices.length === 1 ? '' : 's'}</span>
-              )}
-              <span> · {totalResolved}/{conflicts.length} resolved</span>
+              {conflict.kind === 'conflict'
+                ? <>Merge conflict · {changeHunkIndices.length} region{changeHunkIndices.length === 1 ? '' : 's'}</>
+                : <>Remote deleted · local has unsynced edits</>}
             </div>
           </div>
-          <button
-            onClick={() => setCurrentIdx(i => Math.min(conflicts.length - 1, i + 1))}
-            disabled={currentIdx >= conflicts.length - 1}
-            className="p-1 text-obsidianSecondaryText hover:text-obsidianText disabled:opacity-30"
-            aria-label="Next conflict"
-          >
-            <ChevronRightIcon className="w-4 h-4" />
-          </button>
           <div className="flex-shrink-0 flex items-center gap-2 pl-2 border-l border-obsidianBorder">
             <Button variant="ghost" onClick={() => closeTab(tabId)}>Cancel</Button>
-            <Button variant="primary" onClick={applyAll} disabled={!allResolved}>
-              Apply ({totalResolved}/{conflicts.length})
+            <Button variant="primary" onClick={applyAndClose} disabled={!resolved}>
+              Apply
             </Button>
           </div>
         </div>
@@ -152,17 +105,17 @@ export const MergeEditorView = ({ tabId, conflicts }: Props) => {
 
       {/* Body */}
       <div className="flex-1 overflow-auto p-4">
-        {current.kind === 'conflictDeleted' ? (
+        {conflict.kind === 'conflictDeleted' ? (
           <DeletedConflictView
-            localContent={current.localContent}
-            choice={deletedChoice[current.path]}
-            onChoose={(c) => setDeletedChoice(prev => ({ ...prev, [current.path]: c }))}
+            localContent={conflict.localContent}
+            choice={deletedChoice}
+            onChoose={setDeletedChoice}
           />
         ) : (
           <MergeView
             hunks={hunks}
-            choices={currentChoices}
-            onChooseHunk={(i, c) => setHunkChoice(current.path, i, c)}
+            choices={choices}
+            onChooseHunk={setHunkChoice}
           />
         )}
       </div>
@@ -299,7 +252,7 @@ const DeletedConflictView = ({
   localContent, choice, onChoose,
 }: {
   localContent: string
-  choice: 'local' | 'remote' | undefined
+  choice: 'local' | 'remote' | null
   onChoose: (c: 'local' | 'remote') => void
 }) => (
   <div className="space-y-3 max-w-3xl">

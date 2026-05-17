@@ -13,6 +13,7 @@ export const Editor = () => {
   const { isPreviewMode } = useUIStore()
   const tabs = useWorkspaceStore(s => s.tabs)
   const activeTabId = useWorkspaceStore(s => s.activeTabId)
+  const promoteTab = useWorkspaceStore(s => s.promoteTab)
   const activeTab = tabs.find(t => t.id === activeTabId) ?? null
 
   if (!activeTab) {
@@ -34,7 +35,7 @@ export const Editor = () => {
     return (
       <div className="flex flex-col h-full w-full overflow-hidden bg-obsidianBlack">
         <TabBar />
-        <MergeEditorView tabId={activeTab.id} conflicts={activeTab.conflicts} />
+        <MergeEditorView tabId={activeTab.id} conflict={activeTab.conflict} />
       </div>
     )
   }
@@ -53,8 +54,15 @@ export const Editor = () => {
     )
   }
 
-  const handleTitleChange = (title: string) => updateNote(note.id, { title })
-  const handleContentChange = (content: string) => updateNote(note.id, { content })
+  const handleTitleChange = (title: string) => {
+    updateNote(note.id, { title })
+    // Editing a preview tab promotes it to pinned (VS Code behaviour).
+    if (activeTab?.kind === 'note' && activeTab.isPreview) promoteTab(activeTab.id)
+  }
+  const handleContentChange = (content: string) => {
+    updateNote(note.id, { content })
+    if (activeTab?.kind === 'note' && activeTab.isPreview) promoteTab(activeTab.id)
+  }
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden bg-obsidianBlack">

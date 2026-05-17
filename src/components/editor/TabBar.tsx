@@ -4,6 +4,8 @@ import { DocumentTextIcon, ExclamationTriangleIcon, XMarkIcon } from '@heroicons
 import { useNoteStore, useWorkspaceStore } from '@/stores'
 import type { Tab } from '@/stores/workspaceStore'
 
+interface RenderedTitle { text: string; tooltip: string; italic: boolean }
+
 // Tab strip at the top of the editor area. Currently single-row, no scroll
 // (overflowing tabs truncate). Drag-reorder + middle-click close are nice
 // follow-ups but not in this MVP.
@@ -36,7 +38,7 @@ export const TabBar = () => {
             {tab.kind === 'merge-conflict'
               ? <ExclamationTriangleIcon className="w-4 h-4 text-amber-400 flex-shrink-0" />
               : <DocumentTextIcon className="w-4 h-4 flex-shrink-0" />}
-            <span className="truncate flex-1 min-w-0">{title.text}</span>
+            <span className={`truncate flex-1 min-w-0 ${title.italic ? 'italic' : ''}`}>{title.text}</span>
             <button
               onClick={(e) => { e.stopPropagation(); closeTab(tab.id) }}
               className="flex-shrink-0 p-0.5 rounded hover:bg-obsidianHighlight text-obsidianSecondaryText"
@@ -52,17 +54,15 @@ export const TabBar = () => {
   )
 }
 
-function renderTitle(tab: Tab, notes: Array<{ id: string; title: string }>): { text: string; tooltip: string } {
+function renderTitle(tab: Tab, notes: Array<{ id: string; title: string }>): RenderedTitle {
   if (tab.kind === 'merge-conflict') {
-    const n = tab.conflicts.length
-    return {
-      text: `Resolve conflicts (${n})`,
-      tooltip: `${n} sync conflict${n === 1 ? '' : 's'} need review`,
-    }
+    // Use the file path as the tab title — the conflict view IS that file.
+    const path = tab.conflict.path
+    return { text: path, tooltip: `Merge conflict — ${path}`, italic: false }
   }
   const note = notes.find(n => n.id === tab.noteId)
   const text = note?.title || 'Untitled'
-  return { text, tooltip: text }
+  return { text, tooltip: text, italic: tab.isPreview }
 }
 
 export default TabBar
