@@ -93,10 +93,17 @@ export function applyNonConflicts(classifications: PullClassification[]): ApplyC
   return counts
 }
 
-// Used by the conflict resolver: when the user picks "keep remote" we apply
-// it like a `remoteUpdated`; when they pick "keep local" we just bump the
-// gitLastPushedSha so the *next* sync no longer sees it as a conflict (the
-// local content will be pushed normally).
+// Used by the conflict resolver. Critical invariant: after we apply, the next
+// pull must NOT classify this note as a conflict again.
+//
+// For a regular conflict we pin gitLastPushedSha to the *remote* SHA we saw
+// at conflict time. Pull's three-way merge then evaluates as
+//   lastPushed === remoteSha → remote unchanged
+//   lastPushed !== localBlob → local changed
+// → push-only, no conflict.
+//
+// For a conflictDeleted we clear gitPath + gitLastPushedSha so the note is
+// treated like a fresh local note: push will create the file from scratch.
 export function applyConflictResolution(
   c: Extract<PullClassification, { kind: 'conflict' } | { kind: 'conflictDeleted' }>,
   choice: 'local' | 'remote',
@@ -107,16 +114,17 @@ export function applyConflictResolution(
       const tagIds = ensureTagIds(c.remoteTags)
       updateNote(c.noteId, { content: c.remoteBody, tags: tagIds, gitLastPushedSha: c.remoteSha })
     } else {
-      // Mark the local as the canonical winner; clear stale pushed-sha so the
-      // push phase that follows definitely re-uploads our content.
-      updateNote(c.noteId, { gitLastPushedSha: null })
+      // Local wins: pretend the remote SHA was the one we pushed, so pull
+      // sees "remote unchanged, local changed" → push uploads our content.
+      updateNote(c.noteId, { gitLastPushedSha: c.remoteSha })
     }
   } else {
-    // conflictDeleted: local exists, remote was deleted.
+    // conflictDeleted: remote file is gone, but local has unsynced edits.
     if (choice === 'remote') {
       deleteNote(c.noteId)
     } else {
-      updateNote(c.noteId, { gitLastPushedSha: null })
+      // Re-spawn: drop the stale path/SHA so push treats it as a new file.
+      updateNote(c.noteId, { gitPath: null, gitLastPushedSha: null })
     }
   }
 }
