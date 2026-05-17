@@ -36,7 +36,7 @@ export const Sidebar = () => {
   const { addNote, getDeletedNotes, getRecentNotes, getPinnedNotes } = useNoteStore()
   const { addFolder, activeFolderId } = useFolderStore()
   const githubUser = useGitHubStore((s) => s.user)
-  const githubDisconnect = useGitHubStore((s) => s.disconnect)
+  const githubSyncRepo = useGitHubStore((s) => s.syncRepo)
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
 
@@ -217,19 +217,25 @@ export const Sidebar = () => {
         <div className="px-2 py-2 border-t border-obsidianBorder space-y-1">
           {hydrated && githubUser ? (
             <button
-              onClick={() => {
-                if (confirm(`Disconnect GitHub account @${githubUser.login}?`)) githubDisconnect()
-              }}
+              onClick={() => openModal({ type: 'github-repo' })}
               className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-obsidianSecondaryText hover:bg-obsidianDarkGray transition-colors"
-              title={`Connected as @${githubUser.login} — click to disconnect`}
+              title={
+                githubSyncRepo
+                  ? `Vault: ${githubSyncRepo.owner}/${githubSyncRepo.name} — click to change`
+                  : `Connected as @${githubUser.login} — click to pick a vault repo`
+              }
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={githubUser.avatar_url}
                 alt={githubUser.login}
-                className="w-4 h-4 rounded-full"
+                className="w-4 h-4 rounded-full flex-shrink-0"
               />
-              <span className="truncate">@{githubUser.login}</span>
+              <span className="truncate">
+                {githubSyncRepo
+                  ? `${githubSyncRepo.owner}/${githubSyncRepo.name}`
+                  : 'Pick a vault repo'}
+              </span>
             </button>
           ) : (
             <button

@@ -13,8 +13,9 @@ type Status =
   | { kind: 'error'; message: string }
 
 export const GitHubAuthModal = () => {
-  const { modal, closeModal } = useUIStore()
+  const { modal, closeModal, openModal } = useUIStore()
   const setSession = useGitHubStore((s) => s.setSession)
+  const syncRepo = useGitHubStore((s) => s.syncRepo)
 
   const isOpen = modal.type === 'github-auth'
   const [status, setStatus] = useState<Status>({ kind: 'requesting' })
@@ -44,9 +45,12 @@ export const GitHubAuthModal = () => {
         if (controller.signal.aborted) return
         setSession(token, user)
         setStatus({ kind: 'success', login: user.login })
-        // Brief success view, then auto-close.
+        // Brief success view, then chain into the repo picker (or just close
+        // if the user already has a sync repo from a previous session).
         setTimeout(() => {
-          if (!controller.signal.aborted) closeModal()
+          if (controller.signal.aborted) return
+          if (syncRepo) closeModal()
+          else openModal({ type: 'github-repo' })
         }, 1200)
       } catch (err) {
         if (controller.signal.aborted) return
