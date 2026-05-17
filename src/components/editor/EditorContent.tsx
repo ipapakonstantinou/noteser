@@ -355,13 +355,42 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
     )
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const wrapBlock = (Tag: keyof React.JSX.IntrinsicElements) => (props: any) => {
-    const { node, className, children, ...rest } = props
-    const cls = [className, isCursorBlock(node) ? 'preview-cursor-block' : '']
-      .filter(Boolean).join(' ')
-    return createElement(Tag, { ...rest, className: cls || undefined }, children)
+  // ReactMarkdown passes a `node` (HAST element) plus standard intrinsic props.
+  // We use ComponentType<any> on the receiving end so each Tag's specific props
+  // signature is satisfied; the runtime shape is what matters here.
+  interface MdProps {
+    node?: { position?: { start?: { line?: number }; end?: { line?: number } }; children?: unknown[] }
+    className?: string
+    children?: React.ReactNode
+    [key: string]: unknown
   }
+
+  const wrapBlock = (Tag: keyof React.JSX.IntrinsicElements) => {
+    const Block = ({ node, className, children, ...rest }: MdProps) => {
+      const cls = [className, isCursorBlock(node) ? 'preview-cursor-block' : '']
+        .filter(Boolean).join(' ')
+      return createElement(Tag, { ...rest, className: cls || undefined }, children)
+    }
+    Block.displayName = `MdBlock(${Tag})`
+    return Block as React.ComponentType<unknown>
+  }
+
+  const ListItem = ({ node, className, children, ...rest }: MdProps) => {
+    // react-markdown v10 doesn't pass `checked` — derive it from the HAST node.
+    type HastEl = { type?: string; tagName?: string; properties?: { checked?: boolean } }
+    const checkbox = (node?.children as HastEl[] | undefined)?.find(
+      (c) => c?.type === 'element' && c?.tagName === 'input',
+    )
+    const isChecked = checkbox?.properties?.checked === true
+    const cls = [
+      className,
+      isCursorBlock(node) ? 'preview-cursor-block' : '',
+      isChecked ? 'preview-task-done' : '',
+    ].filter(Boolean).join(' ')
+    return <li className={cls || undefined} {...rest}>{children}</li>
+  }
+  ListItem.displayName = 'MdListItem'
+  const TypedListItem = ListItem as unknown as React.ComponentType<unknown>
 
   const components = {
     code: CodeBlock as React.ComponentType<{ className?: string; children?: React.ReactNode }>,
@@ -375,20 +404,7 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
     h6: wrapBlock('h6'),
     blockquote: wrapBlock('blockquote'),
     pre: wrapBlock('pre'),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    li: (props: any) => {
-      const { node, className, children, ...rest } = props
-      // react-markdown v10 doesn't pass `checked` — derive it from the HAST node.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const checkbox = node?.children?.find((c: any) => c?.type === 'element' && c?.tagName === 'input')
-      const isChecked = checkbox?.properties?.checked === true
-      const cls = [
-        className,
-        isCursorBlock(node) ? 'preview-cursor-block' : '',
-        isChecked ? 'preview-task-done' : '',
-      ].filter(Boolean).join(' ')
-      return <li className={cls || undefined} {...rest}>{children}</li>
-    },
+    li: TypedListItem,
   }
 
   return (

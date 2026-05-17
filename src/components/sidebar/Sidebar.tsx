@@ -13,8 +13,9 @@ import {
   DocumentDuplicateIcon,
   Cog6ToothIcon,
   CalendarDaysIcon,
+  CodeBracketIcon,
 } from '@heroicons/react/24/outline'
-import { useUIStore, useNoteStore, useFolderStore } from '@/stores'
+import { useUIStore, useNoteStore, useFolderStore, useGitHubStore } from '@/stores'
 import { useHydration } from '@/hooks'
 import { FolderTree } from './FolderTree'
 import { CalendarView } from './CalendarView'
@@ -34,6 +35,8 @@ export const Sidebar = () => {
 
   const { addNote, getDeletedNotes, getRecentNotes, getPinnedNotes } = useNoteStore()
   const { addFolder, activeFolderId } = useFolderStore()
+  const githubUser = useGitHubStore((s) => s.user)
+  const githubDisconnect = useGitHubStore((s) => s.disconnect)
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
 
@@ -211,7 +214,33 @@ export const Sidebar = () => {
 
       {/* Footer */}
       {!sidebarCollapsed && (
-        <div className="px-2 py-2 border-t border-obsidianBorder">
+        <div className="px-2 py-2 border-t border-obsidianBorder space-y-1">
+          {hydrated && githubUser ? (
+            <button
+              onClick={() => {
+                if (confirm(`Disconnect GitHub account @${githubUser.login}?`)) githubDisconnect()
+              }}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-obsidianSecondaryText hover:bg-obsidianDarkGray transition-colors"
+              title={`Connected as @${githubUser.login} — click to disconnect`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={githubUser.avatar_url}
+                alt={githubUser.login}
+                className="w-4 h-4 rounded-full"
+              />
+              <span className="truncate">@{githubUser.login}</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => openModal({ type: 'github-auth' })}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-obsidianSecondaryText hover:bg-obsidianDarkGray transition-colors"
+              title="Connect to GitHub"
+            >
+              <CodeBracketIcon className="w-4 h-4" />
+              Connect to GitHub
+            </button>
+          )}
           <button
             onClick={() => openModal({ type: 'export' })}
             className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-obsidianSecondaryText hover:bg-obsidianDarkGray transition-colors"
