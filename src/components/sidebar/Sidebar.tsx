@@ -20,7 +20,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { useUIStore, useNoteStore, useFolderStore, useGitHubStore, useWorkspaceStore } from '@/stores'
 import { useGitHubSync } from '@/hooks/useGitHubSync'
-import { SYNC_REQUEST_EVENT } from '@/components/editor/MergeEditorView'
+import { SYNC_REQUEST_EVENT } from '@/utils/events'
 
 function relativeTime(ts: number): string {
   const seconds = Math.floor((Date.now() - ts) / 1000)
