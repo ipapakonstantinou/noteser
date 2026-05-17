@@ -41,7 +41,8 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     setActiveFolder,
     toggleFolderExpanded,
     updateFolder,
-    getRootFolders
+    getRootFolders,
+    getChildFolders
   } = useFolderStore()
   const { tags, getTagById } = useTagStore()
 
@@ -97,18 +98,21 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     )
   }
 
-  // Render folder with its notes
-  const FolderItem = ({ folder }: { folder: typeof folders[0] }) => {
+  // Render folder with its child folders + its notes (recursive)
+  const FolderItem = ({ folder, depth = 0 }: { folder: typeof folders[0]; depth?: number }) => {
     const isExpanded = expandedFolders[folder.id]
     const isActive = activeFolderId === folder.id
     const folderNotes = activeNotes.filter(n => n.folderId === folder.id)
+    const childFolders = hydrated ? getChildFolders(folder.id) : []
+    const childCount = folderNotes.length + childFolders.length
 
     return (
-      <div className="mb-1">
+      <div className="mb-0.5">
         <div
           className={`obsidian-folder-item ${
             isActive ? 'bg-obsidianHighlight' : ''
           }`}
+          style={{ paddingLeft: depth > 0 ? `${depth * 12 + 8}px` : undefined }}
           onClick={() => setActiveFolder(folder.id)}
           onContextMenu={e => onRightClick(e, 'folder', folder.id)}
         >
@@ -130,22 +134,29 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
             value={folder.name}
             onSave={newName => updateFolder(folder.id, { name: newName })}
           />
-          {folderNotes.length > 0 && (
+          {childCount > 0 && (
             <span className="ml-auto text-xs text-obsidianSecondaryText">
-              {folderNotes.length}
+              {childCount}
             </span>
           )}
         </div>
         {isExpanded && (
-          <div className="ml-5">
-            {folderNotes.map(note => (
-              <NoteItem key={note.id} note={note} />
+          <div>
+            {/* Nested child folders first */}
+            {childFolders.map(child => (
+              <FolderItem key={child.id} folder={child} depth={depth + 1} />
             ))}
-            {folderNotes.length === 0 && (
-              <div className="px-3 py-2 text-xs text-obsidianSecondaryText italic">
-                Empty folder
-              </div>
-            )}
+            {/* Then notes inside this folder */}
+            <div style={{ paddingLeft: `${(depth + 1) * 12 + 8}px` }}>
+              {folderNotes.map(note => (
+                <NoteItem key={note.id} note={note} />
+              ))}
+              {folderNotes.length === 0 && childFolders.length === 0 && (
+                <div className="px-3 py-2 text-xs text-obsidianSecondaryText italic">
+                  Empty folder
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

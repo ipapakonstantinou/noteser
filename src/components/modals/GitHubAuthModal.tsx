@@ -101,16 +101,22 @@ export const GitHubAuthModal = () => {
     })()
   }
 
-  const copyAndOpen = async () => {
+  // Anchor's default click opens the new tab without tripping popup blockers.
+  // We piggyback on the same click to copy synchronously (no await before the
+  // browser sees the navigation intent).
+  const handleAnchorClick = () => {
     if (status.kind !== 'waiting') return
     try {
-      await navigator.clipboard.writeText(status.device.user_code)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      navigator.clipboard.writeText(status.device.user_code).then(
+        () => {
+          setCopied(true)
+          setTimeout(() => setCopied(false), 2000)
+        },
+        () => { /* clipboard unavailable; tab still opens */ },
+      )
     } catch {
-      // Clipboard API may be unavailable; still open GitHub so the user can paste manually.
+      // Older browsers without the Clipboard API — the tab still opens.
     }
-    window.open(status.device.verification_uri, '_blank', 'noopener,noreferrer')
   }
 
   return (
@@ -134,13 +140,16 @@ export const GitHubAuthModal = () => {
             </code>
           </div>
 
-          <button
-            onClick={copyAndOpen}
-            className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-obsidianAccentPurple text-white rounded text-sm hover:bg-opacity-90 transition-colors"
+          <a
+            href={status.device.verification_uri}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={handleAnchorClick}
+            className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-obsidianAccentPurple text-white rounded text-sm hover:bg-opacity-90 transition-colors no-underline"
           >
             <ArrowTopRightOnSquareIcon className="w-4 h-4" />
             {copied ? 'Code copied — Opening GitHub…' : 'Copy code & Open GitHub'}
-          </button>
+          </a>
 
           <div className="flex items-center gap-2 text-xs text-obsidianSecondaryText pt-2">
             <div className="animate-pulse h-2 w-2 bg-obsidianAccentPurple rounded-full" />

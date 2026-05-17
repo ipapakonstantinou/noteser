@@ -5,6 +5,8 @@ import {
   TrashIcon,
   DocumentDuplicateIcon,
   FolderArrowDownIcon,
+  FolderPlusIcon,
+  DocumentPlusIcon,
   StarIcon,
   PencilIcon,
   ArrowUturnLeftIcon
@@ -22,11 +24,12 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   const { openModal } = useUIStore()
   const {
     getNoteById,
+    addNote,
     duplicateNote,
     togglePinNote,
     deleteNote
   } = useNoteStore()
-  const { getFolderById, deleteFolder, getActiveFolders } = useFolderStore()
+  const { getFolderById, addFolder, deleteFolder, getActiveFolders, toggleFolderExpanded, expandedFolders } = useFolderStore()
 
   const isNote = contextMenu.type === 'note'
   const item = isNote
@@ -108,6 +111,23 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
     onClose()
   }
 
+  const handleNewSubfolder = () => {
+    if (!isNote) {
+      addFolder({ parentId: contextMenu.id })
+      // Make sure the parent is expanded so the user sees the new child.
+      if (!expandedFolders[contextMenu.id]) toggleFolderExpanded(contextMenu.id)
+    }
+    onClose()
+  }
+
+  const handleNewNoteInFolder = () => {
+    if (!isNote) {
+      addNote({ folderId: contextMenu.id })
+      if (!expandedFolders[contextMenu.id]) toggleFolderExpanded(contextMenu.id)
+    }
+    onClose()
+  }
+
   const MenuButton = ({
     icon: Icon,
     label,
@@ -141,6 +161,22 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
         left: contextMenu.x
       }}
     >
+      {!isNote && (
+        <>
+          <MenuButton
+            icon={DocumentPlusIcon}
+            label="New note in folder"
+            onClick={handleNewNoteInFolder}
+          />
+          <MenuButton
+            icon={FolderPlusIcon}
+            label="New subfolder"
+            onClick={handleNewSubfolder}
+          />
+          <div className="my-1 border-t border-obsidianBorder" />
+        </>
+      )}
+
       {isNote && (
         <>
           <MenuButton
