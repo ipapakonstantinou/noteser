@@ -12,7 +12,6 @@ export interface Note {
   deletedAt: number | null
   isPinned: boolean
   templateId: string | null
-  collaborators?: string[]
   // GitHub sync tracking — set after a successful push, used to detect
   // renames/moves on the next sync (delete old path, write new).
   gitPath?: string | null
@@ -50,35 +49,6 @@ export interface Template {
   description: string
   icon: string
   createdAt: number
-}
-
-export interface User {
-  id: string
-  name: string
-  email?: string
-  color: string
-  avatar?: string
-}
-
-export interface Presence {
-  oderId: string
-  name: string
-  color: string
-  cursor?: {
-    line: number
-    column: number
-  }
-  selection?: {
-    start: number
-    end: number
-  }
-  lastSeen: number
-}
-
-export interface CollaborationRoom {
-  noteId: string
-  users: Presence[]
-  isConnected: boolean
 }
 
 export interface SearchResult {
