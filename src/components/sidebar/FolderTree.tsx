@@ -59,6 +59,26 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   // Visual highlight target: folder id, or '__root__' for the root drop zone.
   const [dragOverTarget, setDragOverTarget] = useState<string | null>(null)
 
+  // ── Single vs double click on a note ────────────────────────────────────
+  // Single click = open as preview (italic, replaceable). Double click =
+  // open as pinned. We delay the single-click handler so a quick second
+  // click cancels it (matches VS Code's explorer behaviour).
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const handleNoteClick = (id: string) => {
+    if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
+    clickTimerRef.current = setTimeout(() => {
+      openNote(id, { preview: true })
+      clickTimerRef.current = null
+    }, 200)
+  }
+  const handleNoteDoubleClick = (id: string) => {
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current)
+      clickTimerRef.current = null
+    }
+    openNote(id, { preview: false })
+  }
+
   const beginNoteDrag = (e: React.DragEvent, noteId: string) => {
     draggedNoteIdRef.current = noteId
     // Required for Firefox to register the drag; also exposes the id to drop.
@@ -106,7 +126,8 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
         draggable={currentView !== 'trash'}
         onDragStart={e => beginNoteDrag(e, note.id)}
         onDragEnd={endNoteDrag}
-        onClick={() => openNote(note.id)}
+        onClick={() => handleNoteClick(note.id)}
+        onDoubleClick={() => handleNoteDoubleClick(note.id)}
         onContextMenu={e => onRightClick(e, 'note', note.id)}
       >
         <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
@@ -240,7 +261,8 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
               className={`obsidian-file-item ${
                 selectedNoteId === note.id ? 'bg-obsidianHighlight' : ''
               }`}
-              onClick={() => openNote(note.id)}
+              onClick={() => handleNoteClick(note.id)}
+        onDoubleClick={() => handleNoteDoubleClick(note.id)}
             >
               <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
               <span className="flex-1 truncate">{note.title}</span>
