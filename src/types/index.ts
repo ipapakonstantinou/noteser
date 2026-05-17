@@ -13,6 +13,9 @@ export interface Note {
   isPinned: boolean
   templateId: string | null
   collaborators?: string[]
+  // GitHub sync tracking — set after a successful push, used to detect
+  // renames/moves on the next sync (delete old path, write new).
+  gitPath?: string | null
 }
 
 export interface Folder {

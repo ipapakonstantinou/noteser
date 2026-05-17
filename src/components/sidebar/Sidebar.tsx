@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import {
   ChevronDoubleLeftIcon,
   ChevronDoubleRightIcon,
@@ -14,8 +14,20 @@ import {
   Cog6ToothIcon,
   CalendarDaysIcon,
   CodeBracketIcon,
+  CloudArrowUpIcon,
+  CheckCircleIcon,
+  ExclamationCircleIcon,
 } from '@heroicons/react/24/outline'
-import { useUIStore, useNoteStore, useFolderStore, useGitHubStore } from '@/stores'
+import { useUIStore, useNoteStore, useFolderStore, useGitHubStore, useTagStore } from '@/stores'
+import { syncToGitHub } from '@/utils/githubSync'
+
+function relativeTime(ts: number): string {
+  const seconds = Math.floor((Date.now() - ts) / 1000)
+  if (seconds < 60) return 'just now'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
+  return `${Math.floor(seconds / 86400)}d ago`
+}
 import { useHydration } from '@/hooks'
 import { FolderTree } from './FolderTree'
 import { CalendarView } from './CalendarView'
@@ -35,8 +47,53 @@ export const Sidebar = () => {
 
   const { addNote, getDeletedNotes, getRecentNotes, getPinnedNotes } = useNoteStore()
   const { addFolder, activeFolderId } = useFolderStore()
+  const githubToken = useGitHubStore((s) => s.token)
   const githubUser = useGitHubStore((s) => s.user)
   const githubSyncRepo = useGitHubStore((s) => s.syncRepo)
+  const githubLastSyncedAt = useGitHubStore((s) => s.lastSyncedAt)
+  const recordSync = useGitHubStore((s) => s.recordSync)
+
+  // Sync state — local to the sidebar, no need to persist.
+  type SyncState =
+    | { kind: 'idle' }
+    | { kind: 'running' }
+    | { kind: 'ok'; message: string; url: string | null }
+    | { kind: 'err'; message: string }
+  const [syncState, setSyncState] = useState<SyncState>({ kind: 'idle' })
+
+  const runSync = useCallback(async () => {
+    if (!githubToken || !githubSyncRepo) return
+    setSyncState({ kind: 'running' })
+    try {
+      const { notes, updateNote } = useNoteStore.getState()
+      const { folders } = useFolderStore.getState()
+      const { tags } = useTagStore.getState()
+      const { result, pathUpdates } = await syncToGitHub({
+        token: githubToken,
+        repo: githubSyncRepo,
+        notes,
+        folders,
+        tags: tags.map(t => ({ id: t.id, name: t.name })),
+      })
+      // Apply path updates to the note store.
+      for (const u of pathUpdates) updateNote(u.noteId, { gitPath: u.gitPath })
+      recordSync(result.commitSha)
+      if (result.unchanged) {
+        setSyncState({ kind: 'ok', message: 'Up to date', url: null })
+      } else {
+        const parts: string[] = []
+        if (result.created) parts.push(`${result.created} new`)
+        if (result.updated) parts.push(`${result.updated} updated`)
+        if (result.deleted) parts.push(`${result.deleted} deleted`)
+        setSyncState({ kind: 'ok', message: parts.join(' · '), url: result.commitUrl })
+      }
+      // Clear the success badge after a moment so the row returns to its
+      // "last synced X ago" steady state.
+      setTimeout(() => setSyncState({ kind: 'idle' }), 5000)
+    } catch (err) {
+      setSyncState({ kind: 'err', message: err instanceof Error ? err.message : 'Sync failed' })
+    }
+  }, [githubToken, githubSyncRepo, recordSync])
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
 
@@ -216,27 +273,57 @@ export const Sidebar = () => {
       {!sidebarCollapsed && (
         <div className="px-2 py-2 border-t border-obsidianBorder space-y-1">
           {hydrated && githubUser ? (
-            <button
-              onClick={() => openModal({ type: 'github-repo' })}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-obsidianSecondaryText hover:bg-obsidianDarkGray transition-colors"
-              title={
-                githubSyncRepo
-                  ? `Vault: ${githubSyncRepo.owner}/${githubSyncRepo.name} — click to change`
-                  : `Connected as @${githubUser.login} — click to pick a vault repo`
-              }
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={githubUser.avatar_url}
-                alt={githubUser.login}
-                className="w-4 h-4 rounded-full flex-shrink-0"
-              />
-              <span className="truncate">
-                {githubSyncRepo
-                  ? `${githubSyncRepo.owner}/${githubSyncRepo.name}`
-                  : 'Pick a vault repo'}
-              </span>
-            </button>
+            <>
+              <button
+                onClick={() => openModal({ type: 'github-repo' })}
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-obsidianSecondaryText hover:bg-obsidianDarkGray transition-colors"
+                title={
+                  githubSyncRepo
+                    ? `Vault: ${githubSyncRepo.owner}/${githubSyncRepo.name} — click to change`
+                    : `Connected as @${githubUser.login} — click to pick a vault repo`
+                }
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={githubUser.avatar_url}
+                  alt={githubUser.login}
+                  className="w-4 h-4 rounded-full flex-shrink-0"
+                />
+                <span className="truncate">
+                  {githubSyncRepo
+                    ? `${githubSyncRepo.owner}/${githubSyncRepo.name}`
+                    : 'Pick a vault repo'}
+                </span>
+              </button>
+              {githubSyncRepo && (
+                <button
+                  onClick={runSync}
+                  disabled={syncState.kind === 'running'}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-obsidianSecondaryText hover:bg-obsidianDarkGray transition-colors disabled:opacity-60"
+                  title={syncState.kind === 'err' ? syncState.message : 'Commit and push current notes'}
+                >
+                  {syncState.kind === 'running' ? (
+                    <div className="w-4 h-4 border-2 border-obsidianAccentPurple border-t-transparent rounded-full animate-spin" />
+                  ) : syncState.kind === 'ok' ? (
+                    <CheckCircleIcon className="w-4 h-4 text-green-500" />
+                  ) : syncState.kind === 'err' ? (
+                    <ExclamationCircleIcon className="w-4 h-4 text-red-400" />
+                  ) : (
+                    <CloudArrowUpIcon className="w-4 h-4" />
+                  )}
+                  <span className="truncate">
+                    {syncState.kind === 'running' && 'Syncing…'}
+                    {syncState.kind === 'ok' && syncState.message}
+                    {syncState.kind === 'err' && syncState.message}
+                    {syncState.kind === 'idle' && (
+                      githubLastSyncedAt
+                        ? `Sync · ${relativeTime(githubLastSyncedAt)}`
+                        : 'Commit & Sync'
+                    )}
+                  </span>
+                </button>
+              )}
+            </>
           ) : (
             <button
               onClick={() => openModal({ type: 'github-auth' })}

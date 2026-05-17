@@ -156,6 +156,143 @@ export async function createRepo(
   return res.json()
 }
 
+// ── Git Data API (for bundling many file changes into one commit) ──────────
+// Reference: https://docs.github.com/en/rest/git
+//
+// One sync = N+5 API calls:
+//   1× GET refs/heads/{branch}     → current commit SHA
+//   1× GET commits/{sha}           → tree SHA
+//   1× GET trees/{sha}?recursive=1 → map of path → blob SHA
+//   K× POST git/blobs              → only files whose content actually changed
+//   1× POST git/trees              → new tree
+//   1× POST git/commits            → new commit
+//   1× PATCH refs/heads/{branch}   → fast-forward the branch
+
+export interface GitTreeEntry { path: string; mode: '100644'; type: 'blob'; sha: string | null }
+
+export async function getBranchRefSha(token: string, owner: string, repo: string, branch: string): Promise<string> {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`,
+    { headers: GH_HEADERS(token) },
+  )
+  if (!res.ok) throw new Error(`Failed to read ref (${res.status})`)
+  const data = await res.json()
+  return data.object.sha
+}
+
+export async function getCommitTreeSha(token: string, owner: string, repo: string, commitSha: string): Promise<string> {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/git/commits/${commitSha}`,
+    { headers: GH_HEADERS(token) },
+  )
+  if (!res.ok) throw new Error(`Failed to read commit (${res.status})`)
+  const data = await res.json()
+  return data.tree.sha
+}
+
+// Map of repo path → existing blob SHA (only blob entries, not subtrees).
+export async function getTreeMap(token: string, owner: string, repo: string, treeSha: string): Promise<Map<string, string>> {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/git/trees/${treeSha}?recursive=1`,
+    { headers: GH_HEADERS(token) },
+  )
+  if (!res.ok) throw new Error(`Failed to read tree (${res.status})`)
+  const data = await res.json()
+  const out = new Map<string, string>()
+  for (const entry of data.tree as Array<{ path: string; type: string; sha: string }>) {
+    if (entry.type === 'blob') out.set(entry.path, entry.sha)
+  }
+  return out
+}
+
+export async function createBlob(token: string, owner: string, repo: string, content: string): Promise<string> {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/git/blobs`,
+    {
+      method: 'POST',
+      headers: { ...GH_HEADERS(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, encoding: 'utf-8' }),
+    },
+  )
+  if (!res.ok) throw new Error(`Failed to create blob (${res.status})`)
+  const data = await res.json()
+  return data.sha as string
+}
+
+export async function createTree(
+  token: string,
+  owner: string,
+  repo: string,
+  baseTreeSha: string,
+  entries: GitTreeEntry[],
+): Promise<string> {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/git/trees`,
+    {
+      method: 'POST',
+      headers: { ...GH_HEADERS(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base_tree: baseTreeSha, tree: entries }),
+    },
+  )
+  if (!res.ok) throw new Error(`Failed to create tree (${res.status})`)
+  const data = await res.json()
+  return data.sha as string
+}
+
+export async function createCommit(
+  token: string,
+  owner: string,
+  repo: string,
+  message: string,
+  treeSha: string,
+  parentSha: string,
+): Promise<{ sha: string; html_url: string }> {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/git/commits`,
+    {
+      method: 'POST',
+      headers: { ...GH_HEADERS(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, tree: treeSha, parents: [parentSha] }),
+    },
+  )
+  if (!res.ok) throw new Error(`Failed to create commit (${res.status})`)
+  const data = await res.json()
+  return { sha: data.sha, html_url: data.html_url }
+}
+
+export async function updateBranchRef(
+  token: string,
+  owner: string,
+  repo: string,
+  branch: string,
+  commitSha: string,
+): Promise<void> {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`,
+    {
+      method: 'PATCH',
+      headers: { ...GH_HEADERS(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sha: commitSha, force: false }),
+    },
+  )
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(`Failed to update branch (${res.status}): ${err.message ?? ''}`)
+  }
+}
+
+// SHA-1 git blob hash, computed client-side so we can skip uploading unchanged
+// content. Algorithm: SHA-1 of  `blob {byteLength}\0{content}`.
+export async function gitBlobSha(content: string): Promise<string> {
+  const contentBytes = new TextEncoder().encode(content)
+  const header = new TextEncoder().encode(`blob ${contentBytes.byteLength}\0`)
+  const buf = new Uint8Array(header.byteLength + contentBytes.byteLength)
+  buf.set(header, 0)
+  buf.set(contentBytes, header.byteLength)
+  const hash = await crypto.subtle.digest('SHA-1', buf)
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
 // ── helpers ─────────────────────────────────────────────────────────────────
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {

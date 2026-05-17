@@ -11,8 +11,11 @@ interface GitHubState {
   user: GitHubUser | null
   connectedAt: number | null
   syncRepo: SyncRepo | null
+  lastSyncedAt: number | null
+  lastCommitSha: string | null
   setSession: (token: string, user: GitHubUser) => void
   setSyncRepo: (repo: SyncRepo | null) => void
+  recordSync: (commitSha: string) => void
   disconnect: () => void
 }
 
@@ -23,9 +26,15 @@ export const useGitHubStore = create<GitHubState>()(
       user: null,
       connectedAt: null,
       syncRepo: null,
+      lastSyncedAt: null,
+      lastCommitSha: null,
       setSession: (token, user) => set({ token, user, connectedAt: Date.now() }),
-      setSyncRepo: (repo) => set({ syncRepo: repo }),
-      disconnect: () => set({ token: null, user: null, connectedAt: null, syncRepo: null }),
+      setSyncRepo: (repo) => set({ syncRepo: repo, lastSyncedAt: null, lastCommitSha: null }),
+      recordSync: (commitSha) => set({ lastSyncedAt: Date.now(), lastCommitSha: commitSha }),
+      disconnect: () => set({
+        token: null, user: null, connectedAt: null,
+        syncRepo: null, lastSyncedAt: null, lastCommitSha: null,
+      }),
     }),
     {
       name: 'noteser-github',
@@ -34,6 +43,8 @@ export const useGitHubStore = create<GitHubState>()(
         user: state.user,
         connectedAt: state.connectedAt,
         syncRepo: state.syncRepo,
+        lastSyncedAt: state.lastSyncedAt,
+        lastCommitSha: state.lastCommitSha,
       }),
     },
   ),

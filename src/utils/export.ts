@@ -287,7 +287,7 @@ const parseMarkdownNote = (content: string, filename: string): Note => {
 }
 
 // Utility: Sanitize filename
-const sanitizeFilename = (name: string): string => {
+export const sanitizeFilename = (name: string): string => {
   return name
     .replace(/[<>:"/\\|?*]/g, '')
     .replace(/\s+/g, '-')
