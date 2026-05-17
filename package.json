@@ -35,9 +35,6 @@
     "react-syntax-highlighter": "^15.6.1",
     "remark-gfm": "^4.0.1",
     "uuid": "^10.0.0",
-    "y-indexeddb": "^9.0.12",
-    "y-websocket": "^2.0.4",
-    "yjs": "^13.6.19",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
