@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { DocumentTextIcon, ExclamationTriangleIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { useNoteStore, useWorkspaceStore } from '@/stores'
+import { TAB_DRAG_MIME } from '@/hooks'
 import type { Tab, PaneState } from '@/stores/workspaceStore'
 
 interface RenderedTitle { text: string; tooltip: string; italic: boolean }
@@ -25,22 +26,22 @@ export const TabBar = ({ pane }: Props) => {
   const paneIsActive = pane.id === activePaneId
 
   const onDragStart = (e: React.DragEvent, tabId: string) => {
-    e.dataTransfer.setData('application/x-noteser-tab', tabId)
+    e.dataTransfer.setData(TAB_DRAG_MIME, tabId)
     e.dataTransfer.effectAllowed = 'move'
   }
   const onDragEnd = () => setDragOverIdx(null)
 
   // Drop on a gap between tabs (insertion).
   const handleGapDragOver = (e: React.DragEvent, idx: number) => {
-    if (!e.dataTransfer.types.includes('application/x-noteser-tab')) return
+    if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     if (dragOverIdx !== idx) setDragOverIdx(idx)
   }
   const handleGapDrop = (e: React.DragEvent, idx: number) => {
-    if (!e.dataTransfer.types.includes('application/x-noteser-tab')) return
+    if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
     e.preventDefault()
-    const tabId = e.dataTransfer.getData('application/x-noteser-tab')
+    const tabId = e.dataTransfer.getData(TAB_DRAG_MIME)
     if (tabId) moveTab(tabId, pane.id, idx)
     setDragOverIdx(null)
   }
