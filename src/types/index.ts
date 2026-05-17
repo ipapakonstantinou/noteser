@@ -114,7 +114,7 @@ export type ContextMenuState = {
 } | null
 
 export interface ModalState {
-  type: 'delete' | 'template' | 'export' | 'import' | 'settings' | 'shortcuts' | 'github-auth' | 'github-repo' | 'github-conflicts' | null
+  type: 'delete' | 'template' | 'export' | 'import' | 'settings' | 'shortcuts' | 'github-auth' | 'github-repo' | null
   data?: Record<string, unknown>
 }
 

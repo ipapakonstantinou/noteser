@@ -11,23 +11,32 @@ import {
   ExportModal,
   GitHubAuthModal,
   GitHubRepoModal,
-  GitHubConflictModal
 } from '@/components/modals'
 import { useKeyboardShortcuts, useHydration } from '@/hooks'
-import { useUIStore, useNoteStore, useFolderStore } from '@/stores'
+import { useUIStore, useNoteStore, useFolderStore, useWorkspaceStore } from '@/stores'
 
 export default function Home() {
   const hydrated = useHydration()
   const { sidebarCollapsed } = useUIStore()
   const { addNote } = useNoteStore()
   const { addFolder, activeFolderId } = useFolderStore()
+  const openNote = useWorkspaceStore(s => s.openNote)
+  const pruneStaleTabs = useWorkspaceStore(s => s.pruneStaleTabs)
 
   // Use default value during SSR to avoid hydration mismatch
   const isSidebarCollapsed = hydrated ? sidebarCollapsed : false
 
+  // After hydration, drop any persisted tabs whose underlying notes are gone.
+  useEffect(() => {
+    if (hydrated) pruneStaleTabs()
+  }, [hydrated, pruneStaleTabs])
+
   // Set up keyboard shortcuts
   useKeyboardShortcuts({
-    onNewNote: () => addNote({ folderId: activeFolderId }),
+    onNewNote: () => {
+      const note = addNote({ folderId: activeFolderId })
+      openNote(note.id)
+    },
     onNewFolder: () => addFolder(),
   })
 
@@ -65,7 +74,6 @@ export default function Home() {
       <ExportModal />
       <GitHubAuthModal />
       <GitHubRepoModal />
-      <GitHubConflictModal />
     </div>
   )
 }

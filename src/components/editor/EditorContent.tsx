@@ -6,7 +6,7 @@ import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism'
 import type { EditorView } from '@codemirror/view'
-import { useUIStore, useNoteStore } from '@/stores'
+import { useUIStore, useNoteStore, useWorkspaceStore } from '@/stores'
 import { renderWikilinks } from '@/utils/wikilinks'
 import { CodeMirrorEditor } from './CodeMirrorEditor'
 import type { Note } from '@/types'
@@ -21,7 +21,8 @@ const IDLE_MS = 2000
 
 export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorContentProps) => {
   const { setPreviewMode } = useUIStore()
-  const { selectNote, getActiveNotes } = useNoteStore()
+  const { getActiveNotes } = useNoteStore()
+  const openNote = useWorkspaceStore(s => s.openNote)
 
   // Local copy so the preview overlay reflects unsaved edits immediately.
   const [previewContent, setPreviewContent] = useState(note.content)
@@ -338,7 +339,7 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
       const target = activeNotes.find(n => n.title.toLowerCase() === title.toLowerCase())
       return (
         <span
-          onClick={e => { e.stopPropagation(); if (target) selectNote(target.id) }}
+          onClick={e => { e.stopPropagation(); if (target) openNote(target.id) }}
           className={`cursor-pointer rounded px-0.5 transition-colors ${
             target ? 'text-obsidianAccentPurple hover:underline' : 'text-red-400 hover:underline'
           }`}
@@ -414,7 +415,7 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
         initialContent={note.content}
         activeNotes={activeNotes}
         onSave={handleChange}
-        onWikilinkNavigate={(n) => selectNote(n.id)}
+        onWikilinkNavigate={(n) => openNote(n.id)}
         viewRef={cmViewRef}
       />
       {isPreviewMode && (

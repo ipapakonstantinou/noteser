@@ -18,9 +18,9 @@ import {
   CheckCircleIcon,
   ExclamationCircleIcon,
 } from '@heroicons/react/24/outline'
-import { useUIStore, useNoteStore, useFolderStore, useGitHubStore } from '@/stores'
+import { useUIStore, useNoteStore, useFolderStore, useGitHubStore, useWorkspaceStore } from '@/stores'
 import { useGitHubSync } from '@/hooks/useGitHubSync'
-import { SYNC_REQUEST_EVENT } from '@/components/modals/GitHubConflictModal'
+import { SYNC_REQUEST_EVENT } from '@/components/editor/MergeEditorView'
 
 function relativeTime(ts: number): string {
   const seconds = Math.floor((Date.now() - ts) / 1000)
@@ -48,6 +48,7 @@ export const Sidebar = () => {
 
   const { addNote, getDeletedNotes, getRecentNotes, getPinnedNotes } = useNoteStore()
   const { addFolder, activeFolderId } = useFolderStore()
+  const openNote = useWorkspaceStore(s => s.openNote)
   const githubUser = useGitHubStore((s) => s.user)
   const githubSyncRepo = useGitHubStore((s) => s.syncRepo)
   const githubLastSyncedAt = useGitHubStore((s) => s.lastSyncedAt)
@@ -69,7 +70,8 @@ export const Sidebar = () => {
   const pinnedNotes = hydrated ? getPinnedNotes() : []
 
   const handleAddNote = () => {
-    addNote({ folderId: activeFolderId })
+    const note = addNote({ folderId: activeFolderId })
+    openNote(note.id)
   }
 
   const handleAddFolder = () => {

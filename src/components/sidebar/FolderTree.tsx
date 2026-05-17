@@ -8,7 +8,7 @@ import {
   DocumentTextIcon
 } from '@heroicons/react/24/outline'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
-import { useNoteStore, useFolderStore, useUIStore, useTagStore } from '@/stores'
+import { useNoteStore, useFolderStore, useUIStore, useTagStore, useWorkspaceStore } from '@/stores'
 import { useHydration } from '@/hooks'
 import { EditableText } from '../shared/EditableText'
 import { Badge } from '../ui'
@@ -23,7 +23,6 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   const {
     notes,
     selectedNoteId,
-    selectNote,
     updateNote,
     moveNoteToFolder,
     getActiveNotes,
@@ -34,6 +33,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     permanentlyDeleteNote,
     emptyTrash
   } = useNoteStore()
+  const openNote = useWorkspaceStore(s => s.openNote)
   const {
     folders,
     activeFolderId,
@@ -106,7 +106,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
         draggable={currentView !== 'trash'}
         onDragStart={e => beginNoteDrag(e, note.id)}
         onDragEnd={endNoteDrag}
-        onClick={() => selectNote(note.id)}
+        onClick={() => openNote(note.id)}
         onContextMenu={e => onRightClick(e, 'note', note.id)}
       >
         <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
@@ -240,7 +240,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
               className={`obsidian-file-item ${
                 selectedNoteId === note.id ? 'bg-obsidianHighlight' : ''
               }`}
-              onClick={() => selectNote(note.id)}
+              onClick={() => openNote(note.id)}
             >
               <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
               <span className="flex-1 truncate">{note.title}</span>
