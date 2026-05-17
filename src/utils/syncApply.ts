@@ -1,5 +1,6 @@
 import { useNoteStore, useFolderStore, useTagStore } from '@/stores'
 import type { PullClassification } from './githubSync'
+import { parseNote } from './githubSync'
 import { sanitizeFilename } from './export'
 
 // ── Folder + tag find-or-create helpers ─────────────────────────────────────
@@ -91,6 +92,26 @@ export function applyNonConflicts(classifications: PullClassification[]): ApplyC
   }
 
   return counts
+}
+
+// Used by the new merge-editor flow: the user produced a merged body of the
+// note (line-by-line cherry pick). We store it as the note's content and pin
+// gitLastPushedSha to the remote SHA so pull doesn't see this as a conflict
+// again — push will upload the merged content on the next sync.
+export function applyMergedConflict(
+  c: Extract<PullClassification, { kind: 'conflict' }>,
+  mergedRawFile: string,
+): void {
+  const { updateNote } = useNoteStore.getState()
+  // The diff was on the raw file content (frontmatter + body). Re-parse so
+  // we keep tags + body separately on the note record.
+  const parsed = parseNote(mergedRawFile)
+  const tagIds = ensureTagIds(parsed.tags)
+  updateNote(c.noteId, {
+    content: parsed.body,
+    tags: tagIds,
+    gitLastPushedSha: c.remoteSha,
+  })
 }
 
 // Used by the conflict resolver. Critical invariant: after we apply, the next
