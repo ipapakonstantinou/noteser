@@ -26,6 +26,10 @@ interface UIState {
   // Collaboration
   showCollaborators: boolean
 
+  // Inline-rename request from the context menu. FolderTree watches this
+  // and puts the matching EditableText into edit mode, then clears it.
+  renameRequest: { type: 'note' | 'folder'; id: string } | null
+
   // Actions
   toggleSidebar: () => void
   setSidebarWidth: (width: number) => void
@@ -40,6 +44,8 @@ interface UIState {
   closeModal: () => void
   setCurrentView: (view: UIState['currentView']) => void
   toggleCollaborators: () => void
+  requestRename: (target: { type: 'note' | 'folder'; id: string }) => void
+  clearRenameRequest: () => void
 }
 
 export const useUIStore = create<UIState>()(
@@ -55,6 +61,7 @@ export const useUIStore = create<UIState>()(
       modal: { type: null },
       currentView: 'notes',
       showCollaborators: true,
+      renameRequest: null,
 
       // Actions
       toggleSidebar: () => {
@@ -107,7 +114,10 @@ export const useUIStore = create<UIState>()(
 
       toggleCollaborators: () => {
         set(state => ({ showCollaborators: !state.showCollaborators }))
-      }
+      },
+
+      requestRename: (target) => set({ renameRequest: target }),
+      clearRenameRequest: () => set({ renameRequest: null }),
     }),
     {
       name: 'noteser-ui',

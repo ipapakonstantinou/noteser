@@ -7,6 +7,7 @@ import {
   FolderArrowDownIcon,
   FolderPlusIcon,
   DocumentPlusIcon,
+  PencilSquareIcon,
   StarIcon,
   ChevronRightIcon,
   ChevronLeftIcon,
@@ -46,6 +47,7 @@ interface ContextMenuProps {
 export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   const menuRef = useRef<HTMLDivElement>(null)
   const { openModal } = useUIStore()
+  const requestRename = useUIStore(s => s.requestRename)
   const {
     getNoteById,
     addNote,
@@ -161,6 +163,11 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
     onClose()
   }
 
+  const handleRename = () => {
+    requestRename({ type: contextMenu.type as 'note' | 'folder', id: contextMenu.id })
+    onClose()
+  }
+
   const handleNewNoteInFolder = () => {
     if (!isNote) {
       const note = addNote({ folderId: contextMenu.id })
@@ -215,6 +222,11 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
             label="New subfolder"
             onClick={handleNewSubfolder}
           />
+          <MenuButton
+            icon={PencilSquareIcon}
+            label="Rename"
+            onClick={handleRename}
+          />
           <div className="my-1 border-t border-obsidianBorder" />
         </>
       )}
@@ -225,6 +237,11 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
             icon={(item as { isPinned?: boolean }).isPinned ? StarIcon : StarIcon}
             label={(item as { isPinned?: boolean }).isPinned ? 'Unpin' : 'Pin to top'}
             onClick={handleTogglePin}
+          />
+          <MenuButton
+            icon={PencilSquareIcon}
+            label="Rename"
+            onClick={handleRename}
           />
           <MenuButton
             icon={DocumentDuplicateIcon}
