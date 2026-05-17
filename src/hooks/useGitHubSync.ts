@@ -1,9 +1,10 @@
 'use client'
 
 import { useCallback, useState } from 'react'
-import { useGitHubStore, useNoteStore, useFolderStore, useTagStore, useUIStore } from '@/stores'
+import { useGitHubStore, useNoteStore, useFolderStore, useTagStore, useWorkspaceStore } from '@/stores'
 import { syncToGitHub, pullFromGitHub } from '@/utils/githubSync'
 import { applyNonConflicts } from '@/utils/syncApply'
+import type { ConflictTabData } from '@/stores/workspaceStore'
 
 export type SyncState =
   | { kind: 'idle' }
@@ -25,7 +26,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
   const token = useGitHubStore((s) => s.token)
   const syncRepo = useGitHubStore((s) => s.syncRepo)
   const recordSync = useGitHubStore((s) => s.recordSync)
-  const openModal = useUIStore((s) => s.openModal)
+  const openMergeConflicts = useWorkspaceStore((s) => s.openMergeConflicts)
 
   const [syncState, setSyncState] = useState<SyncState>({ kind: 'idle' })
 
@@ -46,10 +47,10 @@ export function useGitHubSync(): UseGitHubSyncResult {
 
       const conflicts = classifications.filter(
         c => c.kind === 'conflict' || c.kind === 'conflictDeleted',
-      )
+      ) as ConflictTabData[]
       if (conflicts.length > 0) {
         applyNonConflicts(classifications)
-        openModal({ type: 'github-conflicts', data: { conflicts } })
+        openMergeConflicts(conflicts)
         setSyncState({ kind: 'err', message: `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} need review` })
         return
       }
@@ -87,7 +88,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
     } catch (err) {
       setSyncState({ kind: 'err', message: err instanceof Error ? err.message : 'Sync failed' })
     }
-  }, [token, syncRepo, recordSync, openModal])
+  }, [token, syncRepo, recordSync, openMergeConflicts])
 
   return { syncState, runSync, isConnected: !!(token && syncRepo) }
 }

@@ -11,7 +11,7 @@ import {
   ChevronRightIcon,
   ChevronLeftIcon,
 } from '@heroicons/react/24/outline'
-import { useNoteStore, useFolderStore, useUIStore } from '@/stores'
+import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore } from '@/stores'
 import type { ContextMenuState, Folder } from '@/types'
 
 // Build a flat list of folders annotated with their full path
@@ -54,6 +54,7 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
     deleteNote
   } = useNoteStore()
   const { getFolderById, addFolder, deleteFolder, getActiveFolders, toggleFolderExpanded, expandedFolders } = useFolderStore()
+  const openNote = useWorkspaceStore(s => s.openNote)
 
   const isNote = contextMenu.type === 'note'
   const item = isNote
@@ -162,7 +163,8 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
 
   const handleNewNoteInFolder = () => {
     if (!isNote) {
-      addNote({ folderId: contextMenu.id })
+      const note = addNote({ folderId: contextMenu.id })
+      openNote(note.id)
       if (!expandedFolders[contextMenu.id]) toggleFolderExpanded(contextMenu.id)
     }
     onClose()

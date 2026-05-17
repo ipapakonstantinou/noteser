@@ -7,42 +7,39 @@ import {
   ExclamationTriangleIcon,
   CheckCircleIcon,
 } from '@heroicons/react/24/outline'
-import { Modal, Button } from '@/components/ui'
-import { useUIStore } from '@/stores'
+import { Button } from '@/components/ui'
+import { useWorkspaceStore } from '@/stores'
 import { applyConflictResolution, applyMergedConflict } from '@/utils/syncApply'
-import type { PullClassification } from '@/utils/githubSync'
 import { diffByLine, composeMerged, type DiffHunk } from '@/utils/lineDiff'
+import type { ConflictTabData } from '@/stores/workspaceStore'
 
-// Just the two kinds we surface to the user.
-type ConflictItem = Extract<PullClassification, { kind: 'conflict' } | { kind: 'conflictDeleted' }>
-type HunkChoice = 'local' | 'remote' | 'both' | 'skip'
-// Per-conflict (keyed by path) → per-hunk-index → choice
-type ChoiceMap = Record<string, Record<number, HunkChoice>>
-
+// Module-level signal so the sidebar's sync hook can pick up where we left
+// off after Apply. Same convention as the old conflict modal.
 export const SYNC_REQUEST_EVENT = 'noteser:sync-request'
 
-export const GitHubConflictModal = () => {
-  const { modal, closeModal } = useUIStore()
+type HunkChoice = 'local' | 'remote' | 'both' | 'skip'
+type ChoiceMap = Record<string, Record<number, HunkChoice>>
 
-  const conflicts = useMemo<ConflictItem[]>(() => {
-    const raw = modal.data?.conflicts
-    return Array.isArray(raw) ? (raw as ConflictItem[]) : []
-  }, [modal.data])
+interface Props {
+  tabId: string
+  conflicts: ConflictTabData[]
+}
+
+export const MergeEditorView = ({ tabId, conflicts }: Props) => {
+  const closeTab = useWorkspaceStore(s => s.closeTab)
 
   const [currentIdx, setCurrentIdx] = useState(0)
   const [choices, setChoices] = useState<ChoiceMap>({})
   const [deletedChoice, setDeletedChoice] = useState<Record<string, 'local' | 'remote'>>({})
 
-  // Reset state whenever a new set of conflicts comes in.
+  // Reset when a new conflict batch arrives.
   useEffect(() => {
     setCurrentIdx(0)
     setChoices({})
     setDeletedChoice({})
   }, [conflicts])
 
-  const isOpen = modal.type === 'github-conflicts'
   const current = conflicts[currentIdx]
-
   const hunks: DiffHunk[] = useMemo(() => {
     if (!current || current.kind !== 'conflict') return []
     return diffByLine(current.localContent, current.remoteContent)
@@ -90,30 +87,31 @@ export const GitHubConflictModal = () => {
       const merged = composeMerged(h, choices[c.path] ?? {})
       applyMergedConflict(c, merged)
     }
-    closeModal()
+    closeTab(tabId)
     window.dispatchEvent(new Event(SYNC_REQUEST_EVENT))
   }
 
-  if (!isOpen || conflicts.length === 0 || !current) return null
+  if (!current) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-obsidianSecondaryText">
+        No conflicts to resolve.
+      </div>
+    )
+  }
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={closeModal}
-      title={`Resolve conflicts (${totalResolved}/${conflicts.length})`}
-      size="xl"
-    >
-      <div className="space-y-3">
+    <div className="flex-1 h-full flex flex-col overflow-hidden bg-obsidianBlack">
+      {/* Header */}
+      <div className="px-4 py-2 border-b border-obsidianBorder space-y-2">
         <div className="flex items-start gap-2 px-3 py-2 bg-amber-900/20 border border-amber-900/40 rounded text-sm text-amber-200">
           <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
           <span>
-            Use the action links above each conflict to pick a side. Resolved regions collapse to
-            the chosen content; hover them to revert.
+            Use the action links above each conflict to pick a side. Resolved regions collapse to the
+            chosen content; hover them to revert.
           </span>
         </div>
 
-        {/* Navigator */}
-        <div className="flex items-center gap-2 border border-obsidianBorder rounded px-2 py-1.5">
+        <div className="flex items-center gap-2">
           <button
             onClick={() => setCurrentIdx(i => Math.max(0, i - 1))}
             disabled={currentIdx === 0}
@@ -132,6 +130,7 @@ export const GitHubConflictModal = () => {
               {current.kind === 'conflict' && (
                 <span> · {changeHunkIndices.length} region{changeHunkIndices.length === 1 ? '' : 's'}</span>
               )}
+              <span> · {totalResolved}/{conflicts.length} resolved</span>
             </div>
           </div>
           <button
@@ -142,41 +141,36 @@ export const GitHubConflictModal = () => {
           >
             <ChevronRightIcon className="w-4 h-4" />
           </button>
-        </div>
-
-        {/* Body */}
-        <div className="max-h-[55vh] overflow-y-auto -mx-1 px-1">
-          {current.kind === 'conflictDeleted' ? (
-            <DeletedConflictView
-              localContent={current.localContent}
-              choice={deletedChoice[current.path]}
-              onChoose={(c) => setDeletedChoice(prev => ({ ...prev, [current.path]: c }))}
-            />
-          ) : (
-            <MergeView
-              hunks={hunks}
-              choices={currentChoices}
-              onChooseHunk={(i, c) => setHunkChoice(current.path, i, c)}
-            />
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end gap-2 pt-3 border-t border-obsidianBorder">
-          <Button variant="ghost" onClick={closeModal}>Cancel</Button>
-          <Button variant="primary" onClick={applyAll} disabled={!allResolved}>
-            Apply ({totalResolved}/{conflicts.length})
-          </Button>
+          <div className="flex-shrink-0 flex items-center gap-2 pl-2 border-l border-obsidianBorder">
+            <Button variant="ghost" onClick={() => closeTab(tabId)}>Cancel</Button>
+            <Button variant="primary" onClick={applyAll} disabled={!allResolved}>
+              Apply ({totalResolved}/{conflicts.length})
+            </Button>
+          </div>
         </div>
       </div>
-    </Modal>
+
+      {/* Body */}
+      <div className="flex-1 overflow-auto p-4">
+        {current.kind === 'conflictDeleted' ? (
+          <DeletedConflictView
+            localContent={current.localContent}
+            choice={deletedChoice[current.path]}
+            onChoose={(c) => setDeletedChoice(prev => ({ ...prev, [current.path]: c }))}
+          />
+        ) : (
+          <MergeView
+            hunks={hunks}
+            choices={currentChoices}
+            onChooseHunk={(i, c) => setHunkChoice(current.path, i, c)}
+          />
+        )}
+      </div>
+    </div>
   )
 }
 
-// VS Code-style inline merge: one monospace document with a line-number
-// gutter, red/green backdrops on local/remote regions, an action-link bar
-// above each conflict, and inline <<<<<<< / ======= / >>>>>>> markers.
-// Resolved hunks collapse to just the chosen content with a hover-revert chip.
+// ── Inline merge view (VS Code conflict-marker style) ───────────────────────
 
 type RowKind = 'context' | 'marker' | 'local' | 'remote' | 'actions' | 'resolved'
 
@@ -205,7 +199,6 @@ function buildRows(hunks: DiffHunk[], choices: Record<number, HunkChoice>): Disp
       rows.push({ kind: 'marker', side: 'remote', text: '>>>>>>> Remote', hunkIdx: i })
       return
     }
-    // Resolved: render chosen content, with the revert chip on the first row.
     const wantLocal  = choice === 'local'  || choice === 'both'
     const wantRemote = choice === 'remote' || choice === 'both'
     let first = true
@@ -297,15 +290,10 @@ const MergeView = ({
 }
 
 const ActionLink = ({ children, onClick }: { children: React.ReactNode; onClick: () => void }) => (
-  <button
-    onClick={onClick}
-    className="text-obsidianAccentPurple hover:underline focus:outline-none"
-  >
+  <button onClick={onClick} className="text-obsidianAccentPurple hover:underline focus:outline-none">
     {children}
   </button>
 )
-
-// ── conflictDeleted view (remote gone, local edited) ────────────────────────
 
 const DeletedConflictView = ({
   localContent, choice, onChoose,
@@ -314,10 +302,10 @@ const DeletedConflictView = ({
   choice: 'local' | 'remote' | undefined
   onChoose: (c: 'local' | 'remote') => void
 }) => (
-  <div className="space-y-3">
+  <div className="space-y-3 max-w-3xl">
     <div className="px-3 py-2 bg-amber-900/20 border border-amber-900/40 rounded text-sm text-amber-200">
-      The remote file was deleted, but you have unsynced local edits. Keep your local copy
-      (it will be re-created on next sync) or accept the deletion (the note will be moved to trash).
+      The remote file was deleted, but you have unsynced local edits. Keep your local copy (it
+      will be re-created on next sync) or accept the deletion (the note will be moved to trash).
     </div>
     <div>
       <div className="text-xs text-obsidianSecondaryText mb-1 font-mono">Local content</div>
@@ -346,4 +334,4 @@ const DeletedConflictView = ({
   </div>
 )
 
-export default GitHubConflictModal
+export default MergeEditorView

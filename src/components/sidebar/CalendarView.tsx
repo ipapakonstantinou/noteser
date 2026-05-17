@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
-import { useNoteStore, useFolderStore } from '@/stores'
+import { useNoteStore, useFolderStore, useWorkspaceStore } from '@/stores'
 import { useHydration } from '@/hooks'
 
 const DAY_HEADERS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
@@ -40,7 +40,8 @@ export const CalendarView = () => {
     new Date(today.getFullYear(), today.getMonth(), 1)
   )
 
-  const { notes, addNote, selectNote } = useNoteStore()
+  const { notes, addNote } = useNoteStore()
+  const openNote = useWorkspaceStore(s => s.openNote)
   const { folders, addFolder } = useFolderStore()
 
   const year = viewDate.getFullYear()
@@ -77,13 +78,14 @@ export const CalendarView = () => {
     const title = toDateKey(year, month, day)
     const existing = activeNotes.find(n => n.title === title)
     if (existing) {
-      selectNote(existing.id)
+      openNote(existing.id)
       return
     }
     const folder =
       folders.find(f => !f.isDeleted && f.name === 'Daily Notes') ??
       addFolder({ name: 'Daily Notes' })
-    addNote({ title, folderId: folder.id, content: getDailyTemplate(new Date(year, month, day)) })
+    const created = addNote({ title, folderId: folder.id, content: getDailyTemplate(new Date(year, month, day)) })
+    openNote(created.id)
   }
 
   const goToToday = () => {

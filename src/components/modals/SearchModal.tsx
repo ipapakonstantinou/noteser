@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { MagnifyingGlassIcon, DocumentTextIcon } from '@heroicons/react/24/outline'
-import { useUIStore, useNoteStore, useFolderStore } from '@/stores'
+import { useUIStore, useNoteStore, useFolderStore, useWorkspaceStore } from '@/stores'
 import { searchNotes, getMatchSnippet } from '@/utils/search'
 import { useDebounce } from '@/hooks/useDebounce'
 
 export const SearchModal = () => {
   const { isSearchOpen, closeSearch, searchQuery, setSearchQuery } = useUIStore()
-  const { notes, selectNote, getActiveNotes } = useNoteStore()
+  const { notes, getActiveNotes } = useNoteStore()
+  const openNote = useWorkspaceStore(s => s.openNote)
   const { getFolderById } = useFolderStore()
 
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -64,7 +65,7 @@ export const SearchModal = () => {
   }, [selectedIndex])
 
   const handleSelectNote = (noteId: string) => {
-    selectNote(noteId)
+    openNote(noteId)
     closeSearch()
   }
 
