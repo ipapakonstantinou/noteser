@@ -20,6 +20,8 @@ interface FolderTreeProps {
 export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   const hydrated = useHydration()
   const { currentView } = useUIStore()
+  const renameRequest = useUIStore(s => s.renameRequest)
+  const clearRenameRequest = useUIStore(s => s.clearRenameRequest)
   const {
     notes,
     selectedNoteId,
@@ -142,6 +144,8 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
               <EditableText
                 value={note.title}
                 onSave={newTitle => updateNote(note.id, { title: newTitle })}
+                isEditing={renameRequest?.type === 'note' && renameRequest.id === note.id}
+                onEditingChange={(v) => { if (!v) clearRenameRequest() }}
               />
             )}
           </div>
@@ -203,6 +207,8 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
           <EditableText
             value={folder.name}
             onSave={newName => updateFolder(folder.id, { name: newName })}
+            isEditing={renameRequest?.type === 'folder' && renameRequest.id === folder.id}
+            onEditingChange={(v) => { if (!v) clearRenameRequest() }}
           />
           {childCount > 0 && (
             <span className="ml-auto text-xs text-obsidianSecondaryText">
