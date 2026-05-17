@@ -5,8 +5,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   FolderIcon,
-  DocumentTextIcon,
-  StarIcon
+  DocumentTextIcon
 } from '@heroicons/react/24/outline'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
 import { useNoteStore, useFolderStore, useUIStore, useTagStore } from '@/stores'
@@ -279,53 +278,33 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     )
   }
 
-  // Render default notes view
+  // Render default notes view — Obsidian-style flat tree.
+  // Sort: pinned notes first (still inline, no separate section), then
+  // folders in their store order, then unpinned root notes.
   const rootNotes = activeNotes.filter(n => !n.folderId)
-  const pinnedNotes = activeNotes.filter(n => n.isPinned)
+  const pinnedRootNotes = rootNotes.filter(n => n.isPinned)
+  const unpinnedRootNotes = rootNotes.filter(n => !n.isPinned)
+
+  if (rootFolders.length === 0 && rootNotes.length === 0) {
+    return (
+      <div className="text-center py-8 text-obsidianSecondaryText">
+        <p className="text-sm">No notes yet</p>
+        <p className="text-xs mt-1">Click + to create your first note</p>
+      </div>
+    )
+  }
 
   return (
     <div>
-      {/* Pinned notes */}
-      {pinnedNotes.length > 0 && (
-        <div className="mb-4">
-          <h3 className="text-xs font-medium text-obsidianSecondaryText uppercase tracking-wide mb-2 flex items-center gap-1">
-            <StarIcon className="w-3 h-3" />
-            Pinned
-          </h3>
-          {pinnedNotes.map(note => (
-            <NoteItem key={note.id} note={note} />
-          ))}
-        </div>
-      )}
-
-      {/* Folders */}
-      {rootFolders.length > 0 && (
-        <div className="mb-4">
-          <h3 className="text-xs font-medium text-obsidianSecondaryText uppercase tracking-wide mb-2">
-            Folders
-          </h3>
-          {rootFolders.map(folder => (
-            <FolderItem key={folder.id} folder={folder} />
-          ))}
-        </div>
-      )}
-
-      {/* Root notes */}
-      <div>
-        <h3 className="text-xs font-medium text-obsidianSecondaryText uppercase tracking-wide mb-2">
-          Notes
-        </h3>
-        {rootNotes.length === 0 && rootFolders.length === 0 ? (
-          <div className="text-center py-8 text-obsidianSecondaryText">
-            <p className="text-sm">No notes yet</p>
-            <p className="text-xs mt-1">Click + to create your first note</p>
-          </div>
-        ) : (
-          rootNotes.filter(n => !n.isPinned).map(note => (
-            <NoteItem key={note.id} note={note} />
-          ))
-        )}
-      </div>
+      {pinnedRootNotes.map(note => (
+        <NoteItem key={note.id} note={note} />
+      ))}
+      {rootFolders.map(folder => (
+        <FolderItem key={folder.id} folder={folder} />
+      ))}
+      {unpinnedRootNotes.map(note => (
+        <NoteItem key={note.id} note={note} />
+      ))}
     </div>
   )
 }
