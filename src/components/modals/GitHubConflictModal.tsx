@@ -11,6 +11,11 @@ import { useUIStore } from '@/stores'
 import { applyConflictResolution } from '@/utils/syncApply'
 import type { PullClassification } from '@/utils/githubSync'
 
+// Module-level signal so the sidebar can re-run sync once the user resolves
+// conflicts here. Avoids prop-drilling and keeps the sync state owned by one
+// place (the sidebar's `useGitHubSync`).
+export const SYNC_REQUEST_EVENT = 'noteser:sync-request'
+
 // Just the two kinds we surface to the user.
 type ConflictItem = Extract<PullClassification, { kind: 'conflict' } | { kind: 'conflictDeleted' }>
 
@@ -45,6 +50,10 @@ export const GitHubConflictModal = () => {
       applyConflictResolution(c, choice)
     }
     closeModal()
+    // Ask the sidebar to re-run sync so resolved local-wins get pushed and
+    // remote-wins are flushed to the store. The user shouldn't have to click
+    // Sync again.
+    window.dispatchEvent(new Event(SYNC_REQUEST_EVENT))
   }
 
   return (

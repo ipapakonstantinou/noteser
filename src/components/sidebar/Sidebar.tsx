@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   ChevronDoubleLeftIcon,
   ChevronDoubleRightIcon,
@@ -18,9 +18,9 @@ import {
   CheckCircleIcon,
   ExclamationCircleIcon,
 } from '@heroicons/react/24/outline'
-import { useUIStore, useNoteStore, useFolderStore, useGitHubStore, useTagStore } from '@/stores'
-import { syncToGitHub, pullFromGitHub } from '@/utils/githubSync'
-import { applyNonConflicts } from '@/utils/syncApply'
+import { useUIStore, useNoteStore, useFolderStore, useGitHubStore } from '@/stores'
+import { useGitHubSync } from '@/hooks/useGitHubSync'
+import { SYNC_REQUEST_EVENT } from '@/components/modals/GitHubConflictModal'
 
 function relativeTime(ts: number): string {
   const seconds = Math.floor((Date.now() - ts) / 1000)
@@ -48,84 +48,18 @@ export const Sidebar = () => {
 
   const { addNote, getDeletedNotes, getRecentNotes, getPinnedNotes } = useNoteStore()
   const { addFolder, activeFolderId } = useFolderStore()
-  const githubToken = useGitHubStore((s) => s.token)
   const githubUser = useGitHubStore((s) => s.user)
   const githubSyncRepo = useGitHubStore((s) => s.syncRepo)
   const githubLastSyncedAt = useGitHubStore((s) => s.lastSyncedAt)
-  const recordSync = useGitHubStore((s) => s.recordSync)
+  const { syncState, runSync } = useGitHubSync()
 
-  // Sync state — local to the sidebar, no need to persist.
-  type SyncState =
-    | { kind: 'idle' }
-    | { kind: 'running' }
-    | { kind: 'ok'; message: string; url: string | null }
-    | { kind: 'err'; message: string }
-  const [syncState, setSyncState] = useState<SyncState>({ kind: 'idle' })
-
-  const runSync = useCallback(async () => {
-    if (!githubToken || !githubSyncRepo) return
-    setSyncState({ kind: 'running' })
-    try {
-      // Build the tag-name lookup once; both pull and push need it.
-      const tagsSnapshot = useTagStore.getState().tags
-      const tagNamesById = new Map(tagsSnapshot.map(t => [t.id, t.name]))
-
-      // ─── Phase 4 pull ────────────────────────────────────────────────
-      const { classifications } = await pullFromGitHub({
-        token: githubToken,
-        repo: githubSyncRepo,
-        notes: useNoteStore.getState().notes,
-        folders: useFolderStore.getState().folders,
-        tagNamesById,
-      })
-
-      const conflicts = classifications.filter(
-        c => c.kind === 'conflict' || c.kind === 'conflictDeleted',
-      )
-      if (conflicts.length > 0) {
-        // Apply the non-conflict pieces (those are safe), then ask the user
-        // to resolve the rest. Push will run on their next Sync click.
-        applyNonConflicts(classifications)
-        openModal({ type: 'github-conflicts', data: { conflicts } })
-        setSyncState({ kind: 'err', message: `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} need review` })
-        return
-      }
-      const pullCounts = applyNonConflicts(classifications)
-
-      // ─── Phase 3 push (over the fresh local state) ───────────────────
-      const { notes, updateNote } = useNoteStore.getState()
-      const { folders } = useFolderStore.getState()
-      const refreshedTags = useTagStore.getState().tags
-      const { result, pathUpdates } = await syncToGitHub({
-        token: githubToken,
-        repo: githubSyncRepo,
-        notes,
-        folders,
-        tags: refreshedTags.map(t => ({ id: t.id, name: t.name })),
-      })
-      for (const u of pathUpdates) {
-        updateNote(u.noteId, { gitPath: u.gitPath, gitLastPushedSha: u.gitLastPushedSha })
-      }
-      recordSync(result.commitSha)
-
-      const totalPulled = pullCounts.created + pullCounts.updated + pullCounts.deleted
-      if (result.unchanged && totalPulled === 0) {
-        setSyncState({ kind: 'ok', message: 'Up to date', url: null })
-      } else {
-        const parts: string[] = []
-        if (pullCounts.created) parts.push(`↓${pullCounts.created} new`)
-        if (pullCounts.updated) parts.push(`↓${pullCounts.updated} updated`)
-        if (pullCounts.deleted) parts.push(`↓${pullCounts.deleted} removed`)
-        if (result.created) parts.push(`↑${result.created} new`)
-        if (result.updated) parts.push(`↑${result.updated} updated`)
-        if (result.deleted) parts.push(`↑${result.deleted} deleted`)
-        setSyncState({ kind: 'ok', message: parts.join(' · ') || 'Synced', url: result.commitUrl })
-      }
-      setTimeout(() => setSyncState({ kind: 'idle' }), 5000)
-    } catch (err) {
-      setSyncState({ kind: 'err', message: err instanceof Error ? err.message : 'Sync failed' })
-    }
-  }, [githubToken, githubSyncRepo, recordSync, openModal])
+  // Auto-rerun sync after the conflict modal applies resolutions, so the
+  // user doesn't have to click Sync a second time.
+  useEffect(() => {
+    const handler = () => { runSync() }
+    window.addEventListener(SYNC_REQUEST_EVENT, handler)
+    return () => window.removeEventListener(SYNC_REQUEST_EVENT, handler)
+  }, [runSync])
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
 
