@@ -10,7 +10,8 @@ import {
   TemplatesModal,
   ExportModal,
   GitHubAuthModal,
-  GitHubRepoModal
+  GitHubRepoModal,
+  GitHubConflictModal
 } from '@/components/modals'
 import { useKeyboardShortcuts, useHydration } from '@/hooks'
 import { useUIStore, useNoteStore, useFolderStore } from '@/stores'
@@ -64,6 +65,7 @@ export default function Home() {
       <ExportModal />
       <GitHubAuthModal />
       <GitHubRepoModal />
+      <GitHubConflictModal />
     </div>
   )
 }

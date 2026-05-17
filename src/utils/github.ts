@@ -281,6 +281,26 @@ export async function updateBranchRef(
   }
 }
 
+// Fetch a blob's content by SHA. GitHub returns it base64-encoded.
+export async function getBlobContent(token: string, owner: string, repo: string, sha: string): Promise<string> {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/git/blobs/${sha}`,
+    { headers: GH_HEADERS(token) },
+  )
+  if (!res.ok) throw new Error(`Failed to read blob ${sha} (${res.status})`)
+  const data = await res.json()
+  // GitHub may also return content with encoding 'utf-8' for small text blobs,
+  // but base64 is the documented default and always safe to decode.
+  if (data.encoding === 'base64') {
+    // atob → binary string of bytes → decode as utf-8.
+    const binary = atob(data.content.replace(/\n/g, ''))
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    return new TextDecoder('utf-8').decode(bytes)
+  }
+  return data.content as string
+}
+
 // SHA-1 git blob hash, computed client-side so we can skip uploading unchanged
 // content. Algorithm: SHA-1 of  `blob {byteLength}\0{content}`.
 export async function gitBlobSha(content: string): Promise<string> {

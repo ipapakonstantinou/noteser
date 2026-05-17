@@ -8,6 +8,7 @@ import {
   createTree,
   createCommit,
   updateBranchRef,
+  getBlobContent,
   gitBlobSha,
   type GitTreeEntry,
 } from './github'
@@ -64,6 +65,190 @@ export function serializeNote(note: Note, tagNamesById: Map<string, string>): st
   return `---\ntags: ${yamlList(tagNames)}\n---\n\n${body}`
 }
 
+// ── Parser (Phase 4 pull) ───────────────────────────────────────────────────
+// We only support the YAML subset we ourselves emit: `tags: [a, "b", c]` on a
+// single line. Anything else in the frontmatter is preserved into the body so
+// we don't silently destroy custom user metadata.
+export interface ParsedNote {
+  tags: string[]
+  body: string
+}
+
+export function parseNote(raw: string): ParsedNote {
+  // No frontmatter — everything is body.
+  if (!raw.startsWith('---\n') && !raw.startsWith('---\r\n')) {
+    return { tags: [], body: raw }
+  }
+  // Find the closing delimiter starting at line 1.
+  const endMatch = raw.match(/\n---\r?\n/)
+  if (!endMatch || endMatch.index === undefined) return { tags: [], body: raw }
+
+  const fmBlock = raw.slice(4, endMatch.index)
+  const bodyStart = endMatch.index + endMatch[0].length
+  const body = raw.slice(bodyStart)
+
+  // Pull the tags line if present. Accept both inline `[a, b]` and our quoted
+  // variant `["a", "b"]`. Unknown fields fall through to body untouched.
+  const tagsLineMatch = fmBlock.match(/^tags:\s*\[(.*)\]\s*$/m)
+  const tags: string[] = []
+  if (tagsLineMatch) {
+    const inner = tagsLineMatch[1].trim()
+    if (inner) {
+      // Split on commas not inside quotes. Simple state-machine; good enough
+      // for the format we produce.
+      let cur = ''
+      let inQuote = false
+      for (let i = 0; i < inner.length; i++) {
+        const c = inner[i]
+        if (c === '"') { inQuote = !inQuote; continue }
+        if (c === ',' && !inQuote) {
+          const t = cur.trim()
+          if (t) tags.push(t)
+          cur = ''
+          continue
+        }
+        cur += c
+      }
+      const t = cur.trim()
+      if (t) tags.push(t)
+    }
+  }
+  return { tags, body }
+}
+
+// ── Pull (Phase 4) ──────────────────────────────────────────────────────────
+
+export type PullClassification =
+  // Local & remote agree, nothing to do.
+  | { kind: 'unchanged'; noteId: string }
+  // Remote has a file with no matching local note yet — create one.
+  | { kind: 'remoteCreated'; path: string; remoteSha: string; remoteContent: string; tags: string[]; body: string }
+  // Local exists, remote changed since our last push, local has NOT changed
+  // since last sync — accept the remote version.
+  | { kind: 'remoteUpdated'; noteId: string; remoteSha: string; remoteContent: string; tags: string[]; body: string }
+  // We previously pushed this note, but the file is gone from the repo and
+  // we haven't edited it locally since — soft-delete it locally.
+  | { kind: 'remoteDeleted'; noteId: string }
+  // Both sides changed — let the user pick.
+  | {
+      kind: 'conflict'
+      noteId: string
+      path: string
+      localContent: string
+      remoteSha: string
+      remoteContent: string
+      remoteTags: string[]
+      remoteBody: string
+    }
+  // Remote deleted the file but we edited it locally — degenerate conflict
+  // that's still asking the user a question, treat it as a conflict variant.
+  | {
+      kind: 'conflictDeleted'
+      noteId: string
+      path: string
+      localContent: string
+    }
+
+export interface PullOutcome {
+  classifications: PullClassification[]
+  latestCommitSha: string
+}
+
+export async function pullFromGitHub(input: {
+  token: string
+  repo: SyncRepo
+  notes: Note[]
+  folders: Folder[]
+  tagNamesById: Map<string, string>
+}): Promise<PullOutcome> {
+  const { token, repo, notes, folders, tagNamesById } = input
+  const { owner, name, branch } = repo
+
+  const headSha = await getBranchRefSha(token, owner, name, branch)
+  const treeSha = await getCommitTreeSha(token, owner, name, headSha)
+  const remoteTree = await getTreeMap(token, owner, name, treeSha)
+
+  const out: PullClassification[] = []
+  const seenLocalIds = new Set<string>()
+
+  // 1. Walk every remote .md file.
+  for (const [path, remoteSha] of remoteTree) {
+    if (!path.endsWith('.md')) continue
+    const localMatch = notes.find(n => !n.isDeleted && n.gitPath === path)
+
+    // Fetch the remote content lazily — only when we need it.
+    let remoteContent: string | null = null
+    const loadRemote = async () => {
+      if (remoteContent === null) remoteContent = await getBlobContent(token, owner, name, remoteSha)
+      return remoteContent
+    }
+
+    if (!localMatch) {
+      const content = await loadRemote()
+      const parsed = parseNote(content)
+      out.push({ kind: 'remoteCreated', path, remoteSha, remoteContent: content, tags: parsed.tags, body: parsed.body })
+      continue
+    }
+
+    seenLocalIds.add(localMatch.id)
+    const localContent = serializeNote(localMatch, tagNamesById)
+    const localBlobSha = await gitBlobSha(localContent)
+
+    if (localBlobSha === remoteSha) {
+      out.push({ kind: 'unchanged', noteId: localMatch.id })
+      continue
+    }
+
+    const lastPushed = localMatch.gitLastPushedSha ?? null
+    const remoteChanged = lastPushed !== remoteSha
+    const localChanged = lastPushed !== localBlobSha
+
+    if (remoteChanged && !localChanged) {
+      const content = await loadRemote()
+      const parsed = parseNote(content)
+      out.push({ kind: 'remoteUpdated', noteId: localMatch.id, remoteSha, remoteContent: content, tags: parsed.tags, body: parsed.body })
+    } else if (remoteChanged && localChanged) {
+      const content = await loadRemote()
+      const parsed = parseNote(content)
+      out.push({
+        kind: 'conflict',
+        noteId: localMatch.id,
+        path,
+        localContent,
+        remoteSha,
+        remoteContent: content,
+        remoteTags: parsed.tags,
+        remoteBody: parsed.body,
+      })
+    }
+    // remoteUnchanged + localChanged → handled by the push phase, nothing here.
+  }
+
+  // 2. Local notes that had a gitPath but are missing from the remote tree.
+  for (const note of notes) {
+    if (note.isDeleted || !note.gitPath || seenLocalIds.has(note.id)) continue
+    if (remoteTree.has(note.gitPath)) continue
+    // Was it deleted on the remote?
+    const lastPushed = note.gitLastPushedSha ?? null
+    const localContent = serializeNote(note, tagNamesById)
+    const localBlobSha = await gitBlobSha(localContent)
+    if (lastPushed && lastPushed === localBlobSha) {
+      // We haven't touched it locally since the last push → accept the delete.
+      out.push({ kind: 'remoteDeleted', noteId: note.id })
+    } else if (lastPushed) {
+      // Remote deleted, local has edits since the last sync → conflict.
+      out.push({ kind: 'conflictDeleted', noteId: note.id, path: note.gitPath, localContent })
+    }
+    // No lastPushed → this note was never actually synced (clear stale gitPath
+    // and let push re-create it). Treat as remoteDeleted to just clear state.
+    else {
+      out.push({ kind: 'remoteDeleted', noteId: note.id })
+    }
+  }
+
+  return { classifications: out, latestCommitSha: headSha }
+}
+
 // ── Sync orchestrator ───────────────────────────────────────────────────────
 
 export interface SyncInput {
@@ -74,7 +259,13 @@ export interface SyncInput {
   tags: { id: string; name: string }[]
 }
 
-export type GitPathUpdate = { noteId: string; gitPath: string | null }
+export type GitPathUpdate = {
+  noteId: string
+  gitPath: string | null
+  // Blob SHA of what we just pushed for this note. Null when the note's file
+  // was deleted in this commit.
+  gitLastPushedSha: string | null
+}
 
 export interface SyncOutcome {
   result: SyncResult
@@ -114,15 +305,18 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   for (const [path, { content, note }] of desired) {
     const localSha = await gitBlobSha(content)
     const remoteSha = remoteTree.get(path)
+    let finalSha = remoteSha ?? null
     if (remoteSha !== localSha) {
       // Need to upload a blob for the new content.
-      const blobSha = await createBlob(token, owner, name, content)
-      entries.push({ path, mode: '100644', type: 'blob', sha: blobSha })
+      finalSha = await createBlob(token, owner, name, content)
+      entries.push({ path, mode: '100644', type: 'blob', sha: finalSha })
       if (remoteSha) updated++; else created++
     }
-    // Record the path on the note regardless (first-time pushes need this
-    // even when the blob happened to match an already-existing remote file).
-    if (note.gitPath !== path) pathUpdates.push({ noteId: note.id, gitPath: path })
+    // Record the path + last-pushed SHA on the note. We always update this so
+    // first-time pushes (and content-equal-but-path-changed) write the field.
+    if (note.gitPath !== path || note.gitLastPushedSha !== finalSha) {
+      pathUpdates.push({ noteId: note.id, gitPath: path, gitLastPushedSha: finalSha ?? localSha })
+    }
   }
 
   // 4. Handle deletions: notes that USED to have a gitPath but no longer
@@ -143,7 +337,7 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
         entries.push({ path: note.gitPath, mode: '100644', type: 'blob', sha: null })
         deleted++
       }
-      pathUpdates.push({ noteId: note.id, gitPath: null })
+      pathUpdates.push({ noteId: note.id, gitPath: null, gitLastPushedSha: null })
     }
   }
 

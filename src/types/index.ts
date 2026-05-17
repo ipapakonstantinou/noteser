@@ -16,6 +16,13 @@ export interface Note {
   // GitHub sync tracking — set after a successful push, used to detect
   // renames/moves on the next sync (delete old path, write new).
   gitPath?: string | null
+  // Blob SHA of what we last pushed for this note. Pull compares this to
+  // the current remote SHA to detect three-way state:
+  //   match + local unchanged  → unchanged
+  //   match + local changed    → push (no conflict)
+  //   mismatch + local unchanged → take remote
+  //   mismatch + local changed → conflict, ask the user
+  gitLastPushedSha?: string | null
 }
 
 export interface Folder {
@@ -107,7 +114,7 @@ export type ContextMenuState = {
 } | null
 
 export interface ModalState {
-  type: 'delete' | 'template' | 'export' | 'import' | 'settings' | 'shortcuts' | 'github-auth' | 'github-repo' | null
+  type: 'delete' | 'template' | 'export' | 'import' | 'settings' | 'shortcuts' | 'github-auth' | 'github-repo' | 'github-conflicts' | null
   data?: Record<string, unknown>
 }
 
