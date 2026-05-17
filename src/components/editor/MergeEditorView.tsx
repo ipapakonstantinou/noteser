@@ -8,11 +8,6 @@ import { applyConflictResolution, applyMergedConflict } from '@/utils/syncApply'
 import { diffByLine, composeMerged, type DiffHunk } from '@/utils/lineDiff'
 import type { ConflictTabData } from '@/stores/workspaceStore'
 
-// The sidebar still listens for this for backwards compatibility, but the
-// workspace store also fires it itself when the last merge tab closes. Kept
-// exported so nothing breaks if external code imports it.
-export const SYNC_REQUEST_EVENT = 'noteser:sync-request'
-
 type HunkChoice = 'local' | 'remote' | 'both' | 'skip'
 
 interface Props {

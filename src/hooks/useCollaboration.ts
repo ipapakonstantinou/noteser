@@ -25,9 +25,14 @@ interface UseCollaborationReturn {
   updateSelection: (start: number, end: number) => void
 }
 
+// Real-time collaboration is opt-in via NEXT_PUBLIC_YJS_WS_URL. If unset,
+// we skip the WebSocket provider entirely and rely on IndexedDB persistence
+// only. This avoids leaking notes onto the public Yjs demo server (which
+// is what we used to default to). To enable collaboration, run your own
+// y-websocket server and set the env var to its URL.
 export const useCollaboration = ({
   noteId,
-  serverUrl = 'wss://demos.yjs.dev', // Default to Yjs demo server
+  serverUrl = process.env.NEXT_PUBLIC_YJS_WS_URL,
   onContentChange,
   onPresenceChange
 }: UseCollaborationOptions): UseCollaborationReturn => {
@@ -88,60 +93,57 @@ export const useCollaboration = ({
       console.log('Content loaded from IndexedDB')
     })
 
-    // Set up WebSocket provider for real-time sync
-    const roomName = `noteser-${noteId}`
-    const provider = new WebsocketProvider(serverUrl, roomName, ydoc, {
-      connect: true
-    })
-    providerRef.current = provider
+    // Real-time sync only if the user has configured a server.
+    let provider: WebsocketProvider | null = null
+    let handleAwarenessChange: (() => void) | null = null
+    if (serverUrl) {
+      const roomName = `noteser-${noteId}`
+      provider = new WebsocketProvider(serverUrl, roomName, ydoc, { connect: true })
+      providerRef.current = provider
 
-    // Handle connection status
-    provider.on('status', (event: { status: string }) => {
-      const connected = event.status === 'connected'
-      setIsConnected(connected)
-      setConnectionStatus(false, connected ? null : 'Disconnected from server')
-    })
-
-    // Handle connection errors
-    provider.on('connection-error', (event: Event) => {
-      console.error('Connection error:', event)
-      setError('Failed to connect to collaboration server')
-      setConnectionStatus(false, 'Connection error')
-    })
-
-    // Set up awareness (presence)
-    const awareness = provider.awareness
-
-    // Set local user state
-    awareness.setLocalStateField('user', {
-      id: currentUser.id,
-      name: currentUser.name,
-      color: currentUser.color
-    })
-
-    // Handle awareness changes
-    const handleAwarenessChange = () => {
-      const states = awareness.getStates()
-      const users: Presence[] = []
-
-      states.forEach((state, clientId) => {
-        if (state.user && clientId !== awareness.clientID) {
-          users.push({
-            oderId: state.user.id,
-            name: state.user.name,
-            color: state.user.color,
-            cursor: state.cursor,
-            selection: state.selection,
-            lastSeen: Date.now()
-          })
-        }
+      provider.on('status', (event: { status: string }) => {
+        const connected = event.status === 'connected'
+        setIsConnected(connected)
+        setConnectionStatus(false, connected ? null : 'Disconnected from server')
       })
 
-      users.forEach(user => updatePresence(noteId, user))
-      onPresenceChange?.(users)
-    }
+      provider.on('connection-error', (event: Event) => {
+        console.error('Connection error:', event)
+        setError('Failed to connect to collaboration server')
+        setConnectionStatus(false, 'Connection error')
+      })
 
-    awareness.on('change', handleAwarenessChange)
+      const awareness = provider.awareness
+      awareness.setLocalStateField('user', {
+        id: currentUser.id,
+        name: currentUser.name,
+        color: currentUser.color,
+      })
+
+      handleAwarenessChange = () => {
+        const states = awareness.getStates()
+        const users: Presence[] = []
+        states.forEach((state, clientId) => {
+          if (state.user && clientId !== awareness.clientID) {
+            users.push({
+              oderId: state.user.id,
+              name: state.user.name,
+              color: state.user.color,
+              cursor: state.cursor,
+              selection: state.selection,
+              lastSeen: Date.now(),
+            })
+          }
+        })
+        users.forEach(user => updatePresence(noteId, user))
+        onPresenceChange?.(users)
+      }
+      awareness.on('change', handleAwarenessChange)
+    } else {
+      // Local-only mode: mark as "connected" since IndexedDB is what we have.
+      setIsConnected(true)
+      setConnectionStatus(false)
+    }
 
     // Handle text changes
     const handleTextChange = () => {
@@ -157,9 +159,11 @@ export const useCollaboration = ({
 
     // Cleanup
     return () => {
-      awareness.off('change', handleAwarenessChange)
+      if (provider && handleAwarenessChange) {
+        provider.awareness.off('change', handleAwarenessChange)
+      }
       ytext.unobserve(handleTextChange)
-      provider.disconnect()
+      provider?.disconnect()
       persistence.destroy()
       ydoc.destroy()
     }

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { v4 as uuidv4 } from 'uuid'
 import type { PullClassification } from '@/utils/githubSync'
+import { SYNC_REQUEST_EVENT } from '@/utils/events'
 import { useNoteStore } from './noteStore'
 
 export type ConflictTabData = Extract<PullClassification, { kind: 'conflict' } | { kind: 'conflictDeleted' }>
@@ -39,8 +40,6 @@ interface WorkspaceState {
   // sits to the right (or alone if there's nowhere to go).
   splitTabRight: (tabId: string) => void
 }
-
-const SYNC_REQUEST_EVENT = 'noteser:sync-request'
 
 function findTab(panes: PaneState[], tabId: string): { paneIdx: number; tabIdx: number } | null {
   for (let pi = 0; pi < panes.length; pi++) {
