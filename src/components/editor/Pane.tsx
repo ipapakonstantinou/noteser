@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { DocumentTextIcon } from '@heroicons/react/24/outline'
 import { useNoteStore, useUIStore, useWorkspaceStore } from '@/stores'
+import { useTabDragActive, TAB_DRAG_MIME } from '@/hooks'
 import { EditorHeader } from './EditorHeader'
 import { EditorContent } from './EditorContent'
 import { TabBar } from './TabBar'
@@ -30,19 +31,20 @@ export const Pane = ({ pane, allowSplitDropZone }: Props) => {
   const activePaneId = useWorkspaceStore(s => s.activePaneId)
 
   const [splitDropActive, setSplitDropActive] = useState(false)
+  const tabDragActive = useTabDragActive()
   const activeTab = pane.tabs.find(t => t.id === pane.activeTabId) ?? null
   const isActive = pane.id === activePaneId
 
   const handleRightEdgeDragOver = (e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes('application/x-noteser-tab')) return
+    if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     setSplitDropActive(true)
   }
   const handleRightEdgeDrop = (e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes('application/x-noteser-tab')) return
+    if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
     e.preventDefault()
-    const tabId = e.dataTransfer.getData('application/x-noteser-tab')
+    const tabId = e.dataTransfer.getData(TAB_DRAG_MIME)
     if (tabId) splitTabRight(tabId)
     setSplitDropActive(false)
   }
@@ -100,17 +102,26 @@ export const Pane = ({ pane, allowSplitDropZone }: Props) => {
       <TabBar pane={pane} />
       <div className="flex-1 flex flex-col min-h-0">{body}</div>
 
-      {/* Right-edge drop target: dragging a tab here creates a split */}
-      {allowSplitDropZone && (
+      {/* Right-edge split drop target — only rendered (and only intercepts
+          events) while a tab is actively being dragged. Otherwise clicks in
+          the right portion of the editor would get eaten. */}
+      {allowSplitDropZone && tabDragActive && (
         <div
           onDragOver={handleRightEdgeDragOver}
           onDragLeave={() => setSplitDropActive(false)}
           onDrop={handleRightEdgeDrop}
-          className={`absolute top-0 right-0 h-full w-1/4 pointer-events-auto ${
-            splitDropActive ? 'bg-obsidianAccentPurple/15 border-l-2 border-obsidianAccentPurple' : ''
+          className={`absolute top-0 right-0 h-full w-1/3 z-10 transition-colors ${
+            splitDropActive
+              ? 'bg-obsidianAccentPurple/20 border-l-2 border-obsidianAccentPurple'
+              : 'bg-obsidianAccentPurple/5 border-l border-obsidianAccentPurple/40 border-dashed'
           }`}
-          style={{ zIndex: splitDropActive ? 5 : 0 }}
-        />
+        >
+          {!splitDropActive && (
+            <div className="absolute top-1/2 -translate-y-1/2 right-3 text-xs text-obsidianAccentPurple/80 font-medium pointer-events-none">
+              Drop to split →
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
