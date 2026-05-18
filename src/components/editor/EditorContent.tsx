@@ -431,13 +431,7 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
       {isPreviewMode && (
         <div
           ref={previewContainerRef}
-          className="absolute inset-0 overflow-auto p-4 cursor-text bg-obsidianBlack z-10"
-          onClick={(e) => {
-            // Don't exit preview when clicking interactive elements (checkboxes, links).
-            const target = e.target as HTMLElement
-            if (target.closest('input, a, [data-keep-preview]')) return
-            exitPreviewAndFocus()
-          }}
+          className="absolute inset-0 overflow-auto p-4 bg-obsidianBlack z-10"
         >
           <div className="prose prose-invert max-w-none">
             <ReactMarkdown

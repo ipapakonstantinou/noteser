@@ -97,21 +97,20 @@ Right-click any note or folder for rename / move / delete / new-subfolder.
 Loosely prioritized — top section is what's being picked up next, bottom is "someday / nice to have".
 
 ### Now
-- **Tasks plugin equivalent.** Aggregate `- [ ]` / `- [x]` checkboxes across all notes into "To Do" / "Done Today"-style views, with completion dates and links back to the source note. Mirrors Obsidian's [Tasks](https://publish.obsidian.md/tasks/) plugin.
-- **Test subagent.** A Claude Code custom agent under `.claude/agents/` scoped to test writing / running, so the main conversation thread doesn't get bogged down in test churn.
+- **Live preview for ```tasks fences.** The rendered preview (Ctrl+E) already renders ```tasks code fences as live grouped task lists. The live-preview editor still shows the raw fence. Needs a CodeMirror block widget that renders the same `TaskQueryBlock` inline while editing, with cursor-on-fence fallback to source — matches Obsidian's behavior.
+- **Obsidian-style task-line shortcuts.** A shortcut to toggle the task on the current line (cross out / un-cross out), and another to remove the `- [ ]` prefix so the line becomes plain text. Today there's `Alt+L` for toggle only — needs a partner for removal and a setting-driven choice of key combo (since `Ctrl+L` and similar are browser-reserved).
 
 ### Next
 - **Settings panel.** Obsidian-style settings modal — theme, daily-note format, default folder, sync preferences.
 - **Remappable keyboard shortcuts.** Let users rebind shortcuts from the settings panel. Useful both for personal preference and to work around browser-reserved combos — Ctrl+N is intercepted for "New Window" so noteser uses Alt+N for new note; users should be able to pick their own escape hatch.
 - **VS Code-style Git UI.** A proper source-control sidebar view: modified / added / deleted notes shown pre-push with a real Git icon, per-file include/exclude, and a richer conflict push manager. Today there's a single "Commit & Sync" button and conflicts open as inline merge tabs — workable but blind. A VS Code-like changes panel would let the user review the whole push before it goes out.
 - **Status bar footer.** Word / character count, sync status, branch indicator — parity with Obsidian's footer.
-- **Test coverage.** Only `markdownLivePreview.test.ts` exists today. Add tests for sync orchestration (`githubSync.ts`), IndexedDB stores, and the merge editor line-diff.
+- **Test coverage.** Add tests for sync orchestration (`githubSync.ts`), IndexedDB stores, and the merge editor line-diff. Pure utilities are now well-covered (tags, lineDiff, tasks, taskQuery, kbd shortcuts, FolderTreeToolbar).
 - **Sync robustness.** Large vaults, rate-limit handling, partial-failure recovery, conflict-resolution UX polish.
 
 ### Later
 - **Mobile browser version.** Responsive layout for phones / small tablets — collapsible sidebar by default, touch-friendly tab bar, single-pane mode below a width threshold, virtual-keyboard-safe editor.
 - **Security hardening.** Token storage review, XSS surface in rendered markdown, tighter auth on the `/api/github/*` proxy routes.
-- **Ribbon column.** Quick-action icons on the far left (new note, new folder, search, settings).
 
 ## License
 
