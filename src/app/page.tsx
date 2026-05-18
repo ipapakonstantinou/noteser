@@ -13,14 +13,11 @@ import {
   GitHubRepoModal,
 } from '@/components/modals'
 import { useKeyboardShortcuts, useHydration } from '@/hooks'
-import { useUIStore, useNoteStore, useFolderStore, useWorkspaceStore } from '@/stores'
+import { useUIStore, useWorkspaceStore } from '@/stores'
 
 export default function Home() {
   const hydrated = useHydration()
   const { sidebarCollapsed } = useUIStore()
-  const { addNote } = useNoteStore()
-  const { addFolder, activeFolderId } = useFolderStore()
-  const openNote = useWorkspaceStore(s => s.openNote)
   const pruneStaleTabs = useWorkspaceStore(s => s.pruneStaleTabs)
 
   // Use default value during SSR to avoid hydration mismatch
@@ -32,13 +29,7 @@ export default function Home() {
   }, [hydrated, pruneStaleTabs])
 
   // Set up keyboard shortcuts
-  useKeyboardShortcuts({
-    onNewNote: () => {
-      const note = addNote({ folderId: activeFolderId })
-      openNote(note.id)
-    },
-    onNewFolder: () => addFolder(),
-  })
+  useKeyboardShortcuts()
 
   // Migrate old data on first load
   useEffect(() => {
