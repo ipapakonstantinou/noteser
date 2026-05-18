@@ -13,7 +13,10 @@ import {
   GitHubRepoModal,
 } from '@/components/modals'
 import { useKeyboardShortcuts, useHydration } from '@/hooks'
-import { useUIStore, useWorkspaceStore } from '@/stores'
+import { useUIStore, useWorkspaceStore, useGitHubStore } from '@/stores'
+import { switchVault } from '@/utils/switchVault'
+import { notesKey } from '@/utils/repoStorage'
+import { useNoteStore } from '@/stores/noteStore'
 
 export default function Home() {
   const hydrated = useHydration()
@@ -27,6 +30,18 @@ export default function Home() {
   useEffect(() => {
     if (hydrated) pruneStaleTabs()
   }, [hydrated, pruneStaleTabs])
+
+  // After hydration, if a repo is connected but the stores are still pointed
+  // at the unscoped default key (e.g. first run after upgrading to per-repo
+  // vaults), move them to the scoped key so subsequent writes are isolated.
+  useEffect(() => {
+    if (!hydrated) return
+    const repo = useGitHubStore.getState().syncRepo
+    if (!repo) return
+    const currentName = useNoteStore.persist.getOptions().name as string
+    if (currentName === notesKey(repo)) return
+    switchVault(repo, { carryOver: true }).catch(err => console.error('Vault scope migration failed', err))
+  }, [hydrated])
 
   // Set up keyboard shortcuts
   useKeyboardShortcuts()
