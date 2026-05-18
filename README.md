@@ -92,6 +92,25 @@ NEXT_PUBLIC_YJS_WS_URL=wss://your-server.example.com
 
 Right-click any note or folder for rename / move / delete / new-subfolder.
 
+## Backlog
+
+Loosely prioritized — top section is what's being picked up next, bottom is "someday / nice to have".
+
+### Now
+- **Tasks plugin equivalent.** Aggregate `- [ ]` / `- [x]` checkboxes across all notes into "To Do" / "Done Today"-style views, with completion dates and links back to the source note. Mirrors Obsidian's [Tasks](https://publish.obsidian.md/tasks/) plugin.
+- **Test subagent.** A Claude Code custom agent under `.claude/agents/` scoped to test writing / running, so the main conversation thread doesn't get bogged down in test churn.
+
+### Next
+- **Settings panel.** Obsidian-style settings modal — theme, daily-note format, default folder, sync preferences.
+- **Status bar footer.** Word / character count, sync status, branch indicator — parity with Obsidian's footer.
+- **Test coverage.** Only `markdownLivePreview.test.ts` exists today. Add tests for sync orchestration (`githubSync.ts`), IndexedDB stores, and the merge editor line-diff.
+- **Sync robustness.** Large vaults, rate-limit handling, partial-failure recovery, conflict-resolution UX polish.
+
+### Later
+- **Mobile browser version.** Responsive layout for phones / small tablets — collapsible sidebar by default, touch-friendly tab bar, single-pane mode below a width threshold, virtual-keyboard-safe editor.
+- **Security hardening.** Token storage review, XSS surface in rendered markdown, tighter auth on the `/api/github/*` proxy routes.
+- **Ribbon column.** Quick-action icons on the far left (new note, new folder, search, settings).
+
 ## License
 
 MIT.
