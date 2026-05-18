@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { sanitizeTitleInput } from '@/utils/export'
 
 interface EditableTextProps {
   value: string
@@ -66,7 +67,7 @@ export const EditableText = ({
         ref={inputRef}
         type="text"
         value={text}
-        onChange={e => setText(e.target.value)}
+        onChange={e => setText(sanitizeTitleInput(e.target.value))}
         onBlur={commit}
         onKeyDown={handleKeyDown}
         onClick={e => e.stopPropagation()}

@@ -286,10 +286,19 @@ const parseMarkdownNote = (content: string, filename: string): Note => {
   }
 }
 
-// Utility: Sanitize filename
+// Filesystem-unsafe characters across Windows + cross-platform. Used to
+// strip from both file names AND interactively-edited titles.
+export const INVALID_FILENAME_CHARS = /[<>:"/\\|?*]/g
+
+// Live-input sanitizer: drops invalid filename chars but PRESERVES spaces and
+// other innocuous content (unlike sanitizeFilename which is destination-side).
+export const sanitizeTitleInput = (s: string): string => s.replace(INVALID_FILENAME_CHARS, '')
+
+// Destination-side: aggressive — also collapses whitespace to dashes and
+// truncates. Use for the actual filename written to disk / git.
 export const sanitizeFilename = (name: string): string => {
   return name
-    .replace(/[<>:"/\\|?*]/g, '')
+    .replace(INVALID_FILENAME_CHARS, '')
     .replace(/\s+/g, '-')
     .slice(0, 100)
 }
