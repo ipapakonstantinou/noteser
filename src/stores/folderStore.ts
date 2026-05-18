@@ -16,6 +16,7 @@ interface FolderState {
   restoreFolder: (id: string) => void
   setActiveFolder: (id: string | null) => void
   toggleFolderExpanded: (id: string) => void
+  setAllFoldersExpanded: (expanded: boolean) => void
   reorderFolders: (folders: Folder[]) => void
 
   // Getters
@@ -113,6 +114,19 @@ export const useFolderStore = create<FolderState>()(
             [id]: !state.expandedFolders[id]
           }
         }))
+      },
+
+      // Bulk action used by the folder-tree toolbar. Expanded = true sets
+      // every non-deleted folder to expanded; false collapses everything.
+      setAllFoldersExpanded: (expanded) => {
+        set(state => {
+          const next: Record<string, boolean> = {}
+          for (const f of state.folders) {
+            if (f.isDeleted) continue
+            next[f.id] = expanded
+          }
+          return { expandedFolders: next }
+        })
       },
 
       reorderFolders: (folders) => {

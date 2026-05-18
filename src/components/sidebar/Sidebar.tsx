@@ -31,6 +31,7 @@ function relativeTime(ts: number): string {
 }
 import { useHydration } from '@/hooks'
 import { FolderTree } from './FolderTree'
+import { FolderTreeToolbar } from './FolderTreeToolbar'
 import { CalendarView } from './CalendarView'
 import { ContextMenu } from './ContextMenu'
 import type { ContextMenuState } from '@/types'
@@ -227,6 +228,10 @@ export const Sidebar = () => {
           </button>
         </div>
       )}
+
+      {/* Folder-tree toolbar (only for the notes view; calendar has its
+          own controls). */}
+      {!sidebarCollapsed && currentView === 'notes' && <FolderTreeToolbar />}
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-2 py-2">
