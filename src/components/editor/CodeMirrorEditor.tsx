@@ -8,6 +8,7 @@ import { Prec } from '@codemirror/state'
 import { useDebouncedCallback } from '@/hooks/useDebounce'
 import { useUIStore } from '@/stores'
 import { markdownLivePreview } from './markdownLivePreview'
+import { tasksLivePreview } from './tasksLivePreview'
 import { getActiveWikilinkQuery } from '@/utils/wikilinks'
 import { WikilinkAutocomplete } from './WikilinkAutocomplete'
 import type { Note } from '@/types'
@@ -68,6 +69,7 @@ export function CodeMirrorEditor({
   const extensions = useMemo(() => [
     markdown({ base: markdownLanguage }),
     markdownLivePreview,
+    tasksLivePreview,
     obsidianTheme,
     EditorView.lineWrapping,
     // Prec.highest ensures our bindings win over any conflicting default keymap.
