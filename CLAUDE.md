@@ -11,62 +11,95 @@ npm run lint         # ESLint via Next.js
 npm run typecheck    # TypeScript type checking (tsc --noEmit)
 npm run prettier     # Format all files
 npm test             # Run Jest tests
-npm run test:watch   # Jest in watch mode
-npm run test:coverage
 ```
 
-Run a single test file: `npx jest src/__tests__/useNotesStorage.test.js`
+Run a single test file: `npx jest src/__tests__/markdownLivePreview.test.ts`
 
 ## Architecture
 
-**Next.js 15 / React 19 app** — single-page layout in `src/app/page.tsx` composed of a collapsible `<Sidebar>` and an `<Editor>`, with modals rendered at the root level.
+**Next.js 15 / React 19 app.** Single-page layout in `src/app/page.tsx`: a `<Sidebar>` on the left, the `<Editor>` (which renders 1–2 panes of tabs) on the right, modals at the root.
 
 ### State management (Zustand)
 
-All state lives in `src/stores/`. Each store uses `zustand/middleware/persist` to write to `localStorage` under the key prefix `noteser-*`:
+All state lives in `src/stores/`. Most stores use `zustand/middleware/persist` to write to `localStorage` under the key prefix `noteser-*`:
 
-| Store | Key | What it holds |
+| Store | Persist key | What it holds |
 |---|---|---|
-| `useNoteStore` | `noteser-notes` | Notes array, selectedNoteId |
-| `useFolderStore` | `noteser-folders` | Folders, activeFolderId, expandedFolders |
-| `useTagStore` | `noteser-tags` | Tags array |
-| `useUIStore` | `noteser-ui` | Sidebar state, preview mode, modals, current view |
-| `useCollaborationStore` | (no persist) | Yjs presence/room state in memory |
+| `useNoteStore` | `noteser-notes` (v2) | `notes[]`, `selectedNoteId` |
+| `useFolderStore` | `noteser-folders` (v2) | `folders[]`, `activeFolderId`, `expandedFolders` |
+| `useTagStore` | `noteser-tags` | Legacy entity store — kept only because old data may reference it; new code derives tags from `#word` patterns in note bodies via `src/utils/tags.ts` |
+| `useUIStore` | `noteser-ui` | Sidebar collapse/width, preview mode, modal state, current view, `renameRequest` |
+| `useGitHubStore` | `noteser-github` | OAuth token, GitHub user, vault `syncRepo`, `lastCommitSha`, `lastSyncedAt` |
+| `useWorkspaceStore` | `noteser-workspace` (v2) | `panes[]` (max 2 horizontal), `activePaneId`, `mergeAppliedCount`. Only note-kind tabs are persisted — merge-conflict tabs are point-in-time |
 
-**Hydration pattern:** Persisted stores cause SSR/client mismatches. Use the `useHydration()` hook (returns `false` until `useEffect` fires) to defer rendering of persisted values.
+**Hydration pattern.** Persisted stores cause SSR/client mismatches. Use `useHydration()` (returns `false` until `useEffect` fires) to defer rendering of persisted values.
+
+### Workspace, tabs, panes
+
+- The editor area is one or two horizontal panes (`PaneState`), each with its own `tabs[]` and `activeTabId`.
+- Tabs are either `note` (with `noteId` + `isPreview` for VS Code-style preview tabs) or `merge-conflict` (with one `conflict` payload).
+- `openNote(noteId, { preview })`: single-click in sidebar opens as preview (italic); double-click pins; typing into the note auto-promotes preview → pinned via `promoteTab(tabId)`.
+- `moveTab(tabId, toPaneId, toIdx)` handles drag-and-drop reorder + cross-pane move.
+- `splitTabRight(tabId)` creates a second pane to the right with that tab.
+- `pruneStaleTabs()` runs once after hydration to drop tabs whose underlying note was deleted.
 
 ### Components
 
-- `src/components/sidebar/` — `Sidebar`, `FolderTree`, `ContextMenu`
-- `src/components/editor/` — `Editor`, `EditorHeader`, `EditorContent`, `CollaboratorAvatars`
-- `src/components/modals/` — `SearchModal`, `DeleteConfirmModal`, `ShortcutsModal`, `TemplatesModal`, `ExportModal`
-- `src/components/ui/` — generic primitives (`Button`, `Input`, `Modal`, `Badge`, `EmptyState`)
-- `src/components/shared/` — `EditableText`
+- `src/components/sidebar/` — `Sidebar`, `FolderTree`, `CalendarView`, `ContextMenu`
+- `src/components/editor/` — `Editor`, `Pane`, `TabBar`, `EditorHeader`, `EditorFooter`, `EditorContent`, `MergeEditorView`, `CodeMirrorEditor`, `markdownLivePreview`
+- `src/components/modals/` — `SearchModal`, `DeleteConfirmModal`, `ShortcutsModal`, `TemplatesModal`, `ExportModal`, `GitHubAuthModal`, `GitHubRepoModal`
+- `src/components/ui/` — `Button`, `Input`, `Modal`, `Badge`, `EmptyState`
+- `src/components/shared/` — `EditableText` (controlled by `useUIStore.renameRequest`; no double-click-to-edit)
 
 ### Data model
 
-Defined in `src/types/index.ts`. Key types: `Note`, `Folder`, `Tag`, `Template`, `User`, `Presence`. Notes support soft-delete (`isDeleted` / `deletedAt`), pinning, and folder/tag associations. Both `Note.id` and `Folder.id` are UUID strings.
+`src/types/index.ts`. Key types: `Note`, `Folder`, `Tag`, `Template`, `SyncRepo`, `GitHubUser`, `GitHubRepo`. Notes carry soft-delete (`isDeleted`/`deletedAt`), pin (`isPinned`), and GitHub sync fields (`gitPath`, `gitLastPushedSha`). UUIDs for `Note.id` and `Folder.id`. The legacy `Note.tags: string[]` field is being phased out — new UI reads tags from `extractTags(content)` in `src/utils/tags.ts`.
 
-### Collaboration (Yjs)
+### Tags (Obsidian-style)
 
-`useCollaboration` and `useLocalCollaboration` in `src/hooks/useCollaboration.ts` wrap Yjs (`y-websocket` + `y-indexeddb`). The default WebSocket server points to `wss://demos.yjs.dev`. Collaboration state (rooms, presence) lives in `useCollaborationStore` which is not persisted.
+Tags come from `#word` patterns in note bodies — they are NOT entity-stored. `src/utils/tags.ts` exposes `extractTags(content)` and `collectAllTags(notes)`. The sidebar Tags view aggregates from all active notes; the live-preview and rendered-preview both style `#tag` matches inline (`.cm-lp-tag` and `.preview-tag`).
+
+### GitHub sync
+
+Two thin Next.js API routes proxy the OAuth device-flow endpoints (which lack CORS): `src/app/api/github/device-code/route.ts` and `.../access-token/route.ts`. They forward the request to `github.com` and return the JSON; no token storage server-side.
+
+Once authorized, the browser talks directly to `api.github.com` (CORS-friendly). `src/utils/github.ts` wraps the Git Data API; `src/utils/githubSync.ts` orchestrates pull-then-push:
+
+1. **Pull**: fetch the branch ref → commit → tree (recursive) → classify each `.md` file:
+   `unchanged`, `remoteCreated`, `remoteUpdated`, `remoteDeleted`, `conflict`, `conflictDeleted`. Three-way merge using `Note.gitLastPushedSha`.
+2. **Apply non-conflicts** via `src/utils/syncApply.ts` (creates folders/tags, updates notes, soft-deletes).
+3. **Conflicts** open as merge-tabs (one per file). `MergeEditorView` does VS Code-style inline merge with line diffs (`src/utils/lineDiff.ts`).
+4. **Push**: serialize notes to `.md` (frontmatter only if tags present), compute git blob SHAs client-side, upload only changed blobs, create a single tree + commit, fast-forward the branch.
+
+All wired together by `useGitHubSync` (`src/hooks/useGitHubSync.ts`). The MergeEditorView fires a `noteser:sync-request` event (`src/utils/events.ts`) when the user applies and the last merge tab closes, so the sidebar re-runs sync without needing a manual click.
+
+### Drag-and-drop
+
+- **Notes between folders** — tracked in `FolderTree` via React drag events.
+- **Tabs between panes / to create split** — uses `TAB_DRAG_MIME = 'application/x-noteser-tab'`. `useTabDragActive()` listens window-level for that mime so drop zones only mount during an active drag (avoids intercepting unrelated clicks).
 
 ### Search
 
-`src/utils/search.ts` uses Fuse.js with a singleton index. The index is lazily rebuilt when the notes hash changes. Title is weighted 0.7, content 0.3, tags 0.2.
+`src/utils/search.ts` uses Fuse.js with a singleton index, lazily rebuilt when notes hash changes. Title weighted 0.7, content 0.3, tags 0.2.
 
 ### Export / import
 
-`src/utils/export.ts` handles markdown, JSON, and HTML export using `file-saver` and `jszip`.
+`src/utils/export.ts` handles markdown / JSON / HTML export via `file-saver` and `jszip`. `sanitizeFilename` (destination-side, also collapses whitespace) and `sanitizeTitleInput` (input-side, only strips filesystem-unsafe chars) both live here.
 
 ### Styling
 
-Tailwind CSS with a custom Obsidian-inspired dark palette defined in `tailwind.config.js` (`obsidianBlack`, `obsidianGray`, `obsidianText`, etc.). The `@tailwindcss/typography` plugin is used for rendered Markdown.
+Tailwind with an Obsidian-inspired dark palette in `tailwind.config.js` (`obsidianBlack`, `obsidianGray`, `obsidianText`, …). `@tailwindcss/typography` for rendered markdown (`.prose`). Live-preview CSS lives bundled in the CodeMirror extension via `EditorView.baseTheme` — see `src/components/editor/markdownLivePreview.ts`.
 
 ### Data migration
 
-`src/app/page.tsx` runs `migrateOldData()` on mount to upgrade data from the pre-TypeScript localStorage keys (`notes`, `folders`) to the current versioned format (`noteser-notes` v2, `noteser-folders` v2).
+`src/app/page.tsx` runs `migrateOldData()` on mount to upgrade pre-TypeScript localStorage keys (`notes`, `folders`) to the versioned format (`noteser-notes` v2, `noteser-folders` v2). `useWorkspaceStore` has its own `migrate` (v1 → v2) that wraps the legacy flat `tabs[]` into a single pane.
 
 ### Path alias
 
 `@/` maps to `src/` (configured in `tsconfig.json`).
+
+### Security notes
+
+- OAuth token stored in `localStorage` — same trust model as Obsidian Git plugin. XSS would exfiltrate it.
+- Real-time collaboration is opt-in only; `useCollaboration` doesn't connect anywhere unless `NEXT_PUBLIC_YJS_WS_URL` is set.
+- The proxy API routes rate-limit per-IP (see `src/app/api/github/*`).
