@@ -70,21 +70,28 @@ export function todayISO(now: Date = new Date()): string {
 export function toggleTaskLine(content: string, lineNumber: number, now: Date = new Date()): string {
   const lines = content.split(/\r?\n/)
   if (lineNumber < 0 || lineNumber >= lines.length) return content
-  const line = lines[lineNumber]
-  const m = line.match(TASK_LINE_REGEX)
-  if (!m) return content
+  const toggled = toggleTaskLineText(lines[lineNumber], now)
+  if (toggled == null) return content
+  lines[lineNumber] = toggled
+  return lines.join('\n')
+}
 
+// Like `toggleTaskLine` but operates on a single line and accepts any list
+// bullet (`-`, `*`, `+`, or numbered). The rendered-preview's checkbox handler
+// uses this since remark-gfm renders task list items for all of those.
+// Returns the toggled line, or null if the line isn't a task.
+const UI_TASK_LINE_REGEX = /^(\s*(?:[-*+]|\d+\.)\s+\[)( |x|X)(\]\s+)(.*)$/
+
+export function toggleTaskLineText(lineText: string, now: Date = new Date()): string | null {
+  const m = lineText.match(UI_TASK_LINE_REGEX)
+  if (!m) return null
   const [, prefix, mark, mid, rest] = m
   const wasCompleted = mark.toLowerCase() === 'x'
   if (wasCompleted) {
-    // Uncheck → strip trailing ✅ date if present.
     const stripped = rest.replace(COMPLETED_DATE_REGEX, '').trimEnd()
-    lines[lineNumber] = `${prefix} ${mid}${stripped}`
-  } else {
-    // Check → stamp today's date if there isn't one already.
-    const hasDate = COMPLETED_DATE_REGEX.test(rest)
-    const body = hasDate ? rest : `${rest.trimEnd()} ✅ ${todayISO(now)}`
-    lines[lineNumber] = `${prefix}x${mid}${body}`
+    return `${prefix} ${mid}${stripped}`
   }
-  return lines.join('\n')
+  const hasDate = COMPLETED_DATE_REGEX.test(rest)
+  const body = hasDate ? rest : `${rest.trimEnd()} ✅ ${todayISO(now)}`
+  return `${prefix}x${mid}${body}`
 }

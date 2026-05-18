@@ -8,6 +8,7 @@ import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism'
 import type { EditorView } from '@codemirror/view'
 import { useUIStore, useNoteStore, useWorkspaceStore } from '@/stores'
 import { renderWikilinks } from '@/utils/wikilinks'
+import { toggleTaskLineText } from '@/utils/tasks'
 import { CodeMirrorEditor } from './CodeMirrorEditor'
 import { TaskQueryBlock } from './TaskQueryBlock'
 import type { Note } from '@/types'
@@ -70,18 +71,17 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
     })
   }
 
-  // Toggle the task at a specific 1-indexed source line.
+  // Toggle the task at a specific 1-indexed source line. Adds a ✅ date stamp
+  // on check and strips it on uncheck (Obsidian Tasks-plugin behavior).
   const toggleTaskAt = useCallback((sourceLine: number) => {
     const view = cmViewRef.current
     if (!view) return
     if (sourceLine < 1 || sourceLine > view.state.doc.lines) return
     const line = view.state.doc.line(sourceLine)
-    const match = line.text.match(/^(\s*(?:[-*+]|\d+\.)\s+)\[([ xX])\]/)
-    if (!match) return
-    const isChecked = match[2].toLowerCase() === 'x'
-    const boxStart = line.from + match[1].length + 1
+    const newLine = toggleTaskLineText(line.text)
+    if (newLine == null || newLine === line.text) return
     view.dispatch({
-      changes: { from: boxStart, to: boxStart + 1, insert: isChecked ? ' ' : 'x' },
+      changes: { from: line.from, to: line.to, insert: newLine },
     })
     setPreviewContent(view.state.doc.toString())
   }, [])
