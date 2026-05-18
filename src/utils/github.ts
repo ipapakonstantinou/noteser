@@ -296,6 +296,30 @@ export async function updateBranchRef(
   }
 }
 
+// Download the repo as a zip archive at a given ref via our own proxy route.
+// We can't hit api.github.com's zipball endpoint directly from the browser:
+// GitHub returns a 302 to codeload.github.com which strips Authorization on
+// the cross-origin redirect and doesn't set CORS headers on its responses,
+// so the browser rejects the chain. The Next.js route at /api/github/zipball
+// performs the fetch server-side and streams the bytes back.
+//
+// One archive download replaces what would otherwise be one blob fetch per
+// file when seeding a vault from scratch. The trade-off is up-front memory
+// (the whole archive lives in an ArrayBuffer before JSZip parses it), but
+// for typical vaults (≤100 MB) that's well within browser limits.
+export async function fetchZipball(token: string, owner: string, repo: string, ref: string): Promise<ArrayBuffer> {
+  const res = await fetch('/api/github/zipball', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ owner, repo, ref }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(`Failed to download zipball (${res.status}): ${err.error_description ?? ''}`)
+  }
+  return res.arrayBuffer()
+}
+
 // Fetch a blob's content by SHA. GitHub returns it base64-encoded.
 export async function getBlobContent(token: string, owner: string, repo: string, sha: string): Promise<string> {
   const res = await fetch(

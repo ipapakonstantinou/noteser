@@ -12,12 +12,20 @@ import {
   ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline'
 import { Modal, Button } from '@/components/ui'
-import { useUIStore, useGitHubStore, useWorkspaceStore } from '@/stores'
+import { useUIStore, useGitHubStore, useWorkspaceStore, useNoteStore, useFolderStore } from '@/stores'
 import { listUserRepos, createRepo } from '@/utils/github'
 import { switchVault } from '@/utils/switchVault'
-import { getUnpushedChangeCount } from '@/utils/dirtyState'
+import { getUnpushedChangeCount, discardUnpushedChanges } from '@/utils/dirtyState'
 import { useGitHubSync } from '@/hooks/useGitHubSync'
 import type { GitHubRepo, SyncRepo } from '@/types'
+
+// True when the active stores hold no real content — used to decide whether
+// to fire an automatic sync right after switching vaults.
+function vaultIsEmpty(): boolean {
+  const notes = useNoteStore.getState().notes
+  const folders = useFolderStore.getState().folders
+  return !notes.some(n => !n.isDeleted) && !folders.some(f => !f.isDeleted)
+}
 
 type View =
   | { kind: 'list' }
@@ -78,7 +86,14 @@ export const GitHubRepoModal = () => {
     try {
       await switchVault(target, { carryOver })
       setSyncRepo(target)
+      const shouldAutoSync = vaultIsEmpty()
       closeModal()
+      if (shouldAutoSync) {
+        // Fire-and-forget: the sidebar's sync indicator surfaces progress
+        // and errors. runSync reads syncRepo from the store at call time,
+        // so it picks up the just-set target.
+        runSync().catch(err => console.error('Auto-sync after switch failed', err))
+      }
     } catch (err) {
       setView({ kind: 'error', message: err instanceof Error ? err.message : 'Failed to switch vault' })
     } finally {
@@ -136,6 +151,11 @@ export const GitHubRepoModal = () => {
     }
   }
 
+  const handleDiscardAndSwitch = async (target: SyncRepo) => {
+    discardUnpushedChanges()
+    await commitSwitch(target, false)
+  }
+
   const handlePushThenSwitch = async (target: SyncRepo) => {
     setSwitching(true)
     try {
@@ -154,7 +174,11 @@ export const GitHubRepoModal = () => {
       }
       await switchVault(target, { carryOver: false })
       setSyncRepo(target)
+      const shouldAutoSync = vaultIsEmpty()
       closeModal()
+      if (shouldAutoSync) {
+        runSync().catch(err => console.error('Auto-sync after switch failed', err))
+      }
     } catch (err) {
       setView({ kind: 'error', message: err instanceof Error ? err.message : 'Sync failed' })
     } finally {
@@ -345,6 +369,13 @@ export const GitHubRepoModal = () => {
               disabled={switching}
             >
               Switch anyway (keep unpushed changes here)
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => handleDiscardAndSwitch(view.target)}
+              disabled={switching}
+            >
+              Discard {view.unpushed} note{view.unpushed === 1 ? '' : 's'} and switch
             </Button>
             <Button
               variant="ghost"
