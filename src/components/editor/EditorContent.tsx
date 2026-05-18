@@ -9,6 +9,7 @@ import type { EditorView } from '@codemirror/view'
 import { useUIStore, useNoteStore, useWorkspaceStore } from '@/stores'
 import { renderWikilinks } from '@/utils/wikilinks'
 import { CodeMirrorEditor } from './CodeMirrorEditor'
+import { TaskQueryBlock } from './TaskQueryBlock'
 import type { Note } from '@/types'
 
 interface EditorContentProps {
@@ -318,6 +319,9 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
   }) => {
     const match = /language-(\w+)/.exec(className || '')
     const language = match ? match[1] : ''
+    if (!inline && language === 'tasks') {
+      return <TaskQueryBlock source={String(children).replace(/\n$/, '')} />
+    }
     if (!inline && language) {
       return (
         <SyntaxHighlighter
