@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { Sidebar } from '@/components/sidebar'
+import { Sidebar, Ribbon } from '@/components/sidebar'
 import { Editor } from '@/components/editor'
 import {
   SearchModal,
@@ -53,6 +53,11 @@ export default function Home() {
 
   return (
     <div className="flex h-screen w-screen bg-obsidianBlack text-obsidianText overflow-hidden">
+      {/* Ribbon */}
+      <div className="flex-none">
+        <Ribbon />
+      </div>
+
       {/* Sidebar */}
       <div
         className={`flex-none transition-all duration-300 ${
@@ -66,7 +71,7 @@ export default function Home() {
       <div
         className="flex-1 h-full overflow-hidden"
         style={{
-          width: `calc(100vw - ${isSidebarCollapsed ? '50px' : '16rem'})`
+          width: `calc(100vw - 44px - ${isSidebarCollapsed ? '50px' : '16rem'})`
         }}
       >
         <Editor />

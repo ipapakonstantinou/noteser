@@ -48,7 +48,7 @@ export const Sidebar = () => {
   } = useUIStore()
 
   const { addNote, getDeletedNotes, getRecentNotes, getPinnedNotes } = useNoteStore()
-  const { addFolder, activeFolderId } = useFolderStore()
+  const { addFolder } = useFolderStore()
   const openNote = useWorkspaceStore(s => s.openNote)
   const githubUser = useGitHubStore((s) => s.user)
   const githubSyncRepo = useGitHubStore((s) => s.syncRepo)
@@ -71,12 +71,12 @@ export const Sidebar = () => {
   const pinnedNotes = hydrated ? getPinnedNotes() : []
 
   const handleAddNote = () => {
-    const note = addNote({ folderId: activeFolderId })
+    const note = addNote({ folderId: null })
     openNote(note.id)
   }
 
   const handleAddFolder = () => {
-    addFolder()
+    addFolder({ parentId: null })
   }
 
   const handleRightClick = (e: React.MouseEvent, type: 'note' | 'folder', id: string) => {
@@ -136,7 +136,7 @@ export const Sidebar = () => {
             <button
               className="obsidian-button"
               onClick={handleAddNote}
-              title="New note (Ctrl+N)"
+              title="New note (Alt+N)"
             >
               <PlusIcon className="w-5 h-5" />
             </button>
