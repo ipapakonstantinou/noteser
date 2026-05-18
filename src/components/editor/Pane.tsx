@@ -5,6 +5,7 @@ import { DocumentTextIcon } from '@heroicons/react/24/outline'
 import { useNoteStore, useUIStore, useWorkspaceStore } from '@/stores'
 import { useTabDragActive, TAB_DRAG_MIME } from '@/hooks'
 import { EditorHeader } from './EditorHeader'
+import { EditorFooter } from './EditorFooter'
 import { EditorContent } from './EditorContent'
 import { TabBar } from './TabBar'
 import { MergeEditorView } from './MergeEditorView'
@@ -87,6 +88,7 @@ export const Pane = ({ pane, allowSplitDropZone }: Props) => {
             isPreviewMode={isPreviewMode}
             onContentChange={handleContentChange}
           />
+          <EditorFooter note={note} />
         </>
       )
     }
