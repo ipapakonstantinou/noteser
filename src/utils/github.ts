@@ -171,12 +171,27 @@ export async function createRepo(
 export interface GitTreeEntry { path: string; mode: '100644'; type: 'blob'; sha: string | null }
 
 export async function getBranchRefSha(token: string, owner: string, repo: string, branch: string): Promise<string> {
-  const res = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`,
-    { headers: GH_HEADERS(token) },
-  )
+  // GitHub's API responses for ref reads pass through caching layers that
+  // can hand back a stale SHA for ~60s after a push. If we use a stale SHA
+  // as the parent of a new commit, the subsequent `updateBranchRef` PATCH
+  // is rejected as "Update is not a fast forward".
+  //
+  // We can't send `Cache-Control: no-cache` — it isn't on the CORS-safelist
+  // and GitHub's preflight doesn't allow it. Instead we cache-bust the URL
+  // with a timestamp; GitHub ignores unknown query params, but any cache in
+  // the path keys on the URL and so always misses.
+  const url = `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}?_=${Date.now()}`
+  const res = await fetch(url, { headers: GH_HEADERS(token), cache: 'no-store' })
   if (!res.ok) throw new Error(`Failed to read ref (${res.status})`)
   const data = await res.json()
+  // The `/refs/heads/{branch}` endpoint returns an array when the supplied
+  // path is a prefix match for multiple refs (e.g. `main` matching both
+  // `main` and `main-foo`). Pick the exact match in that case.
+  if (Array.isArray(data)) {
+    const exact = data.find((d) => d.ref === `refs/heads/${branch}`)
+    if (!exact) throw new Error(`Branch ${branch} not found`)
+    return exact.object.sha
+  }
   return data.object.sha
 }
 

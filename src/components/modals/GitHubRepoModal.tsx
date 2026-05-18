@@ -9,15 +9,20 @@ import {
   CheckCircleIcon,
   ExclamationCircleIcon,
   ArrowLeftIcon,
+  ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline'
 import { Modal, Button } from '@/components/ui'
-import { useUIStore, useGitHubStore } from '@/stores'
+import { useUIStore, useGitHubStore, useWorkspaceStore } from '@/stores'
 import { listUserRepos, createRepo } from '@/utils/github'
-import type { GitHubRepo } from '@/types'
+import { switchVault } from '@/utils/switchVault'
+import { getUnpushedChangeCount } from '@/utils/dirtyState'
+import { useGitHubSync } from '@/hooks/useGitHubSync'
+import type { GitHubRepo, SyncRepo } from '@/types'
 
 type View =
   | { kind: 'list' }
   | { kind: 'create' }
+  | { kind: 'confirm-switch'; target: SyncRepo; unpushed: number; carryOver: boolean }
   | { kind: 'error'; message: string }
 
 export const GitHubRepoModal = () => {
@@ -26,6 +31,7 @@ export const GitHubRepoModal = () => {
   const syncRepo = useGitHubStore((s) => s.syncRepo)
   const setSyncRepo = useGitHubStore((s) => s.setSyncRepo)
   const disconnect = useGitHubStore((s) => s.disconnect)
+  const { runSync } = useGitHubSync()
 
   const isOpen = modal.type === 'github-repo'
 
@@ -33,6 +39,7 @@ export const GitHubRepoModal = () => {
   const [repos, setRepos] = useState<GitHubRepo[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
+  const [switching, setSwitching] = useState(false)
 
   // Create-repo form state
   const [newName, setNewName] = useState('noteser-vault')
@@ -63,14 +70,49 @@ export const GitHubRepoModal = () => {
     return repos.filter((r) => r.full_name.toLowerCase().includes(q))
   }, [repos, search])
 
-  const handlePick = (repo: GitHubRepo) => {
-    setSyncRepo({
+  // Carry-over makes sense when we're attaching a vault that didn't have a
+  // repo before (first connection): pull local notes into the new scoped
+  // key. When moving between two existing repos we never carry over.
+  const commitSwitch = async (target: SyncRepo, carryOver: boolean) => {
+    setSwitching(true)
+    try {
+      await switchVault(target, { carryOver })
+      setSyncRepo(target)
+      closeModal()
+    } catch (err) {
+      setView({ kind: 'error', message: err instanceof Error ? err.message : 'Failed to switch vault' })
+    } finally {
+      setSwitching(false)
+    }
+  }
+
+  const handlePick = async (repo: GitHubRepo) => {
+    const target: SyncRepo = {
       owner: repo.owner.login,
       name: repo.name,
       branch: repo.default_branch,
       isPrivate: repo.private,
-    })
-    closeModal()
+    }
+
+    // Same repo — nothing to switch.
+    if (syncRepo?.owner === target.owner && syncRepo?.name === target.name) {
+      closeModal()
+      return
+    }
+
+    // Switching from one repo to another with unpushed changes — confirm.
+    if (syncRepo) {
+      const unpushed = getUnpushedChangeCount()
+      if (unpushed > 0) {
+        setView({ kind: 'confirm-switch', target, unpushed, carryOver: false })
+        return
+      }
+      await commitSwitch(target, false)
+      return
+    }
+
+    // First connection — carry local notes into the new vault.
+    await commitSwitch(target, true)
   }
 
   const handleCreate = async () => {
@@ -78,13 +120,15 @@ export const GitHubRepoModal = () => {
     setCreating(true)
     try {
       const created = await createRepo(token, newName.trim(), newPrivate)
-      setSyncRepo({
+      const target: SyncRepo = {
         owner: created.owner.login,
         name: created.name,
         branch: created.default_branch,
         isPrivate: created.private,
-      })
-      closeModal()
+      }
+      // New repo can't conflict with anything — but if the user already had
+      // a repo connected we still avoid carrying the previous vault over.
+      await commitSwitch(target, !syncRepo)
     } catch (err) {
       setView({ kind: 'error', message: err instanceof Error ? err.message : 'Failed to create repo' })
     } finally {
@@ -92,11 +136,43 @@ export const GitHubRepoModal = () => {
     }
   }
 
-  const handleDisconnect = () => {
-    if (confirm('Disconnect your GitHub account from Noteser?')) {
-      disconnect()
+  const handlePushThenSwitch = async (target: SyncRepo) => {
+    setSwitching(true)
+    try {
+      await runSync()
+      // If the sync surfaced conflicts the workspace now has merge-conflict
+      // tabs open; bail so the user can resolve them in the current vault.
+      // Anything else is treated as "sync did what it could" — soft-deleted
+      // notes whose remote files are already gone can keep a stale sha that
+      // our dirty check would otherwise re-flag forever.
+      const hasConflictTabs = useWorkspaceStore.getState().panes.some(p =>
+        p.tabs.some(t => t.kind === 'merge-conflict'),
+      )
+      if (hasConflictTabs) {
+        setView({ kind: 'error', message: 'Resolve sync conflicts in the current vault before switching.' })
+        return
+      }
+      await switchVault(target, { carryOver: false })
+      setSyncRepo(target)
       closeModal()
+    } catch (err) {
+      setView({ kind: 'error', message: err instanceof Error ? err.message : 'Sync failed' })
+    } finally {
+      setSwitching(false)
     }
+  }
+
+  const handleDisconnect = async () => {
+    if (!confirm('Disconnect GitHub? Your current vault data stays locally and will reappear when you reconnect to the same repo.')) {
+      return
+    }
+    try {
+      await switchVault(null, { carryOver: false })
+    } catch (err) {
+      console.error('Vault reset on disconnect failed', err)
+    }
+    disconnect()
+    closeModal()
   }
 
   return (
@@ -151,7 +227,8 @@ export const GitHubRepoModal = () => {
                     <li key={repo.id}>
                       <button
                         onClick={() => handlePick(repo)}
-                        className={`w-full flex items-center gap-2 px-3 py-2 rounded text-sm text-left transition-colors ${
+                        disabled={switching}
+                        className={`w-full flex items-center gap-2 px-3 py-2 rounded text-sm text-left transition-colors disabled:opacity-50 ${
                           isCurrent
                             ? 'bg-obsidianAccentPurple/15 border border-obsidianAccentPurple/40'
                             : 'hover:bg-obsidianDarkGray border border-transparent'
@@ -230,6 +307,51 @@ export const GitHubRepoModal = () => {
               disabled={!newName.trim() || creating}
             >
               Create &amp; Use
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {view.kind === 'confirm-switch' && syncRepo && (
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-3 bg-yellow-900/15 border border-yellow-900/40 rounded">
+            <ExclamationTriangleIcon className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-obsidianText">
+              <p>
+                <strong>{view.unpushed}</strong> note{view.unpushed === 1 ? '' : 's'} in{' '}
+                <code className="text-obsidianAccentPurple">{syncRepo.owner}/{syncRepo.name}</code>{' '}
+                {view.unpushed === 1 ? 'is' : 'are'} not yet pushed.
+              </p>
+              <p className="text-xs text-obsidianSecondaryText mt-1">
+                Switching to <code className="text-obsidianAccentPurple">{view.target.owner}/{view.target.name}</code>{' '}
+                keeps the unpushed work in this vault — it&apos;ll reappear next time you reconnect to{' '}
+                <code className="text-obsidianAccentPurple">{syncRepo.name}</code>.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Button
+              variant="primary"
+              onClick={() => handlePushThenSwitch(view.target)}
+              isLoading={switching}
+              disabled={switching}
+            >
+              Push to {syncRepo.name} first, then switch
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => commitSwitch(view.target, false)}
+              disabled={switching}
+            >
+              Switch anyway (keep unpushed changes here)
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => setView({ kind: 'list' })}
+              disabled={switching}
+            >
+              Cancel
             </Button>
           </div>
         </div>
