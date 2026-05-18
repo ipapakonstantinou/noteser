@@ -3,6 +3,7 @@
 import { EyeIcon, PencilIcon, StarIcon } from '@heroicons/react/24/outline'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
 import { useUIStore, useNoteStore } from '@/stores'
+import { sanitizeTitleInput } from '@/utils/export'
 import type { Note } from '@/types'
 
 interface EditorHeaderProps {
@@ -35,9 +36,12 @@ export const EditorHeader = ({ note, onTitleChange }: EditorHeaderProps) => {
       <input
         type="text"
         value={note.title}
-        onChange={e => onTitleChange(e.target.value)}
+        // Strip filesystem-unsafe chars at the keystroke so the title can be
+        // round-tripped to a .md filename without surprises.
+        onChange={e => onTitleChange(sanitizeTitleInput(e.target.value))}
         className="flex-1 bg-transparent text-xl font-medium text-obsidianText focus:outline-none"
         placeholder="Note title..."
+        title='Filenames cannot contain &lt; &gt; : " / \ | ? *'
       />
 
       <button
