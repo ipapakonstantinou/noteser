@@ -1,13 +1,10 @@
 'use client'
 
 import { useEffect, useCallback } from 'react'
-import { useUIStore, useNoteStore, useFolderStore } from '@/stores'
+import { useUIStore, useNoteStore } from '@/stores'
 import { KEYBOARD_SHORTCUTS } from '@/types'
 
 interface ShortcutHandlers {
-  onNewNote?: () => void
-  onNewFolder?: () => void
-  onSave?: () => void
   onInsertNumberedList?: () => void
   onInsertTodo?: () => void
   onUndo?: () => void
@@ -43,44 +40,7 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers = {}) => {
       return
     }
 
-    // Skip other shortcuts if in input
-    if (isInput) {
-      // But allow specific editor shortcuts
-      if (hasCtrl && hasShift) {
-        if (event.key === '7') {
-          event.preventDefault()
-          handlers.onInsertNumberedList?.()
-          return
-        }
-        if (event.key.toLowerCase() === 't') {
-          event.preventDefault()
-          handlers.onInsertTodo?.()
-          return
-        }
-      }
-      return
-    }
-
-    // New note - Ctrl+N
-    if (hasCtrl && !hasShift && event.key.toLowerCase() === 'n') {
-      event.preventDefault()
-      handlers.onNewNote?.()
-      return
-    }
-
-    // New folder - Ctrl+Shift+N
-    if (hasCtrl && hasShift && event.key.toLowerCase() === 'n') {
-      event.preventDefault()
-      handlers.onNewFolder?.()
-      return
-    }
-
-    // Save - Ctrl+S
-    if (hasCtrl && event.key.toLowerCase() === 's') {
-      event.preventDefault()
-      handlers.onSave?.()
-      return
-    }
+    // App-level shortcuts — fire regardless of focus location
 
     // Toggle preview - Ctrl+E
     if (hasCtrl && event.key.toLowerCase() === 'e') {
@@ -103,6 +63,25 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers = {}) => {
         type: 'delete',
         data: { type: 'note', id: selectedNoteId }
       })
+      return
+    }
+
+    // Skip editor-only shortcuts when not in an editable field
+    if (isInput) {
+      // Formatting shortcuts (only inside editor)
+      if (hasCtrl && hasShift) {
+        if (event.key === '7') {
+          event.preventDefault()
+          handlers.onInsertNumberedList?.()
+          return
+        }
+        if (event.key.toLowerCase() === 't') {
+          event.preventDefault()
+          handlers.onInsertTodo?.()
+          return
+        }
+      }
+
       return
     }
 

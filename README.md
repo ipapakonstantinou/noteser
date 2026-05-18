@@ -78,11 +78,19 @@ NEXT_PUBLIC_YJS_WS_URL=wss://your-server.example.com
 
 ## Keyboard shortcuts
 
-- `Ctrl/Cmd + N` — new note
-- `Ctrl/Cmd + Shift + N` — new folder
-- `Ctrl/Cmd + K` — open search
-- `Alt + L` — toggle task-list item on the current line (`- [ ]`)
-- Right-click any note or folder for rename / move / delete / new-subfolder.
+| Shortcut | Action |
+|---|---|
+| `Ctrl + K` | Open search |
+| `Ctrl + /` | Show all shortcuts |
+| `Ctrl + E` | Toggle preview mode |
+| `Ctrl + B` | Toggle sidebar |
+| `Ctrl + Delete` | Delete current note |
+| `Ctrl + Shift + 7` | Insert numbered list (editor) |
+| `Ctrl + Shift + T` | Insert todo item (editor) |
+| `Alt + L` | Toggle task checkbox on current line (editor) |
+| `Escape` | Close modal / search |
+
+Right-click any note or folder for rename / move / delete / new-subfolder.
 
 ## License
 

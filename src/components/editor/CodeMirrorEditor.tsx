@@ -6,6 +6,7 @@ import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { EditorView, keymap } from '@codemirror/view'
 import { Prec } from '@codemirror/state'
 import { useDebouncedCallback } from '@/hooks/useDebounce'
+import { useUIStore } from '@/stores'
 import { markdownLivePreview } from './markdownLivePreview'
 import { getActiveWikilinkQuery } from '@/utils/wikilinks'
 import { WikilinkAutocomplete } from './WikilinkAutocomplete'
@@ -69,8 +70,17 @@ export function CodeMirrorEditor({
     markdownLivePreview,
     obsidianTheme,
     EditorView.lineWrapping,
-    // Prec.highest ensures our Alt-l binding wins over any conflicting default keymap.
-    Prec.highest(keymap.of([{
+    // Prec.highest ensures our bindings win over any conflicting default keymap.
+    Prec.highest(keymap.of([
+    {
+      key: 'Ctrl-e',
+      preventDefault: true,
+      run() {
+        useUIStore.getState().togglePreview()
+        return true
+      },
+    },
+    {
       key: 'Alt-l',
       preventDefault: true,
       run(view) {
@@ -97,7 +107,8 @@ export function CodeMirrorEditor({
         }
         return true
       },
-    }])),
+    },
+    ])),
     EditorView.domEventHandlers({
       mousedown(event, view) {
         const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
