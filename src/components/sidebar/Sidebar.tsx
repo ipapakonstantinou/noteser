@@ -7,12 +7,8 @@ import {
   PlusIcon,
   FolderPlusIcon,
   MagnifyingGlassIcon,
-  TrashIcon,
-  ClockIcon,
-  TagIcon,
   DocumentDuplicateIcon,
   Cog6ToothIcon,
-  CalendarDaysIcon,
   CodeBracketIcon,
   CloudArrowUpIcon,
   CheckCircleIcon,
@@ -42,12 +38,11 @@ export const Sidebar = () => {
     sidebarCollapsed,
     toggleSidebar,
     currentView,
-    setCurrentView,
     openSearch,
     openModal
   } = useUIStore()
 
-  const { addNote, getDeletedNotes, getRecentNotes, getPinnedNotes } = useNoteStore()
+  const { addNote } = useNoteStore()
   const { addFolder } = useFolderStore()
   const openNote = useWorkspaceStore(s => s.openNote)
   const githubUser = useGitHubStore((s) => s.user)
@@ -64,11 +59,6 @@ export const Sidebar = () => {
   }, [runSync])
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
-
-  // Use default values during SSR/hydration to avoid mismatch
-  const deletedNotes = hydrated ? getDeletedNotes() : []
-  const recentNotes = hydrated ? getRecentNotes(5) : []
-  const pinnedNotes = hydrated ? getPinnedNotes() : []
 
   const handleAddNote = () => {
     const note = addNote({ folderId: null })
@@ -157,77 +147,6 @@ export const Sidebar = () => {
           </>
         )}
       </div>
-
-      {/* Navigation */}
-      {!sidebarCollapsed && (
-        <div className="px-2 py-2 border-b border-obsidianBorder space-y-1">
-          <button
-            onClick={() => setCurrentView('notes')}
-            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${
-              currentView === 'notes'
-                ? 'bg-obsidianHighlight text-obsidianText'
-                : 'text-obsidianSecondaryText hover:bg-obsidianDarkGray'
-            }`}
-          >
-            <DocumentDuplicateIcon className="w-4 h-4" />
-            All Notes
-          </button>
-          <button
-            onClick={() => setCurrentView('recent')}
-            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${
-              currentView === 'recent'
-                ? 'bg-obsidianHighlight text-obsidianText'
-                : 'text-obsidianSecondaryText hover:bg-obsidianDarkGray'
-            }`}
-          >
-            <ClockIcon className="w-4 h-4" />
-            Recent
-            {recentNotes.length > 0 && (
-              <span className="ml-auto text-xs text-obsidianSecondaryText">
-                {recentNotes.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setCurrentView('tags')}
-            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${
-              currentView === 'tags'
-                ? 'bg-obsidianHighlight text-obsidianText'
-                : 'text-obsidianSecondaryText hover:bg-obsidianDarkGray'
-            }`}
-          >
-            <TagIcon className="w-4 h-4" />
-            Tags
-          </button>
-          <button
-            onClick={() => setCurrentView('trash')}
-            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${
-              currentView === 'trash'
-                ? 'bg-obsidianHighlight text-obsidianText'
-                : 'text-obsidianSecondaryText hover:bg-obsidianDarkGray'
-            }`}
-          >
-            <TrashIcon className="w-4 h-4" />
-            Trash
-            {deletedNotes.length > 0 && (
-              <span className="ml-auto text-xs text-obsidianSecondaryText">
-                {deletedNotes.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setCurrentView('calendar')}
-            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${
-              currentView === 'calendar'
-                ? 'bg-obsidianHighlight text-obsidianText'
-                : 'text-obsidianSecondaryText hover:bg-obsidianDarkGray'
-            }`}
-          >
-            <CalendarDaysIcon className="w-4 h-4" />
-            Calendar
-          </button>
-        </div>
-      )}
 
       {/* Folder-tree toolbar (only for the notes view; calendar has its
           own controls). */}
