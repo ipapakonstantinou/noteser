@@ -47,22 +47,12 @@ export function notePath(note: Note, folders: Folder[]): string {
 }
 
 // ── Note serialization ──────────────────────────────────────────────────────
-// Obsidian convention: a .md file is just the body, with an optional YAML
-// frontmatter block at the top *only* when there's something to put in it.
-// Today the only field we round-trip is `tags`. No id/title/dates — the
-// filename is the title and round-tripping (Phase 4 pull) matches by path.
-
-function yamlList(items: string[]): string {
-  return `[${items.map(s => (/^[A-Za-z0-9_-]+$/.test(s) ? s : JSON.stringify(s))).join(', ')}]`
-}
-
-export function serializeNote(note: Note, tagNamesById: Map<string, string>): string {
-  const tagNames = note.tags
-    .map(id => tagNamesById.get(id))
-    .filter((n): n is string => !!n)
-  const body = note.content ?? ''
-  if (tagNames.length === 0) return body
-  return `---\ntags: ${yamlList(tagNames)}\n---\n\n${body}`
+// We write the body verbatim — no YAML frontmatter. Tags now live as `#word`
+// patterns inline in the body, so there's nothing to round-trip in a header.
+// Round-trip identity uses the file path (Phase 4 pull matches by gitPath).
+//
+export function serializeNote(note: Note): string {
+  return note.content ?? ''
 }
 
 // ── Parser (Phase 4 pull) ───────────────────────────────────────────────────
@@ -159,9 +149,8 @@ export async function pullFromGitHub(input: {
   repo: SyncRepo
   notes: Note[]
   folders: Folder[]
-  tagNamesById: Map<string, string>
 }): Promise<PullOutcome> {
-  const { token, repo, notes, folders, tagNamesById } = input
+  const { token, repo, notes } = input
   const { owner, name, branch } = repo
 
   const headSha = await getBranchRefSha(token, owner, name, branch)
@@ -191,7 +180,7 @@ export async function pullFromGitHub(input: {
     }
 
     seenLocalIds.add(localMatch.id)
-    const localContent = serializeNote(localMatch, tagNamesById)
+    const localContent = serializeNote(localMatch)
     const localBlobSha = await gitBlobSha(localContent)
 
     if (localBlobSha === remoteSha) {
@@ -230,7 +219,7 @@ export async function pullFromGitHub(input: {
     if (remoteTree.has(note.gitPath)) continue
     // Was it deleted on the remote?
     const lastPushed = note.gitLastPushedSha ?? null
-    const localContent = serializeNote(note, tagNamesById)
+    const localContent = serializeNote(note)
     const localBlobSha = await gitBlobSha(localContent)
     if (lastPushed && lastPushed === localBlobSha) {
       // We haven't touched it locally since the last push → accept the delete.
@@ -256,7 +245,6 @@ export interface SyncInput {
   repo: SyncRepo
   notes: Note[]
   folders: Folder[]
-  tags: { id: string; name: string }[]
 }
 
 export type GitPathUpdate = {
@@ -275,16 +263,15 @@ export interface SyncOutcome {
 }
 
 export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
-  const { token, repo, notes, folders, tags } = input
+  const { token, repo, notes, folders } = input
   const { owner, name, branch } = repo
 
   // 1. Compute desired files for every active note.
-  const tagMap = new Map(tags.map(t => [t.id, t.name]))
   const activeNotes = notes.filter(n => !n.isDeleted)
   const desired = new Map<string, { content: string; note: Note }>()
   for (const note of activeNotes) {
     const path = notePath(note, folders)
-    const content = serializeNote(note, tagMap)
+    const content = serializeNote(note)
     // If two notes resolve to the same path (e.g. duplicate titles in same
     // folder), the later one in the array wins. Acceptable for v1.
     desired.set(path, { content, note })

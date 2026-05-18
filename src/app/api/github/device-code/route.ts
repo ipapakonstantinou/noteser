@@ -1,8 +1,21 @@
 import { NextResponse } from 'next/server'
+import { checkRateLimit, getClientIp } from '@/utils/rateLimit'
 
 // Browser → this route → github.com (CORS proxy for OAuth device-code endpoint).
 // Stateless: we never touch tokens; this just forwards the request.
-export async function POST() {
+//
+// Rate-limited per-IP so the proxy can't be abused as a load-amplifier
+// against our GitHub OAuth App (it shares a quota with the user's normal
+// device-flow usage).
+export async function POST(request: Request) {
+  const limit = checkRateLimit(`device:${getClientIp(request)}`, { max: 10, windowMs: 60_000 })
+  if (!limit.ok) {
+    return NextResponse.json(
+      { error: 'rate_limited', error_description: 'Too many requests. Please wait and try again.' },
+      { status: 429, headers: { 'Retry-After': Math.ceil(limit.retryAfterMs / 1000).toString() } },
+    )
+  }
+
   const clientId = process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID
   if (!clientId) {
     return NextResponse.json(

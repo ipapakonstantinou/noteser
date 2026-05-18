@@ -43,7 +43,6 @@ export const useNoteStore = create<NoteState>()(
           title: 'Untitled Note',
           content: '',
           folderId: null,
-          tags: [],
           createdAt: now,
           updatedAt: now,
           isDeleted: false,
@@ -160,7 +159,6 @@ export const useNoteStore = create<NoteState>()(
           title: template.name,
           content: template.content,
           folderId,
-          tags: [],
           createdAt: now,
           updatedAt: now,
           isDeleted: false,
@@ -187,8 +185,14 @@ export const useNoteStore = create<NoteState>()(
       getNotesByFolder: (folderId) =>
         get().notes.filter(note => !note.isDeleted && note.folderId === folderId),
 
-      getNotesByTag: (tagId) =>
-        get().notes.filter(note => !note.isDeleted && note.tags.includes(tagId)),
+      // Tags are derived from `#word` patterns in body content now; legacy
+      // callers can still ask "which notes contain this tag name".
+      getNotesByTag: (tagName) =>
+        get().notes.filter(note => {
+          if (note.isDeleted) return false
+          const lc = tagName.toLowerCase()
+          return new RegExp(`(^|[^\\w#/-])#${lc.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}(?![\\w/-])`, 'i').test(note.content)
+        }),
 
       getPinnedNotes: () =>
         get().notes.filter(note => !note.isDeleted && note.isPinned),
@@ -212,7 +216,6 @@ export const useNoteStore = create<NoteState>()(
             notes: (state.notes || []).map((note: Note & { id?: string | number }) => ({
               ...note,
               id: String(note.id),
-              tags: note.tags || [],
               createdAt: note.createdAt || Date.now(),
               updatedAt: note.updatedAt || Date.now(),
               isDeleted: note.isDeleted || false,

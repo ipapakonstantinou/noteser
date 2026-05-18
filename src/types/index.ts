@@ -5,7 +5,9 @@ export interface Note {
   title: string
   content: string
   folderId: string | null
-  tags: string[]
+  // Note: tags are derived from `#word` patterns in `content` via
+  // src/utils/tags.ts. The legacy `tags: string[]` field was removed; old
+  // localStorage data may still carry it but new code does not read it.
   createdAt: number
   updatedAt: number
   isDeleted: boolean
