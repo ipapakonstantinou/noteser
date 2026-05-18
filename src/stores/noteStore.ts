@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { v4 as uuidv4 } from 'uuid'
 import type { Note, Template, DEFAULT_TEMPLATES } from '@/types'
+import { idbStorage } from '@/utils/idbStorage'
 
 interface NoteState {
   notes: Note[]
@@ -206,6 +207,7 @@ export const useNoteStore = create<NoteState>()(
     }),
     {
       name: 'noteser-notes',
+      storage: idbStorage,
       version: 2,
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as NoteState

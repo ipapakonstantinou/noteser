@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { v4 as uuidv4 } from 'uuid'
 import type { Folder } from '@/types'
+import { idbStorage } from '@/utils/idbStorage'
 
 interface FolderState {
   folders: Folder[]
@@ -155,6 +156,7 @@ export const useFolderStore = create<FolderState>()(
     }),
     {
       name: 'noteser-folders',
+      storage: idbStorage,
       version: 2,
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as FolderState
