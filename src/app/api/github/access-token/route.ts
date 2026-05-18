@@ -1,9 +1,22 @@
 import { NextResponse } from 'next/server'
+import { checkRateLimit, getClientIp } from '@/utils/rateLimit'
 
 // Browser polls this while the user authorizes in github.com.
 // On success the upstream responds with { access_token, token_type, scope };
 // while pending it responds with { error: 'authorization_pending' | 'slow_down' | ... }.
+//
+// Rate-limited per-IP at a higher allowance than /device-code because this
+// route gets POLLED — every ~5s by spec — during a normal device-flow login.
+// Allow ~10 hits per 5-second window.
 export async function POST(request: Request) {
+  const limit = checkRateLimit(`token:${getClientIp(request)}`, { max: 10, windowMs: 5_000 })
+  if (!limit.ok) {
+    return NextResponse.json(
+      { error: 'rate_limited', error_description: 'Polling too fast. Please wait.' },
+      { status: 429, headers: { 'Retry-After': Math.ceil(limit.retryAfterMs / 1000).toString() } },
+    )
+  }
+
   const clientId = process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID
   if (!clientId) {
     return NextResponse.json(

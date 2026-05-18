@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useState } from 'react'
-import { useGitHubStore, useNoteStore, useFolderStore, useTagStore, useWorkspaceStore } from '@/stores'
+import { useGitHubStore, useNoteStore, useFolderStore, useWorkspaceStore } from '@/stores'
 import { syncToGitHub, pullFromGitHub } from '@/utils/githubSync'
 import { applyNonConflicts } from '@/utils/syncApply'
 import type { ConflictTabData } from '@/stores/workspaceStore'
@@ -34,15 +34,11 @@ export function useGitHubSync(): UseGitHubSyncResult {
     if (!token || !syncRepo) return
     setSyncState({ kind: 'running' })
     try {
-      const tagsSnapshot = useTagStore.getState().tags
-      const tagNamesById = new Map(tagsSnapshot.map(t => [t.id, t.name]))
-
       const { classifications } = await pullFromGitHub({
         token,
         repo: syncRepo,
         notes: useNoteStore.getState().notes,
         folders: useFolderStore.getState().folders,
-        tagNamesById,
       })
 
       const conflicts = classifications.filter(
@@ -58,13 +54,11 @@ export function useGitHubSync(): UseGitHubSyncResult {
 
       const { notes, updateNote } = useNoteStore.getState()
       const { folders } = useFolderStore.getState()
-      const refreshedTags = useTagStore.getState().tags
       const { result, pathUpdates } = await syncToGitHub({
         token,
         repo: syncRepo,
         notes,
         folders,
-        tags: refreshedTags.map(t => ({ id: t.id, name: t.name })),
       })
       for (const u of pathUpdates) {
         updateNote(u.noteId, { gitPath: u.gitPath, gitLastPushedSha: u.gitLastPushedSha })

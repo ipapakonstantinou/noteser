@@ -1,4 +1,4 @@
-import { useNoteStore, useFolderStore, useTagStore } from '@/stores'
+import { useNoteStore, useFolderStore } from '@/stores'
 import type { PullClassification } from './githubSync'
 import { parseNote } from './githubSync'
 import { sanitizeFilename } from './export'
@@ -13,7 +13,6 @@ function ensureFolderPath(segments: string[]): string | null {
   let parentId: string | null = null
   for (const segment of segments) {
     const desired = sanitizeFilename(segment)
-    // Look for an existing folder with this sanitized name under the parent.
     const existing = folders.find(
       f => !f.isDeleted && (f.parentId ?? null) === parentId
         && sanitizeFilename(f.name) === desired,
@@ -28,10 +27,15 @@ function ensureFolderPath(segments: string[]): string | null {
   return parentId
 }
 
-function ensureTagIds(names: string[]): string[] {
-  if (names.length === 0) return []
-  const { getOrCreateTag } = useTagStore.getState()
-  return names.map(n => getOrCreateTag(n).id)
+// Tags from frontmatter are merged into the body as `#tag` so they survive
+// in the derived-tags model.
+function bodyWithInlineTags(body: string, frontmatterTags: string[]): string {
+  if (frontmatterTags.length === 0) return body
+  const prefix = frontmatterTags.map(t => `#${t}`).join(' ')
+  // Don't add a duplicate prefix if the body already starts with it (rare,
+  // but happens on round-trips between Noteser versions).
+  if (body.startsWith(prefix)) return body
+  return `${prefix}\n\n${body}`
 }
 
 // Parse a repo path like "Work/Q1 plan.md" → ({ segments: ['Work'], title: 'Q1 plan' }).
@@ -60,12 +64,10 @@ export function applyNonConflicts(classifications: PullClassification[]): ApplyC
     if (c.kind === 'remoteCreated') {
       const { segments, title } = splitRepoPath(c.path)
       const folderId = ensureFolderPath(segments)
-      const tagIds = ensureTagIds(c.tags)
       noteStore.addNote({
         title,
-        content: c.body,
+        content: bodyWithInlineTags(c.body, c.tags),
         folderId,
-        tags: tagIds,
         gitPath: c.path,
         gitLastPushedSha: c.remoteSha,
       })
@@ -74,10 +76,8 @@ export function applyNonConflicts(classifications: PullClassification[]): ApplyC
     }
 
     if (c.kind === 'remoteUpdated') {
-      const tagIds = ensureTagIds(c.tags)
       noteStore.updateNote(c.noteId, {
-        content: c.body,
-        tags: tagIds,
+        content: bodyWithInlineTags(c.body, c.tags),
         gitLastPushedSha: c.remoteSha,
       })
       counts.updated++
@@ -103,13 +103,11 @@ export function applyMergedConflict(
   mergedRawFile: string,
 ): void {
   const { updateNote } = useNoteStore.getState()
-  // The diff was on the raw file content (frontmatter + body). Re-parse so
-  // we keep tags + body separately on the note record.
+  // The diff was on the raw file content (possibly with legacy frontmatter).
+  // Re-parse to strip any tags block; merge those tags into the body.
   const parsed = parseNote(mergedRawFile)
-  const tagIds = ensureTagIds(parsed.tags)
   updateNote(c.noteId, {
-    content: parsed.body,
-    tags: tagIds,
+    content: bodyWithInlineTags(parsed.body, parsed.tags),
     gitLastPushedSha: c.remoteSha,
   })
 }
@@ -132,11 +130,11 @@ export function applyConflictResolution(
   const { updateNote, deleteNote } = useNoteStore.getState()
   if (c.kind === 'conflict') {
     if (choice === 'remote') {
-      const tagIds = ensureTagIds(c.remoteTags)
-      updateNote(c.noteId, { content: c.remoteBody, tags: tagIds, gitLastPushedSha: c.remoteSha })
+      updateNote(c.noteId, {
+        content: bodyWithInlineTags(c.remoteBody, c.remoteTags),
+        gitLastPushedSha: c.remoteSha,
+      })
     } else {
-      // Local wins: pretend the remote SHA was the one we pushed, so pull
-      // sees "remote unchanged, local changed" → push uploads our content.
       updateNote(c.noteId, { gitLastPushedSha: c.remoteSha })
     }
   } else {

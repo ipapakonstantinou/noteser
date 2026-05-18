@@ -1,15 +1,18 @@
 import { saveAs } from 'file-saver'
 import JSZip from 'jszip'
+import { extractTags } from './tags'
 import type { Note, Folder, Tag, ExportOptions, ImportResult } from '@/types'
 
 // Export a single note as markdown
-export const exportNoteAsMarkdown = (note: Note, tags: Tag[]): void => {
+// `tags` is accepted for backwards compatibility but no longer used —
+// derived from #word patterns in the body now.
+export const exportNoteAsMarkdown = (note: Note, _tags: Tag[] = []): void => {
   let content = `# ${note.title}\n\n`
 
-  // Add metadata as YAML frontmatter
-  const noteTags = tags.filter(t => note.tags.includes(t.id))
+  // Add metadata as YAML frontmatter when the note has any inline tags.
+  const noteTags = extractTags(note.content)
   if (noteTags.length > 0) {
-    content = `---\ntags: [${noteTags.map(t => t.name).join(', ')}]\ncreated: ${new Date(note.createdAt).toISOString()}\nupdated: ${new Date(note.updatedAt).toISOString()}\n---\n\n` + content
+    content = `---\ntags: [${noteTags.join(', ')}]\ncreated: ${new Date(note.createdAt).toISOString()}\nupdated: ${new Date(note.updatedAt).toISOString()}\n---\n\n` + content
   }
 
   content += note.content
@@ -98,17 +101,17 @@ export const exportAllNotes = async (
 // Convert note to markdown with frontmatter
 const convertToMarkdown = (
   note: Note,
-  tags: Tag[],
+  _tags: Tag[],
   options: ExportOptions
 ): string => {
   let content = ''
 
   if (options.includeMetadata || options.includeTags) {
-    const noteTags = tags.filter(t => note.tags.includes(t.id))
+    const noteTags = extractTags(note.content)
     const frontmatter: string[] = []
 
     if (options.includeTags && noteTags.length > 0) {
-      frontmatter.push(`tags: [${noteTags.map(t => t.name).join(', ')}]`)
+      frontmatter.push(`tags: [${noteTags.join(', ')}]`)
     }
 
     if (options.includeMetadata) {
@@ -128,10 +131,10 @@ const convertToMarkdown = (
 }
 
 // Convert note to HTML
-const convertToHTML = (note: Note, tags: Tag[], includeTags: boolean): string => {
-  const noteTags = tags.filter(t => note.tags.includes(t.id))
+const convertToHTML = (note: Note, _tags: Tag[], includeTags: boolean): string => {
+  const noteTags = extractTags(note.content)
   const tagsHTML = includeTags && noteTags.length > 0
-    ? `<div class="tags">${noteTags.map(t => `<span class="tag" style="background-color: ${t.color}">${t.name}</span>`).join(' ')}</div>`
+    ? `<div class="tags">${noteTags.map(t => `<span class="tag">#${escapeHTML(t)}</span>`).join(' ')}</div>`
     : ''
 
   return `<!DOCTYPE html>
@@ -271,12 +274,14 @@ const parseMarkdownNote = (content: string, filename: string): Note => {
   }
 
   const now = Date.now()
+  // Tags from frontmatter are inlined as #tag at the top of the body so
+  // they survive in the new derived-tags model.
+  const tagPrefix = tags.length > 0 ? tags.map(t => `#${t}`).join(' ') + '\n\n' : ''
   return {
     id: `imported-${now}-${Math.random().toString(36).substr(2, 9)}`,
     title,
-    content: noteContent.trim(),
+    content: tagPrefix + noteContent.trim(),
     folderId: null,
-    tags,
     createdAt: now,
     updatedAt: now,
     isDeleted: false,
