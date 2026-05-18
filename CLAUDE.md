@@ -15,6 +15,8 @@ npm test             # Run Jest tests
 
 Run a single test file: `npx jest src/__tests__/markdownLivePreview.test.ts`
 
+After changing `package.json` `overrides` (or any dependency shift that deduplicates a nested package), run `rm -rf .next` before the next `npm run build` / `npm run dev`. The Webpack cache stores resolved module paths and will keep looking for the old nested location (e.g. `node_modules/refractor/node_modules/prismjs/...`) until it is cleared.
+
 ## Architecture
 
 **Next.js 15 / React 19 app.** Single-page layout in `src/app/page.tsx`: a `<Sidebar>` on the left, the `<Editor>` (which renders 1–2 panes of tabs) on the right, modals at the root.
