@@ -210,6 +210,11 @@ export function CodeMirrorEditor({
           crosshairCursor: false,
           highlightActiveLine: true,
           highlightSelectionMatches: false,
+          // CodeMirror's defaultHighlightStyle underlines headings — our
+          // markdownLivePreview already provides bold + larger font for
+          // headings, italics for emphasis, etc. Disable the default so the
+          // heading underline (and other duplicate styling) doesn't fight us.
+          syntaxHighlighting: false,
           closeBracketsKeymap: false,
           defaultKeymap: true,
           searchKeymap: false,
