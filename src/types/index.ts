@@ -266,7 +266,7 @@ export const TAG_COLORS = [
 // Keyboard shortcuts configuration
 export const KEYBOARD_SHORTCUTS: Shortcut[] = [
   { key: 'k', ctrl: true, description: 'Open search', action: 'openSearch' },
-  { key: 'n', ctrl: true, description: 'New note', action: 'newNote' },
+  { key: 'n', alt: true, description: 'New note', action: 'newNote' },
   { key: 'n', ctrl: true, shift: true, description: 'New folder', action: 'newFolder' },
   { key: 's', ctrl: true, description: 'Save note', action: 'saveNote' },
   { key: 'e', ctrl: true, description: 'Toggle preview', action: 'togglePreview' },

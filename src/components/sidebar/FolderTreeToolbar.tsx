@@ -12,20 +12,22 @@ import { useNoteStore, useFolderStore, useWorkspaceStore } from '@/stores'
 // Matches the toolbar from the user's reference screenshot.
 export const FolderTreeToolbar = () => {
   const { addNote } = useNoteStore()
-  const { addFolder, activeFolderId, setAllFoldersExpanded } = useFolderStore()
+  const { addFolder, setAllFoldersExpanded } = useFolderStore()
   const openNote = useWorkspaceStore(s => s.openNote)
 
+  // Toolbar buttons always create at the root — contextual "New note here"
+  // / "New subfolder" lives on the right-click menu.
   const handleNewNote = () => {
-    const note = addNote({ folderId: activeFolderId })
+    const note = addNote({ folderId: null })
     openNote(note.id, { preview: false })
   }
   const handleNewFolder = () => {
-    addFolder({ parentId: activeFolderId })
+    addFolder({ parentId: null })
   }
 
   return (
     <div className="flex items-center gap-1 px-2 py-1 border-b border-obsidianBorder/60">
-      <ToolbarButton onClick={handleNewNote} title="New note (Ctrl+N)">
+      <ToolbarButton onClick={handleNewNote} title="New note (Alt+N)">
         <DocumentPlusIcon className="w-4 h-4" />
       </ToolbarButton>
       <ToolbarButton onClick={handleNewFolder} title="New folder (Ctrl+Shift+N)">

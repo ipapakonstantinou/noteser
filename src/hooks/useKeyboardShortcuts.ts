@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useCallback } from 'react'
-import { useUIStore, useNoteStore } from '@/stores'
+import { useUIStore, useNoteStore, useFolderStore, useWorkspaceStore } from '@/stores'
 import { KEYBOARD_SHORTCUTS } from '@/types'
 
 interface ShortcutHandlers {
@@ -53,6 +53,22 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers = {}) => {
     if (hasCtrl && event.key.toLowerCase() === 'b') {
       event.preventDefault()
       toggleSidebar()
+      return
+    }
+
+    // New note - Alt+N (always at root). Ctrl+N can't be used: browsers
+    // reserve it for "New Window" and the keydown never reaches the page.
+    if (event.altKey && !hasCtrl && !hasShift && event.key.toLowerCase() === 'n') {
+      event.preventDefault()
+      const note = useNoteStore.getState().addNote({ folderId: null })
+      useWorkspaceStore.getState().openNote(note.id, { preview: false })
+      return
+    }
+
+    // New folder - Ctrl+Shift+N (always at root).
+    if (hasCtrl && hasShift && event.key.toLowerCase() === 'n') {
+      event.preventDefault()
+      useFolderStore.getState().addFolder({ parentId: null })
       return
     }
 

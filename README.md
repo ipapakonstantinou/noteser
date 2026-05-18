@@ -102,6 +102,8 @@ Loosely prioritized — top section is what's being picked up next, bottom is "s
 
 ### Next
 - **Settings panel.** Obsidian-style settings modal — theme, daily-note format, default folder, sync preferences.
+- **Remappable keyboard shortcuts.** Let users rebind shortcuts from the settings panel. Useful both for personal preference and to work around browser-reserved combos — Ctrl+N is intercepted for "New Window" so noteser uses Alt+N for new note; users should be able to pick their own escape hatch.
+- **VS Code-style Git UI.** A proper source-control sidebar view: modified / added / deleted notes shown pre-push with a real Git icon, per-file include/exclude, and a richer conflict push manager. Today there's a single "Commit & Sync" button and conflicts open as inline merge tabs — workable but blind. A VS Code-like changes panel would let the user review the whole push before it goes out.
 - **Status bar footer.** Word / character count, sync status, branch indicator — parity with Obsidian's footer.
 - **Test coverage.** Only `markdownLivePreview.test.ts` exists today. Add tests for sync orchestration (`githubSync.ts`), IndexedDB stores, and the merge editor line-diff.
 - **Sync robustness.** Large vaults, rate-limit handling, partial-failure recovery, conflict-resolution UX polish.
