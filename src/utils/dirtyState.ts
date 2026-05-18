@@ -16,21 +16,37 @@
 import { useNoteStore } from '@/stores/noteStore'
 import { useGitHubStore } from '@/stores/githubStore'
 
-export function getUnpushedChangeCount(): number {
+// Single source of truth for which note IDs count as "unpushed". Both the
+// count display and the discard action consume this so they can't disagree.
+export function getUnpushedNoteIds(): string[] {
   const lastSyncedAt = useGitHubStore.getState().lastSyncedAt
   const notes = useNoteStore.getState().notes
-  let count = 0
+  const ids: string[] = []
   for (const n of notes) {
     if (n.isDeleted) continue
     if (lastSyncedAt == null) {
-      count++
+      ids.push(n.id)
       continue
     }
-    if (n.updatedAt > lastSyncedAt) count++
+    if (n.updatedAt > lastSyncedAt) ids.push(n.id)
   }
-  return count
+  return ids
+}
+
+export function getUnpushedChangeCount(): number {
+  return getUnpushedNoteIds().length
 }
 
 export function hasUnpushedChanges(): boolean {
   return getUnpushedChangeCount() > 0
+}
+
+// Permanently remove the unpushed notes from the current vault.
+//   - Notes that were on the remote will reappear on the next sync (since
+//     the remote copy is untouched), so this acts as a revert-to-remote.
+//   - Notes that were never pushed (no `gitLastPushedSha`) are lost. That's
+//     the intent — the user opted to discard them explicitly.
+export function discardUnpushedChanges(): void {
+  const { permanentlyDeleteNote } = useNoteStore.getState()
+  for (const id of getUnpushedNoteIds()) permanentlyDeleteNote(id)
 }

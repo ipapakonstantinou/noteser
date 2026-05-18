@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react'
 import { useGitHubStore, useNoteStore, useFolderStore, useWorkspaceStore } from '@/stores'
-import { syncToGitHub, pullFromGitHub } from '@/utils/githubSync'
+import { syncToGitHub, pullFromGitHub, pullFromZipball } from '@/utils/githubSync'
 import { applyNonConflicts } from '@/utils/syncApply'
 import type { ConflictTabData } from '@/stores/workspaceStore'
 
@@ -31,15 +31,31 @@ export function useGitHubSync(): UseGitHubSyncResult {
   const [syncState, setSyncState] = useState<SyncState>({ kind: 'idle' })
 
   const runSync = useCallback(async () => {
-    if (!token || !syncRepo) return
+    // Read token + syncRepo from the store at call time rather than relying
+    // on the captured values — auto-sync triggered immediately after
+    // `setSyncRepo` (e.g. from `GitHubRepoModal`) would otherwise still see
+    // the previous repo.
+    const { token: activeToken, syncRepo: activeRepo } = useGitHubStore.getState()
+    if (!activeToken || !activeRepo) return
     setSyncState({ kind: 'running' })
     try {
-      const { classifications } = await pullFromGitHub({
-        token,
-        repo: syncRepo,
-        notes: useNoteStore.getState().notes,
-        folders: useFolderStore.getState().folders,
-      })
+      // On a first clone the local vault is empty, so every remote file
+      // would otherwise become one sequential blob fetch. Switch to the
+      // zipball path in that case — one archive download instead of N API
+      // round-trips.
+      const localNotes = useNoteStore.getState().notes
+      const localFolders = useFolderStore.getState().folders
+      const isFirstClone = !localNotes.some(n => !n.isDeleted)
+        && !localFolders.some(f => !f.isDeleted)
+
+      const { classifications } = isFirstClone
+        ? await pullFromZipball({ token: activeToken, repo: activeRepo })
+        : await pullFromGitHub({
+            token: activeToken,
+            repo: activeRepo,
+            notes: localNotes,
+            folders: localFolders,
+          })
 
       const conflicts = classifications.filter(
         c => c.kind === 'conflict' || c.kind === 'conflictDeleted',
@@ -55,8 +71,8 @@ export function useGitHubSync(): UseGitHubSyncResult {
       const { notes, updateNote } = useNoteStore.getState()
       const { folders } = useFolderStore.getState()
       const { result, pathUpdates } = await syncToGitHub({
-        token,
-        repo: syncRepo,
+        token: activeToken,
+        repo: activeRepo,
         notes,
         folders,
       })

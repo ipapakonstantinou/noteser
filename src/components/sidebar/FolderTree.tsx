@@ -336,11 +336,10 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   }
 
   // Render default notes view — Obsidian-style flat tree.
-  // Sort: pinned notes first (still inline, no separate section), then
-  // folders in their store order, then unpinned root notes.
+  // Order matches a GitHub repo's file browser: folders first, then notes
+  // (including pinned ones — they're still distinguishable by their pin
+  // icon but no longer get hoisted above the folder list).
   const rootNotes = activeNotes.filter(n => !n.folderId)
-  const pinnedRootNotes = rootNotes.filter(n => n.isPinned)
-  const unpinnedRootNotes = rootNotes.filter(n => !n.isPinned)
 
   if (rootFolders.length === 0 && rootNotes.length === 0) {
     return (
@@ -369,13 +368,10 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
       }}
       onDrop={onRootDrop}
     >
-      {pinnedRootNotes.map(note => (
-        <NoteItem key={note.id} note={note} />
-      ))}
       {rootFolders.map(folder => (
         <FolderItem key={folder.id} folder={folder} />
       ))}
-      {unpinnedRootNotes.map(note => (
+      {rootNotes.map(note => (
         <NoteItem key={note.id} note={note} />
       ))}
     </div>

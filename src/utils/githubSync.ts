@@ -1,3 +1,4 @@
+import JSZip from 'jszip'
 import type { Note, Folder, SyncRepo } from '@/types'
 import { sanitizeFilename } from './export'
 import {
@@ -10,6 +11,7 @@ import {
   updateBranchRef,
   getBlobContent,
   gitBlobSha,
+  fetchZipball,
   type GitTreeEntry,
 } from './github'
 
@@ -236,6 +238,68 @@ export async function pullFromGitHub(input: {
   }
 
   return { classifications: out, latestCommitSha: headSha }
+}
+
+// ── Bulk first-clone (zipball fast path) ────────────────────────────────────
+//
+// `pullFromGitHub` is correct but does one blob fetch per file that differs
+// from local. On a first connection to a large vault (thousands of files) we
+// already know everything is `remoteCreated`, so the per-file API trip is
+// pure waste — we'd burn rate limit and minutes of wall time. The zipball
+// endpoint hands us the whole repo as a single zip download, which the
+// browser already follows past a redirect on its own and which doesn't get
+// charged against the primary API rate limit the way blob reads do.
+//
+// We still need authoritative blob SHAs to seed `gitLastPushedSha`. Computing
+// them locally via `gitBlobSha` produces the same hash git would (it's the
+// same SHA-1 of `blob <len>\0<content>`), so a separate tree fetch isn't
+// necessary.
+export async function pullFromZipball(input: {
+  token: string
+  repo: SyncRepo
+}): Promise<PullOutcome> {
+  const { token, repo } = input
+  const { owner, name, branch } = repo
+
+  // Fetch the ref + the zipball in parallel; the ref is cheap and we need
+  // it for `latestCommitSha` regardless.
+  const [headSha, zipBuffer] = await Promise.all([
+    getBranchRefSha(token, owner, name, branch),
+    fetchZipball(token, owner, name, branch),
+  ])
+
+  const zip = await JSZip.loadAsync(zipBuffer)
+  const classifications: PullClassification[] = []
+
+  // The zipball wraps every entry in a top-level directory named
+  // `<owner>-<repo>-<short-sha>/`, so we strip the first path segment.
+  const entries: Array<{ rel: string; file: JSZip.JSZipObject }> = []
+  zip.forEach((rel, file) => {
+    if (file.dir) return
+    if (!rel.endsWith('.md')) return
+    entries.push({ rel, file })
+  })
+
+  for (const { rel, file } of entries) {
+    const slashIdx = rel.indexOf('/')
+    if (slashIdx === -1) continue
+    const path = rel.slice(slashIdx + 1)
+
+    const content = await file.async('string')
+    const remoteSha = await gitBlobSha(content)
+    const parsed = parseNote(content)
+
+    classifications.push({
+      kind: 'remoteCreated',
+      path,
+      remoteSha,
+      remoteContent: content,
+      tags: parsed.tags,
+      body: parsed.body,
+    })
+  }
+
+  return { classifications, latestCommitSha: headSha }
 }
 
 // ── Sync orchestrator ───────────────────────────────────────────────────────
