@@ -44,6 +44,11 @@ const inlineTag  = Decoration.mark({ class: 'cm-lp-tag' })
 // not block ones.
 const TAG_RE = /(^|[^\w#/-])(#[A-Za-z0-9_/-]+)(?![\w/-])/g
 
+// Bullet (`-` `*` `+`) or ordered (`1.`, `2)`) list marker at line start,
+// optionally indented, followed by whitespace OR end of line. Captures the
+// indent in group 1 and the marker chars in group 2.
+const LIST_MARKER_RE = /^(\s*)([-*+]|\d+[.)])(?=[ \t]|$)/
+
 function childrenNamed(node: SyntaxNode, name: string): SyntaxNode[] {
   const out: SyntaxNode[] = []
   let child = node.firstChild
@@ -59,9 +64,24 @@ function buildDecorations(state: EditorState): DecorationSet {
     const { doc, selection } = state
     const cursorLine = doc.lineAt(selection.main.head).number
     const specs: [number, number, Decoration][] = []
+    // Line numbers covered by a fenced/indented/HTML code block — the fallback
+    // list-marker pass below skips these so `    1. ` inside code doesn't get
+    // styled as a list item.
+    const codeBlockLines = new Set<number>()
 
     syntaxTree(state).iterate({
       enter(node) {
+        if (
+          node.name === 'FencedCode' ||
+          node.name === 'CodeBlock' ||
+          node.name === 'HTMLBlock'
+        ) {
+          const from = doc.lineAt(node.from).number
+          const to = doc.lineAt(node.to).number
+          for (let i = from; i <= to; i++) codeBlockLines.add(i)
+          return false
+        }
+
         const atCursor = doc.lineAt(node.from).number === cursorLine
 
         // ── ATX Headings (#, ##, …) ──────────────────────────────────────────
@@ -159,6 +179,23 @@ function buildDecorations(state: EditorState): DecorationSet {
       const tagStart = m.index + m[1].length
       const tagEnd = tagStart + m[2].length
       specs.push([tagStart, tagEnd, inlineTag])
+    }
+
+    // ── List-marker fallback pass ──────────────────────────────────────────
+    // lezer-markdown only tags a line as a ListItem once it has content after
+    // the marker. So `1. ` (just typed the space, no body yet) goes
+    // un-styled. We pattern-match every non-code line for a leading list
+    // marker and add the same line/mark decorations; the dedup at the end
+    // drops these as duplicates when the parser has already caught up.
+    for (let i = 1; i <= doc.lines; i++) {
+      if (codeBlockLines.has(i)) continue
+      const line = doc.line(i)
+      const lm = LIST_MARKER_RE.exec(line.text)
+      if (!lm) continue
+      const markerStart = line.from + lm[1].length
+      const markerEnd = markerStart + lm[2].length
+      specs.push([line.from, line.from, lineDecos.list])
+      specs.push([markerStart, markerEnd, listMark])
     }
 
     // RangeSetBuilder needs sorted, non-overlapping ranges.

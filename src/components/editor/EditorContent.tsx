@@ -17,8 +17,6 @@ interface EditorContentProps {
   onContentChange: (content: string) => void
 }
 
-const IDLE_MS = 2000
-
 export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorContentProps) => {
   const { setPreviewMode } = useUIStore()
   const { getActiveNotes } = useNoteStore()
@@ -30,43 +28,28 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
     setPreviewContent(note.content)
   }, [note.id, note.content])
 
-  // Editor cursor state mirrored to drive the preview indicator.
+  // Editor cursor state mirrored to drive the preview indicator. Captured on
+  // entry to preview mode so the rendered preview can show a cursor marker.
   const [cursorLine, setCursorLine] = useState<number | null>(null)
   const [cursorOffset, setCursorOffset] = useState<number | null>(null)
 
   const activeNotes = getActiveNotes().filter(n => n.id !== note.id)
 
-  // Refs that survive renders.
   const cmViewRef = useRef<EditorView | null>(null)
-  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const isPreviewModeRef = useRef(isPreviewMode)
-  const prevPreviewRef = useRef<boolean | undefined>(undefined)
   const previewContainerRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => { isPreviewModeRef.current = isPreviewMode }, [isPreviewMode])
 
-  // Cleanup any pending switch on unmount / note change.
-  useEffect(() => () => {
-    if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
-  }, [])
+  // Manual entry to preview (eye-icon button / shortcut). Captures cursor
+  // position from the CodeMirror view so the preview can show a marker.
   useEffect(() => {
-    if (idleTimerRef.current) {
-      clearTimeout(idleTimerRef.current)
-      idleTimerRef.current = null
-    }
-  }, [note.id])
-
-  // Snapshot the current document into the preview overlay before showing it.
-  const enterPreview = () => {
+    if (!isPreviewMode) return
     const view = cmViewRef.current
-    if (view) {
-      const pos = view.state.selection.main.head
-      setPreviewContent(view.state.doc.toString())
-      setCursorOffset(pos)
-      setCursorLine(view.state.doc.lineAt(pos).number)
-      view.contentDOM.blur()
-    }
-    setPreviewMode(true)
-  }
+    if (!view) return
+    const pos = view.state.selection.main.head
+    setPreviewContent(view.state.doc.toString())
+    setCursorOffset(pos)
+    setCursorLine(view.state.doc.lineAt(pos).number)
+    view.contentDOM.blur()
+  }, [isPreviewMode])
 
   const exitPreviewAndFocus = (insertText?: string) => {
     setCursorLine(null)
@@ -125,21 +108,6 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
     setCursorOffset(newPos)
     setCursorLine(doc.lineAt(newPos).number)
   }, [])
-
-  // When exiting preview (via click or keypress), start the idle timer
-  // so the user goes back to preview if they don't continue editing.
-  useEffect(() => {
-    const prev = prevPreviewRef.current
-    prevPreviewRef.current = isPreviewMode
-    if (prev === true && !isPreviewMode) {
-      if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
-      idleTimerRef.current = setTimeout(() => {
-        if (!isPreviewModeRef.current) enterPreview()
-      }, IDLE_MS)
-    }
-  // enterPreview is recreated each render but captures stable refs; safe to ignore.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPreviewMode])
 
   // Preview-mode keyboard handler.
   useEffect(() => {
@@ -324,16 +292,6 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
     }
   }, [isPreviewMode, previewContent])
 
-  // Reset the auto-switch timer whenever the user keys into the editor area.
-  const handleEditorKeyDown = (e: React.KeyboardEvent) => {
-    if (isPreviewModeRef.current) return
-    if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') return
-    if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
-    idleTimerRef.current = setTimeout(() => {
-      if (!isPreviewModeRef.current) enterPreview()
-    }, IDLE_MS)
-  }
-
   const handleChange = (content: string) => {
     setPreviewContent(content)
     onContentChange(content)
@@ -457,7 +415,7 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
   }
 
   return (
-    <div className="relative flex-1 h-full overflow-hidden" onKeyDown={handleEditorKeyDown}>
+    <div className="relative flex-1 h-full overflow-hidden">
       <CodeMirrorEditor
         noteId={note.id}
         initialContent={note.content}

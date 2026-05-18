@@ -291,12 +291,13 @@ const parseMarkdownNote = (content: string, filename: string): Note => {
   }
 }
 
-// Filesystem-unsafe characters across Windows + cross-platform. Used to
-// strip from both file names AND interactively-edited titles.
-export const INVALID_FILENAME_CHARS = /[<>:"/\\|?*]/g
+// Allowlist for note / folder names. Anything outside Unicode letters, digits,
+// space, and - _ . ( ) is stripped — keeps titles safe across Windows, macOS,
+// Linux, URLs and git paths without surprising punctuation in filenames.
+export const INVALID_FILENAME_CHARS = /[^\p{L}\p{N} \-_.()]/gu
 
-// Live-input sanitizer: drops invalid filename chars but PRESERVES spaces and
-// other innocuous content (unlike sanitizeFilename which is destination-side).
+// Live-input sanitizer: drops disallowed chars but PRESERVES spaces
+// (unlike sanitizeFilename which is destination-side).
 export const sanitizeTitleInput = (s: string): string => s.replace(INVALID_FILENAME_CHARS, '')
 
 // Destination-side: aggressive — also collapses whitespace to dashes and

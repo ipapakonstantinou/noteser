@@ -152,6 +152,38 @@ describe('markdownLivePreview StateField', () => {
     expect(headingDeco).toBeDefined()
   })
 
+  test('styles a list marker as soon as space is typed (no content yet)', () => {
+    // User just typed `1. ` — lezer-markdown does not consider this a
+    // ListItem until there is content, so the fallback regex pass must fire.
+    const doc = '1. '
+    const state = makeState(doc, doc.length)
+    const decos = collectDecos(state)
+
+    const lineDeco = decos.find(d => d.from === 0 && d.to === 0 && d.class === 'cm-lp-list')
+    expect(lineDeco).toBeDefined()
+    const markDeco = decos.find(d => d.from === 0 && d.to === 2 && d.class === 'cm-lp-list-mark')
+    expect(markDeco).toBeDefined()
+  })
+
+  test('styles a bullet marker (`- `) as soon as space is typed', () => {
+    const doc = '- '
+    const state = makeState(doc, doc.length)
+    const decos = collectDecos(state)
+
+    expect(decos.find(d => d.from === 0 && d.to === 0 && d.class === 'cm-lp-list')).toBeDefined()
+    expect(decos.find(d => d.from === 0 && d.to === 1 && d.class === 'cm-lp-list-mark')).toBeDefined()
+  })
+
+  test('does NOT style a list-marker-like sequence inside a fenced code block', () => {
+    const doc = '```\n1. not a list\n```\n'
+    const state = makeState(doc, 0)
+    const decos = collectDecos(state)
+
+    // No list-mark deco anywhere inside the code fence.
+    const markInside = decos.find(d => d.class === 'cm-lp-list-mark')
+    expect(markInside).toBeUndefined()
+  })
+
   test('StateField is registered with EditorView.decorations facet', () => {
     // The plugin is a StateField, verify it participates in EditorView.decorations
     // by checking its `provide` property produces the right facet provider.

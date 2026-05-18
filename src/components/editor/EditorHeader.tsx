@@ -41,7 +41,7 @@ export const EditorHeader = ({ note, onTitleChange }: EditorHeaderProps) => {
         onChange={e => onTitleChange(sanitizeTitleInput(e.target.value))}
         className="flex-1 bg-transparent text-xl font-medium text-obsidianText focus:outline-none"
         placeholder="Note title..."
-        title='Filenames cannot contain &lt; &gt; : " / \ | ? *'
+        title="Title may only contain letters, digits, spaces, and - _ . ( )"
       />
 
       <button
