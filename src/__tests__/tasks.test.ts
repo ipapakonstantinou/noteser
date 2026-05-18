@@ -4,7 +4,7 @@
  * Unit tests for src/utils/tasks.ts — pure functions, no mocks needed.
  */
 
-import { extractTasks, todayISO, toggleTaskLine, Task, TaskSourceNote } from '../utils/tasks'
+import { extractTasks, todayISO, toggleTaskLine, toggleTaskLineText, Task, TaskSourceNote } from '../utils/tasks'
 
 // ── extractTasks ──────────────────────────────────────────────────────────────
 
@@ -303,5 +303,56 @@ describe('toggleTaskLine', () => {
     // Checked version has a date stamp; unchecking should strip it
     const unchecked = toggleTaskLine(checked, 0, FIXED_DATE)
     expect(unchecked).toBe(original)
+  })
+})
+
+// ── toggleTaskLineText ────────────────────────────────────────────────────────
+
+describe('toggleTaskLineText', () => {
+  test('returns null for non-task lines', () => {
+    expect(toggleTaskLineText('just text', FIXED_DATE)).toBeNull()
+    expect(toggleTaskLineText('- a list item', FIXED_DATE)).toBeNull()
+    expect(toggleTaskLineText('', FIXED_DATE)).toBeNull()
+  })
+
+  test('checks a `- [ ]` task and appends ✅ date', () => {
+    expect(toggleTaskLineText('- [ ] foo', FIXED_DATE)).toBe('- [x] foo ✅ 2026-05-18')
+  })
+
+  test('unchecks a `- [x] ... ✅ date` task and strips the date', () => {
+    expect(toggleTaskLineText('- [x] foo ✅ 2026-01-15', FIXED_DATE)).toBe('- [ ] foo')
+  })
+
+  test('accepts `*` bullets (broader than toggleTaskLine)', () => {
+    expect(toggleTaskLineText('* [ ] star', FIXED_DATE)).toBe('* [x] star ✅ 2026-05-18')
+    expect(toggleTaskLineText('* [x] star ✅ 2026-05-18', FIXED_DATE)).toBe('* [ ] star')
+  })
+
+  test('accepts `+` bullets', () => {
+    expect(toggleTaskLineText('+ [ ] plus', FIXED_DATE)).toBe('+ [x] plus ✅ 2026-05-18')
+    expect(toggleTaskLineText('+ [x] plus ✅ 2026-05-18', FIXED_DATE)).toBe('+ [ ] plus')
+  })
+
+  test('accepts numbered list bullets', () => {
+    expect(toggleTaskLineText('1. [ ] numbered', FIXED_DATE)).toBe('1. [x] numbered ✅ 2026-05-18')
+    expect(toggleTaskLineText('12. [x] numbered ✅ 2026-05-18', FIXED_DATE)).toBe('12. [ ] numbered')
+  })
+
+  test('preserves indentation', () => {
+    expect(toggleTaskLineText('    - [ ] indented', FIXED_DATE)).toBe('    - [x] indented ✅ 2026-05-18')
+  })
+
+  test('uppercase [X] is treated as checked', () => {
+    expect(toggleTaskLineText('- [X] upper', FIXED_DATE)).toBe('- [ ] upper')
+  })
+
+  test('checking a task whose body already has a ✅ date keeps the existing date', () => {
+    expect(toggleTaskLineText('- [ ] foo ✅ 2026-01-15', FIXED_DATE)).toBe('- [x] foo ✅ 2026-01-15')
+  })
+
+  test('check-then-uncheck round-trips to the original line', () => {
+    const original = '- [ ] round trip'
+    const checked = toggleTaskLineText(original, FIXED_DATE)!
+    expect(toggleTaskLineText(checked, FIXED_DATE)).toBe(original)
   })
 })
