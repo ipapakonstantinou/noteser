@@ -1,23 +1,106 @@
-// Aggregate `- [ ]` / `- [x]` checkboxes across all notes — Obsidian-style
-// Tasks-plugin minimum viable subset.
+// Aggregate `- [ ]` / `- [x]` checkboxes across all notes — Obsidian
+// Tasks-plugin emoji metadata subset.
 //
 // Recognized syntax (per line):
 //   - [ ] thing to do
 //   - [x] thing I did
-//   - [x] thing I did ✅ 2026-05-18      ← strict "done today"
+//   - [x] thing I did ✅ 2026-05-18              done date
+//   - [ ] thing with 📅 2026-05-20                due date
+//   - [ ] thing with ⏳ 2026-05-19                scheduled date
+//   - [ ] thing with 🛫 2026-05-18                start date
+//   - [ ] thing with ⏫ priority (highest)
+//   - [ ] thing with 🔼 priority (high)
+//   - [ ] thing with 🔽 priority (low)
+//   - [ ] thing with ⏬ priority (lowest)
 //
-// Indentation before the dash is allowed (nested list items count). Bullet
-// character must be `-` (matching the rest of the app's markdown conventions).
+// Indentation before the dash is allowed (nested list items count).
+// Bullet character must be `-` here; the rendered-preview path also
+// accepts `*`, `+`, and numbered via UI_TASK_LINE_REGEX.
 
 const TASK_LINE_REGEX = /^(\s*-\s+\[)( |x|X)(\]\s+)(.*)$/
-const COMPLETED_DATE_REGEX = /\s*✅\s*(\d{4}-\d{2}-\d{2})\s*$/
+
+// Each metadata regex matches anywhere in the task body. We capture the
+// emoji-marker form so we can strip it cleanly when extracting the display
+// text. `g` flag so we can iterate matches if a body has weird duplicates
+// (use the first hit per kind).
+const COMPLETED_DATE_REGEX = /\s*✅\s*(\d{4}-\d{2}-\d{2})\s*/g
+const DUE_DATE_REGEX       = /\s*📅\s*(\d{4}-\d{2}-\d{2})\s*/g
+const SCHEDULED_DATE_REGEX = /\s*⏳\s*(\d{4}-\d{2}-\d{2})\s*/g
+const START_DATE_REGEX     = /\s*🛫\s*(\d{4}-\d{2}-\d{2})\s*/g
+// Priority markers don't carry a date; we just detect the emoji.
+const PRIORITY_REGEX       = /\s*(⏫|🔼|🔽|⏬)\s*/g
+
+export type TaskPriority = 'highest' | 'high' | 'normal' | 'low' | 'lowest'
+
+// Numeric weight for sort-by-priority. Higher = more urgent.
+export const PRIORITY_WEIGHT: Record<TaskPriority, number> = {
+  highest: 4,
+  high: 3,
+  normal: 2,
+  low: 1,
+  lowest: 0,
+}
+
+function priorityFromEmoji(emoji: string): TaskPriority {
+  switch (emoji) {
+    case '⏫': return 'highest'
+    case '🔼': return 'high'
+    case '🔽': return 'low'
+    case '⏬': return 'lowest'
+    default:   return 'normal'
+  }
+}
 
 export interface Task {
   noteId: string
   lineNumber: number   // 0-based, matches CodeMirror line numbering minus one
-  text: string         // task body with the `✅ date` suffix stripped
+  text: string         // task body with every metadata marker stripped
   completed: boolean
   completedDate: string | null  // ISO YYYY-MM-DD or null
+  dueDate: string | null
+  scheduledDate: string | null
+  startDate: string | null
+  priority: TaskPriority
+}
+
+// Extracts (and strips) every supported metadata marker from a body line.
+// Returns the cleaned body + the parsed values. Multiple markers of the
+// same kind are tolerated — we take the FIRST occurrence and drop the
+// rest along with their surrounding whitespace.
+export function parseTaskMetadata(body: string): {
+  text: string
+  completedDate: string | null
+  dueDate: string | null
+  scheduledDate: string | null
+  startDate: string | null
+  priority: TaskPriority
+} {
+  let text = body
+  const firstMatch = (re: RegExp): string | null => {
+    re.lastIndex = 0
+    const m = re.exec(text)
+    return m ? m[1] : null
+  }
+  const completedDate = firstMatch(COMPLETED_DATE_REGEX)
+  const dueDate       = firstMatch(DUE_DATE_REGEX)
+  const scheduledDate = firstMatch(SCHEDULED_DATE_REGEX)
+  const startDate     = firstMatch(START_DATE_REGEX)
+  const priorityEmoji = firstMatch(PRIORITY_REGEX)
+  const priority = priorityEmoji ? priorityFromEmoji(priorityEmoji) : 'normal'
+
+  // Now strip ALL occurrences of every marker so the display text is clean.
+  // Order matters less than we'd think — each regex captures its own
+  // surrounding whitespace, so successive replaces don't double-up.
+  text = text
+    .replace(COMPLETED_DATE_REGEX, ' ')
+    .replace(DUE_DATE_REGEX, ' ')
+    .replace(SCHEDULED_DATE_REGEX, ' ')
+    .replace(START_DATE_REGEX, ' ')
+    .replace(PRIORITY_REGEX, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  return { text, completedDate, dueDate, scheduledDate, startDate, priority }
 }
 
 export interface TaskSourceNote {
@@ -36,19 +119,17 @@ export function extractTasks(notes: TaskSourceNote[]): Task[] {
       const m = lines[i].match(TASK_LINE_REGEX)
       if (!m) continue
       const completed = m[2].toLowerCase() === 'x'
-      let text = m[4]
-      let completedDate: string | null = null
-      const dateMatch = text.match(COMPLETED_DATE_REGEX)
-      if (dateMatch) {
-        completedDate = dateMatch[1]
-        text = text.slice(0, dateMatch.index).trimEnd()
-      }
+      const parsed = parseTaskMetadata(m[4])
       out.push({
         noteId: note.id,
         lineNumber: i,
-        text,
+        text: parsed.text,
         completed,
-        completedDate,
+        completedDate: parsed.completedDate,
+        dueDate: parsed.dueDate,
+        scheduledDate: parsed.scheduledDate,
+        startDate: parsed.startDate,
+        priority: parsed.priority,
       })
     }
   }
@@ -88,9 +169,14 @@ export function toggleTaskLineText(lineText: string, now: Date = new Date()): st
   const [, prefix, mark, mid, rest] = m
   const wasCompleted = mark.toLowerCase() === 'x'
   if (wasCompleted) {
-    const stripped = rest.replace(COMPLETED_DATE_REGEX, '').trimEnd()
+    // Strip the ✅ done date but keep due / scheduled / start / priority
+    // intact — the user might un-check by accident, and we shouldn't
+    // lose the rest of the metadata.
+    COMPLETED_DATE_REGEX.lastIndex = 0
+    const stripped = rest.replace(COMPLETED_DATE_REGEX, ' ').replace(/\s+/g, ' ').trimEnd()
     return `${prefix} ${mid}${stripped}`
   }
+  COMPLETED_DATE_REGEX.lastIndex = 0
   const hasDate = COMPLETED_DATE_REGEX.test(rest)
   const body = hasDate ? rest : `${rest.trimEnd()} ✅ ${todayISO(now)}`
   return `${prefix}x${mid}${body}`
