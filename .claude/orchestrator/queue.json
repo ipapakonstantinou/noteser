@@ -59,11 +59,11 @@
     {
       "id": "20260519T052651-b5e3",
       "brief": "Deploy only to Vercel on push — disable / fix the failing GitHub Pages workflow in .github/workflows/",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T05:26:51Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T05:33:00Z",
+      "completed_at": "2026-05-19T05:33:30Z",
+      "result": "Deleted .github/workflows/nextjs.yml. Last 3 runs all failed (no static-export config + server-side API routes mean it could never succeed). Vercel deploys are auto-triggered via Vercel's GitHub integration — no Actions workflow needed.",
       "error": null,
       "source": "telegram"
     }
