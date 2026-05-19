@@ -270,3 +270,70 @@ describe('Ctrl+/ — open shortcuts modal', () => {
     expect(event.defaultPrevented).toBe(true)
   })
 })
+
+// ── Ctrl+1 — focus the sidebar folder tree ───────────────────────────────────
+
+describe('Ctrl+1 — focus folder tree', () => {
+  test('calls focus() on the [data-testid="folder-tree"] element when present', () => {
+    // Mount a stand-in for the folder tree so the hook has something to focus.
+    const div = document.createElement('div')
+    div.setAttribute('data-testid', 'folder-tree')
+    div.tabIndex = 0
+    document.body.appendChild(div)
+    const focusSpy = jest.spyOn(div, 'focus')
+
+    mountHook()
+    act(() => { fireKey('1', { ctrlKey: true }) })
+
+    expect(focusSpy).toHaveBeenCalledTimes(1)
+    document.body.removeChild(div)
+  })
+
+  test('event.defaultPrevented is true', () => {
+    mountHook()
+    let event!: KeyboardEvent
+    act(() => { event = fireKey('1', { ctrlKey: true }) })
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  test('is a safe no-op when the tree is not mounted', () => {
+    mountHook()
+    // No throw — focus() is called on `?.` so missing element is fine.
+    expect(() => {
+      act(() => { fireKey('1', { ctrlKey: true }) })
+    }).not.toThrow()
+  })
+})
+
+// ── `/` — open search as a synonym for Ctrl+K ────────────────────────────────
+
+describe('/ — open search (no modifier)', () => {
+  test('opens search when no input is focused', () => {
+    mountHook()
+    act(() => { fireKey('/') })
+    expect(useUIStore.getState().isSearchOpen).toBe(true)
+  })
+
+  test('event.defaultPrevented is true', () => {
+    mountHook()
+    let event!: KeyboardEvent
+    act(() => { event = fireKey('/') })
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  test('does NOT open search when typing in an INPUT', () => {
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    input.focus()
+
+    mountHook()
+    // Dispatch on the input so event.target is the input element.
+    act(() => {
+      const ev = new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true })
+      input.dispatchEvent(ev)
+    })
+
+    expect(useUIStore.getState().isSearchOpen).toBe(false)
+    document.body.removeChild(input)
+  })
+})

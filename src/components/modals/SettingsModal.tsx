@@ -6,6 +6,7 @@ import { Modal } from '@/components/ui'
 import { AttachmentsSection } from './AttachmentsSection'
 import { AISection } from './AISection'
 import { DailyNotesSection, TemplatesSection } from './DailyNotesSection'
+import { ShortcutsSection } from './ShortcutsSection'
 import {
   Section,
   Field,
@@ -91,6 +92,10 @@ export const SettingsModal = () => {
 
         <Section title="AI">
           <AISection />
+        </Section>
+
+        <Section title="Keyboard shortcuts">
+          <ShortcutsSection />
         </Section>
 
         <Section title="GitHub sync">

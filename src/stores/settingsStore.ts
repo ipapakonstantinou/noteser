@@ -59,6 +59,13 @@ export interface SettingsState {
   // common case.
   aiModel: string
 
+  // ── Keyboard shortcuts ─────────────────────────────────────────────────
+  // Per-shortcut combo override. Keys are `ShortcutDef.id` values from
+  // `src/utils/shortcuts.ts`; values are canonical combo strings (e.g.
+  // `Ctrl+Shift+Y`). Anything absent falls back to the shortcut's default.
+  // Empty object = pristine defaults.
+  shortcutOverrides: Record<string, string>
+
   setFolderSortMode: (mode: FolderSortMode) => void
   setTaskListDensity: (density: TaskListDensity) => void
   setShowHiddenFolders: (value: boolean) => void
@@ -72,6 +79,9 @@ export interface SettingsState {
   setAiProvider: (provider: AIProvider) => void
   setAiApiKey: (key: string) => void
   setAiModel: (model: string) => void
+  setShortcutOverride: (id: string, combo: string) => void
+  clearShortcutOverride: (id: string) => void
+  resetShortcutOverrides: () => void
   reset: () => void
 }
 
@@ -89,6 +99,7 @@ const DEFAULTS = {
   aiProvider: 'off' as AIProvider,
   aiApiKey: '',
   aiModel: DEFAULT_AI_MODEL.anthropic,
+  shortcutOverrides: {} as Record<string, string>,
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -108,6 +119,18 @@ export const useSettingsStore = create<SettingsState>()(
       setAiProvider: (aiProvider) => set({ aiProvider }),
       setAiApiKey: (aiApiKey) => set({ aiApiKey }),
       setAiModel: (aiModel) => set({ aiModel }),
+      setShortcutOverride: (id, combo) =>
+        set((state) => ({
+          shortcutOverrides: { ...state.shortcutOverrides, [id]: combo },
+        })),
+      clearShortcutOverride: (id) =>
+        set((state) => {
+          if (!(id in state.shortcutOverrides)) return state
+          const next = { ...state.shortcutOverrides }
+          delete next[id]
+          return { shortcutOverrides: next }
+        }),
+      resetShortcutOverrides: () => set({ shortcutOverrides: {} }),
       reset: () => set(DEFAULTS),
     }),
     { name: STORAGE_KEYS.settings }

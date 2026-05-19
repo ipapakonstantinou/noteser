@@ -191,11 +191,11 @@
     {
       "id": "20260519T115557-c4a1",
       "brief": "Keyboard-driven sidebar navigation — arrow keys to traverse the folder tree, Enter to open, Space to toggle expand, slash to focus search, jump-to-note shortcut. Roadmap entry added 2026-05-19; queue placeholder for when work picks up.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T11:55:57Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T19:30:00Z",
+      "completed_at": "2026-05-19T19:55:00Z",
+      "result": "Shipped via parallel agent. New src/utils/treeNav.ts exposes getFlattenedTreeOrder / findRowIndex / findNextRowByLetter — flattens expanded folders into a single navigation list. FolderTree.tsx becomes role='tree' with tabIndex=0; an onKeyDown handler implements ArrowUp/Down/Left/Right, Home/End, Enter (open note), Space (toggle folder), and letter-jump (incremental find with 800ms buffer). Focused row gets a visible obsidianAccentPurple ring. Global Ctrl+1 focuses the tree (via new focusSidebar shortcut action). Bare `/` opens search when not in an input — Obsidian/Slack muscle memory. 22 treeNav tests + 6 useKeyboardShortcuts tests added.",
       "error": null,
       "source": "telegram"
     },
@@ -548,6 +548,17 @@
       "started_at": null,
       "completed_at": null,
       "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T181000-t1u2",
+      "brief": "Configurable keyboard shortcuts. Data-driven SHORTCUTS registry, per-shortcut user overrides persisted in settingsStore, Settings → Shortcuts UI that lets the user click any combo and press a new one to rebind. Cross-platform Mod handling (Ctrl ↔ Meta on Mac).",
+      "status": "done",
+      "created_at": "2026-05-19T18:10:00Z",
+      "started_at": "2026-05-19T19:30:00Z",
+      "completed_at": "2026-05-19T19:55:00Z",
+      "result": "Shipped via parallel agent. New src/utils/shortcuts.ts exposes SHORTCUTS registry, parseCombo / matchEvent / formatEventAsCombo / comboToDisplay / activeComboFor helpers, and the ShortcutAction union. settingsStore gains shortcutOverrides + setShortcutOverride / clearShortcutOverride / resetShortcutOverrides. useKeyboardShortcuts refactored from if/else ladder to data-driven loop over SHORTCUTS; subscribes to overrides so changes take effect without a reload. Mac Cmd is collapsed with Ctrl into a single Mod modifier — same defaults work on both platforms. New ShortcutsSection.tsx (Settings) shows every shortcut with a click-to-capture rebind UI, modifier-only events ignored, Escape cancels. 45 new tests.",
       "error": null,
       "source": "telegram"
     }
