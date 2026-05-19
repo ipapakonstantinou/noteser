@@ -3,7 +3,8 @@
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)
 ![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)
-![Deployed on Vercel](https://img.shields.io/badge/deploy-Vercel-000?logo=vercel)
+
+**Live:** [noteser.thetechjon.com](https://noteser.thetechjon.com)
 
 <!-- TODO: drop a hero screenshot or GIF here.
      Suggested path: `public/screenshot.png` (or `.gif`), then:
@@ -27,7 +28,7 @@ Other useful commands:
 
 | Command | What it does |
 | --- | --- |
-| `npm run build` | Production build (used by Vercel) |
+| `npm run build` | Production build |
 | `npm run lint` | ESLint via Next.js |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm test` | Jest |
@@ -47,7 +48,7 @@ NEXT_PUBLIC_GITHUB_CLIENT_ID=Ov23li...
 NEXT_PUBLIC_YJS_WS_URL=wss://your-server.example.com
 ```
 
-`.env.local` is gitignored. For Vercel, add the same keys under **Project Settings → Environment Variables**.
+`.env.local` is gitignored. For your hosting platform, add the same keys to the project's environment-variable settings.
 
 ## Setting up GitHub sync
 
@@ -60,15 +61,19 @@ NEXT_PUBLIC_YJS_WS_URL=wss://your-server.example.com
 4. Restart the dev server so it reads the new env var.
 5. In the running app, click **Connect to GitHub** in the sidebar footer → enter the 6-character code on github.com → pick or create a vault repo.
 
-## Deploying to Vercel + custom domain
+## Deploying
 
-1. Push the repo to GitHub.
-2. Import on Vercel; framework auto-detected as Next.js.
-3. Add `NEXT_PUBLIC_GITHUB_CLIENT_ID` (and optionally `NEXT_PUBLIC_YJS_WS_URL`) under **Project Settings → Environment Variables** for all three environments. Redeploy to pick them up.
-4. For a custom domain (e.g. `noteser.yourdomain.com`):
-   - Vercel → **Settings → Domains → Add**, enter the domain. Vercel will show you the DNS record to add (usually a `CNAME` to `cname.vercel-dns.com`).
-   - Add that record at your DNS registrar; TLS is automatic once it propagates.
-   - In the GitHub OAuth App settings, change Homepage / Authorization callback URL to `https://noteser.yourdomain.com`.
+Production runs at **[noteser.thetechjon.com](https://noteser.thetechjon.com)**.
+The app is a standard Next.js project — any platform that supports Next.js
+server routes will work (Vercel, Netlify, Cloudflare Pages with the
+adapter, your own VPS). The two `/api/github/*` routes are required (they
+proxy the OAuth device-flow endpoints which don't support CORS), so a
+pure-static export won't work.
+
+For a custom domain:
+1. Point a `CNAME` (or `A`) record to your hosting platform.
+2. Set `NEXT_PUBLIC_GITHUB_CLIENT_ID` (and optionally `NEXT_PUBLIC_YJS_WS_URL`) in the platform's environment variables.
+3. In the GitHub OAuth App settings, change Homepage / Authorization callback URL to your production domain.
 
 ## Architecture (10 000 ft)
 

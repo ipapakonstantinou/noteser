@@ -276,4 +276,42 @@ describe('task marker click handler', () => {
     view.destroy()
     parent.remove()
   })
+
+  test('clicking a recurring task checkbox produces TWO lines (new open instance above, completed below)', () => {
+    // Fixed date: 2026-05-18 (from beforeEach).
+    // Due date 2026-05-20, rule "every week" → next due 2026-05-27.
+    const { view, parent } = mountView('- [ ] water plants 🔁 every week 📅 2026-05-20')
+    const clicked = clickMarker(parent, '.cm-lp-task-unchecked')
+    expect(clicked).toBe(true)
+    const doc = view.state.doc.toString()
+    const lines = doc.split('\n')
+    expect(lines).toHaveLength(2)
+    // New open instance: date rolled forward one week, canonical marker order.
+    expect(lines[0]).toBe('- [ ] water plants 📅 2026-05-27 🔁 every week')
+    // Completed line: original due date preserved, ✅ stamped with today (2026-05-18).
+    expect(lines[1]).toContain('- [x]')
+    expect(lines[1]).toContain('📅 2026-05-20')
+    expect(lines[1]).toContain('🔁 every week')
+    expect(lines[1]).toContain('✅ 2026-05-18')
+    view.destroy()
+    parent.remove()
+  })
+
+  test('recurring task: new instance appears ABOVE the completed line in a multi-line doc', () => {
+    const doc = 'Intro\n- [ ] water plants 🔁 every week 📅 2026-05-20\nOutro'
+    const { view, parent } = mountView(doc)
+    clickMarker(parent, '.cm-lp-task-unchecked')
+    const result = view.state.doc.toString()
+    const lines = result.split('\n')
+    // Expect 4 lines: Intro, new-open, completed, Outro
+    expect(lines).toHaveLength(4)
+    expect(lines[0]).toBe('Intro')
+    expect(lines[1]).toContain('- [ ]')
+    expect(lines[1]).toContain('📅 2026-05-27')
+    expect(lines[2]).toContain('- [x]')
+    expect(lines[2]).toContain('✅ 2026-05-18')
+    expect(lines[3]).toBe('Outro')
+    view.destroy()
+    parent.remove()
+  })
 })

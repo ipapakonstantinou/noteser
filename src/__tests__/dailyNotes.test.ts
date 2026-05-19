@@ -28,7 +28,7 @@ beforeEach(() => {
   useNoteStore.setState({ notes: [], selectedNoteId: null })
   useFolderStore.setState({ folders: [], activeFolderId: null, expandedFolders: {} })
   useSettingsStore.setState({
-    dailyNotesFolder: 'Daily Notes',
+    dailyNotesFolder: 'Notes/Daily',
     dailyNoteDateFormat: 'YYYY-MM-DD',
     templatesFolder: 'Templates',
     dailyNoteTemplateId: null,
@@ -47,12 +47,15 @@ describe('openTodayNote', () => {
     const notes = useNoteStore.getState().notes
     expect(notes).toHaveLength(1)
     expect(notes[0].title).toBe('2026-05-19')
-    // The daily-notes folder should have been auto-materialised. Stored
-    // name is the SANITIZED form ("Daily-Notes"), not the raw setting
-    // value ("Daily Notes") — see ensureFolderPath docs.
-    const folder = useFolderStore.getState().folders.find(f => f.name === 'Daily-Notes')
-    expect(folder).toBeDefined()
-    expect(notes[0].folderId).toBe(folder!.id)
+    // The daily-notes folder hierarchy should have been auto-materialised.
+    // Default is "Notes/Daily" → two folders (parent "Notes", child "Daily").
+    // The new note lives in the child.
+    const folders = useFolderStore.getState().folders
+    const parent = folders.find(f => f.name === 'Notes' && f.parentId == null)
+    const child = folders.find(f => f.name === 'Daily' && f.parentId === parent?.id)
+    expect(parent).toBeDefined()
+    expect(child).toBeDefined()
+    expect(notes[0].folderId).toBe(child!.id)
     // Workspace opened the new note.
     const pane = useWorkspaceStore.getState().panes[0]
     expect(pane.tabs).toHaveLength(1)
