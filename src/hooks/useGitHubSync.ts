@@ -3,7 +3,7 @@
 import { useCallback, useState } from 'react'
 import { useGitHubStore, useNoteStore, useFolderStore, useWorkspaceStore } from '@/stores'
 import { syncToGitHub, pullFromGitHub, pullFromZipball } from '@/utils/githubSync'
-import { applyNonConflicts } from '@/utils/syncApply'
+import { applyNonConflicts, applyAttachmentClassifications } from '@/utils/syncApply'
 import type { ConflictTabData } from '@/stores/workspaceStore'
 
 export type SyncState =
@@ -62,11 +62,13 @@ export function useGitHubSync(): UseGitHubSyncResult {
       ) as ConflictTabData[]
       if (conflicts.length > 0) {
         applyNonConflicts(classifications)
+        await applyAttachmentClassifications(classifications)
         openMergeConflicts(conflicts)
         setSyncState({ kind: 'err', message: `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} need review` })
         return
       }
       const pullCounts = applyNonConflicts(classifications)
+      const attachCounts = await applyAttachmentClassifications(classifications)
 
       const { notes, updateNote } = useNoteStore.getState()
       const { folders } = useFolderStore.getState()
@@ -81,7 +83,9 @@ export function useGitHubSync(): UseGitHubSyncResult {
       }
       recordSync(result.commitSha)
 
-      const totalPulled = pullCounts.created + pullCounts.updated + pullCounts.deleted
+      const totalPulled =
+        pullCounts.created + pullCounts.updated + pullCounts.deleted +
+        attachCounts.created + attachCounts.updated
       if (result.unchanged && totalPulled === 0) {
         setSyncState({ kind: 'ok', message: 'Up to date', url: null })
       } else {
@@ -89,6 +93,8 @@ export function useGitHubSync(): UseGitHubSyncResult {
         if (pullCounts.created) parts.push(`↓${pullCounts.created} new`)
         if (pullCounts.updated) parts.push(`↓${pullCounts.updated} updated`)
         if (pullCounts.deleted) parts.push(`↓${pullCounts.deleted} removed`)
+        const attachTotal = attachCounts.created + attachCounts.updated
+        if (attachTotal) parts.push(`↓${attachTotal} image${attachTotal === 1 ? '' : 's'}`)
         if (result.created) parts.push(`↑${result.created} new`)
         if (result.updated) parts.push(`↑${result.updated} updated`)
         if (result.deleted) parts.push(`↑${result.deleted} deleted`)

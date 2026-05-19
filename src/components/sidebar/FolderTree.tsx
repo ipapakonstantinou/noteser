@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -13,6 +13,13 @@ import { useHydration } from '@/hooks'
 import { EditableText } from '../shared/EditableText'
 import { collectAllTags } from '@/utils/tags'
 import { sortNotes } from '@/utils/sortNotes'
+import {
+  ATTACHMENT_DIR,
+  listAttachmentMeta,
+  getAttachmentUrl,
+  type AttachmentMeta,
+} from '@/utils/attachments'
+import { ATTACHMENTS_CHANGED_EVENT } from '@/utils/events'
 
 interface FolderTreeProps {
   onRightClick: (e: React.MouseEvent, type: 'note' | 'folder', id: string) => void
@@ -24,6 +31,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   const renameRequest = useUIStore(s => s.renameRequest)
   const clearRenameRequest = useUIStore(s => s.clearRenameRequest)
   const folderSortMode = useSettingsStore(s => s.folderSortMode)
+  const showHiddenFolders = useSettingsStore(s => s.showHiddenFolders)
   const {
     notes,
     selectedNoteId,
@@ -57,6 +65,28 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   // Tags are derived from #word patterns in note bodies — recomputed when
   // notes change. No more entity store.
   const tagCounts = useMemo(() => collectAllTags(activeNotes), [activeNotes])
+
+  // ── Attachments folder (synthetic) ──────────────────────────────────────
+  // Surfaces the IDB-backed attachment store as a read-only folder at the
+  // bottom of the root tree. Refreshed on any save/put/delete via the
+  // global ATTACHMENTS_CHANGED_EVENT.
+  const [attachmentMeta, setAttachmentMeta] = useState<AttachmentMeta[]>([])
+  const [attachmentsExpanded, setAttachmentsExpanded] = useState(false)
+  useEffect(() => {
+    if (!hydrated) return
+    let cancelled = false
+    const load = () => {
+      listAttachmentMeta().then(m => {
+        if (!cancelled) setAttachmentMeta(m)
+      })
+    }
+    load()
+    window.addEventListener(ATTACHMENTS_CHANGED_EVENT, load)
+    return () => {
+      cancelled = true
+      window.removeEventListener(ATTACHMENTS_CHANGED_EVENT, load)
+    }
+  }, [hydrated])
 
   // ── Drag & drop state ───────────────────────────────────────────────────
   // The id of the note currently being dragged (null when nothing is held);
@@ -120,6 +150,67 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     endNoteDrag()
   }
 
+  // ── Synthetic attachments folder render helpers ─────────────────────────
+  // Rendered with the same icons/affordances as user folders + notes — see
+  // commit history if you're tempted to give it a special PhotoIcon back.
+  // The folder is treated as "hidden" and suppressed when the
+  // `showHiddenFolders` setting is off.
+
+  const openAttachment = async (path: string) => {
+    const url = await getAttachmentUrl(path)
+    if (url) window.open(url, '_blank', 'noopener')
+  }
+
+  // Strip the timestamp prefix our saver adds so the original filename shows.
+  const attachmentDisplayName = (path: string): string => {
+    const file = path.replace(/^attachments\//, '')
+    const match = file.match(/^\d{14}-(.+)$/)
+    return match ? match[1] : file
+  }
+
+  const AttachmentsFolder = () => {
+    const count = attachmentMeta.length
+    if (count === 0) return null
+    if (!showHiddenFolders) return null
+    return (
+      <div className="mb-0.5">
+        <div
+          className="obsidian-folder-item"
+          onClick={() => setAttachmentsExpanded(v => !v)}
+        >
+          <button
+            className="mr-1 focus:outline-none"
+            onClick={e => { e.stopPropagation(); setAttachmentsExpanded(v => !v) }}
+          >
+            {attachmentsExpanded ? (
+              <ChevronDownIcon className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronRightIcon className="w-3.5 h-3.5" />
+            )}
+          </button>
+          <FolderIcon className="w-4 h-4 mr-1.5 text-obsidianSecondaryText" />
+          <span className="text-obsidianText">{ATTACHMENT_DIR}</span>
+          <span className="ml-auto text-xs text-obsidianSecondaryText">{count}</span>
+        </div>
+        {attachmentsExpanded && (
+          <div style={{ paddingLeft: '20px' }}>
+            {attachmentMeta.map(m => (
+              <div
+                key={m.path}
+                className="obsidian-file-item"
+                onClick={() => openAttachment(m.path)}
+                title={m.path}
+              >
+                <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
+                <span className="flex-1 truncate">{attachmentDisplayName(m.path)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // Render note item
   const NoteItem = ({ note, className = '' }: { note: typeof notes[0]; className?: string }) => {
     return (
@@ -156,12 +247,18 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     )
   }
 
+  // A folder is "hidden" if its name starts with `.` — convention borrowed
+  // from Unix dotfiles. The synthetic attachments folder is also hidden.
+  const isHiddenFolderName = (name: string): boolean => name.startsWith('.')
+  const filterHidden = <T extends { name: string }>(items: T[]): T[] =>
+    showHiddenFolders ? items : items.filter(f => !isHiddenFolderName(f.name))
+
   // Render folder with its child folders + its notes (recursive)
   const FolderItem = ({ folder, depth = 0 }: { folder: typeof folders[0]; depth?: number }) => {
     const isExpanded = expandedFolders[folder.id]
     const isActive = activeFolderId === folder.id
     const folderNotes = sortNotes(activeNotes.filter(n => n.folderId === folder.id), folderSortMode)
-    const childFolders = hydrated ? getChildFolders(folder.id) : []
+    const childFolders = filterHidden(hydrated ? getChildFolders(folder.id) : [])
     const childCount = folderNotes.length + childFolders.length
 
     const isDropTarget = dragOverTarget === folder.id
@@ -343,7 +440,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   // icon but no longer get hoisted above the folder list).
   const rootNotes = sortNotes(activeNotes.filter(n => !n.folderId), folderSortMode)
 
-  if (rootFolders.length === 0 && rootNotes.length === 0) {
+  if (rootFolders.length === 0 && rootNotes.length === 0 && attachmentMeta.length === 0) {
     return (
       <div
         className={`text-center py-8 text-obsidianSecondaryText min-h-full ${
@@ -360,6 +457,24 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   }
 
   const rootHighlighted = dragOverTarget === '__root__'
+
+  // Merge the synthetic attachments folder into the root list and sort
+  // alphabetically (case-insensitive) so it sits in its natural place rather
+  // than being pinned to the bottom. Each entry is rendered by its `kind`.
+  type RootEntry =
+    | { kind: 'folder'; name: string; folder: typeof folders[0] }
+    | { kind: 'attachments'; name: string }
+  const rootEntries: RootEntry[] = filterHidden(rootFolders).map(f => ({
+    kind: 'folder' as const, name: f.name, folder: f,
+  }))
+  if (
+    attachmentMeta.length > 0
+    && (showHiddenFolders || !isHiddenFolderName(ATTACHMENT_DIR))
+  ) {
+    rootEntries.push({ kind: 'attachments', name: ATTACHMENT_DIR })
+  }
+  rootEntries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+
   return (
     <div
       className={`min-h-full ${rootHighlighted ? 'outline outline-2 outline-obsidianAccentPurple rounded' : ''}`}
@@ -370,8 +485,10 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
       }}
       onDrop={onRootDrop}
     >
-      {rootFolders.map(folder => (
-        <FolderItem key={folder.id} folder={folder} />
+      {rootEntries.map(entry => entry.kind === 'folder' ? (
+        <FolderItem key={entry.folder.id} folder={entry.folder} />
+      ) : (
+        <AttachmentsFolder key="__attachments__" />
       ))}
       {rootNotes.map(note => (
         <NoteItem key={note.id} note={note} />

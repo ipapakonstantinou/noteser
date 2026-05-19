@@ -10,7 +10,16 @@
 // same path doesn't burn through `URL.createObjectURL` calls on every preview
 // re-render. The cache is best-effort: a page reload re-mints URLs.
 
-import { get, set, del } from 'idb-keyval'
+import { get, set, del, keys } from 'idb-keyval'
+import { gitBlobShaBytes } from './github'
+import { ATTACHMENTS_CHANGED_EVENT } from './events'
+
+// Notify any listening UI (FolderTree, Settings) that the attachment store
+// changed. No-op outside a browser environment.
+function notifyAttachmentsChanged(): void {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(ATTACHMENTS_CHANGED_EVENT))
+}
 
 const PREFIX = 'noteser-attachment:'
 export const ATTACHMENT_DIR = 'attachments'
@@ -78,6 +87,7 @@ export async function saveAttachment(
     createdAt: Date.now(),
   }
   await set(PREFIX + path, record)
+  notifyAttachmentsChanged()
   return path
 }
 
@@ -107,6 +117,7 @@ export async function deleteAttachment(path: string): Promise<void> {
     URL.revokeObjectURL(url)
     urlCache.delete(path)
   }
+  notifyAttachmentsChanged()
 }
 
 // Test-only: drop the in-memory URL cache without touching IDB. Tests that
@@ -114,4 +125,82 @@ export async function deleteAttachment(path: string): Promise<void> {
 export function _clearAttachmentUrlCache(): void {
   for (const url of urlCache.values()) URL.revokeObjectURL(url)
   urlCache.clear()
+}
+
+// ── Bulk + sync helpers ─────────────────────────────────────────────────────
+// These power the Settings panel ("show me everything in the store") and the
+// GitHub binary sync flow ("which files changed since the last push?").
+
+// Enumerate every attachment path currently in IDB. Filters by the
+// `noteser-attachment:` prefix because idb-keyval shares its database with
+// the Zustand persist adapter, so other keys live in the same KV store.
+export async function listAttachmentPaths(): Promise<string[]> {
+  const allKeys = await keys()
+  const out: string[] = []
+  for (const k of allKeys) {
+    if (typeof k !== 'string') continue
+    if (k.startsWith(PREFIX)) out.push(k.slice(PREFIX.length))
+  }
+  return out.sort()
+}
+
+export interface AttachmentMeta {
+  path: string
+  size: number
+  mime: string
+  originalName: string
+  createdAt: number
+}
+
+// Metadata for every attachment in IDB, suitable for the Settings list view.
+// Skips the blob itself so we don't pull megabytes into memory just to count.
+export async function listAttachmentMeta(): Promise<AttachmentMeta[]> {
+  const paths = await listAttachmentPaths()
+  const out: AttachmentMeta[] = []
+  for (const path of paths) {
+    const record = await get<StoredAttachment>(PREFIX + path)
+    if (!record) continue
+    out.push({
+      path,
+      size: record.blob.size,
+      mime: record.mime,
+      originalName: record.originalName,
+      createdAt: record.createdAt,
+    })
+  }
+  return out
+}
+
+// Compute the git blob SHA for a stored attachment, so the sync layer can
+// decide whether to upload it. Returns null if the path is unknown.
+export async function getAttachmentGitSha(path: string): Promise<string | null> {
+  const record = await get<StoredAttachment>(PREFIX + path)
+  if (!record) return null
+  const bytes = new Uint8Array(await record.blob.arrayBuffer())
+  return gitBlobShaBytes(bytes)
+}
+
+// Save a blob at a specific path (vs. saveAttachment which mints a fresh
+// timestamped path). Used by sync apply when pulling remote attachments —
+// the path is dictated by the remote tree, not the wall clock.
+export async function putAttachmentAtPath(
+  path: string,
+  blob: Blob,
+  originalName: string = path.split('/').pop() ?? path,
+): Promise<void> {
+  const record: StoredAttachment = {
+    blob,
+    mime: blob.type || 'application/octet-stream',
+    originalName,
+    createdAt: Date.now(),
+  }
+  await set(PREFIX + path, record)
+  // Invalidate the URL cache so the next read mints a fresh blob: URL for
+  // the new content (otherwise editors and preview keep showing the old img).
+  const oldUrl = urlCache.get(path)
+  if (oldUrl) {
+    URL.revokeObjectURL(oldUrl)
+    urlCache.delete(path)
+  }
+  notifyAttachmentsChanged()
 }

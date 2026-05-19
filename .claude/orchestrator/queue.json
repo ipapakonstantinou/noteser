@@ -157,12 +157,12 @@
     },
     {
       "id": "20260519T130701-f7c2",
-      "brief": "Attachments visibility in Settings — show the IndexedDB attachment store: total count, total size, list of paths (with thumbnails?), and a way to clean up orphans (attachments no longer referenced by any note). Today attachments live invisibly in IDB under the `attachments/` path scheme.",
-      "status": "pending",
+      "brief": "Attachments visibility in Settings — show the IndexedDB attachment store: total count, total size, list of paths (with thumbnails?), and a way to clean up orphans (attachments no longer referenced by any note). Today attachments live invisibly in IDB under the `attachments/` path scheme. Folded in: GitHub binary sync for attachments (per user direction 2026-05-19) so they round-trip to a real attachments/ folder in the synced repo.",
+      "status": "done",
       "created_at": "2026-05-19T13:07:01Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T14:01:00Z",
+      "completed_at": "2026-05-19T15:10:00Z",
+      "result": "Shipped both halves. GitHub binary sync: github.ts gets createBlobBinary (base64 upload), getBlobBytes (decode→Uint8Array), blobToBase64, base64ToBytes, gitBlobShaBytes (binary SHA). githubSync.ts pull walks `attachments/*` paths, classifies attachmentCreated/Updated by comparing local IDB SHA to remote tree SHA; push uploads any local attachment whose SHA differs from remote (additive only — no remote-side deletes). pullFromZipball seeds attachments on first clone via a side-channel byte cache. syncApply.applyAttachmentClassifications fetches and writes binaries to IDB. useGitHubSync hook applies attachment counts in the status line. Settings: AttachmentsSection.tsx shows count, total size, paths list with size + delete, orphan detection (via new attachmentRefs.ts that scans ![](attachments/...) + <img src='attachments/...'>) and a Clean-up-orphans button. 27 new tests (284 total green).",
       "error": null,
       "source": "telegram"
     },

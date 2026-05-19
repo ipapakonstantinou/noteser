@@ -6,14 +6,24 @@ import {
   getCommitTreeSha,
   getTreeMap,
   createBlob,
+  createBlobBinary,
   createTree,
   createCommit,
   updateBranchRef,
   getBlobContent,
+  getBlobBytes,
   gitBlobSha,
+  gitBlobShaBytes,
   fetchZipball,
   type GitTreeEntry,
 } from './github'
+import {
+  ATTACHMENT_DIR,
+  isAttachmentPath,
+  listAttachmentPaths,
+  getAttachmentBlob,
+  getAttachmentGitSha,
+} from './attachments'
 
 export interface SyncResult {
   unchanged: boolean
@@ -42,10 +52,46 @@ function buildFolderPath(folderId: string | null, folders: Folder[]): string {
   return segs.join('/')
 }
 
+// Repo-paths (e.g. `.obsidian/themes`) for every non-deleted local folder.
+// Used by the pull's directory-walking pass to skip dirs we already
+// materialised — without it we'd emit duplicate folderCreated entries on
+// every sync.
+function collectLocalFolderRepoPaths(folders: Folder[]): Set<string> {
+  const out = new Set<string>()
+  for (const f of folders) {
+    if (f.isDeleted) continue
+    const p = buildFolderPath(f.id, folders)
+    if (p) out.add(p)
+  }
+  return out
+}
+
 export function notePath(note: Note, folders: Folder[]): string {
   const dir = buildFolderPath(note.folderId, folders)
   const file = `${sanitizeFilename(note.title || 'Untitled')}.md`
   return dir ? `${dir}/${file}` : file
+}
+
+// Map common image extensions to MIME types so attachment pulls hand the
+// apply layer a properly-typed Blob. Unknown extensions fall back to
+// `application/octet-stream` — the file still round-trips, just without a
+// recognised type for browser previews.
+const MIME_BY_EXT: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+  bmp: 'image/bmp',
+  avif: 'image/avif',
+}
+
+export function guessMimeFromPath(path: string): string {
+  const dotIdx = path.lastIndexOf('.')
+  if (dotIdx === -1) return 'application/octet-stream'
+  const ext = path.slice(dotIdx + 1).toLowerCase()
+  return MIME_BY_EXT[ext] ?? 'application/octet-stream'
 }
 
 // ── Note serialization ──────────────────────────────────────────────────────
@@ -140,6 +186,16 @@ export type PullClassification =
       path: string
       localContent: string
     }
+  // Binary attachment: remote has this file, local doesn't. Apply step fetches
+  // the bytes and writes them to IDB at the same path.
+  | { kind: 'attachmentCreated'; path: string; remoteSha: string; mime: string }
+  // Binary attachment: local + remote both have it but content differs. We
+  // treat remote as authoritative for v1 (no per-attachment three-way merge).
+  | { kind: 'attachmentUpdated'; path: string; remoteSha: string; mime: string }
+  // Directory the remote tree implies (via any file inside it) that we don't
+  // have locally. Materialise it as an empty Folder so the sidebar reflects
+  // the repo's structure — surfaces `.obsidian/` and similar dotfile dirs.
+  | { kind: 'folderCreated'; path: string }
 
 export interface PullOutcome {
   classifications: PullClassification[]
@@ -215,6 +271,50 @@ export async function pullFromGitHub(input: {
     // remoteUnchanged + localChanged → handled by the push phase, nothing here.
   }
 
+  // 1b. Empty / non-syncable directories the remote implies. We classify
+  // every parent directory of every blob; the apply step calls
+  // ensureFolderPath on each, so dotfile dirs like `.obsidian/` and
+  // `.obsidian/themes/` show in the sidebar even though we don't pull their
+  // file contents. The `attachments/` tree is excluded — it stays rendered
+  // by the sidebar's synthetic folder, not as a real Folder entity.
+  const localFolderPaths = collectLocalFolderRepoPaths(input.folders)
+  const seenDirPaths = new Set<string>()
+  for (const [path] of remoteTree) {
+    let cur = path
+    while (true) {
+      const lastSlash = cur.lastIndexOf('/')
+      if (lastSlash === -1) break
+      cur = cur.slice(0, lastSlash)
+      if (!cur) break
+      if (seenDirPaths.has(cur)) break
+      seenDirPaths.add(cur)
+      const firstSeg = cur.split('/')[0]
+      if (firstSeg === ATTACHMENT_DIR) continue
+      if (localFolderPaths.has(cur)) continue
+      out.push({ kind: 'folderCreated', path: cur })
+    }
+  }
+
+  // 1c. Binary attachments under `attachments/`. Compare each remote entry
+  // against the local IDB store; queue creates/updates so syncApply can fetch
+  // the bytes lazily (each blob fetch is its own API call, so we only pay
+  // for ones the user actually needs).
+  const localAttachmentPaths = new Set(await listAttachmentPaths())
+  for (const [path, remoteSha] of remoteTree) {
+    if (!isAttachmentPath(path)) continue
+    // Best-effort MIME guess from extension — the apply step uses this to
+    // build the Blob. Falls back to octet-stream.
+    const mime = guessMimeFromPath(path)
+    if (!localAttachmentPaths.has(path)) {
+      out.push({ kind: 'attachmentCreated', path, remoteSha, mime })
+      continue
+    }
+    const localSha = await getAttachmentGitSha(path)
+    if (localSha && localSha !== remoteSha) {
+      out.push({ kind: 'attachmentUpdated', path, remoteSha, mime })
+    }
+  }
+
   // 2. Local notes that had a gitPath but are missing from the remote tree.
   for (const note of notes) {
     if (note.isDeleted || !note.gitPath || seenLocalIds.has(note.id)) continue
@@ -276,7 +376,10 @@ export async function pullFromZipball(input: {
   const entries: Array<{ rel: string; file: JSZip.JSZipObject }> = []
   zip.forEach((rel, file) => {
     if (file.dir) return
-    if (!rel.endsWith('.md')) return
+    // Pull both .md notes and binary files under attachments/. Anything else
+    // in the repo (root README, .github/, etc.) is ignored on the first
+    // clone — same as before the binary-sync work.
+    if (!rel.endsWith('.md') && !rel.includes(`/${ATTACHMENT_DIR}/`)) return
     entries.push({ rel, file })
   })
 
@@ -285,21 +388,50 @@ export async function pullFromZipball(input: {
     if (slashIdx === -1) continue
     const path = rel.slice(slashIdx + 1)
 
-    const content = await file.async('string')
-    const remoteSha = await gitBlobSha(content)
-    const parsed = parseNote(content)
+    if (path.endsWith('.md')) {
+      const content = await file.async('string')
+      const remoteSha = await gitBlobSha(content)
+      const parsed = parseNote(content)
 
-    classifications.push({
-      kind: 'remoteCreated',
-      path,
-      remoteSha,
-      remoteContent: content,
-      tags: parsed.tags,
-      body: parsed.body,
-    })
+      classifications.push({
+        kind: 'remoteCreated',
+        path,
+        remoteSha,
+        remoteContent: content,
+        tags: parsed.tags,
+        body: parsed.body,
+      })
+      continue
+    }
+
+    if (isAttachmentPath(path)) {
+      const bytes = await file.async('uint8array')
+      const remoteSha = await gitBlobShaBytes(bytes)
+      const mime = guessMimeFromPath(path)
+      classifications.push({ kind: 'attachmentCreated', path, remoteSha, mime })
+      // pullFromZipball already has the bytes in memory — stash them so the
+      // apply step doesn't issue a redundant per-blob fetch against the API.
+      attachmentBytesByPath.set(path, { bytes, mime })
+      continue
+    }
   }
 
   return { classifications, latestCommitSha: headSha }
+}
+
+// Side-channel cache: pullFromZipball already has the bytes in memory after
+// reading the zip, so we stash them here and the apply layer (or anyone
+// calling getZipballAttachmentBytes) can grab them without re-downloading.
+// Cleared after applyAttachmentClassifications consumes them.
+const attachmentBytesByPath = new Map<string, { bytes: Uint8Array; mime: string }>()
+
+export function takeZipballAttachmentBytes(
+  path: string,
+): { bytes: Uint8Array; mime: string } | null {
+  const entry = attachmentBytesByPath.get(path)
+  if (!entry) return null
+  attachmentBytesByPath.delete(path)
+  return entry
 }
 
 // ── Sync orchestrator ───────────────────────────────────────────────────────
@@ -368,6 +500,24 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     if (note.gitPath !== path || note.gitLastPushedSha !== finalSha) {
       pathUpdates.push({ noteId: note.id, gitPath: path, gitLastPushedSha: finalSha ?? localSha })
     }
+  }
+
+  // 3b. Local attachments → binary blob entries. Additive only for v1: we
+  // don't issue tree deletes for attachments that vanished from IDB, since
+  // we have no per-attachment "last pushed SHA" to distinguish "deleted by
+  // user" from "this device never had it". Orphan cleanup happens via the
+  // Settings UI which deletes from both sides explicitly.
+  const localAttachmentPaths = await listAttachmentPaths()
+  for (const path of localAttachmentPaths) {
+    const localSha = await getAttachmentGitSha(path)
+    if (!localSha) continue
+    const remoteSha = remoteTree.get(path)
+    if (remoteSha === localSha) continue
+    const blob = await getAttachmentBlob(path)
+    if (!blob) continue
+    const uploadedSha = await createBlobBinary(token, owner, name, blob)
+    entries.push({ path, mode: '100644', type: 'blob', sha: uploadedSha })
+    if (remoteSha) updated++; else created++
   }
 
   // 4. Handle deletions: notes that USED to have a gitPath but no longer
