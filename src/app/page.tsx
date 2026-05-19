@@ -12,6 +12,8 @@ import {
   ExportModal,
   GitHubAuthModal,
   GitHubRepoModal,
+  TaskEditModal,
+  CommandPalette,
 } from '@/components/modals'
 import { useKeyboardShortcuts, useHydration, useAutoSync } from '@/hooks'
 import { useUIStore, useWorkspaceStore, useGitHubStore } from '@/stores'
@@ -126,6 +128,8 @@ export default function Home() {
       <ExportModal />
       <GitHubAuthModal />
       <GitHubRepoModal />
+      <TaskEditModal />
+      <CommandPalette />
     </div>
   )
 }

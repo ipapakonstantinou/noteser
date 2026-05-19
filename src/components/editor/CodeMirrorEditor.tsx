@@ -12,7 +12,7 @@ import { tasksLivePreview } from './tasksLivePreview'
 import { imagesLivePreview } from './imagesLivePreview'
 import { getActiveWikilinkQuery } from '@/utils/wikilinks'
 import { findNoteByTitleOrAlias } from '@/utils/aliases'
-import { toggleTaskLineText } from '@/utils/tasks'
+import { toggleTaskLineText, UI_TASK_LINE_REGEX } from '@/utils/tasks'
 import { saveAttachment } from '@/utils/attachments'
 import { WikilinkAutocomplete } from './WikilinkAutocomplete'
 import type { Note } from '@/types'
@@ -89,8 +89,10 @@ export function CodeMirrorEditor({
   // Stable refs so extension callbacks always see the latest values
   const activeNotesRef = useRef(activeNotes)
   const navigateRef = useRef(onWikilinkNavigate)
+  const noteIdRef = useRef(noteId)
   useEffect(() => { activeNotesRef.current = activeNotes }, [activeNotes])
   useEffect(() => { navigateRef.current = onWikilinkNavigate }, [onWikilinkNavigate])
+  useEffect(() => { noteIdRef.current = noteId }, [noteId])
 
   const debouncedSave = useDebouncedCallback(onSave, 300)
 
@@ -152,6 +154,25 @@ export function CodeMirrorEditor({
         const newLine = toggleTaskLineText(line.text)
         if (newLine == null || newLine === line.text) return false
         view.dispatch({ changes: { from: line.from, to: line.to, insert: newLine } })
+        return true
+      },
+    },
+    {
+      // Open the "Create or edit Task" modal for the task line under the
+      // cursor. Mirrors Obsidian Tasks' Mod+Shift+T binding. No-op for lines
+      // that aren't task lines — falls through so the chord still works in
+      // future for non-task contexts (e.g. turn-into-task) without us having
+      // to claim the key globally.
+      key: 'Mod-Shift-t',
+      preventDefault: true,
+      run(view) {
+        const { head } = view.state.selection.main
+        const line = view.state.doc.lineAt(head)
+        if (!UI_TASK_LINE_REGEX.test(line.text)) return false
+        useUIStore.getState().openModal({
+          type: 'task-edit',
+          data: { noteId: noteIdRef.current, line: line.number - 1 },
+        })
         return true
       },
     },

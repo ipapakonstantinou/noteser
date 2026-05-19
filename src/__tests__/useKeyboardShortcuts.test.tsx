@@ -256,6 +256,42 @@ describe('Ctrl+B — toggle sidebar', () => {
   })
 })
 
+describe('Ctrl+Shift+P — open command palette', () => {
+  test('sets modal.type to "command-palette"', () => {
+    mountHook()
+    act(() => { fireKey('p', { ctrlKey: true, shiftKey: true }) })
+    expect(useUIStore.getState().modal.type).toBe('command-palette')
+  })
+
+  test('event.defaultPrevented is true', () => {
+    mountHook()
+    let event!: KeyboardEvent
+    act(() => { event = fireKey('p', { ctrlKey: true, shiftKey: true }) })
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  test('fires even when focus is in an INPUT', () => {
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    input.focus()
+
+    mountHook()
+    act(() => {
+      const ev = new KeyboardEvent('keydown', {
+        key: 'p',
+        ctrlKey: true,
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      })
+      input.dispatchEvent(ev)
+    })
+
+    expect(useUIStore.getState().modal.type).toBe('command-palette')
+    document.body.removeChild(input)
+  })
+})
+
 describe('Ctrl+/ — open shortcuts modal', () => {
   test('sets modal.type to "shortcuts"', () => {
     mountHook()

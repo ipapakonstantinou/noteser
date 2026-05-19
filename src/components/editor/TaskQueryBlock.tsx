@@ -28,7 +28,7 @@ export const TaskQueryBlock = ({ source }: { source: string }) => {
   const { query, groups } = useMemo(() => {
     const query = parseTaskQuery(source)
     const tasks = executeTaskQuery(query, { notes, folders })
-    return { query, groups: groupTasks(tasks, query.groupBy) }
+    return { query, groups: groupTasks(tasks, query.groupBy, query.sortBy) }
   }, [source, notes, folders])
 
   const handleToggle = (task: ExecutedTask) => {
