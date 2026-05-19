@@ -323,11 +323,11 @@
     {
       "id": "20260519T160841-p8j3",
       "brief": "Drag-drop bug: UI blanks during attachment move. User reports the sidebar becomes blank / unstable while dragging an attachment to a different folder. Suspect cause: many simultaneous updateNote calls (one per rewritten ref) trigger a render storm; possible secondary causes are race between moveAttachment's IDB ops and the attachmentMeta reload effect.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T16:08:41Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T16:13:00Z",
+      "completed_at": "2026-05-19T16:40:00Z",
+      "result": "Fixed in c65e08b (batched single setState replaces per-note updateNote loop) and regression-tested in 06ec364 (Playwright spec asserts notes-array ref changes exactly once and folder-tree element survives the move). Move logic extracted to attachments.moveAttachmentAndRewriteRefs so it's testable outside the hook. New window.__noteser_test surface lets E2E seed state + invoke helpers directly. 5 E2E + 348 Jest tests all green.",
       "error": null,
       "source": "telegram"
     },
