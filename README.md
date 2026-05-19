@@ -1,5 +1,14 @@
 # Noteser
 
+![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
+![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)
+![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)
+![Deployed on Vercel](https://img.shields.io/badge/deploy-Vercel-000?logo=vercel)
+
+<!-- TODO: drop a hero screenshot or GIF here.
+     Suggested path: `public/screenshot.png` (or `.gif`), then:
+     ![Noteser](./public/screenshot.png) -->
+
 Browser-first, Obsidian-style markdown note app with optional GitHub sync.
 
 - **Local-first.** Notes live in `localStorage`; no account required to start.
@@ -93,25 +102,9 @@ NEXT_PUBLIC_YJS_WS_URL=wss://your-server.example.com
 
 Right-click any note or folder for rename / move / delete / new-subfolder.
 
-## Backlog
+## Roadmap
 
-Loosely prioritized — top section is what's being picked up next, bottom is "someday / nice to have".
-
-### Now
-
-*Nothing in flight — promote from Next when starting work.*
-
-### Next
-- **Settings panel.** Obsidian-style settings modal — theme, daily-note format, default folder, sync preferences.
-- **Remappable keyboard shortcuts.** Let users rebind shortcuts from the settings panel. Useful both for personal preference and to work around browser-reserved combos — Ctrl+N is intercepted for "New Window" so noteser uses Alt+N for new note; users should be able to pick their own escape hatch.
-- **VS Code-style Git UI.** A proper source-control sidebar view: modified / added / deleted notes shown pre-push with a real Git icon, per-file include/exclude, and a richer conflict push manager. Today there's a single "Commit & Sync" button and conflicts open as inline merge tabs — workable but blind. A VS Code-like changes panel would let the user review the whole push before it goes out.
-- **Status bar footer.** Word / character count, sync status, branch indicator — parity with Obsidian's footer.
-- **Test coverage.** Add tests for sync orchestration (`githubSync.ts`), IndexedDB stores, and the merge editor line-diff. Pure utilities are now well-covered (tags, lineDiff, tasks, taskQuery, kbd shortcuts, FolderTreeToolbar).
-- **Sync robustness.** Large vaults, rate-limit handling, partial-failure recovery, conflict-resolution UX polish.
-
-### Later
-- **Mobile browser version.** Responsive layout for phones / small tablets — collapsible sidebar by default, touch-friendly tab bar, single-pane mode below a width threshold, virtual-keyboard-safe editor.
-- **Security hardening.** Token storage review, XSS surface in rendered markdown, tighter auth on the `/api/github/*` proxy routes.
+See [`docs/roadmap.md`](./docs/roadmap.md) for the full backlog (Now / Next / Later).
 
 ## License
 
