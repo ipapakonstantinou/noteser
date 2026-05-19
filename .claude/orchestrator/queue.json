@@ -510,11 +510,11 @@
     {
       "id": "20260519T172411-w7b3",
       "brief": "Smart 3-way merge for non-overlapping conflict regions. Currently any divergence (both local + remote changed since lastPushed) fires a manual merge tab. Add: fetch the lastPushed blob from GitHub as the common ancestor, run a proper 3-way merge — if the changes don't overlap (different lines), auto-pick both. Only fall back to the merge editor when there's genuine overlap. Reduces sync friction for the common 'edited two different parts on two devices' case.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T17:24:11Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T18:30:00Z",
+      "completed_at": "2026-05-19T19:10:00Z",
+      "result": "Shipped. New threeWayMerge(ancestor, local, remote) in src/utils/lineDiff.ts returns either {ok:true, merged} or {ok:false, reason:'conflicting-overlap'}. pullFromGitHub fetches the lastPushed blob via getBlobContent and attempts auto-merge before emitting a conflict; on success emits a new 'autoMerged' classification kind ({noteId, remoteSha, mergedContent}). applyNonConflicts handles autoMerged by writing the merged content + bumping gitLastPushedSha=remoteSha so the next push uploads cleanly. formatSyncMessage appends 'auto-merged N' to the status line. 23 new threeWayMerge tests (429 total). The user's Obsidian-induced conflict loop should now auto-resolve when the edits don't touch the same lines.",
       "error": null,
       "source": "telegram"
     },

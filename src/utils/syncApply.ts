@@ -37,11 +37,15 @@ export interface ApplyCounts {
   created: number
   updated: number
   deleted: number
+  // Subset of `updated`: how many were the result of a successful line-level
+  // 3-way auto-merge (as opposed to a clean one-sided remote update). Surfaced
+  // separately so the sync status line can highlight it.
+  autoMerged: number
 }
 
 export function applyNonConflicts(classifications: PullClassification[]): ApplyCounts {
   const noteStore = useNoteStore.getState()
-  const counts: ApplyCounts = { created: 0, updated: 0, deleted: 0 }
+  const counts: ApplyCounts = { created: 0, updated: 0, deleted: 0, autoMerged: 0 }
 
   for (const c of classifications) {
     if (c.kind === 'unchanged' || c.kind === 'conflict' || c.kind === 'conflictDeleted') continue
@@ -77,6 +81,19 @@ export function applyNonConflicts(classifications: PullClassification[]): ApplyC
         gitLastPushedSha: c.remoteSha,
       })
       counts.updated++
+      continue
+    }
+
+    if (c.kind === 'autoMerged') {
+      // Auto-merged content is already the union of local + remote line edits;
+      // write it back and pin gitLastPushedSha to remoteSha so the next push
+      // uploads the merged version exactly once.
+      noteStore.updateNote(c.noteId, {
+        content: c.mergedContent,
+        gitLastPushedSha: c.remoteSha,
+      })
+      counts.updated++
+      counts.autoMerged++
       continue
     }
 
