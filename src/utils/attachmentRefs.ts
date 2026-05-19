@@ -10,21 +10,27 @@
 // emit that form yet. Adding it later is a one-regex edit here.
 
 import type { Note } from '@/types'
-import { ATTACHMENT_DIR, isAttachmentPath } from './attachments'
+import { isAttachmentPath, getAttachmentPrefixes } from './attachments'
 
-// One regex per surface form. Anchored on the `attachments/` prefix so we
-// don't accidentally match external URLs or other paths.
-const MD_IMG_RE = new RegExp(`!\\[[^\\]]*\\]\\((${ATTACHMENT_DIR}/[^)\\s]+)`, 'g')
-const HTML_IMG_RE = new RegExp(`<img[^>]+src=["'](${ATTACHMENT_DIR}/[^"']+)["']`, 'gi')
+// Regex-escape a literal string so it can be embedded in a RegExp.
+function escapeForRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
 
 // Return every distinct attachment path referenced by the given content.
+// Builds the regexes per call so a settings change (new attachments folder)
+// is reflected immediately. Always recognises the historical default
+// `attachments/` plus the configured folder.
 export function extractAttachmentRefs(content: string): string[] {
   const refs = new Set<string>()
-  let m: RegExpExecArray | null
-  MD_IMG_RE.lastIndex = 0
-  while ((m = MD_IMG_RE.exec(content)) !== null) refs.add(m[1])
-  HTML_IMG_RE.lastIndex = 0
-  while ((m = HTML_IMG_RE.exec(content)) !== null) refs.add(m[1])
+  for (const prefix of getAttachmentPrefixes()) {
+    const escaped = escapeForRegex(prefix)
+    const mdRe = new RegExp(`!\\[[^\\]]*\\]\\((${escaped}[^)\\s]+)`, 'g')
+    const htmlRe = new RegExp(`<img[^>]+src=["'](${escaped}[^"']+)["']`, 'gi')
+    let m: RegExpExecArray | null
+    while ((m = mdRe.exec(content)) !== null) refs.add(m[1])
+    while ((m = htmlRe.exec(content)) !== null) refs.add(m[1])
+  }
   return [...refs]
 }
 
@@ -36,6 +42,19 @@ export function collectReferencedAttachments(notes: Note[]): Set<string> {
     for (const ref of extractAttachmentRefs(note.content)) refs.add(ref)
   }
   return refs
+}
+
+// Rewrite every occurrence of `oldPath` in `content` to `newPath`. Used when
+// an attachment is moved between folders so the markdown refs in notes stay
+// pointing at the file's new location.
+export function rewriteAttachmentRefs(
+  content: string,
+  oldPath: string,
+  newPath: string,
+): string {
+  if (oldPath === newPath || !content.includes(oldPath)) return content
+  const escaped = escapeForRegex(oldPath)
+  return content.replace(new RegExp(escaped, 'g'), newPath)
 }
 
 // Given the IDB path list and the active notes, return paths that no note

@@ -38,7 +38,7 @@ export const SettingsModal = () => {
           </Field>
           <Field
             label="Show hidden folders"
-            description="Folders flagged as hidden (currently: attachments/). Turn off to suppress them from the sidebar."
+            description="Folders whose name starts with a dot (`.obsidian`, `.github`, …). Turn off to suppress them from the sidebar."
           >
             <input
               type="checkbox"
@@ -69,14 +69,25 @@ export const SettingsModal = () => {
           <AttachmentsSection />
         </Section>
 
-        <div className="pt-4 border-t border-obsidianBorder flex justify-end">
+        <div className="pt-4 border-t border-obsidianBorder flex justify-between items-center gap-2">
           <button
             onClick={() => {
               if (confirm('Reset all settings to defaults?')) reset()
             }}
-            className="text-xs text-obsidianSecondaryText hover:text-obsidianText"
+            className="text-sm px-3 py-1.5 rounded border border-obsidianBorder text-obsidianSecondaryText hover:text-obsidianText hover:bg-obsidianDarkGray"
           >
             Reset to defaults
+          </button>
+          <button
+            onClick={() => {
+              // Commit any pending draft inputs (e.g. the attachments folder
+              // field) by blurring whatever input is focused, then close.
+              ;(document.activeElement as HTMLElement | null)?.blur?.()
+              closeModal()
+            }}
+            className="text-sm px-3 py-1.5 rounded bg-obsidianAccentPurple text-white hover:opacity-90"
+          >
+            Apply
           </button>
         </div>
       </div>

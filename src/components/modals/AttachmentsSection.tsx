@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useNoteStore } from '@/stores'
+import { useNoteStore, useSettingsStore } from '@/stores'
 import {
-  ATTACHMENT_DIR,
+  normalizeAttachmentDir,
   listAttachmentMeta,
   deleteAttachment,
   type AttachmentMeta,
@@ -21,9 +21,22 @@ function formatBytes(n: number): string {
 // removed per user request — folder path + stats is what's useful here.
 export const AttachmentsSection = () => {
   const notes = useNoteStore(s => s.notes)
+  const attachmentsFolderSetting = useSettingsStore(s => s.attachmentsFolder)
+  const setAttachmentsFolder = useSettingsStore(s => s.setAttachmentsFolder)
   const [meta, setMeta] = useState<AttachmentMeta[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
+  // Draft value so the user can edit freely and we only commit (with
+  // normalisation) on blur. Resets when the persisted setting changes
+  // from elsewhere.
+  const [draft, setDraft] = useState(attachmentsFolderSetting)
+  useEffect(() => { setDraft(attachmentsFolderSetting) }, [attachmentsFolderSetting])
+
+  const commitDraft = () => {
+    const normalised = normalizeAttachmentDir(draft)
+    if (normalised !== attachmentsFolderSetting) setAttachmentsFolder(normalised)
+    setDraft(normalised)
+  }
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -53,15 +66,30 @@ export const AttachmentsSection = () => {
   return (
     <div className="space-y-3">
       <div className="text-xs text-obsidianSecondaryText leading-relaxed">
-        Images you drop into notes are stored in your browser&apos;s IndexedDB
-        and synced to your GitHub repo under the path below.
+        New attachments land under the folder below and appear in the sidebar
+        as a regular folder. Existing files keep their original path —
+        switching the folder doesn&apos;t move or rename anything.
       </div>
 
       <div className="flex items-center gap-2 text-sm">
         <span className="text-obsidianSecondaryText">Folder</span>
-        <code className="px-2 py-0.5 rounded bg-obsidianDarkGray text-obsidianAccentPurple">
-          {ATTACHMENT_DIR}/
-        </code>
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commitDraft}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur() }
+            if (e.key === 'Escape') { setDraft(attachmentsFolderSetting); (e.target as HTMLInputElement).blur() }
+          }}
+          spellCheck={false}
+          placeholder="attachments"
+          className="bg-obsidianDarkGray border border-obsidianBorder rounded px-2 py-1 text-sm text-obsidianText focus:outline-none focus:border-obsidianAccentPurple font-mono"
+        />
+        <span className="text-obsidianSecondaryText">/</span>
+      </div>
+      <div className="text-[11px] text-obsidianSecondaryText -mt-1">
+        Affects new attachments only. Existing files keep their original path; both old and new are still recognised.
       </div>
 
       <div className="flex items-center justify-between gap-4 text-sm">

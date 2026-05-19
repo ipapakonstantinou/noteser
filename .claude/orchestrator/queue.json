@@ -180,11 +180,11 @@
     {
       "id": "20260519T120008-b9e4",
       "brief": "Configurable attachments folder / path in Settings — user should be able to set a different folder name (e.g. `images/`, `assets/`) or a nested path for attachments. Needs: a setting field for attachmentsFolder (default `attachments`), saveAttachment uses the setting for new files, isAttachmentPath checks against the configured prefix, sidebar synthetic folder labels match. Open question: do existing attachments get migrated/renamed on change, or only new ones land in the new folder (probably the latter for v1).",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T12:00:08Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T14:54:00Z",
+      "completed_at": "2026-05-19T15:30:00Z",
+      "result": "Shipped. settingsStore gains attachmentsFolder (default 'attachments') + setAttachmentsFolder. attachments.ts adds normalizeAttachmentDir, getAttachmentDir (live read), getAttachmentPrefixes (always includes historical 'attachments/' for back-compat); saveAttachment uses the live setting, isAttachmentPath accepts any configured prefix. attachmentRefs.ts builds its regexes per call from the prefix list so orphan detection covers both old and new paths. githubSync uses isAttachmentPath instead of hardcoded ATTACHMENT_DIR. FolderTree label reads the live setting. SettingsModal → Attachments adds a text input with blur-to-commit + Enter/Escape; normalisation strips slashes and collapses repeats. v1 behavior: existing attachments stay at their original path, only new attachments land in the new folder. 11 new tests (295 total green).",
       "error": null,
       "source": "telegram"
     },

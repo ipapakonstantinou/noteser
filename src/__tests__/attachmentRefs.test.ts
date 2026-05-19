@@ -1,9 +1,23 @@
+// idb-keyval is touched via attachments.ts → settings store import chain.
+jest.mock('idb-keyval', () => ({
+  get: jest.fn().mockResolvedValue(undefined),
+  set: jest.fn().mockResolvedValue(undefined),
+  del: jest.fn().mockResolvedValue(undefined),
+  keys: jest.fn().mockResolvedValue([]),
+}))
+
 import {
   extractAttachmentRefs,
   collectReferencedAttachments,
   findOrphanAttachments,
 } from '../utils/attachmentRefs'
+import { useSettingsStore } from '../stores/settingsStore'
+import { DEFAULT_ATTACHMENT_DIR } from '../utils/attachments'
 import type { Note } from '../types'
+
+beforeEach(() => {
+  useSettingsStore.getState().setAttachmentsFolder(DEFAULT_ATTACHMENT_DIR)
+})
 
 function makeNote(content: string, overrides: Partial<Note> = {}): Note {
   return {
@@ -47,6 +61,21 @@ describe('extractAttachmentRefs', () => {
 
   test('empty input returns []', () => {
     expect(extractAttachmentRefs('')).toEqual([])
+  })
+
+  test('matches refs under the configured folder + the default for back-compat', () => {
+    useSettingsStore.getState().setAttachmentsFolder('images')
+    const md = '![a](images/new.png) and ![b](attachments/old.png) and ![c](other/foo.png)'
+    expect(extractAttachmentRefs(md).sort()).toEqual([
+      'attachments/old.png',
+      'images/new.png',
+    ])
+  })
+
+  test('matches refs under a nested configured path', () => {
+    useSettingsStore.getState().setAttachmentsFolder('assets/images')
+    const md = '![a](assets/images/foo.png) ![b](assets/other.png)'
+    expect(extractAttachmentRefs(md)).toEqual(['assets/images/foo.png'])
   })
 })
 

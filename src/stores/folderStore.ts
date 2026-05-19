@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 import { v4 as uuidv4 } from 'uuid'
 import type { Folder } from '@/types'
 import { idbStorage } from '@/utils/idbStorage'
+import { sanitizeFilename } from '@/utils/export'
 
 interface FolderState {
   folders: Folder[]
@@ -19,6 +20,10 @@ interface FolderState {
   toggleFolderExpanded: (id: string) => void
   setAllFoldersExpanded: (expanded: boolean) => void
   reorderFolders: (folders: Folder[]) => void
+  // Walks a repo path (e.g. ["images"]) creating any missing folder
+  // segments. Idempotent: existing folders match by sanitized name +
+  // parent. Returns the leaf folder id, or null for an empty path.
+  ensureFolderPath: (segments: string[]) => string | null
 
   // Getters
   getFolderById: (id: string) => Folder | undefined
@@ -132,6 +137,27 @@ export const useFolderStore = create<FolderState>()(
 
       reorderFolders: (folders) => {
         set({ folders })
+      },
+
+      ensureFolderPath: (segments) => {
+        if (segments.length === 0) return null
+        let parentId: string | null = null
+        for (const segment of segments) {
+          const desired = sanitizeFilename(segment)
+          const existing = get().folders.find(
+            f => !f.isDeleted
+              && (f.parentId ?? null) === parentId
+              && sanitizeFilename(f.name) === desired,
+          )
+          if (existing) {
+            parentId = existing.id
+            continue
+          }
+          // Call the store's own addFolder so order/timestamps stay consistent.
+          const created = get().addFolder({ name: segment, parentId })
+          parentId = created.id
+        }
+        return parentId
       },
 
       // Getters
