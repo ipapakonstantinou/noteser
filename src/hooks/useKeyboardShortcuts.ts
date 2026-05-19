@@ -23,6 +23,7 @@ interface ShortcutHandlers {
 // hijack ordinary keystrokes inside the editor.
 const ALLOWED_IN_INPUT: ReadonlySet<ShortcutAction> = new Set<ShortcutAction>([
   'openSearch',
+  'openCommandPalette',
 ])
 
 export const useKeyboardShortcuts = (handlers: ShortcutHandlers = {}) => {
@@ -100,6 +101,10 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers = {}) => {
           tree?.focus()
           return
         }
+        case 'openCommandPalette':
+          event.preventDefault()
+          openModal({ type: 'command-palette' })
+          return
       }
     }
 

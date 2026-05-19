@@ -251,10 +251,10 @@ describe('activeComboFor', () => {
 // ── SHORTCUTS registry sanity ────────────────────────────────────────────────
 
 describe('SHORTCUTS registry', () => {
-  test('has the eight documented actions', () => {
+  test('has the documented actions', () => {
     const ids = SHORTCUTS.map(s => s.id).sort()
     expect(ids).toEqual([
-      'deleteNote', 'focusSidebar', 'newFolder', 'newNote', 'openSearch', 'openToday', 'togglePreview', 'toggleSidebar',
+      'deleteNote', 'focusSidebar', 'newFolder', 'newNote', 'openCommandPalette', 'openSearch', 'openToday', 'togglePreview', 'toggleSidebar',
     ])
   })
 

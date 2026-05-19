@@ -25,6 +25,7 @@ export type ShortcutAction =
   | 'deleteNote'
   | 'openToday'
   | 'focusSidebar'
+  | 'openCommandPalette'
 
 export interface ShortcutDef {
   id: string
@@ -92,6 +93,13 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
     description: 'Move keyboard focus to the sidebar folder tree so arrow keys drive navigation.',
     defaultCombo: 'Ctrl+1',
     action: 'focusSidebar',
+  },
+  {
+    id: 'openCommandPalette',
+    label: 'Open command palette',
+    description: 'Show all commands with fuzzy search.',
+    defaultCombo: 'Ctrl+Shift+P',
+    action: 'openCommandPalette',
   },
 ]
 

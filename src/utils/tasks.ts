@@ -51,6 +51,18 @@ function priorityFromEmoji(emoji: string): TaskPriority {
   }
 }
 
+// Inverse of priorityFromEmoji. `normal` has no marker (returns null) so
+// callers can omit it from the serialised line.
+export function priorityToEmoji(priority: TaskPriority): string | null {
+  switch (priority) {
+    case 'highest': return '⏫'
+    case 'high':    return '🔼'
+    case 'low':     return '🔽'
+    case 'lowest':  return '⏬'
+    default:        return null
+  }
+}
+
 export interface Task {
   noteId: string
   lineNumber: number   // 0-based, matches CodeMirror line numbering minus one
@@ -161,7 +173,7 @@ export function toggleTaskLine(content: string, lineNumber: number, now: Date = 
 // bullet (`-`, `*`, `+`, or numbered). The rendered-preview's checkbox handler
 // uses this since remark-gfm renders task list items for all of those.
 // Returns the toggled line, or null if the line isn't a task.
-const UI_TASK_LINE_REGEX = /^(\s*(?:[-*+]|\d+\.)\s+\[)( |x|X)(\]\s+)(.*)$/
+export const UI_TASK_LINE_REGEX = /^(\s*(?:[-*+]|\d+\.)\s+\[)( |x|X)(\]\s+)(.*)$/
 
 export function toggleTaskLineText(lineText: string, now: Date = new Date()): string | null {
   const m = lineText.match(UI_TASK_LINE_REGEX)
@@ -193,4 +205,34 @@ export function removeTaskPrefixFromLine(lineText: string): string | null {
   const [, prefix, , , rest] = m
   const indent = /^(\s*)/.exec(prefix)?.[1] ?? ''
   return `${indent}${rest}`
+}
+
+// Inputs for serializeTaskLine. Mirrors the shape returned by
+// parseTaskMetadata, plus `open` (= !completed) and the bullet prefix.
+export interface TaskLineParts {
+  open: boolean
+  text: string
+  priority: TaskPriority
+  dueDate: string | null
+  scheduledDate: string | null
+  startDate: string | null
+  completedDate: string | null
+}
+
+// Render a Task back into Obsidian-Tasks-plugin emoji syntax. Canonical
+// marker order: priority → 📅 due → ⏳ scheduled → 🛫 start → ✅ done.
+// `normal` priority emits no marker. Null dates emit no marker.
+export function serializeTaskLine(parts: TaskLineParts, bullet: string = '- '): string {
+  const mark = parts.open ? ' ' : 'x'
+  const segments: string[] = []
+  const text = parts.text.trim()
+  if (text) segments.push(text)
+  const priorityMarker = priorityToEmoji(parts.priority)
+  if (priorityMarker) segments.push(priorityMarker)
+  if (parts.dueDate)       segments.push(`📅 ${parts.dueDate}`)
+  if (parts.scheduledDate) segments.push(`⏳ ${parts.scheduledDate}`)
+  if (parts.startDate)     segments.push(`🛫 ${parts.startDate}`)
+  if (parts.completedDate) segments.push(`✅ ${parts.completedDate}`)
+  const body = segments.join(' ')
+  return body ? `${bullet}[${mark}] ${body}` : `${bullet}[${mark}] `
 }

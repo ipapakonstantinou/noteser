@@ -413,6 +413,8 @@ describe('groupTasks', () => {
       path,
       noteTitle,
       folderPath,
+      noteCreatedAt: 0,
+      tags: [],
     }
   }
 
@@ -537,5 +539,412 @@ describe('explainQuery', () => {
     const result = explainQuery(q)
     expect(result).toContain('group by folder')
     expect(result).toContain('group by filename')
+  })
+})
+
+// ── New v5h7-era surface: date / priority filters, sort, group by tag/priority ─
+
+describe('parseTaskQuery — new filters', () => {
+  test('"due before 2026-05-20" → dueBefore filter', () => {
+    const q = parseTaskQuery('due before 2026-05-20')
+    expect(q.filters).toEqual([{ kind: 'dueBefore', date: '2026-05-20' }])
+  })
+
+  test('"due after 2026-05-20" → dueAfter filter', () => {
+    const q = parseTaskQuery('due after 2026-05-20')
+    expect(q.filters).toEqual([{ kind: 'dueAfter', date: '2026-05-20' }])
+  })
+
+  test('"due on 2026-05-20" → dueOn filter', () => {
+    const q = parseTaskQuery('due on 2026-05-20')
+    expect(q.filters).toEqual([{ kind: 'dueOn', date: '2026-05-20' }])
+  })
+
+  test('"due" alone → hasDue filter', () => {
+    const q = parseTaskQuery('due')
+    expect(q.filters).toEqual([{ kind: 'hasDue' }])
+  })
+
+  test('"no due date" → noDue filter', () => {
+    const q = parseTaskQuery('no due date')
+    expect(q.filters).toEqual([{ kind: 'noDue' }])
+  })
+
+  test('"scheduled before 2026-05-20" → scheduledBefore filter', () => {
+    const q = parseTaskQuery('scheduled before 2026-05-20')
+    expect(q.filters).toEqual([{ kind: 'scheduledBefore', date: '2026-05-20' }])
+  })
+
+  test('"no scheduled date" → noScheduled filter', () => {
+    const q = parseTaskQuery('no scheduled date')
+    expect(q.filters).toEqual([{ kind: 'noScheduled' }])
+  })
+
+  test('"priority is highest" → priorityIs highest', () => {
+    const q = parseTaskQuery('priority is highest')
+    expect(q.filters).toEqual([{ kind: 'priorityIs', priority: 'highest' }])
+  })
+
+  test('"priority above normal" → priorityAbove normal', () => {
+    const q = parseTaskQuery('priority above normal')
+    expect(q.filters).toEqual([{ kind: 'priorityAbove', priority: 'normal' }])
+  })
+
+  test('"priority below high" → priorityBelow high', () => {
+    const q = parseTaskQuery('priority below high')
+    expect(q.filters).toEqual([{ kind: 'priorityBelow', priority: 'high' }])
+  })
+
+  test('"priority is bogus" is silently skipped (no filter)', () => {
+    const q = parseTaskQuery('priority is bogus')
+    expect(q.filters).toEqual([])
+  })
+
+  test('malformed date "due before 2026-13-99" is treated as plain due (hasDue)', () => {
+    const q = parseTaskQuery('due before notadate')
+    // "due" matches as hasDue; "before notadate" is then skipped token-by-token
+    expect(q.filters).toEqual([{ kind: 'hasDue' }])
+  })
+
+  test('"sort by due" → sortBy: "due"', () => {
+    const q = parseTaskQuery('sort by due')
+    expect(q.sortBy).toBe('due')
+  })
+
+  test('"sort by priority" → sortBy: "priority"', () => {
+    const q = parseTaskQuery('sort by priority')
+    expect(q.sortBy).toBe('priority')
+  })
+
+  test('"sort by created" → sortBy: "created"', () => {
+    const q = parseTaskQuery('sort by created')
+    expect(q.sortBy).toBe('created')
+  })
+
+  test('"sort by bogus" is ignored, sortBy stays undefined', () => {
+    const q = parseTaskQuery('sort by bogus')
+    expect(q.sortBy).toBeUndefined()
+  })
+
+  test('later sort-by clauses overwrite earlier ones', () => {
+    const q = parseTaskQuery('sort by due sort by priority')
+    expect(q.sortBy).toBe('priority')
+  })
+
+  test('"group by tag" → groupBy: ["tag"]', () => {
+    const q = parseTaskQuery('group by tag')
+    expect(q.groupBy).toEqual(['tag'])
+  })
+
+  test('"group by priority" → groupBy: ["priority"]', () => {
+    const q = parseTaskQuery('group by priority')
+    expect(q.groupBy).toEqual(['priority'])
+  })
+
+  test('compound query with all new clauses parses everything', () => {
+    const q = parseTaskQuery(
+      'priority above normal due before 2026-05-25 sort by due group by priority'
+    )
+    expect(q.filters).toContainEqual({ kind: 'priorityAbove', priority: 'normal' })
+    expect(q.filters).toContainEqual({ kind: 'dueBefore', date: '2026-05-25' })
+    expect(q.sortBy).toBe('due')
+    expect(q.groupBy).toEqual(['priority'])
+  })
+})
+
+describe('executeTaskQuery — new filters', () => {
+  function makeNote(
+    id: string,
+    title: string,
+    content: string,
+    folderId: string | null = null,
+    createdAt = 0,
+    isDeleted = false
+  ) {
+    return { id, title, content, folderId, createdAt, isDeleted }
+  }
+
+  test('"due before 2026-05-20" returns only tasks with due < that date', () => {
+    const notes = [
+      makeNote('n1', 'N', [
+        '- [ ] before 📅 2026-05-19',
+        '- [ ] exact  📅 2026-05-20',
+        '- [ ] after  📅 2026-05-21',
+        '- [ ] no due',
+      ].join('\n')),
+    ]
+    const q = parseTaskQuery('due before 2026-05-20')
+    const result = executeTaskQuery(q, { notes, folders: [] })
+    expect(result.map(r => r.text)).toEqual(['before'])
+  })
+
+  test('"due on 2026-05-20" returns only exact-match', () => {
+    const notes = [
+      makeNote('n1', 'N', [
+        '- [ ] before 📅 2026-05-19',
+        '- [ ] exact  📅 2026-05-20',
+        '- [ ] after  📅 2026-05-21',
+      ].join('\n')),
+    ]
+    const q = parseTaskQuery('due on 2026-05-20')
+    const result = executeTaskQuery(q, { notes, folders: [] })
+    expect(result.map(r => r.text)).toEqual(['exact'])
+  })
+
+  test('"no due date" returns only tasks without a due date', () => {
+    const notes = [
+      makeNote('n1', 'N', [
+        '- [ ] has due 📅 2026-05-20',
+        '- [ ] no due',
+      ].join('\n')),
+    ]
+    const q = parseTaskQuery('no due date')
+    const result = executeTaskQuery(q, { notes, folders: [] })
+    expect(result.map(r => r.text)).toEqual(['no due'])
+  })
+
+  test('"priority above normal" returns only highest and high', () => {
+    const notes = [
+      makeNote('n1', 'N', [
+        '- [ ] highest ⏫',
+        '- [ ] high 🔼',
+        '- [ ] normal',
+        '- [ ] low 🔽',
+        '- [ ] lowest ⏬',
+      ].join('\n')),
+    ]
+    const q = parseTaskQuery('priority above normal')
+    const result = executeTaskQuery(q, { notes, folders: [] })
+    const texts = result.map(r => r.text).sort()
+    expect(texts).toEqual(['high', 'highest'])
+  })
+
+  test('"priority is high" returns only the high task', () => {
+    const notes = [
+      makeNote('n1', 'N', [
+        '- [ ] highest ⏫',
+        '- [ ] high 🔼',
+        '- [ ] normal',
+      ].join('\n')),
+    ]
+    const q = parseTaskQuery('priority is high')
+    const result = executeTaskQuery(q, { notes, folders: [] })
+    expect(result.map(r => r.text)).toEqual(['high'])
+  })
+
+  test('"scheduled" returns only tasks with a scheduled date', () => {
+    const notes = [
+      makeNote('n1', 'N', [
+        '- [ ] sched ⏳ 2026-05-20',
+        '- [ ] none',
+      ].join('\n')),
+    ]
+    const q = parseTaskQuery('scheduled')
+    const result = executeTaskQuery(q, { notes, folders: [] })
+    expect(result.map(r => r.text)).toEqual(['sched'])
+  })
+
+  test('combined: priority above normal AND due before 2026-05-25', () => {
+    const notes = [
+      makeNote('n1', 'N', [
+        '- [ ] keep ⏫ 📅 2026-05-20',
+        '- [ ] wrong-prio 📅 2026-05-20',
+        '- [ ] wrong-date ⏫ 📅 2026-05-30',
+        '- [ ] no-date ⏫',
+      ].join('\n')),
+    ]
+    const q = parseTaskQuery('priority above normal due before 2026-05-25')
+    const result = executeTaskQuery(q, { notes, folders: [] })
+    expect(result.map(r => r.text)).toEqual(['keep'])
+  })
+})
+
+describe('groupTasks — sort by', () => {
+  // Direct ExecutedTask construction since we want full control over the
+  // metadata fields used by each sort key.
+  function task(
+    text: string,
+    overrides: Partial<ExecutedTask> = {}
+  ): ExecutedTask {
+    return {
+      noteId: 'x',
+      lineNumber: 0,
+      text,
+      completed: false,
+      completedDate: null,
+      dueDate: null,
+      scheduledDate: null,
+      startDate: null,
+      priority: 'normal',
+      path: text,
+      noteTitle: text,
+      folderPath: '',
+      noteCreatedAt: 0,
+      tags: [],
+      ...overrides,
+    }
+  }
+
+  test('sort by due → ascending, nulls last', () => {
+    const tasks = [
+      task('c', { dueDate: '2026-05-22' }),
+      task('a', { dueDate: '2026-05-20' }),
+      task('no-due'),
+      task('b', { dueDate: '2026-05-21' }),
+    ]
+    const groups = groupTasks(tasks, [], 'due')
+    expect(groups[0].tasks.map(t => t.text)).toEqual(['a', 'b', 'c', 'no-due'])
+  })
+
+  test('sort by priority → highest first, ties keep insertion order', () => {
+    const tasks = [
+      task('low1', { priority: 'low' }),
+      task('high1', { priority: 'high' }),
+      task('highest1', { priority: 'highest' }),
+      task('high2', { priority: 'high' }),
+      task('normal1'),
+    ]
+    const groups = groupTasks(tasks, [], 'priority')
+    expect(groups[0].tasks.map(t => t.text)).toEqual([
+      'highest1', 'high1', 'high2', 'normal1', 'low1',
+    ])
+  })
+
+  test('sort by created → newest first, line-order ties', () => {
+    const tasks = [
+      task('old', { noteCreatedAt: 100 }),
+      task('newA', { noteCreatedAt: 300 }),
+      task('newB', { noteCreatedAt: 300 }),  // tie with newA
+      task('mid', { noteCreatedAt: 200 }),
+    ]
+    const groups = groupTasks(tasks, [], 'created')
+    expect(groups[0].tasks.map(t => t.text)).toEqual(['newA', 'newB', 'mid', 'old'])
+  })
+
+  test('sort by status → incomplete before completed', () => {
+    const tasks = [
+      task('done1', { completed: true }),
+      task('open1'),
+      task('done2', { completed: true }),
+      task('open2'),
+    ]
+    const groups = groupTasks(tasks, [], 'status')
+    expect(groups[0].tasks.map(t => t.text)).toEqual(['open1', 'open2', 'done1', 'done2'])
+  })
+
+  test('sort by title → alphabetical by noteTitle', () => {
+    const tasks = [
+      task('t1', { noteTitle: 'Charlie' }),
+      task('t2', { noteTitle: 'alpha' }),
+      task('t3', { noteTitle: 'bravo' }),
+    ]
+    const groups = groupTasks(tasks, [], 'title')
+    expect(groups[0].tasks.map(t => t.noteTitle)).toEqual(['alpha', 'bravo', 'Charlie'])
+  })
+
+  test('sort applies within each group', () => {
+    const tasks = [
+      task('aLate',  { folderPath: 'A', dueDate: '2026-05-22' }),
+      task('aEarly', { folderPath: 'A', dueDate: '2026-05-20' }),
+      task('bLate',  { folderPath: 'B', dueDate: '2026-05-30' }),
+      task('bEarly', { folderPath: 'B', dueDate: '2026-05-19' }),
+    ]
+    const groups = groupTasks(tasks, ['folder'], 'due')
+    const a = groups.find(g => g.keys[0] === 'A')!
+    const b = groups.find(g => g.keys[0] === 'B')!
+    expect(a.tasks.map(t => t.text)).toEqual(['aEarly', 'aLate'])
+    expect(b.tasks.map(t => t.text)).toEqual(['bEarly', 'bLate'])
+  })
+})
+
+describe('groupTasks — group by tag / priority', () => {
+  function task(
+    text: string,
+    overrides: Partial<ExecutedTask> = {}
+  ): ExecutedTask {
+    return {
+      noteId: 'x',
+      lineNumber: 0,
+      text,
+      completed: false,
+      completedDate: null,
+      dueDate: null,
+      scheduledDate: null,
+      startDate: null,
+      priority: 'normal',
+      path: text,
+      noteTitle: text,
+      folderPath: '',
+      noteCreatedAt: 0,
+      tags: [],
+      ...overrides,
+    }
+  }
+
+  test('group by tag → one bucket per distinct tag; tagless tasks get "(no tag)"', () => {
+    const tasks = [
+      task('a', { tags: ['work'] }),
+      task('b', { tags: ['work', 'urgent'] }),  // appears in both buckets
+      task('c', { tags: ['personal'] }),
+      task('d'),                                 // no tag
+    ]
+    const groups = groupTasks(tasks, ['tag'])
+    const keys = groups.map(g => g.keys[0]).sort()
+    expect(keys).toEqual(['(no tag)', 'personal', 'urgent', 'work'])
+    const work = groups.find(g => g.keys[0] === 'work')!
+    expect(work.tasks.map(t => t.text).sort()).toEqual(['a', 'b'])
+    const urgent = groups.find(g => g.keys[0] === 'urgent')!
+    expect(urgent.tasks.map(t => t.text)).toEqual(['b'])
+    const none = groups.find(g => g.keys[0] === '(no tag)')!
+    expect(none.tasks.map(t => t.text)).toEqual(['d'])
+  })
+
+  test('group by priority → buckets ordered highest → lowest', () => {
+    const tasks = [
+      task('a', { priority: 'low' }),
+      task('b', { priority: 'highest' }),
+      task('c', { priority: 'normal' }),
+      task('d', { priority: 'high' }),
+      task('e', { priority: 'lowest' }),
+    ]
+    const groups = groupTasks(tasks, ['priority'])
+    expect(groups.map(g => g.keys[0])).toEqual([
+      'highest', 'high', 'normal', 'low', 'lowest',
+    ])
+  })
+
+  test('group by priority + sort by due within each priority bucket', () => {
+    const tasks = [
+      task('hL', { priority: 'high',    dueDate: '2026-05-22' }),
+      task('hE', { priority: 'high',    dueDate: '2026-05-20' }),
+      task('xL', { priority: 'highest', dueDate: '2026-05-30' }),
+      task('xE', { priority: 'highest', dueDate: '2026-05-19' }),
+    ]
+    const groups = groupTasks(tasks, ['priority'], 'due')
+    expect(groups[0].keys[0]).toBe('highest')
+    expect(groups[0].tasks.map(t => t.text)).toEqual(['xE', 'xL'])
+    expect(groups[1].keys[0]).toBe('high')
+    expect(groups[1].tasks.map(t => t.text)).toEqual(['hE', 'hL'])
+  })
+})
+
+describe('explainQuery — new clauses', () => {
+  test('explains due-date filters', () => {
+    expect(explainQuery(parseTaskQuery('due before 2026-05-20'))).toContain('due before 2026-05-20')
+    expect(explainQuery(parseTaskQuery('no due date'))).toContain('no due date')
+  })
+
+  test('explains priority filters', () => {
+    expect(explainQuery(parseTaskQuery('priority above normal'))).toContain('priority above normal')
+    expect(explainQuery(parseTaskQuery('priority is highest'))).toContain('priority is highest')
+  })
+
+  test('explains sort by', () => {
+    expect(explainQuery(parseTaskQuery('sort by due'))).toContain('sort by due')
+  })
+
+  test('explains group by tag / priority', () => {
+    expect(explainQuery(parseTaskQuery('group by tag'))).toContain('group by tag')
+    expect(explainQuery(parseTaskQuery('group by priority'))).toContain('group by priority')
   })
 })
