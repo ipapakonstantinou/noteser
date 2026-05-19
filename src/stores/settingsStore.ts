@@ -4,7 +4,7 @@ import { persist } from 'zustand/middleware'
 export type FolderSortMode = 'alphabetical' | 'modified' | 'created' | 'manual'
 export type TaskListDensity = 'compact' | 'comfortable'
 
-interface SettingsState {
+export interface SettingsState {
   folderSortMode: FolderSortMode
   taskListDensity: TaskListDensity
   // Show folders flagged as hidden (currently: the synthetic `attachments/`

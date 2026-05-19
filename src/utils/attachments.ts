@@ -13,8 +13,8 @@
 import { get, set, del, keys } from 'idb-keyval'
 import { gitBlobShaBytes } from './github'
 import { ATTACHMENTS_CHANGED_EVENT } from './events'
-import { useSettingsStore } from '@/stores/settingsStore'
 import { useFolderStore } from '@/stores/folderStore'
+import { attachmentsFolder } from './systemFolder'
 
 // Materialise the parent folder of an attachment path as a real Folder
 // entity. Without this, attachment files would appear "orphaned" — the
@@ -37,48 +37,25 @@ function notifyAttachmentsChanged(): void {
   window.dispatchEvent(new CustomEvent(ATTACHMENTS_CHANGED_EVENT))
 }
 
-// Historical attachments folder. Always recognised in path-prefix checks
-// (back-compat: old notes reference `attachments/foo.png` and must keep
-// resolving even after the user picks a new folder).
-export const DEFAULT_ATTACHMENT_DIR = 'attachments'
+// Thin re-exports of the attachments SystemFolder. Kept as standalone
+// functions so existing call sites don't have to change; new code can
+// also call `attachmentsFolder.get()` etc. directly via `./systemFolder`.
 
-// Sanitise user input from the Settings folder field. Strips slashes that
-// would create accidental root paths, collapses repeated separators, trims
-// whitespace, and falls back to the default when the result is empty.
+export const DEFAULT_ATTACHMENT_DIR = attachmentsFolder.defaultName
+// Back-compat alias — pre-refactor name. Equal to DEFAULT_ATTACHMENT_DIR.
+export const ATTACHMENT_DIR = attachmentsFolder.defaultName
+
 export function normalizeAttachmentDir(input: string | undefined | null): string {
-  if (!input) return DEFAULT_ATTACHMENT_DIR
-  const trimmed = input
-    .trim()
-    .replace(/^\/+/, '')
-    .replace(/\/+$/, '')
-    .replace(/\/{2,}/g, '/')
-  return trimmed || DEFAULT_ATTACHMENT_DIR
+  return attachmentsFolder.normalize(input)
 }
 
-// Folder currently used for NEW attachments. Reads the latest setting at
-// call time so changes apply immediately without re-mounting consumers.
-// Wrapped in try/catch so non-browser test environments without the store
-// initialised fall back to the default rather than throw.
 export function getAttachmentDir(): string {
-  try {
-    return normalizeAttachmentDir(useSettingsStore.getState().attachmentsFolder)
-  } catch {
-    return DEFAULT_ATTACHMENT_DIR
-  }
+  return attachmentsFolder.get()
 }
 
-// Path prefixes a file could have to be considered an attachment. Always
-// includes the historical default so old refs keep working; adds the
-// currently configured folder when it differs.
 export function getAttachmentPrefixes(): string[] {
-  const current = getAttachmentDir()
-  if (current === DEFAULT_ATTACHMENT_DIR) return [`${DEFAULT_ATTACHMENT_DIR}/`]
-  return [`${current}/`, `${DEFAULT_ATTACHMENT_DIR}/`]
+  return attachmentsFolder.prefixes()
 }
-
-// Back-compat alias — older imports still pull this name. New code should
-// call getAttachmentDir() since the value can change at runtime.
-export const ATTACHMENT_DIR = DEFAULT_ATTACHMENT_DIR
 
 const PREFIX = 'noteser-attachment:'
 // Tombstones: paths the user explicitly deleted locally. The next sync's
@@ -120,7 +97,7 @@ export function sanitizeAttachmentName(name: string): string {
 }
 
 export function isAttachmentPath(path: string): boolean {
-  return getAttachmentPrefixes().some(prefix => path.startsWith(prefix))
+  return attachmentsFolder.matchesPath(path)
 }
 
 // Save a blob under a unique, timestamped path. Sub-second collisions append a
@@ -132,7 +109,7 @@ export async function saveAttachment(
   originalName: string,
   now: Date = new Date(),
 ): Promise<string> {
-  const dir = getAttachmentDir()
+  const dir = attachmentsFolder.get()
   const safeName = sanitizeAttachmentName(originalName)
   const ts = timestamp(now)
   let path = `${dir}/${ts}-${safeName}`
