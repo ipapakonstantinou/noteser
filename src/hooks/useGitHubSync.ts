@@ -85,6 +85,9 @@ function formatSyncMessage(
   if (pushed.created) parts.push(`↑${pushed.created} new`)
   if (pushed.updated) parts.push(`↑${pushed.updated} updated`)
   if (pushed.deleted) parts.push(`↑${pushed.deleted} deleted`)
+  // Highlight automatic 3-way merges so the user knows the conflict UI was
+  // skipped on their behalf.
+  if (pulled.autoMerged) parts.push(`auto-merged ${pulled.autoMerged}`)
   return parts.join(' · ') || 'Synced'
 }
 

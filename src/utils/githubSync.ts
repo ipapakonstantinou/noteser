@@ -17,6 +17,7 @@ import {
   fetchZipball,
   type GitTreeEntry,
 } from './github'
+import { threeWayMerge } from './lineDiff'
 import {
   isAttachmentPath,
   listAttachmentPaths,
@@ -186,6 +187,15 @@ export type PullClassification =
       remoteTags: string[]
       remoteBody: string
     }
+  // Both sides changed but the line-level edits don't overlap, so we 3-way
+  // merged automatically. Apply writes the merged content + pins
+  // gitLastPushedSha to remoteSha so the next push uploads the union edit.
+  | {
+      kind: 'autoMerged'
+      noteId: string
+      remoteSha: string
+      mergedContent: string
+    }
   // Remote deleted the file but we edited it locally — degenerate conflict
   // that's still asking the user a question, treat it as a conflict variant.
   | {
@@ -265,16 +275,43 @@ export async function pullFromGitHub(input: {
     } else if (remoteChanged && localChanged) {
       const content = await loadRemote()
       const parsed = parseNote(content)
-      out.push({
-        kind: 'conflict',
-        noteId: localMatch.id,
-        path,
-        localContent,
-        remoteSha,
-        remoteContent: content,
-        remoteTags: parsed.tags,
-        remoteBody: parsed.body,
-      })
+
+      // Try a line-level 3-way merge before bothering the user. If the local
+      // and remote edits don't overlap line-wise we can auto-merge and the
+      // user never sees the conflict tab. We need the common ancestor blob —
+      // which is exactly what `gitLastPushedSha` points at. Anything that goes
+      // wrong (no ancestor sha, blob GC'd, network hiccup, overlapping edits)
+      // falls back to the existing manual conflict flow.
+      let autoMerged: string | null = null
+      if (lastPushed) {
+        try {
+          const ancestor = await getBlobContent(token, owner, name, lastPushed)
+          const merged = threeWayMerge(ancestor, localContent, content)
+          if (merged.ok) autoMerged = merged.merged
+        } catch {
+          // Swallow — fall through to conflict.
+        }
+      }
+
+      if (autoMerged !== null) {
+        out.push({
+          kind: 'autoMerged',
+          noteId: localMatch.id,
+          remoteSha,
+          mergedContent: autoMerged,
+        })
+      } else {
+        out.push({
+          kind: 'conflict',
+          noteId: localMatch.id,
+          path,
+          localContent,
+          remoteSha,
+          remoteContent: content,
+          remoteTags: parsed.tags,
+          remoteBody: parsed.body,
+        })
+      }
     }
     // remoteUnchanged + localChanged → handled by the push phase, nothing here.
   }
