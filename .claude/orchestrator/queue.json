@@ -334,11 +334,11 @@
     {
       "id": "20260519T172701-u4e5",
       "brief": "Bug: deleting the attachments folder and syncing brings it back. The folder is soft-deleted (Folder.isDeleted=true) but the IDB attachments inside it aren't touched. On next sync, ensureFolderPath (which skips deleted folders) creates a fresh duplicate folder entity, and pull keeps the remote files alive. Need: folder deletion cascades — for any attachment whose path is under the folder's repo path, tombstone it so the next push deletes it remotely; and for child notes, soft-delete them too. Separate from the per-attachment orphan delete (which works correctly via tombstones since p8j3/c65e08b).",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T17:27:01Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T17:42:00Z",
+      "completed_at": "2026-05-19T17:55:00Z",
+      "result": "New src/utils/cascadeDelete.ts. cascadeDeleteFolder(folderId) walks descendants, soft-deletes every folder in the subtree, moves child notes to root (matches the existing single-folder behaviour), and async-tombstones every attachment whose IDB path is under the deleted folder's repo path so the next sync push removes the remote copies. DeleteConfirmModal switches the soft-delete branch from the inline note-move + deleteFolder pair to a single cascadeDeleteFolder call. Permanent-delete path stays surgical. 5 new tests cover soft-delete + descendant cascade + note relocation + attachment tombstones + no-op-on-already-deleted. 372 total green.",
       "error": null,
       "source": "telegram"
     },
