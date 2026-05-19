@@ -8,6 +8,9 @@ interface SettingsTextInputProps {
   normalize?: (raw: string) => string
   placeholder?: string
   mono?: boolean
+  // Underlying <input type=...>. Defaults to "text"; pass "password" for
+  // secret values (e.g. API keys) so the browser masks the characters.
+  type?: 'text' | 'password'
 }
 
 export const SettingsTextInput = ({
@@ -16,6 +19,7 @@ export const SettingsTextInput = ({
   normalize,
   placeholder,
   mono = false,
+  type = 'text',
 }: SettingsTextInputProps) => {
   const [draft, setDraft] = useState(value)
 
@@ -31,7 +35,7 @@ export const SettingsTextInput = ({
 
   return (
     <input
-      type="text"
+      type={type}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}

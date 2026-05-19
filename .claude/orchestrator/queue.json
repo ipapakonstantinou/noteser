@@ -521,11 +521,11 @@
     {
       "id": "20260519T172412-y9d5",
       "brief": "AI settings + client wrapper. Settings UI for BYO API key + provider (Anthropic/OpenAI/off) + model name. New aiClient.ts exposes runPrompt({ system, messages }) that picks the provider, handles browser-direct headers (anthropic-dangerous-direct-browser-access), and surfaces errors. Foundation for z0e6 + a1f7.",
-      "status": "in_progress",
+      "status": "done",
       "created_at": "2026-05-19T17:24:12Z",
       "started_at": "2026-05-19T18:15:00Z",
-      "completed_at": null,
-      "result": null,
+      "completed_at": "2026-05-19T19:00:00Z",
+      "result": "Shipped (worktree merged into main). settingsStore gains AIProvider type ('off' | 'anthropic' | 'openai'), DEFAULT_AI_MODEL map, aiProvider/aiApiKey/aiModel fields + setters. New src/utils/aiClient.ts exposes runPrompt({ system, messages }) for both providers with the anthropic-dangerous-direct-browser-access header for Anthropic. New AISection component with three Fields (provider/key/model). SettingsTextInput primitive extended with optional type='text' | 'password' so the API key field can mask. 8 new tests in src/__tests__/aiClient.test.ts cover off-guard, empty-key-guard, both providers' happy paths + system-omitted, and 4xx surfacing. 406 total green.",
       "error": null,
       "source": "telegram"
     },

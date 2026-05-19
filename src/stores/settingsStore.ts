@@ -5,6 +5,19 @@ import { STORAGE_KEYS } from '@/utils/storageKeys'
 export type FolderSortMode = 'alphabetical' | 'modified' | 'created' | 'manual'
 export type TaskListDensity = 'compact' | 'comfortable'
 
+// Bring-your-own-key AI provider. `'off'` disables every AI feature; the
+// aiClient throws if a feature is invoked while off so callers can show a
+// friendly "set up AI in settings" hint instead of silently no-op-ing.
+export type AIProvider = 'off' | 'anthropic' | 'openai'
+
+// Default model per provider. Stored as a free-form string so users can
+// override (e.g. point at a newer snapshot, an Azure deployment name, or a
+// local proxy). The Settings UI shows the matching default as a placeholder.
+export const DEFAULT_AI_MODEL: Record<Exclude<AIProvider, 'off'>, string> = {
+  anthropic: 'claude-haiku-4-5-20251001',
+  openai: 'gpt-4o-mini',
+}
+
 export interface SettingsState {
   folderSortMode: FolderSortMode
   taskListDensity: TaskListDensity
@@ -30,6 +43,22 @@ export interface SettingsState {
   // notes. null = no template; new daily notes start empty.
   dailyNoteTemplateId: string | null
 
+  // ── AI (BYO key) ──────────────────────────────────────────────────────
+  // Which provider the aiClient targets. `'off'` (default) disables every
+  // AI feature.
+  aiProvider: AIProvider
+  // SECURITY NOTE: localStorage is readable by any script on the page; any
+  // XSS would expose the key. Same trust model the GitHub OAuth token uses
+  // (see `githubStore.ts`). Acceptable for a personal note tool, NOT for a
+  // multi-tenant SaaS. The key is sent only to the configured provider's
+  // public API endpoint, never to a noteser-controlled server.
+  aiApiKey: string
+  // Free-form model id so users can switch snapshots without a redeploy.
+  // Defaults to `DEFAULT_AI_MODEL[aiProvider]` semantically; we seed the
+  // anthropic default at install time so the field is never blank for the
+  // common case.
+  aiModel: string
+
   setFolderSortMode: (mode: FolderSortMode) => void
   setTaskListDensity: (density: TaskListDensity) => void
   setShowHiddenFolders: (value: boolean) => void
@@ -40,6 +69,9 @@ export interface SettingsState {
   setDailyNoteDateFormat: (format: string) => void
   setTemplatesFolder: (folder: string) => void
   setDailyNoteTemplateId: (id: string | null) => void
+  setAiProvider: (provider: AIProvider) => void
+  setAiApiKey: (key: string) => void
+  setAiModel: (model: string) => void
   reset: () => void
 }
 
@@ -54,6 +86,9 @@ const DEFAULTS = {
   dailyNoteDateFormat: 'YYYY-MM-DD',
   templatesFolder: 'Templates',
   dailyNoteTemplateId: null as string | null,
+  aiProvider: 'off' as AIProvider,
+  aiApiKey: '',
+  aiModel: DEFAULT_AI_MODEL.anthropic,
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -70,6 +105,9 @@ export const useSettingsStore = create<SettingsState>()(
       setDailyNoteDateFormat: (dailyNoteDateFormat) => set({ dailyNoteDateFormat }),
       setTemplatesFolder: (templatesFolder) => set({ templatesFolder }),
       setDailyNoteTemplateId: (dailyNoteTemplateId) => set({ dailyNoteTemplateId }),
+      setAiProvider: (aiProvider) => set({ aiProvider }),
+      setAiApiKey: (aiApiKey) => set({ aiApiKey }),
+      setAiModel: (aiModel) => set({ aiModel }),
       reset: () => set(DEFAULTS),
     }),
     { name: STORAGE_KEYS.settings }
