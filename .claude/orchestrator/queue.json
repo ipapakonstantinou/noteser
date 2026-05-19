@@ -198,6 +198,17 @@
       "result": null,
       "error": null,
       "source": "telegram"
+    },
+    {
+      "id": "20260519T152423-e2f1",
+      "brief": "Dynamic location for daily notes — same model as the configurable attachments folder. User picks a folder in Settings (e.g. `Daily/`, `Journal/2026/`) where new daily notes land; an existing default applies on first run. Likely also wants a date-format setting (`YYYY-MM-DD.md` vs `YYYY-MM-DD - dddd.md`, etc.) and an Alt+D / cmd+T shortcut to open today's note. Reuse the normalizeAttachmentDir + draft-input pattern from AttachmentsSection.",
+      "status": "pending",
+      "created_at": "2026-05-19T15:24:23Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
     }
   ]
 }
