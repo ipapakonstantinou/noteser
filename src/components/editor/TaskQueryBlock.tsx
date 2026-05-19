@@ -91,6 +91,52 @@ export const TaskQueryBlock = ({ source }: { source: string }) => {
                     >
                       {task.text || '(empty)'}
                     </span>
+                    {/* Inline metadata badges: priority + dates. Each is
+                        clickable as part of the row so the user can still
+                        jump to the source note. */}
+                    {task.priority !== 'normal' && (
+                      <span
+                        className="ml-2 text-[12px]"
+                        title={`Priority: ${task.priority}`}
+                      >
+                        {task.priority === 'highest' ? '⏫' :
+                         task.priority === 'high'    ? '🔼' :
+                         task.priority === 'low'     ? '🔽' :
+                         '⏬'}
+                      </span>
+                    )}
+                    {task.dueDate && (
+                      <span
+                        className="ml-2 text-[11px] text-obsidianSecondaryText"
+                        title={`Due ${task.dueDate}`}
+                      >
+                        📅 {task.dueDate}
+                      </span>
+                    )}
+                    {task.scheduledDate && (
+                      <span
+                        className="ml-2 text-[11px] text-obsidianSecondaryText"
+                        title={`Scheduled ${task.scheduledDate}`}
+                      >
+                        ⏳ {task.scheduledDate}
+                      </span>
+                    )}
+                    {task.startDate && (
+                      <span
+                        className="ml-2 text-[11px] text-obsidianSecondaryText"
+                        title={`Start ${task.startDate}`}
+                      >
+                        🛫 {task.startDate}
+                      </span>
+                    )}
+                    {task.completedDate && (
+                      <span
+                        className="ml-2 text-[11px] text-obsidianSecondaryText"
+                        title={`Done ${task.completedDate}`}
+                      >
+                        ✅ {task.completedDate}
+                      </span>
+                    )}
                     {!query.groupBy.includes('filename') && (
                       <span
                         role="link"

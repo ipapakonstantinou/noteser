@@ -4,7 +4,7 @@
  * Unit tests for src/utils/tasks.ts — pure functions, no mocks needed.
  */
 
-import { extractTasks, todayISO, toggleTaskLine, toggleTaskLineText, removeTaskPrefixFromLine, Task, TaskSourceNote } from '../utils/tasks'
+import { extractTasks, todayISO, toggleTaskLine, toggleTaskLineText, removeTaskPrefixFromLine, parseTaskMetadata, Task, TaskSourceNote } from '../utils/tasks'
 
 // ── extractTasks ──────────────────────────────────────────────────────────────
 
@@ -46,6 +46,10 @@ describe('extractTasks', () => {
       text: 'foo',
       completed: false,
       completedDate: null,
+      dueDate: null,
+      scheduledDate: null,
+      startDate: null,
+      priority: 'normal',
     })
   })
 
@@ -389,5 +393,87 @@ describe('removeTaskPrefixFromLine', () => {
   test('strips the marker for an empty-body task line', () => {
     // Note: the regex requires `\]\s+` so the trailing space is consumed.
     expect(removeTaskPrefixFromLine('- [ ] ')).toBe('')
+  })
+})
+
+// ── parseTaskMetadata ─────────────────────────────────────────────────────────
+
+describe('parseTaskMetadata', () => {
+  test('plain body returns nulls + normal priority', () => {
+    expect(parseTaskMetadata('write report')).toEqual({
+      text: 'write report',
+      completedDate: null,
+      dueDate: null,
+      scheduledDate: null,
+      startDate: null,
+      priority: 'normal',
+    })
+  })
+
+  test('extracts due, scheduled, start, and done dates + strips them from text', () => {
+    const out = parseTaskMetadata('write report 📅 2026-05-20 ⏳ 2026-05-19 🛫 2026-05-18 ✅ 2026-05-21')
+    expect(out.text).toBe('write report')
+    expect(out.dueDate).toBe('2026-05-20')
+    expect(out.scheduledDate).toBe('2026-05-19')
+    expect(out.startDate).toBe('2026-05-18')
+    expect(out.completedDate).toBe('2026-05-21')
+  })
+
+  test('priority emojis map to the correct level', () => {
+    expect(parseTaskMetadata('a ⏫').priority).toBe('highest')
+    expect(parseTaskMetadata('a 🔼').priority).toBe('high')
+    expect(parseTaskMetadata('a 🔽').priority).toBe('low')
+    expect(parseTaskMetadata('a ⏬').priority).toBe('lowest')
+  })
+
+  test('marker can appear before the body text', () => {
+    const out = parseTaskMetadata('📅 2026-05-20 fix the bug')
+    expect(out.text).toBe('fix the bug')
+    expect(out.dueDate).toBe('2026-05-20')
+  })
+
+  test('multiple markers of the same kind take the first occurrence', () => {
+    const out = parseTaskMetadata('a 📅 2026-05-20 b 📅 2026-12-31')
+    expect(out.dueDate).toBe('2026-05-20')
+    expect(out.text).toBe('a b')
+  })
+})
+
+describe('extractTasks — metadata round-trip', () => {
+  test('parses every metadata marker on a single line', () => {
+    const notes: TaskSourceNote[] = [
+      { id: 'n1', content: '- [ ] thing ⏫ 📅 2026-05-20 ⏳ 2026-05-19 🛫 2026-05-18' },
+    ]
+    const tasks = extractTasks(notes)
+    expect(tasks).toHaveLength(1)
+    expect(tasks[0]).toMatchObject({
+      text: 'thing',
+      priority: 'highest',
+      dueDate: '2026-05-20',
+      scheduledDate: '2026-05-19',
+      startDate: '2026-05-18',
+      completedDate: null,
+      completed: false,
+    })
+  })
+})
+
+describe('toggleTaskLineText — preserves metadata', () => {
+  test('checking a task with priority + due keeps both markers and appends ✅ date', () => {
+    const before = '- [ ] thing ⏫ 📅 2026-05-20'
+    const after = toggleTaskLineText(before, new Date(2026, 4, 19))
+    expect(after).toContain('⏫')
+    expect(after).toContain('📅 2026-05-20')
+    expect(after).toContain('✅ 2026-05-19')
+    expect(after?.startsWith('- [x] ')).toBe(true)
+  })
+
+  test('unchecking strips ✅ date but keeps priority + due', () => {
+    const before = '- [x] thing ⏫ 📅 2026-05-20 ✅ 2026-05-19'
+    const after = toggleTaskLineText(before)
+    expect(after).toContain('⏫')
+    expect(after).toContain('📅 2026-05-20')
+    expect(after).not.toContain('✅')
+    expect(after?.startsWith('- [ ] ')).toBe(true)
   })
 })

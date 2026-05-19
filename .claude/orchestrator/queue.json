@@ -389,11 +389,11 @@
     {
       "id": "20260519T173500-v5h7",
       "brief": "Tasks metadata milestone (bundled): inline emoji syntax for due / scheduled / start dates and priority markers (⏫🔼🔽⏬). Extends Task type, taskQuery parser, and rendered preview. Foundation for v5j8 (task modal) and v6k9 (recurring tasks). Reference: Obsidian Tasks plugin Emoji Format.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T17:35:00Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T17:58:00Z",
+      "completed_at": "2026-05-19T18:08:00Z",
+      "result": "tasks.ts gains parseTaskMetadata + a TaskPriority union ('highest'|'high'|'normal'|'low'|'lowest') + numeric PRIORITY_WEIGHT. Task interface adds dueDate, scheduledDate, startDate, priority. extractTasks now strips every marker into structured fields. toggleTaskLineText preserves priority + due/scheduled/start markers when (un)checking — only the ✅ done date is added/removed. TaskQueryBlock renders the metadata as inline badges (⏫/🔼/🔽/⏬ for priority, 📅/⏳/🛫/✅ + date for the four date kinds). 11 new tests cover parser semantics, multi-marker round-trip, priority mapping, and toggle-preserves-metadata. 380 total green.",
       "error": null,
       "source": "researcher"
     },
