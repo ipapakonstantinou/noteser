@@ -166,8 +166,14 @@ export const useFolderStore = create<FolderState>()(
             parentId = existing.id
             continue
           }
-          // Call the store's own addFolder so order/timestamps stay consistent.
-          const created = get().addFolder({ name: segment, parentId })
+          // Store the SANITIZED segment as folder.name so that the path we
+          // generate on the next push (which sanitizes folder.name again)
+          // round-trips to the same path the remote already has. Storing
+          // the raw segment caused the "every push uploads every blob"
+          // bug: remote has "Daily Notes/foo.md", we'd store name="Daily
+          // Notes", push would generate "Daily-Notes/foo.md" (sanitized
+          // space→dash) — mismatch → re-upload every cycle.
+          const created = get().addFolder({ name: desired, parentId })
           parentId = created.id
         }
         return parentId

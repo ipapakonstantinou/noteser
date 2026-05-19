@@ -47,8 +47,10 @@ describe('openTodayNote', () => {
     const notes = useNoteStore.getState().notes
     expect(notes).toHaveLength(1)
     expect(notes[0].title).toBe('2026-05-19')
-    // The daily-notes folder should have been auto-materialised.
-    const folder = useFolderStore.getState().folders.find(f => f.name === 'Daily Notes')
+    // The daily-notes folder should have been auto-materialised. Stored
+    // name is the SANITIZED form ("Daily-Notes"), not the raw setting
+    // value ("Daily Notes") — see ensureFolderPath docs.
+    const folder = useFolderStore.getState().folders.find(f => f.name === 'Daily-Notes')
     expect(folder).toBeDefined()
     expect(notes[0].folderId).toBe(folder!.id)
     // Workspace opened the new note.

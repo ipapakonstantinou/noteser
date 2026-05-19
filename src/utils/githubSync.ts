@@ -101,8 +101,23 @@ export function guessMimeFromPath(path: string): string {
 // patterns inline in the body, so there's nothing to round-trip in a header.
 // Round-trip identity uses the file path (Phase 4 pull matches by gitPath).
 //
+// IMPORTANT: we normalise to LF line endings + a single trailing newline so
+// our blob SHA matches what Obsidian (and most editors that follow the POSIX
+// "text files end in \n" convention) write for the same logical content. Without
+// this, every Obsidian-side save would re-touch the file and noteser would see
+// the trailing-newline difference as drift, re-uploading every blob on each
+// sync (the storm bug). See `normalizeForPush` for the canonical form.
 export function serializeNote(note: Note): string {
-  return note.content ?? ''
+  return normalizeForPush(note.content ?? '')
+}
+
+// Canonical wire form: CRLF → LF, ensure exactly one trailing \n, drop a
+// completely empty file's "newline" (an empty file is just empty bytes —
+// adding "\n" would create drift the other way).
+export function normalizeForPush(content: string): string {
+  if (content === '') return ''
+  const lf = content.replace(/\r\n/g, '\n')
+  return lf.endsWith('\n') ? lf : `${lf}\n`
 }
 
 // ── Parser (Phase 4 pull) ───────────────────────────────────────────────────
