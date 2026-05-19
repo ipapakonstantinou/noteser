@@ -184,6 +184,8 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
       onDragEnd={endDrag}
       onClick={() => openAttachment(m.path)}
       title={m.path}
+      data-testid="attachment-row"
+      data-attachment-path={m.path}
     >
       <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
       <span className="flex-1 truncate">{attachmentDisplayName(m.path)}</span>
@@ -255,6 +257,9 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
           onDragOver={e => onFolderDragOver(e, folder.id)}
           onDragLeave={() => onFolderDragLeave(folder.id)}
           onDrop={e => onFolderDrop(e, folder.id)}
+          data-testid="folder-row"
+          data-folder-name={folder.name}
+          data-folder-id={folder.id}
         >
           <button
             className="mr-1 focus:outline-none"
@@ -427,6 +432,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   if (rootFolders.length === 0 && rootNotes.length === 0 && attachmentMeta.length === 0) {
     return (
       <div
+        data-testid="folder-tree"
         className={`text-center py-8 text-obsidianSecondaryText min-h-full ${
           dragOverTarget === '__root__' ? 'outline outline-2 outline-obsidianAccentPurple' : ''
         }`}
@@ -454,6 +460,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
 
   return (
     <div
+      data-testid="folder-tree"
       className={`min-h-full ${rootHighlighted ? 'outline outline-2 outline-obsidianAccentPurple rounded' : ''}`}
       onDragOver={onRootDragOver}
       onDragLeave={onRootDragLeave}
