@@ -147,11 +147,11 @@
     {
       "id": "20260519T130700-e6b1",
       "brief": "Image rendering in CodeMirror live-preview (edit view) — Obsidian parity follow-up to a2d9. Today images only render in preview-mode (Ctrl+E). Need a CodeMirror widget that replaces `![alt](attachments/...)` lines with the resolved blob URL inline, like the existing list/checkbox live-preview decorations.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T13:07:00Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T13:10:00Z",
+      "completed_at": "2026-05-19T13:54:00Z",
+      "result": "Shipped as 5e98fcb. New src/components/editor/imagesLivePreview.tsx — StateField + RangeSetBuilder + syntaxTree finds Image nodes, parses ![alt](src), and Decoration.replace's them with an AttachmentImageWidget (WidgetType that mounts the existing AttachmentImage React component for blob: URL resolution). Cursor-dodge: if cursor is on the image's line, the widget steps aside so the raw markdown is editable. External URLs (http(s)) are left as plain text. Same commit also fixed a pre-existing SSR hydration mismatch in Ribbon (Recent/Trash count badges now wait for useHydration). 9 new tests, 269 total green.",
       "error": null,
       "source": "telegram"
     },
