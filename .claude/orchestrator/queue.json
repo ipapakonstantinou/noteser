@@ -176,6 +176,28 @@
       "result": null,
       "error": null,
       "source": "telegram"
+    },
+    {
+      "id": "20260519T120008-b9e4",
+      "brief": "Configurable attachments folder / path in Settings — user should be able to set a different folder name (e.g. `images/`, `assets/`) or a nested path for attachments. Needs: a setting field for attachmentsFolder (default `attachments`), saveAttachment uses the setting for new files, isAttachmentPath checks against the configured prefix, sidebar synthetic folder labels match. Open question: do existing attachments get migrated/renamed on change, or only new ones land in the new folder (probably the latter for v1).",
+      "status": "pending",
+      "created_at": "2026-05-19T12:00:08Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T115557-c4a1",
+      "brief": "Keyboard-driven sidebar navigation — arrow keys to traverse the folder tree, Enter to open, Space to toggle expand, slash to focus search, jump-to-note shortcut. Roadmap entry added 2026-05-19; queue placeholder for when work picks up.",
+      "status": "pending",
+      "created_at": "2026-05-19T11:55:57Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
     }
   ]
 }

@@ -467,10 +467,10 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   const rootEntries: RootEntry[] = filterHidden(rootFolders).map(f => ({
     kind: 'folder' as const, name: f.name, folder: f,
   }))
-  if (
-    attachmentMeta.length > 0
-    && (showHiddenFolders || !isHiddenFolderName(ATTACHMENT_DIR))
-  ) {
+  // The attachments folder is treated as hidden by design (regardless of
+  // its actual name, which doesn't start with a dot), so it only renders
+  // when the showHiddenFolders toggle is on.
+  if (attachmentMeta.length > 0 && showHiddenFolders) {
     rootEntries.push({ kind: 'attachments', name: ATTACHMENT_DIR })
   }
   rootEntries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
