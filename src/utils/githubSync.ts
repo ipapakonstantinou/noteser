@@ -22,6 +22,8 @@ import {
   listAttachmentPaths,
   getAttachmentBlob,
   getAttachmentGitSha,
+  getAttachmentTombstones,
+  clearAttachmentTombstones,
 } from './attachments'
 
 export interface SyncResult {
@@ -505,11 +507,10 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     }
   }
 
-  // 3b. Local attachments → binary blob entries. Additive only for v1: we
-  // don't issue tree deletes for attachments that vanished from IDB, since
-  // we have no per-attachment "last pushed SHA" to distinguish "deleted by
-  // user" from "this device never had it". Orphan cleanup happens via the
-  // Settings UI which deletes from both sides explicitly.
+  // 3b. Local attachments → binary blob entries. Push uploads any local
+  // attachment whose SHA differs from the remote. Files only present
+  // locally get created remotely; files present in both get updated when
+  // their content drifts.
   const localAttachmentPaths = await listAttachmentPaths()
   for (const path of localAttachmentPaths) {
     const localSha = await getAttachmentGitSha(path)
@@ -521,6 +522,21 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     const uploadedSha = await createBlobBinary(token, owner, name, blob)
     entries.push({ path, mode: '100644', type: 'blob', sha: uploadedSha })
     if (remoteSha) updated++; else created++
+  }
+
+  // 3c. Apply attachment tombstones — paths the user explicitly deleted
+  // locally need to be removed from the remote tree, otherwise pull would
+  // re-download them every cycle (the orphan-comes-back bug). We only
+  // delete entries that actually exist remotely; stale tombstones (file
+  // already gone remotely) get cleared too.
+  const tombstones = await getAttachmentTombstones()
+  const consumedTombstones: string[] = []
+  for (const path of tombstones) {
+    if (remoteTree.has(path)) {
+      entries.push({ path, mode: '100644', type: 'blob', sha: null })
+      deleted++
+    }
+    consumedTombstones.push(path)
   }
 
   // 4. Handle deletions: notes that USED to have a gitPath but no longer
@@ -546,6 +562,9 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   }
 
   if (entries.length === 0) {
+    // Even with no tree changes, clear stale tombstones (files already gone
+    // remotely) so they don't re-attempt every sync.
+    if (consumedTombstones.length > 0) await clearAttachmentTombstones(consumedTombstones)
     return {
       result: { unchanged: true, created: 0, updated: 0, deleted: 0, commitSha: parentCommitSha, commitUrl: null },
       pathUpdates,
@@ -558,6 +577,9 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   const message = `Sync from Noteser (${total} change${total === 1 ? '' : 's'})`
   const { sha: commitSha, html_url } = await createCommit(token, owner, name, message, newTreeSha, parentCommitSha)
   await updateBranchRef(token, owner, name, branch, commitSha)
+
+  // Push succeeded — drop tombstones whose deletes are now in the commit.
+  if (consumedTombstones.length > 0) await clearAttachmentTombstones(consumedTombstones)
 
   return {
     result: { unchanged: false, created, updated, deleted, commitSha, commitUrl: html_url },

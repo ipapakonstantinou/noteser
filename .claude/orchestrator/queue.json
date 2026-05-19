@@ -220,6 +220,28 @@
       "result": null,
       "error": null,
       "source": "telegram"
+    },
+    {
+      "id": "20260519T153226-g7a2",
+      "brief": "Refactor: extract a SystemFolder helper for attachments / daily-notes / templates. Each has the same shape — setting key, default value, normalisation, back-compat prefix list, isPath check, draft input UI, sidebar materialisation. Extract to src/utils/systemFolder.ts plus a reusable SettingsFolderField component. Build BEFORE e2f1 and f3b8 so they're one-liner subclasses.",
+      "status": "pending",
+      "created_at": "2026-05-19T15:32:26Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T153227-h8b5",
+      "brief": "Trash behaviour: configurable `.trash/` folder for deleted notes + setting to disable trash entirely (hard-delete). Today deletion is soft (note stays with isDeleted=true, hidden from default view, restorable from the Trash sidebar view). User wants either (a) materialise deletions as moves into a `.trash/` folder so they show up in the synced repo, or (b) toggle that hard-deletes immediately. Settings UI: dropdown {keep in trash view / move to .trash/ folder / hard-delete}.",
+      "status": "pending",
+      "created_at": "2026-05-19T15:32:27Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
     }
   ]
 }

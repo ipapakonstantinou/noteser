@@ -47,6 +47,9 @@ import {
   listAttachmentMeta,
   putAttachmentAtPath,
   getAttachmentGitSha,
+  getAttachmentTombstones,
+  addAttachmentTombstone,
+  clearAttachmentTombstones,
   _clearAttachmentUrlCache,
 } from '../utils/attachments'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -256,6 +259,37 @@ describe('deleteAttachment', () => {
     expect(revokeSpy).toHaveBeenCalledWith(url)
     expect(await getAttachmentBlob(path)).toBeNull()
     expect(await getAttachmentUrl(path)).toBeNull()
+  })
+
+  test('adds a tombstone so the next sync can delete the remote copy', async () => {
+    const blob = new Blob(['x'], { type: 'image/png' })
+    const path = await saveAttachment(blob, 'b.png')
+    await deleteAttachment(path)
+    expect(await getAttachmentTombstones()).toContain(path)
+  })
+})
+
+// ── Tombstones ────────────────────────────────────────────────────────────────
+
+describe('attachment tombstones', () => {
+  test('addAttachmentTombstone is idempotent', async () => {
+    await addAttachmentTombstone('attachments/a.png')
+    await addAttachmentTombstone('attachments/a.png')
+    expect(await getAttachmentTombstones()).toEqual(['attachments/a.png'])
+  })
+
+  test('clearAttachmentTombstones removes only the listed paths', async () => {
+    await addAttachmentTombstone('attachments/a.png')
+    await addAttachmentTombstone('attachments/b.png')
+    await addAttachmentTombstone('attachments/c.png')
+    await clearAttachmentTombstones(['attachments/a.png', 'attachments/c.png'])
+    expect(await getAttachmentTombstones()).toEqual(['attachments/b.png'])
+  })
+
+  test('clearAttachmentTombstones with empty list is a no-op', async () => {
+    await addAttachmentTombstone('attachments/a.png')
+    await clearAttachmentTombstones([])
+    expect(await getAttachmentTombstones()).toEqual(['attachments/a.png'])
   })
 })
 
