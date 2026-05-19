@@ -8,7 +8,9 @@ const customJestConfig = {
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   testEnvironment: 'jsdom',
   // Playwright E2E tests live under /e2e and have a separate runner.
-  testPathIgnorePatterns: ['/node_modules/', '/.next/', '/e2e/'],
+  // .claude/worktrees/ holds in-flight subagent branches with duplicate
+  // test files; ignore them too.
+  testPathIgnorePatterns: ['/node_modules/', '/.next/', '/e2e/', '/.claude/worktrees/'],
 }
 
 module.exports = createJestConfig(customJestConfig)

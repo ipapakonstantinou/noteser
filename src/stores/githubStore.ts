@@ -29,9 +29,16 @@ interface GitHubState {
   lastSyncedAt: number | null
   lastCommitSha: string | null
   repoSyncStates: Record<string, RepoSyncState>
+  // Global guard: true while any sync is in flight. Lifted out of the
+  // per-hook syncState because multiple components (Sidebar, GitHubView,
+  // useAutoSync) each instantiate useGitHubSync — without a shared flag,
+  // a manual click + an auto-sync tick would fire two concurrent syncs.
+  // NOT persisted (resets to false on every reload).
+  isSyncing: boolean
   setSession: (token: string, user: GitHubUser) => void
   setSyncRepo: (repo: SyncRepo | null) => void
   recordSync: (commitSha: string) => void
+  setIsSyncing: (value: boolean) => void
   disconnect: () => void
 }
 
@@ -45,7 +52,9 @@ export const useGitHubStore = create<GitHubState>()(
       lastSyncedAt: null,
       lastCommitSha: null,
       repoSyncStates: {},
+      isSyncing: false,
       setSession: (token, user) => set({ token, user, connectedAt: Date.now() }),
+      setIsSyncing: (value) => set({ isSyncing: value }),
       setSyncRepo: (repo) => set(state => {
         const currentKey = repoKey(state.syncRepo)
         const nextKey = repoKey(repo)

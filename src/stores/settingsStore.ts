@@ -5,11 +5,6 @@ import { STORAGE_KEYS } from '@/utils/storageKeys'
 export type FolderSortMode = 'alphabetical' | 'modified' | 'created' | 'manual'
 export type TaskListDensity = 'compact' | 'comfortable'
 
-// Auto-sync interval in minutes. 0 = off. We constrain to a small set so
-// the settings dropdown stays simple; passing arbitrary numbers also
-// works at runtime.
-export type AutoSyncInterval = 0 | 5 | 15 | 30 | 60
-
 export interface SettingsState {
   folderSortMode: FolderSortMode
   taskListDensity: TaskListDensity
@@ -22,8 +17,8 @@ export interface SettingsState {
   attachmentsFolder: string
   // Run a sync (pull-then-push) once on app boot if a repo is connected.
   autoSyncOnStart: boolean
-  // Run sync on this interval. 0 = off.
-  autoSyncIntervalMinutes: AutoSyncInterval
+  // Minutes between auto-syncs. 0 = off. Any positive integer is valid.
+  autoSyncIntervalMinutes: number
   // Repo-relative folder for daily notes. Empty falls back to the default.
   dailyNotesFolder: string
   // Date format used as both the title of a daily note and the calendar
@@ -40,7 +35,7 @@ export interface SettingsState {
   setShowHiddenFolders: (value: boolean) => void
   setAttachmentsFolder: (folder: string) => void
   setAutoSyncOnStart: (value: boolean) => void
-  setAutoSyncIntervalMinutes: (minutes: AutoSyncInterval) => void
+  setAutoSyncIntervalMinutes: (minutes: number) => void
   setDailyNotesFolder: (folder: string) => void
   setDailyNoteDateFormat: (format: string) => void
   setTemplatesFolder: (folder: string) => void
@@ -54,7 +49,7 @@ const DEFAULTS = {
   showHiddenFolders: true,
   attachmentsFolder: 'attachments',
   autoSyncOnStart: true,
-  autoSyncIntervalMinutes: 0 as AutoSyncInterval,
+  autoSyncIntervalMinutes: 0,
   dailyNotesFolder: 'Daily Notes',
   dailyNoteDateFormat: 'YYYY-MM-DD',
   templatesFolder: 'Templates',

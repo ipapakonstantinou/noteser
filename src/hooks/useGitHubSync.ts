@@ -105,8 +105,15 @@ export function useGitHubSync(): UseGitHubSyncResult {
     // on the captured values — auto-sync triggered immediately after
     // `setSyncRepo` (e.g. from `GitHubRepoModal`) would otherwise still see
     // the previous repo.
-    const { token: activeToken, syncRepo: activeRepo } = useGitHubStore.getState()
+    const { token: activeToken, syncRepo: activeRepo, isSyncing, setIsSyncing } = useGitHubStore.getState()
     if (!activeToken || !activeRepo) return
+    // Global guard: refuse to start a second sync while another one is in
+    // flight. Each useGitHubSync caller has its own local syncState, so
+    // without this check the sidebar button, the GitHub view, and the
+    // auto-sync timer could each fire concurrent syncs (visible in the
+    // network panel as a flood of duplicate /blobs POSTs).
+    if (isSyncing) return
+    setIsSyncing(true)
 
     setSyncState({ kind: 'running' })
     try {
@@ -147,6 +154,11 @@ export function useGitHubSync(): UseGitHubSyncResult {
       setTimeout(() => setSyncState({ kind: 'idle' }), 5000)
     } catch (err) {
       setSyncState({ kind: 'err', message: err instanceof Error ? err.message : 'Sync failed' })
+    } finally {
+      // Always release the global guard, even on errors / early returns from
+      // the conflict branch — otherwise a failed sync wedges every future
+      // sync attempt forever.
+      useGitHubStore.getState().setIsSyncing(false)
     }
   }, [token, syncRepo, recordSync, openMergeConflicts])
 

@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { DocumentTextIcon } from '@heroicons/react/24/outline'
 import type { Note } from '@/types'
+import { getAliasesForNote } from '@/utils/aliases'
 
 interface WikilinkAutocompleteProps {
   query: string
@@ -11,6 +12,14 @@ interface WikilinkAutocompleteProps {
   position: { top: number; left: number }
   onSelect: (note: Note) => void
   onClose: () => void
+}
+
+// Result row carries the note + (optional) alias that produced the match, so
+// the dropdown can render "Title (alias: Short Name)" — same affordance
+// Obsidian shows when the typed query hit an alias rather than the title.
+interface AutocompleteRow {
+  note: Note
+  matchedAlias: string | null
 }
 
 export function WikilinkAutocomplete({
@@ -23,9 +32,22 @@ export function WikilinkAutocomplete({
   const [activeIndex, setActiveIndex] = useState(0)
   const activeRef = useRef<HTMLDivElement>(null)
 
-  const filtered = notes
-    .filter(n => n.title.toLowerCase().includes(query.toLowerCase()))
-    .slice(0, 8)
+  const filtered = useMemo<AutocompleteRow[]>(() => {
+    const q = query.toLowerCase()
+    const rows: AutocompleteRow[] = []
+    for (const note of notes) {
+      if (note.title.toLowerCase().includes(q)) {
+        rows.push({ note, matchedAlias: null })
+        continue
+      }
+      // Title didn't match — check aliases. We show the FIRST alias that
+      // matched the query so the user can see why this row appeared.
+      const aliases = getAliasesForNote(note)
+      const hit = aliases.find(a => a.toLowerCase().includes(q))
+      if (hit) rows.push({ note, matchedAlias: hit })
+    }
+    return rows.slice(0, 8)
+  }, [notes, query])
 
   useEffect(() => setActiveIndex(0), [query])
 
@@ -44,7 +66,7 @@ export function WikilinkAutocomplete({
       } else if (e.key === 'Enter' || e.key === 'Tab') {
         if (filtered[activeIndex]) {
           e.preventDefault()
-          onSelect(filtered[activeIndex])
+          onSelect(filtered[activeIndex].note)
         }
       } else if (e.key === 'Escape') {
         e.preventDefault()
@@ -67,7 +89,7 @@ export function WikilinkAutocomplete({
       className="fixed z-[9999] bg-obsidianGray border border-obsidianBorder rounded-lg shadow-obsidian overflow-hidden min-w-[200px] max-w-[320px] max-h-72 overflow-y-auto"
       style={{ top, left: position.left }}
     >
-      {filtered.map((note, i) => (
+      {filtered.map(({ note, matchedAlias }, i) => (
         <div
           key={note.id}
           ref={i === activeIndex ? activeRef : null}
@@ -84,6 +106,11 @@ export function WikilinkAutocomplete({
         >
           <DocumentTextIcon className="w-4 h-4 flex-shrink-0" />
           <span className="truncate">{note.title}</span>
+          {matchedAlias && (
+            <span className="truncate text-xs text-obsidianSecondaryText/70 italic">
+              (alias: {matchedAlias})
+            </span>
+          )}
         </div>
       ))}
     </div>,
