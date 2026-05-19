@@ -66,6 +66,39 @@
       "result": "Deleted .github/workflows/nextjs.yml. Last 3 runs all failed (no static-export config + server-side API routes mean it could never succeed). Vercel deploys are auto-triggered via Vercel's GitHub integration — no Actions workflow needed.",
       "error": null,
       "source": "telegram"
+    },
+    {
+      "id": "20260519T055200-d8a7",
+      "brief": "Settings panel (Obsidian-style modal): theme, daily-note date format, default folder, sync prefs, sort-mode for folders, task-list density. Unlocks remappable shortcuts as a follow-up.",
+      "status": "pending",
+      "created_at": "2026-05-19T05:52:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T055201-e9c4",
+      "brief": "Sort notes within folders — per-folder + global default. Modes: alphabetical, modified, created, manual drag-order. Driven by Settings panel + per-folder right-click override.",
+      "status": "pending",
+      "created_at": "2026-05-19T05:52:01Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T055202-f1b8",
+      "brief": "TaskQueryBlock visual polish — bigger line-height, larger checkboxes, dim/styled source pill (the '(2026-05-16 > To Do)' link), more breathing room. Closer to Obsidian Tasks-plugin density.",
+      "status": "pending",
+      "created_at": "2026-05-19T05:52:02Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
     }
   ]
 }
