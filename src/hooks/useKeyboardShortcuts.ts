@@ -1,8 +1,15 @@
 'use client'
 
 import { useEffect, useCallback } from 'react'
-import { useUIStore, useNoteStore, useFolderStore, useWorkspaceStore } from '@/stores'
+import { useUIStore, useNoteStore, useFolderStore, useWorkspaceStore, useSettingsStore } from '@/stores'
 import { KEYBOARD_SHORTCUTS } from '@/types'
+import {
+  SHORTCUTS,
+  activeComboFor,
+  matchEvent,
+  parseCombo,
+  type ShortcutAction,
+} from '@/utils/shortcuts'
 
 interface ShortcutHandlers {
   onInsertNumberedList?: () => void
@@ -11,89 +18,113 @@ interface ShortcutHandlers {
   onRedo?: () => void
 }
 
+// Actions that are safe to fire even when focus is in an INPUT/TEXTAREA/
+// contenteditable. Everything else is suppressed while typing so we don't
+// hijack ordinary keystrokes inside the editor.
+const ALLOWED_IN_INPUT: ReadonlySet<ShortcutAction> = new Set<ShortcutAction>([
+  'openSearch',
+])
+
 export const useKeyboardShortcuts = (handlers: ShortcutHandlers = {}) => {
   const { openSearch, toggleSidebar, togglePreview, openModal } = useUIStore()
   const { selectedNoteId, deleteNote } = useNoteStore()
+  // Subscribing here means the hook reruns and re-binds when overrides change,
+  // so a freshly-saved override takes effect without a page reload.
+  const shortcutOverrides = useSettingsStore(s => s.shortcutOverrides)
 
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
-    // Don't trigger shortcuts when typing in inputs (except for specific ones)
+    // Don't trigger most shortcuts when typing in inputs (we still allow a
+    // small allowlist, e.g. openSearch / Ctrl+K, to fire from the editor).
     const target = event.target as HTMLElement
     const isInput = target.tagName === 'INPUT' ||
       target.tagName === 'TEXTAREA' ||
       target.isContentEditable
 
-    // Check for modifier keys
     const hasCtrl = event.ctrlKey || event.metaKey
     const hasShift = event.shiftKey
 
-    // Search - Ctrl+K (works even in inputs)
-    if (hasCtrl && event.key.toLowerCase() === 'k') {
-      event.preventDefault()
-      openSearch()
-      return
+    // ── Data-driven app shortcuts ─────────────────────────────────────────
+    // Walk the SHORTCUTS list, picking the first def whose active combo
+    // (default OR user override) matches the event. We do this BEFORE the
+    // hard-coded editor/Escape branches so user overrides can target any key
+    // — including keys that used to be handled by the legacy ladder.
+    for (const def of SHORTCUTS) {
+      const combo = parseCombo(activeComboFor(def, shortcutOverrides))
+      if (!matchEvent(combo, event)) continue
+      if (isInput && !ALLOWED_IN_INPUT.has(def.action)) continue
+
+      switch (def.action) {
+        case 'newNote': {
+          event.preventDefault()
+          const note = useNoteStore.getState().addNote({ folderId: null })
+          useWorkspaceStore.getState().openNote(note.id, { preview: false })
+          return
+        }
+        case 'openSearch':
+          event.preventDefault()
+          openSearch()
+          return
+        case 'toggleSidebar':
+          event.preventDefault()
+          toggleSidebar()
+          return
+        case 'togglePreview':
+          event.preventDefault()
+          togglePreview()
+          return
+        case 'newFolder':
+          event.preventDefault()
+          useFolderStore.getState().addFolder({ parentId: null })
+          return
+        case 'deleteNote': {
+          if (!selectedNoteId) return
+          event.preventDefault()
+          openModal({
+            type: 'delete',
+            data: { type: 'note', id: selectedNoteId },
+          })
+          return
+        }
+        case 'openToday':
+          event.preventDefault()
+          // Lazy import keeps the keyboard hook free of a hard daily-notes dep.
+          import('@/utils/dailyNotes').then(({ openTodayNote }) => openTodayNote())
+          return
+        case 'focusSidebar': {
+          event.preventDefault()
+          // Hand focus to the sidebar folder tree if it's mounted. We
+          // intentionally do NOT auto-expand the sidebar — if the user
+          // collapsed it, this shortcut becomes a no-op rather than a
+          // surprising layout shift.
+          const tree = document.querySelector<HTMLElement>('[data-testid="folder-tree"]')
+          tree?.focus()
+          return
+        }
+      }
     }
 
-    // Show shortcuts - Ctrl+/
+    // ── Hard-coded shortcuts (not yet user-rebindable) ────────────────────
+
+    // Show shortcuts modal - Ctrl+/
     if (hasCtrl && event.key === '/') {
       event.preventDefault()
       openModal({ type: 'shortcuts' })
       return
     }
 
-    // App-level shortcuts — fire regardless of focus location
-
-    // Toggle preview - Ctrl+E
-    if (hasCtrl && event.key.toLowerCase() === 'e') {
+    // `/` (no modifiers, outside of an input) is a fast synonym for
+    // Ctrl+K — Obsidian / Slack muscle memory. Kept out of SHORTCUTS
+    // because the combo parser refuses bare keys (would shadow typing
+    // anywhere). The isInput guard below means it can't fire while
+    // typing in the editor or a rename field.
+    if (!hasCtrl && !hasShift && !event.altKey && event.key === '/' && !isInput) {
       event.preventDefault()
-      togglePreview()
+      openSearch()
       return
     }
 
-    // Toggle sidebar - Ctrl+B
-    if (hasCtrl && event.key.toLowerCase() === 'b') {
-      event.preventDefault()
-      toggleSidebar()
-      return
-    }
-
-    // New note - Alt+N (always at root). Ctrl+N can't be used: browsers
-    // reserve it for "New Window" and the keydown never reaches the page.
-    if (event.altKey && !hasCtrl && !hasShift && event.key.toLowerCase() === 'n') {
-      event.preventDefault()
-      const note = useNoteStore.getState().addNote({ folderId: null })
-      useWorkspaceStore.getState().openNote(note.id, { preview: false })
-      return
-    }
-
-    // Open today's daily note - Alt+D. Creates it (with the configured
-    // template) inside the configured daily-notes folder if missing.
-    if (event.altKey && !hasCtrl && !hasShift && event.key.toLowerCase() === 'd') {
-      event.preventDefault()
-      // Lazy import keeps the keyboard hook free of a hard daily-notes dep.
-      import('@/utils/dailyNotes').then(({ openTodayNote }) => openTodayNote())
-      return
-    }
-
-    // New folder - Ctrl+Shift+N (always at root).
-    if (hasCtrl && hasShift && event.key.toLowerCase() === 'n') {
-      event.preventDefault()
-      useFolderStore.getState().addFolder({ parentId: null })
-      return
-    }
-
-    // Delete note - Ctrl+Delete
-    if (hasCtrl && event.key === 'Delete' && selectedNoteId) {
-      event.preventDefault()
-      openModal({
-        type: 'delete',
-        data: { type: 'note', id: selectedNoteId }
-      })
-      return
-    }
-
-    // Skip editor-only shortcuts when not in an editable field
+    // Editor-only formatting shortcuts (fire only when in an editable field).
     if (isInput) {
-      // Formatting shortcuts (only inside editor)
       if (hasCtrl && hasShift) {
         if (event.key === '7') {
           event.preventDefault()
@@ -106,7 +137,6 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers = {}) => {
           return
         }
       }
-
       return
     }
 
@@ -124,7 +154,7 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers = {}) => {
       return
     }
 
-    // Escape - Close modals/search
+    // Escape - close modals / search / context menu.
     if (event.key === 'Escape') {
       useUIStore.getState().closeSearch()
       useUIStore.getState().closeModal()
@@ -137,7 +167,8 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers = {}) => {
     openModal,
     selectedNoteId,
     deleteNote,
-    handlers
+    handlers,
+    shortcutOverrides,
   ])
 
   useEffect(() => {

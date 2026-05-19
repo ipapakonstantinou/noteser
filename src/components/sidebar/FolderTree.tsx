@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -13,6 +13,12 @@ import { useHydration, useTreeDragDrop } from '@/hooks'
 import { EditableText } from '../shared/EditableText'
 import { collectAllTags } from '@/utils/tags'
 import { sortNotes } from '@/utils/sortNotes'
+import {
+  getFlattenedTreeOrder,
+  findRowIndex,
+  findNextRowByLetter,
+  type TreeRow,
+} from '@/utils/treeNav'
 import {
   listAttachmentMeta,
   getAttachmentUrl,
@@ -157,6 +163,180 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     return out
   }, [attachmentMeta])
 
+  // ── Keyboard navigation ────────────────────────────────────────────────
+  // The folder tree behaves as a single roving-tabindex group: the
+  // outermost div is the only Tab stop, and a single `focusedRow` marks
+  // which row is "selected" by the keyboard. Arrow keys move the marker;
+  // Enter / Space act on it. A flattened view of the visible rows powers
+  // every navigation primitive (next/prev, jump-to-letter, expand/collapse).
+  const [focusedRow, setFocusedRow] = useState<{ kind: 'folder' | 'note'; id: string } | null>(null)
+  const treeRef = useRef<HTMLDivElement | null>(null)
+
+  // Cached flattened order — recomputed when folders/notes/expansion
+  // change. Notes inside each folder follow the configured sort mode so
+  // arrow-down matches the visible order exactly.
+  const flattenedRows = useMemo<TreeRow[]>(() => {
+    if (!hydrated) return []
+    return getFlattenedTreeOrder(folders, notes, expandedFolders, {
+      showHiddenFolders,
+      noteSortMode: folderSortMode,
+    })
+  }, [hydrated, folders, notes, expandedFolders, showHiddenFolders, folderSortMode])
+
+  // Find-as-you-type: we use a single-letter prefix that always searches
+  // forward from the currently focused row, wrapping around. Repeated taps
+  // of the same letter cycle through all matches, so no timed buffer is
+  // needed — the cursor's position carries all the state we need.
+
+  // If focus drifts to a now-hidden row (e.g. user collapsed the parent),
+  // snap it to that parent so the user doesn't get a stale highlight.
+  useEffect(() => {
+    if (!focusedRow) return
+    if (findRowIndex(flattenedRows, focusedRow.kind, focusedRow.id) !== -1) return
+    // Try to find any ancestor folder that is still visible.
+    if (focusedRow.kind === 'note' || focusedRow.kind === 'folder') {
+      // Walk up parents using the folder store.
+      const folderById = new Map(folders.map(f => [f.id, f]))
+      let parentId: string | null | undefined = focusedRow.kind === 'folder'
+        ? folderById.get(focusedRow.id)?.parentId ?? null
+        : notes.find(n => n.id === focusedRow.id)?.folderId ?? null
+      while (parentId) {
+        if (findRowIndex(flattenedRows, 'folder', parentId) !== -1) {
+          setFocusedRow({ kind: 'folder', id: parentId })
+          return
+        }
+        parentId = folderById.get(parentId)?.parentId ?? null
+      }
+    }
+    setFocusedRow(null)
+  }, [flattenedRows, focusedRow, folders, notes])
+
+  const moveFocusToIndex = useCallback((idx: number) => {
+    if (idx < 0 || idx >= flattenedRows.length) return
+    const row = flattenedRows[idx]
+    setFocusedRow({ kind: row.kind, id: row.id })
+  }, [flattenedRows])
+
+  const handleTreeKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Bail out cleanly while typing in nested inline rename inputs — the
+    // EditableText component renders an <input> inside the tree, and we
+    // don't want arrow keys / letter keys hijacking text input.
+    const target = e.target as HTMLElement
+    if (
+      target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.isContentEditable
+    ) {
+      return
+    }
+
+    if (flattenedRows.length === 0) return
+
+    const currentIndex = focusedRow
+      ? findRowIndex(flattenedRows, focusedRow.kind, focusedRow.id)
+      : -1
+    const currentRow = currentIndex >= 0 ? flattenedRows[currentIndex] : null
+
+    switch (e.key) {
+      case 'ArrowDown': {
+        e.preventDefault()
+        const next = currentIndex < 0 ? 0 : Math.min(currentIndex + 1, flattenedRows.length - 1)
+        moveFocusToIndex(next)
+        return
+      }
+      case 'ArrowUp': {
+        e.preventDefault()
+        const next = currentIndex <= 0 ? 0 : currentIndex - 1
+        moveFocusToIndex(next)
+        return
+      }
+      case 'Home': {
+        e.preventDefault()
+        moveFocusToIndex(0)
+        return
+      }
+      case 'End': {
+        e.preventDefault()
+        moveFocusToIndex(flattenedRows.length - 1)
+        return
+      }
+      case 'ArrowRight': {
+        if (!currentRow) return
+        if (currentRow.kind === 'folder') {
+          e.preventDefault()
+          if (!expandedFolders[currentRow.id]) {
+            toggleFolderExpanded(currentRow.id)
+          } else if (currentIndex + 1 < flattenedRows.length) {
+            // Move into the first child if there is one (depth strictly
+            // greater than the folder's depth).
+            const child = flattenedRows[currentIndex + 1]
+            if (child.depth > currentRow.depth) moveFocusToIndex(currentIndex + 1)
+          }
+        }
+        return
+      }
+      case 'ArrowLeft': {
+        if (!currentRow) return
+        e.preventDefault()
+        if (currentRow.kind === 'folder' && expandedFolders[currentRow.id]) {
+          toggleFolderExpanded(currentRow.id)
+          return
+        }
+        // Otherwise jump to the parent folder row if one exists.
+        if (currentRow.parentFolderId) {
+          const parentIdx = findRowIndex(flattenedRows, 'folder', currentRow.parentFolderId)
+          if (parentIdx !== -1) moveFocusToIndex(parentIdx)
+        }
+        return
+      }
+      case 'Enter': {
+        if (!currentRow) return
+        e.preventDefault()
+        if (currentRow.kind === 'note') {
+          // Enter = pinned open (matches double-click).
+          openNote(currentRow.id, { preview: false })
+        } else {
+          toggleFolderExpanded(currentRow.id)
+        }
+        return
+      }
+      case ' ': {
+        // Space toggles expansion on folders; ignored on notes.
+        if (!currentRow || currentRow.kind !== 'folder') return
+        e.preventDefault()
+        toggleFolderExpanded(currentRow.id)
+        return
+      }
+      default: {
+        // Find-as-you-type: single printable letter, no modifiers.
+        if (
+          e.key.length === 1 &&
+          /^[a-z0-9]$/i.test(e.key) &&
+          !e.ctrlKey &&
+          !e.metaKey &&
+          !e.altKey
+        ) {
+          e.preventDefault()
+          const nextIdx = findNextRowByLetter(flattenedRows, e.key, currentIndex)
+          if (nextIdx !== -1) moveFocusToIndex(nextIdx)
+        }
+      }
+    }
+  }, [flattenedRows, focusedRow, expandedFolders, toggleFolderExpanded, openNote, moveFocusToIndex])
+
+  // Initialise the focused row when the tree first gains focus and nothing
+  // is selected yet — drops the user on the first visible row.
+  const handleTreeFocus = useCallback((e: React.FocusEvent<HTMLDivElement>) => {
+    if (e.target !== treeRef.current) return
+    if (focusedRow) return
+    if (flattenedRows.length > 0) {
+      setFocusedRow({ kind: flattenedRows[0].kind, id: flattenedRows[0].id })
+    }
+  }, [flattenedRows, focusedRow])
+
+  const isRowFocused = (kind: 'folder' | 'note', id: string): boolean =>
+    !!focusedRow && focusedRow.kind === kind && focusedRow.id === id
+
   // ── Drag & drop ───────────────────────────────────────────────────────
   // All begin/over/drop/end handlers + the dragOverTarget state come from
   // the useTreeDragDrop hook, which also owns the cross-cutting logic of
@@ -194,17 +374,22 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
 
   // Render note item
   const NoteItem = ({ note, className = '' }: { note: typeof notes[0]; className?: string }) => {
+    const kbFocused = isRowFocused('note', note.id)
     return (
       <div
         className={`obsidian-file-item ${
           selectedNoteId === note.id ? 'bg-obsidianHighlight' : ''
-        } ${className}`}
+        } ${kbFocused ? 'ring-1 ring-inset ring-obsidianAccentPurple' : ''} ${className}`}
         draggable={currentView !== 'trash'}
         onDragStart={e => beginNoteDrag(e, note.id)}
         onDragEnd={endDrag}
         onClick={() => handleNoteClick(note.id)}
         onDoubleClick={() => handleNoteDoubleClick(note.id)}
         onContextMenu={e => onRightClick(e, 'note', note.id)}
+        tabIndex={-1}
+        data-testid="note-row"
+        data-note-id={note.id}
+        data-kb-focused={kbFocused ? 'true' : undefined}
       >
         <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
         <div className="flex-1 min-w-0">
@@ -245,21 +430,26 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     const childCount = folderNotes.length + childFolders.length + folderAttachments.length
 
     const isDropTarget = dragOverTarget === folder.id
+    const kbFocused = isRowFocused('folder', folder.id)
     return (
       <div className="mb-0.5">
         <div
           className={`obsidian-folder-item ${
             isActive ? 'bg-obsidianHighlight' : ''
-          } ${isDropTarget ? 'outline outline-2 outline-obsidianAccentPurple bg-obsidianAccentPurple/10' : ''}`}
+          } ${isDropTarget ? 'outline outline-2 outline-obsidianAccentPurple bg-obsidianAccentPurple/10' : ''} ${
+            kbFocused ? 'ring-1 ring-inset ring-obsidianAccentPurple' : ''
+          }`}
           style={{ paddingLeft: depth > 0 ? `${depth * 12 + 8}px` : undefined }}
           onClick={() => setActiveFolder(folder.id)}
           onContextMenu={e => onRightClick(e, 'folder', folder.id)}
           onDragOver={e => onFolderDragOver(e, folder.id)}
           onDragLeave={() => onFolderDragLeave(folder.id)}
           onDrop={e => onFolderDrop(e, folder.id)}
+          tabIndex={-1}
           data-testid="folder-row"
           data-folder-name={folder.name}
           data-folder-id={folder.id}
+          data-kb-focused={kbFocused ? 'true' : undefined}
         >
           <button
             className="mr-1 focus:outline-none"
@@ -432,8 +622,12 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   if (rootFolders.length === 0 && rootNotes.length === 0 && attachmentMeta.length === 0) {
     return (
       <div
+        ref={treeRef}
         data-testid="folder-tree"
-        className={`text-center py-8 text-obsidianSecondaryText min-h-full ${
+        tabIndex={0}
+        role="tree"
+        aria-label="Folder tree"
+        className={`text-center py-8 text-obsidianSecondaryText min-h-full outline-none ${
           dragOverTarget === '__root__' ? 'outline outline-2 outline-obsidianAccentPurple' : ''
         }`}
         onDragOver={onRootDragOver}
@@ -460,11 +654,17 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
 
   return (
     <div
+      ref={treeRef}
       data-testid="folder-tree"
-      className={`min-h-full ${rootHighlighted ? 'outline outline-2 outline-obsidianAccentPurple rounded' : ''}`}
+      tabIndex={0}
+      role="tree"
+      aria-label="Folder tree"
+      className={`min-h-full outline-none ${rootHighlighted ? 'outline outline-2 outline-obsidianAccentPurple rounded' : ''}`}
       onDragOver={onRootDragOver}
       onDragLeave={onRootDragLeave}
       onDrop={onRootDrop}
+      onKeyDown={handleTreeKeyDown}
+      onFocus={handleTreeFocus}
     >
       {visibleRootFolders.map(folder => (
         <FolderItem key={folder.id} folder={folder} />
