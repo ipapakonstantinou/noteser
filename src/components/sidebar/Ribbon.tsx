@@ -10,6 +10,7 @@ import {
   Cog6ToothIcon,
 } from '@heroicons/react/24/outline'
 import { useUIStore, useNoteStore } from '@/stores'
+import { useHydration } from '@/hooks'
 
 // Obsidian-style far-left ribbon. Always visible. Holds Search + nav icons
 // (All Notes, Recent, Tags, Trash, Calendar) plus a Settings gear pinned
@@ -18,9 +19,13 @@ import { useUIStore, useNoteStore } from '@/stores'
 export const Ribbon = () => {
   const { openSearch, currentView, setCurrentView, openModal } = useUIStore()
   const { getDeletedNotes, getRecentNotes } = useNoteStore()
+  const hydrated = useHydration()
 
-  const trashCount = getDeletedNotes().length
-  const recentCount = getRecentNotes(99).length
+  // Counts come from the persisted noteStore which is only populated on the
+  // client. Suppress them on the server pass so the SSR'd title attribute
+  // matches the first client render — once hydrated, the badge shows.
+  const trashCount = hydrated ? getDeletedNotes().length : 0
+  const recentCount = hydrated ? getRecentNotes(99).length : 0
 
   return (
     <div className="h-full w-[44px] flex flex-col items-center gap-1 py-2 bg-obsidianBlack border-r border-obsidianBorder">
