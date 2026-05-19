@@ -9,6 +9,7 @@ import {
   UI_TASK_LINE_REGEX,
   type TaskPriority,
 } from '@/utils/tasks'
+import { isValidRecurrence } from '@/utils/recurrence'
 
 // Stable list of priority options. `normal` has no emoji marker but is still
 // a valid choice — picking it strips any existing priority marker on save.
@@ -29,6 +30,7 @@ interface TaskEditFormState {
   scheduledDate: string
   startDate: string
   completedDate: string
+  recurrence: string
 }
 
 const EMPTY_FORM: TaskEditFormState = {
@@ -39,6 +41,7 @@ const EMPTY_FORM: TaskEditFormState = {
   scheduledDate: '',
   startDate: '',
   completedDate: '',
+  recurrence: '',
 }
 
 export const TaskEditModal = () => {
@@ -75,6 +78,7 @@ export const TaskEditModal = () => {
         scheduledDate: parsed.scheduledDate ?? '',
         startDate: parsed.startDate ?? '',
         completedDate: parsed.completedDate ?? '',
+        recurrence: parsed.recurrence ?? '',
       } satisfies TaskEditFormState,
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -141,6 +145,7 @@ export const TaskEditModal = () => {
         // Completed-date is only meaningful for closed tasks — strip it on
         // save when the user marks the task open.
         completedDate: form.open ? null : (form.completedDate || null),
+        recurrence: form.recurrence.trim() || null,
       },
       bullet,
     )
@@ -221,6 +226,28 @@ export const TaskEditModal = () => {
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
+        </FormField>
+
+        <FormField label="Recurrence (🔁)">
+          <div className="space-y-1">
+            <input
+              type="text"
+              value={form.recurrence}
+              onChange={e => update('recurrence', e.target.value)}
+              placeholder="e.g. every week, every month on the 1st"
+              aria-label="Recurrence rule"
+              className={`w-full px-3 py-2 bg-obsidianDarkGray border rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:ring-2 focus:ring-obsidianAccentPurple focus:border-transparent ${
+                form.recurrence.trim() && !isValidRecurrence(form.recurrence)
+                  ? 'border-red-500'
+                  : 'border-obsidianBorder'
+              }`}
+            />
+            {form.recurrence.trim() && !isValidRecurrence(form.recurrence) && (
+              <p className="text-xs text-red-400">
+                Unrecognized rule. Examples: <code>every day</code>, <code>every 2 weeks</code>, <code>every month on the 1st</code>.
+              </p>
+            )}
+          </div>
         </FormField>
 
         <div className="flex justify-end gap-2 pt-2">

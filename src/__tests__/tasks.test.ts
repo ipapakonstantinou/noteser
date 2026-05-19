@@ -50,6 +50,7 @@ describe('extractTasks', () => {
       scheduledDate: null,
       startDate: null,
       priority: 'normal',
+      recurrence: null,
     })
   })
 
@@ -407,6 +408,7 @@ describe('parseTaskMetadata', () => {
       scheduledDate: null,
       startDate: null,
       priority: 'normal',
+      recurrence: null,
     })
   })
 
@@ -475,5 +477,120 @@ describe('toggleTaskLineText — preserves metadata', () => {
     expect(after).toContain('📅 2026-05-20')
     expect(after).not.toContain('✅')
     expect(after?.startsWith('- [ ] ')).toBe(true)
+  })
+})
+
+// ── Recurrence (🔁) ───────────────────────────────────────────────────────────
+
+describe('parseTaskMetadata — recurrence', () => {
+  test('captures a "every week" rule', () => {
+    const out = parseTaskMetadata('water plants 🔁 every week')
+    expect(out.recurrence).toBe('every week')
+    expect(out.text).toBe('water plants')
+  })
+
+  test('captures a "every month on the 1st" rule', () => {
+    const out = parseTaskMetadata('pay rent 🔁 every month on the 1st')
+    expect(out.recurrence).toBe('every month on the 1st')
+    expect(out.text).toBe('pay rent')
+  })
+
+  test('captures recurrence even when followed by other markers', () => {
+    const out = parseTaskMetadata('a 🔁 every 2 weeks 📅 2026-05-20')
+    expect(out.recurrence).toBe('every 2 weeks')
+    expect(out.dueDate).toBe('2026-05-20')
+    expect(out.text).toBe('a')
+  })
+
+  test('returns null recurrence when no 🔁 present', () => {
+    expect(parseTaskMetadata('plain task').recurrence).toBeNull()
+  })
+})
+
+describe('toggleTaskLineText — recurring task creates next instance', () => {
+  test('checking a recurring task with due date inserts the next instance above', () => {
+    const before = '- [ ] water plants 🔁 every week 📅 2026-05-20'
+    const after = toggleTaskLineText(before, new Date(2026, 4, 19))
+    expect(after).not.toBeNull()
+    const lines = after!.split('\n')
+    expect(lines).toHaveLength(2)
+    // New open instance above, with due date rolled forward by 1 week.
+    // Canonical order: priority → 📅 → ⏳ → 🛫 → 🔁 → ✅.
+    expect(lines[0]).toBe('- [ ] water plants 📅 2026-05-27 🔁 every week')
+    // Completed line below with the ✅ stamp
+    expect(lines[1]).toContain('- [x] ')
+    expect(lines[1]).toContain('📅 2026-05-20')
+    expect(lines[1]).toContain('🔁 every week')
+    expect(lines[1]).toContain('✅ 2026-05-19')
+  })
+
+  test('preserves priority on the new instance', () => {
+    const before = '- [ ] thing 🔁 every day ⏫ 📅 2026-05-20'
+    const after = toggleTaskLineText(before, new Date(2026, 4, 19))
+    const lines = after!.split('\n')
+    expect(lines[0]).toContain('⏫')
+    expect(lines[0]).toContain('📅 2026-05-21')
+  })
+
+  test('"every month on the 1st" jumps to the 1st of the next month', () => {
+    const before = '- [ ] pay rent 🔁 every month on the 1st 📅 2026-05-15'
+    const after = toggleTaskLineText(before, new Date(2026, 4, 15))
+    const lines = after!.split('\n')
+    expect(lines[0]).toContain('📅 2026-06-01')
+  })
+
+  test('shifts scheduled / start dates by the same delta as the due date', () => {
+    const before = '- [ ] thing 🔁 every week 📅 2026-05-20 ⏳ 2026-05-18 🛫 2026-05-17'
+    const after = toggleTaskLineText(before, new Date(2026, 4, 19))
+    const lines = after!.split('\n')
+    expect(lines[0]).toContain('📅 2026-05-27')
+    expect(lines[0]).toContain('⏳ 2026-05-25')
+    expect(lines[0]).toContain('🛫 2026-05-24')
+  })
+
+  test('"when done" anchors on today instead of the due date', () => {
+    const before = '- [ ] thing 🔁 every day when done 📅 2026-05-10'
+    const after = toggleTaskLineText(before, new Date(2026, 4, 19))
+    const lines = after!.split('\n')
+    // Anchor = today (2026-05-19), next-anchor = 2026-05-20 (every day).
+    // Delta = +1 day, so due rolls from 2026-05-10 → 2026-05-11. This is
+    // the Obsidian-Tasks "when done" behavior: ignore the calendar gap
+    // between today and the due date — just step forward one period.
+    expect(lines[0]).toContain('📅 2026-05-11')
+  })
+
+  test('unchecking a recurring task does NOT create a new instance', () => {
+    const before = '- [x] thing 🔁 every week 📅 2026-05-20 ✅ 2026-05-19'
+    const after = toggleTaskLineText(before)
+    expect(after).not.toBeNull()
+    expect(after!.includes('\n')).toBe(false)
+    expect(after).toContain('- [ ]')
+  })
+
+  test('unparseable rule falls back to single-line toggle', () => {
+    const before = '- [ ] thing 🔁 sometimes maybe'
+    const after = toggleTaskLineText(before, new Date(2026, 4, 19))
+    expect(after!.includes('\n')).toBe(false)
+    expect(after).toContain('- [x]')
+    expect(after).toContain('✅ 2026-05-19')
+    // Recurrence marker is preserved on the completed line
+    expect(after).toContain('🔁 sometimes maybe')
+  })
+
+  test('recurring task with no dates uses today as anchor', () => {
+    const before = '- [ ] thing 🔁 every day'
+    const after = toggleTaskLineText(before, new Date(2026, 4, 19))
+    const lines = after!.split('\n')
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toBe('- [ ] thing 🔁 every day')
+    expect(lines[1]).toContain('✅ 2026-05-19')
+  })
+
+  test('preserves bullet style for the new instance', () => {
+    const before = '  * [ ] nested 🔁 every day'
+    const after = toggleTaskLineText(before, new Date(2026, 4, 19))
+    const lines = after!.split('\n')
+    expect(lines[0].startsWith('  * [ ] ')).toBe(true)
+    expect(lines[1].startsWith('  * [x] ')).toBe(true)
   })
 })

@@ -1,3 +1,5 @@
+import { nextRecurrence, shiftISOByDays, isoDiffDays } from './recurrence'
+
 // Aggregate `- [ ]` / `- [x]` checkboxes across all notes — Obsidian
 // Tasks-plugin emoji metadata subset.
 //
@@ -12,6 +14,8 @@
 //   - [ ] thing with 🔼 priority (high)
 //   - [ ] thing with 🔽 priority (low)
 //   - [ ] thing with ⏬ priority (lowest)
+//   - [ ] recurring thing 🔁 every week           recurrence rule
+//   - [ ] recurring + due 🔁 every month on the 1st 📅 2026-06-01
 //
 // Indentation before the dash is allowed (nested list items count).
 // Bullet character must be `-` here; the rendered-preview path also
@@ -29,6 +33,10 @@ const SCHEDULED_DATE_REGEX = /\s*⏳\s*(\d{4}-\d{2}-\d{2})\s*/g
 const START_DATE_REGEX     = /\s*🛫\s*(\d{4}-\d{2}-\d{2})\s*/g
 // Priority markers don't carry a date; we just detect the emoji.
 const PRIORITY_REGEX       = /\s*(⏫|🔼|🔽|⏬)\s*/g
+// Recurrence rule is free-form text after 🔁, terminated by the next emoji
+// marker or end-of-line. Negative lookahead keeps us from swallowing other
+// metadata. `+` is greedy — naturally stops at any other marker.
+const RECURRENCE_REGEX     = /\s*🔁\s*((?:(?!📅|⏳|🛫|✅|⏫|🔼|🔽|⏬|🔁).)+)/g
 
 export type TaskPriority = 'highest' | 'high' | 'normal' | 'low' | 'lowest'
 
@@ -73,6 +81,7 @@ export interface Task {
   scheduledDate: string | null
   startDate: string | null
   priority: TaskPriority
+  recurrence: string | null  // raw rrule text (e.g. "every week"), trimmed
 }
 
 // Extracts (and strips) every supported metadata marker from a body line.
@@ -86,6 +95,7 @@ export function parseTaskMetadata(body: string): {
   scheduledDate: string | null
   startDate: string | null
   priority: TaskPriority
+  recurrence: string | null
 } {
   let text = body
   const firstMatch = (re: RegExp): string | null => {
@@ -99,6 +109,10 @@ export function parseTaskMetadata(body: string): {
   const startDate     = firstMatch(START_DATE_REGEX)
   const priorityEmoji = firstMatch(PRIORITY_REGEX)
   const priority = priorityEmoji ? priorityFromEmoji(priorityEmoji) : 'normal'
+  // Trim captured recurrence — the lazy group keeps trailing whitespace
+  // (the negative-lookahead char-by-char doesn't strip it for us).
+  const recurrenceRaw = firstMatch(RECURRENCE_REGEX)
+  const recurrence = recurrenceRaw ? recurrenceRaw.trim() || null : null
 
   // Now strip ALL occurrences of every marker so the display text is clean.
   // Order matters less than we'd think — each regex captures its own
@@ -108,11 +122,12 @@ export function parseTaskMetadata(body: string): {
     .replace(DUE_DATE_REGEX, ' ')
     .replace(SCHEDULED_DATE_REGEX, ' ')
     .replace(START_DATE_REGEX, ' ')
+    .replace(RECURRENCE_REGEX, ' ')
     .replace(PRIORITY_REGEX, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 
-  return { text, completedDate, dueDate, scheduledDate, startDate, priority }
+  return { text, completedDate, dueDate, scheduledDate, startDate, priority, recurrence }
 }
 
 export interface TaskSourceNote {
@@ -142,6 +157,7 @@ export function extractTasks(notes: TaskSourceNote[]): Task[] {
         scheduledDate: parsed.scheduledDate,
         startDate: parsed.startDate,
         priority: parsed.priority,
+        recurrence: parsed.recurrence,
       })
     }
   }
@@ -181,9 +197,9 @@ export function toggleTaskLineText(lineText: string, now: Date = new Date()): st
   const [, prefix, mark, mid, rest] = m
   const wasCompleted = mark.toLowerCase() === 'x'
   if (wasCompleted) {
-    // Strip the ✅ done date but keep due / scheduled / start / priority
-    // intact — the user might un-check by accident, and we shouldn't
-    // lose the rest of the metadata.
+    // Strip the ✅ done date but keep due / scheduled / start / priority /
+    // recurrence intact — the user might un-check by accident, and we
+    // shouldn't lose the rest of the metadata.
     COMPLETED_DATE_REGEX.lastIndex = 0
     const stripped = rest.replace(COMPLETED_DATE_REGEX, ' ').replace(/\s+/g, ' ').trimEnd()
     return `${prefix} ${mid}${stripped}`
@@ -191,7 +207,62 @@ export function toggleTaskLineText(lineText: string, now: Date = new Date()): st
   COMPLETED_DATE_REGEX.lastIndex = 0
   const hasDate = COMPLETED_DATE_REGEX.test(rest)
   const body = hasDate ? rest : `${rest.trimEnd()} ✅ ${todayISO(now)}`
-  return `${prefix}x${mid}${body}`
+  const completedLine = `${prefix}x${mid}${body}`
+
+  // Recurrence: if the task carries a 🔁 rule, emit a NEW open instance ABOVE
+  // the just-completed line with dates rolled forward by one period. Keeps
+  // the same indent, bullet, priority, and recurrence marker. Returns the
+  // two lines joined with `\n` so call sites can splice them in as a single
+  // replacement.
+  const parsed = parseTaskMetadata(rest)
+  if (parsed.recurrence) {
+    const next = nextInstanceFromParsed(parsed, now)
+    if (next) {
+      // Extract bullet (everything in `prefix` before the opening `[`) so we
+      // preserve `*`, `+`, numbered lists, and leading indent.
+      const bullet = prefix.endsWith('[') ? prefix.slice(0, -1) : prefix
+      const nextLine = serializeTaskLine(
+        {
+          open: true,
+          text: parsed.text,
+          priority: parsed.priority,
+          dueDate: next.dueDate,
+          scheduledDate: next.scheduledDate,
+          startDate: next.startDate,
+          completedDate: null,
+          recurrence: parsed.recurrence,
+        },
+        bullet,
+      )
+      return `${nextLine}\n${completedLine}`
+    }
+  }
+  return completedLine
+}
+
+// Compute the next open-instance dates for a recurring task whose parts are
+// already parsed. Returns null if the recurrence rule can't be understood
+// (caller falls back to a plain completion in that case).
+function nextInstanceFromParsed(
+  parsed: { dueDate: string | null; scheduledDate: string | null; startDate: string | null; recurrence: string | null },
+  now: Date,
+): { dueDate: string | null; scheduledDate: string | null; startDate: string | null } | null {
+  if (!parsed.recurrence) return null
+
+  const whenDone = /when\s+done/i.test(parsed.recurrence)
+  const anchor = whenDone
+    ? todayISO(now)
+    : (parsed.dueDate ?? parsed.scheduledDate ?? parsed.startDate ?? todayISO(now))
+
+  const nextAnchor = nextRecurrence(parsed.recurrence, anchor)
+  if (!nextAnchor) return null
+
+  const delta = isoDiffDays(anchor, nextAnchor)
+  return {
+    dueDate:       parsed.dueDate       ? shiftISOByDays(parsed.dueDate,       delta) : null,
+    scheduledDate: parsed.scheduledDate ? shiftISOByDays(parsed.scheduledDate, delta) : null,
+    startDate:     parsed.startDate     ? shiftISOByDays(parsed.startDate,     delta) : null,
+  }
 }
 
 // Strip the list marker + checkbox from a task line so it becomes plain
@@ -209,6 +280,8 @@ export function removeTaskPrefixFromLine(lineText: string): string | null {
 
 // Inputs for serializeTaskLine. Mirrors the shape returned by
 // parseTaskMetadata, plus `open` (= !completed) and the bullet prefix.
+// `recurrence` is optional so older call sites (pre-recurring-tasks) still
+// type-check — treat missing as null.
 export interface TaskLineParts {
   open: boolean
   text: string
@@ -217,11 +290,12 @@ export interface TaskLineParts {
   scheduledDate: string | null
   startDate: string | null
   completedDate: string | null
+  recurrence?: string | null
 }
 
 // Render a Task back into Obsidian-Tasks-plugin emoji syntax. Canonical
-// marker order: priority → 📅 due → ⏳ scheduled → 🛫 start → ✅ done.
-// `normal` priority emits no marker. Null dates emit no marker.
+// marker order: priority → 📅 due → ⏳ scheduled → 🛫 start → 🔁 recurrence → ✅ done.
+// `normal` priority emits no marker. Null dates / null recurrence emit no marker.
 export function serializeTaskLine(parts: TaskLineParts, bullet: string = '- '): string {
   const mark = parts.open ? ' ' : 'x'
   const segments: string[] = []
@@ -232,6 +306,7 @@ export function serializeTaskLine(parts: TaskLineParts, bullet: string = '- '): 
   if (parts.dueDate)       segments.push(`📅 ${parts.dueDate}`)
   if (parts.scheduledDate) segments.push(`⏳ ${parts.scheduledDate}`)
   if (parts.startDate)     segments.push(`🛫 ${parts.startDate}`)
+  if (parts.recurrence)    segments.push(`🔁 ${parts.recurrence.trim()}`)
   if (parts.completedDate) segments.push(`✅ ${parts.completedDate}`)
   const body = segments.join(' ')
   return body ? `${bullet}[${mark}] ${body}` : `${bullet}[${mark}] `

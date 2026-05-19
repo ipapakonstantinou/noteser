@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useGitHubStore, useNoteStore, useFolderStore, useWorkspaceStore } from '@/stores'
 import { syncToGitHub, pullFromGitHub, pullFromZipball } from '@/utils/githubSync'
 import type { PullClassification, SyncResult, GitPathUpdate } from '@/utils/githubSync'
@@ -21,6 +21,12 @@ interface UseGitHubSyncResult {
   runPullOnly: () => Promise<void>
   isConnected: boolean
 }
+
+// Module-level "once per page load" defensive reset for the global isSyncing
+// flag. Only the FIRST useGitHubSync hook to mount in a given session ever
+// clears the flag — subsequent hook mounts (e.g. when GitHubRepoModal opens
+// mid-sync) must not wipe an in-flight sync's guard.
+let isSyncingResetThisSession = false
 
 // ── Step 1: PULL ────────────────────────────────────────────────────────────
 // Fetch classifications from the remote. On a vault that's still empty
@@ -126,6 +132,20 @@ export function useGitHubSync(): UseGitHubSyncResult {
 
   const [syncState, setSyncState] = useState<SyncState>({ kind: 'idle' })
 
+  // Defensive: clear any leftover `isSyncing: true` from a sync that never
+  // reached its finally block (e.g. tab crash mid-pull, unmount during
+  // setState). Without this, a wedged flag would silently kill every
+  // subsequent click until the user reloaded the page. We gate this on a
+  // module-level "once per session" flag so a later mount (modal opening
+  // mid-sync) can't wipe an in-flight sync's guard.
+  useEffect(() => {
+    if (isSyncingResetThisSession) return
+    isSyncingResetThisSession = true
+    if (useGitHubStore.getState().isSyncing) {
+      useGitHubStore.getState().setIsSyncing(false)
+    }
+  }, [])
+
   const runSync = useCallback(async () => {
     // Read token + syncRepo from the store at call time rather than relying
     // on the captured values — auto-sync triggered immediately after
@@ -139,10 +159,14 @@ export function useGitHubSync(): UseGitHubSyncResult {
     // auto-sync timer could each fire concurrent syncs (visible in the
     // network panel as a flood of duplicate /blobs POSTs).
     if (isSyncing) return
-    setIsSyncing(true)
 
-    setSyncState({ kind: 'running' })
+    // Set the global guard INSIDE the try block. Doing it earlier meant a
+    // throw between setIsSyncing(true) and entering the try (e.g. React
+    // setState during unmount) would leave the flag wedged true forever,
+    // silently breaking every subsequent click.
     try {
+      setIsSyncing(true)
+      setSyncState({ kind: 'running' })
       const classifications = await runPull(activeToken, activeRepo)
 
       const conflicts = classifications.filter(
@@ -198,10 +222,12 @@ export function useGitHubSync(): UseGitHubSyncResult {
     // Share the same global guard as runSync — a pull-only and a full sync
     // touch the same noteStore, so we can't let them race.
     if (isSyncing) return
-    setIsSyncing(true)
 
-    setSyncState({ kind: 'running' })
+    // Set the guard INSIDE the try block. See runSync above for the
+    // wedged-flag failure mode this avoids.
     try {
+      setIsSyncing(true)
+      setSyncState({ kind: 'running' })
       const classifications = await runPull(activeToken, activeRepo)
 
       const conflicts = classifications.filter(
