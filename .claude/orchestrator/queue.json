@@ -299,6 +299,17 @@
       "source": "telegram"
     },
     {
+      "id": "20260519T161130-r1a8",
+      "brief": "Auto-pull from GitHub on init + periodic. Already in docs/roadmap.md. Two pieces: (1) on app boot after hydration, if a sync repo is configured, run an automatic pull-then-push; (2) settings field for an interval (e.g. every 5 min / 15 min / off) to repeat. Reuse useGitHubSync.runSync (already refactored into named steps via i1c6). UI: indicator on the sync button when auto-pull is in flight.",
+      "status": "pending",
+      "created_at": "2026-05-19T16:11:30Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
       "id": "20260519T160841-p8j3",
       "brief": "Drag-drop bug: UI blanks during attachment move. User reports the sidebar becomes blank / unstable while dragging an attachment to a different folder. Suspect cause: many simultaneous updateNote calls (one per rewritten ref) trigger a render storm; possible secondary causes are race between moveAttachment's IDB ops and the attachmentMeta reload effect.",
       "status": "pending",
