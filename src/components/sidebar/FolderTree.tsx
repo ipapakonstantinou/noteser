@@ -8,10 +8,11 @@ import {
   DocumentTextIcon
 } from '@heroicons/react/24/outline'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
-import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore } from '@/stores'
+import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore, useSettingsStore } from '@/stores'
 import { useHydration } from '@/hooks'
 import { EditableText } from '../shared/EditableText'
 import { collectAllTags } from '@/utils/tags'
+import { sortNotes } from '@/utils/sortNotes'
 
 interface FolderTreeProps {
   onRightClick: (e: React.MouseEvent, type: 'note' | 'folder', id: string) => void
@@ -22,6 +23,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   const { currentView } = useUIStore()
   const renameRequest = useUIStore(s => s.renameRequest)
   const clearRenameRequest = useUIStore(s => s.clearRenameRequest)
+  const folderSortMode = useSettingsStore(s => s.folderSortMode)
   const {
     notes,
     selectedNoteId,
@@ -158,7 +160,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   const FolderItem = ({ folder, depth = 0 }: { folder: typeof folders[0]; depth?: number }) => {
     const isExpanded = expandedFolders[folder.id]
     const isActive = activeFolderId === folder.id
-    const folderNotes = activeNotes.filter(n => n.folderId === folder.id)
+    const folderNotes = sortNotes(activeNotes.filter(n => n.folderId === folder.id), folderSortMode)
     const childFolders = hydrated ? getChildFolders(folder.id) : []
     const childCount = folderNotes.length + childFolders.length
 
@@ -339,7 +341,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   // Order matches a GitHub repo's file browser: folders first, then notes
   // (including pinned ones — they're still distinguishable by their pin
   // icon but no longer get hoisted above the folder list).
-  const rootNotes = activeNotes.filter(n => !n.folderId)
+  const rootNotes = sortNotes(activeNotes.filter(n => !n.folderId), folderSortMode)
 
   if (rootFolders.length === 0 && rootNotes.length === 0) {
     return (

@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import { useNoteStore, useFolderStore, useWorkspaceStore } from '@/stores'
+import { useNoteStore, useFolderStore, useWorkspaceStore, useSettingsStore } from '@/stores'
 import { toggleTaskLine } from '@/utils/tasks'
 import {
   parseTaskQuery,
@@ -22,6 +22,8 @@ export const TaskQueryBlock = ({ source }: { source: string }) => {
   const folders = useFolderStore(s => s.folders)
   const updateNote = useNoteStore(s => s.updateNote)
   const openNote = useWorkspaceStore(s => s.openNote)
+  const density = useSettingsStore(s => s.taskListDensity)
+  const isComfortable = density === 'comfortable'
 
   const { query, groups } = useMemo(() => {
     const query = parseTaskQuery(source)
@@ -44,7 +46,9 @@ export const TaskQueryBlock = ({ source }: { source: string }) => {
 
   return (
     <div
-      className="not-prose my-2 rounded border border-obsidianBorder bg-obsidianDarkGray/40 px-3 py-2 text-sm"
+      className={`not-prose my-2 rounded border border-obsidianBorder bg-obsidianDarkGray/40 ${
+        isComfortable ? 'px-4 py-3 text-[15px]' : 'px-3 py-2 text-sm'
+      }`}
       data-keep-preview="true"
     >
       {query.explain && (
@@ -63,17 +67,19 @@ export const TaskQueryBlock = ({ source }: { source: string }) => {
                 {g.keys.join(' › ')}
               </div>
             )}
-            <ul className="space-y-1">
+            <ul className={isComfortable ? 'space-y-2.5' : 'space-y-1'}>
               {g.tasks.map(task => (
                 <li
                   key={`${task.noteId}:${task.lineNumber}`}
-                  className="flex items-start gap-2"
+                  className={`flex items-start ${isComfortable ? 'gap-3 py-0.5' : 'gap-2'}`}
                 >
                   <input
                     type="checkbox"
                     checked={task.completed}
                     onChange={() => handleToggle(task)}
-                    className="mt-1 flex-shrink-0 accent-obsidianAccentPurple cursor-pointer"
+                    className={`flex-shrink-0 accent-obsidianAccentPurple cursor-pointer ${
+                      isComfortable ? 'mt-1 h-4 w-4' : 'mt-1'
+                    }`}
                   />
                   <div className="min-w-0 flex-1">
                     <span
@@ -86,8 +92,14 @@ export const TaskQueryBlock = ({ source }: { source: string }) => {
                       {task.text || '(empty)'}
                     </span>
                     {!query.groupBy.includes('filename') && (
-                      <span className="ml-2 text-[11px] text-obsidianSecondaryText">
-                        — {task.noteTitle}
+                      <span
+                        className={
+                          isComfortable
+                            ? 'ml-2 px-1.5 py-0.5 rounded bg-obsidianDarkGray text-[11px] text-obsidianSecondaryText'
+                            : 'ml-2 text-[11px] text-obsidianSecondaryText'
+                        }
+                      >
+                        {isComfortable ? task.noteTitle : `— ${task.noteTitle}`}
                       </span>
                     )}
                   </div>
