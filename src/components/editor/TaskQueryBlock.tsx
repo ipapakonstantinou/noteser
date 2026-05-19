@@ -93,10 +93,20 @@ export const TaskQueryBlock = ({ source }: { source: string }) => {
                     </span>
                     {!query.groupBy.includes('filename') && (
                       <span
+                        role="link"
+                        tabIndex={0}
+                        onClick={(e) => { e.stopPropagation(); handleOpen(task) }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            handleOpen(task)
+                          }
+                        }}
+                        title={`Open ${task.noteTitle}`}
                         className={
                           isComfortable
-                            ? 'ml-2 px-1.5 py-0.5 rounded bg-obsidianDarkGray text-[11px] text-obsidianSecondaryText'
-                            : 'ml-2 text-[11px] text-obsidianSecondaryText'
+                            ? 'ml-2 px-1.5 py-0.5 rounded bg-obsidianDarkGray text-[11px] text-obsidianAccentPurple hover:bg-obsidianHighlight hover:underline cursor-pointer focus:outline-none focus:ring-1 focus:ring-obsidianAccentPurple'
+                            : 'ml-2 text-[11px] text-obsidianAccentPurple hover:underline cursor-pointer focus:outline-none focus:ring-1 focus:ring-obsidianAccentPurple rounded'
                         }
                       >
                         {isComfortable ? task.noteTitle : `— ${task.noteTitle}`}
