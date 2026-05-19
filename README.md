@@ -98,8 +98,8 @@ Right-click any note or folder for rename / move / delete / new-subfolder.
 Loosely prioritized — top section is what's being picked up next, bottom is "someday / nice to have".
 
 ### Now
-- **Live preview for ```tasks fences.** The rendered preview (Ctrl+E) already renders ```tasks code fences as live grouped task lists. The live-preview editor still shows the raw fence. Needs a CodeMirror block widget that renders the same `TaskQueryBlock` inline while editing, with cursor-on-fence fallback to source — matches Obsidian's behavior.
-- **Obsidian-style task-line shortcuts.** A shortcut to toggle the task on the current line (cross out / un-cross out), and another to remove the `- [ ]` prefix so the line becomes plain text. Today there's `Alt+L` for toggle only — needs a partner for removal and a setting-driven choice of key combo (since `Ctrl+L` and similar are browser-reserved).
+
+*Nothing in flight — promote from Next when starting work.*
 
 ### Next
 - **Settings panel.** Obsidian-style settings modal — theme, daily-note format, default folder, sync preferences.
