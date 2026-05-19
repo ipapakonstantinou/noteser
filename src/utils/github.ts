@@ -344,12 +344,94 @@ export async function getBlobContent(token: string, owner: string, repo: string,
 // content. Algorithm: SHA-1 of  `blob {byteLength}\0{content}`.
 export async function gitBlobSha(content: string): Promise<string> {
   const contentBytes = new TextEncoder().encode(content)
-  const header = new TextEncoder().encode(`blob ${contentBytes.byteLength}\0`)
-  const buf = new Uint8Array(header.byteLength + contentBytes.byteLength)
+  return gitBlobShaBytes(contentBytes)
+}
+
+// Binary variant of gitBlobSha. Same algorithm — `blob {byteLength}\0{bytes}`
+// SHA-1'd — but lets the caller pass arbitrary bytes (e.g. an image file)
+// without forcing a text encode that would mangle the content.
+export async function gitBlobShaBytes(bytes: Uint8Array): Promise<string> {
+  const header = new TextEncoder().encode(`blob ${bytes.byteLength}\0`)
+  const buf = new Uint8Array(header.byteLength + bytes.byteLength)
   buf.set(header, 0)
-  buf.set(contentBytes, header.byteLength)
+  buf.set(bytes, header.byteLength)
   const hash = await crypto.subtle.digest('SHA-1', buf)
   return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+// Encode a Blob's bytes as a base64 string, suitable for GitHub's
+// `POST /git/blobs` with `encoding: 'base64'`. Uses FileReader's
+// readAsDataURL so we don't blow the JS call stack on large files
+// (String.fromCharCode(...big_array) is not safe).
+export async function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'))
+    reader.onload = () => {
+      const result = reader.result
+      if (typeof result !== 'string') {
+        reject(new Error('FileReader returned non-string for data URL'))
+        return
+      }
+      // data:<mime>;base64,<payload>
+      const commaIdx = result.indexOf(',')
+      resolve(commaIdx === -1 ? '' : result.slice(commaIdx + 1))
+    }
+    reader.readAsDataURL(blob)
+  })
+}
+
+// Decode a base64 string into raw bytes. Strips any embedded newlines that
+// GitHub may add to its base64 payloads.
+export function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64.replace(/\n/g, ''))
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
+// Upload a Blob as a base64-encoded git blob. Returns the SHA GitHub
+// assigned to the new blob (matches the SHA we'd compute via
+// gitBlobShaBytes locally — useful for sanity checks).
+export async function createBlobBinary(
+  token: string,
+  owner: string,
+  repo: string,
+  blob: Blob,
+): Promise<string> {
+  const base64 = await blobToBase64(blob)
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/git/blobs`,
+    {
+      method: 'POST',
+      headers: { ...GH_HEADERS(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: base64, encoding: 'base64' }),
+    },
+  )
+  if (!res.ok) throw new Error(`Failed to create binary blob (${res.status})`)
+  const data = await res.json()
+  return data.sha as string
+}
+
+// Fetch a blob's raw bytes by SHA. GitHub returns it base64-encoded for
+// binary content; we decode straight into a Uint8Array so the caller can
+// wrap it as a Blob with the correct MIME.
+export async function getBlobBytes(
+  token: string,
+  owner: string,
+  repo: string,
+  sha: string,
+): Promise<Uint8Array> {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/git/blobs/${sha}`,
+    { headers: GH_HEADERS(token) },
+  )
+  if (!res.ok) throw new Error(`Failed to read binary blob ${sha} (${res.status})`)
+  const data = await res.json()
+  if (data.encoding === 'base64') return base64ToBytes(data.content)
+  // Unexpected — UTF-8 encoding on a binary blob would corrupt non-ASCII
+  // bytes. Re-encode and surface the issue rather than silently corrupting.
+  throw new Error(`Unexpected blob encoding for binary fetch: ${data.encoding}`)
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────

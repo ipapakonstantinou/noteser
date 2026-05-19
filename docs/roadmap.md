@@ -20,6 +20,10 @@ the wider backlog.
   browser-reserved combos — Ctrl+N is intercepted for "New Window" so
   noteser uses Alt+N for new note; users should be able to pick their own
   escape hatch.
+- **Keyboard-driven navigation.** Move around the sidebar without the
+  mouse: arrow keys to traverse the folder tree, Enter to open, Space to
+  toggle expand, slash to focus search, jump-to-note shortcut. Should
+  feel like Obsidian's command palette + tree navigation.
 - **VS Code-style Git UI.** A proper source-control sidebar view:
   modified / added / deleted notes shown pre-push with a real Git icon,
   per-file include/exclude, and a richer conflict push manager. Today

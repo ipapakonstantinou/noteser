@@ -1,7 +1,9 @@
-import { useNoteStore, useFolderStore } from '@/stores'
+import { useNoteStore, useFolderStore, useGitHubStore } from '@/stores'
 import type { PullClassification } from './githubSync'
-import { parseNote } from './githubSync'
+import { parseNote, takeZipballAttachmentBytes } from './githubSync'
 import { sanitizeFilename } from './export'
+import { putAttachmentAtPath } from './attachments'
+import { getBlobBytes } from './github'
 
 // ── Folder + tag find-or-create helpers ─────────────────────────────────────
 
@@ -60,6 +62,17 @@ export function applyNonConflicts(classifications: PullClassification[]): ApplyC
 
   for (const c of classifications) {
     if (c.kind === 'unchanged' || c.kind === 'conflict' || c.kind === 'conflictDeleted') continue
+    // Attachment classifications are handled asynchronously by
+    // applyAttachmentClassifications — the binary fetch + IDB write doesn't
+    // belong in this synchronous note-store loop. Skip here.
+    if (c.kind === 'attachmentCreated' || c.kind === 'attachmentUpdated') continue
+
+    if (c.kind === 'folderCreated') {
+      // Materialise the directory hierarchy. ensureFolderPath is idempotent —
+      // it'll find existing folders by sanitized name + parent.
+      ensureFolderPath(c.path.split('/'))
+      continue
+    }
 
     if (c.kind === 'remoteCreated') {
       const { segments, title } = splitRepoPath(c.path)
@@ -146,4 +159,60 @@ export function applyConflictResolution(
       updateNote(c.noteId, { gitPath: null, gitLastPushedSha: null })
     }
   }
+}
+
+// ── Attachment classifications ──────────────────────────────────────────────
+// Pulled binary attachments are saved into IDB at their repo path so the
+// existing AttachmentImage / attachments.ts read-path can resolve them
+// transparently. Bytes come from one of two sources, in priority order:
+//   1. takeZipballAttachmentBytes (cached during pullFromZipball — no API call)
+//   2. getBlobBytes (per-blob fetch — used by the incremental pull)
+//
+// Errors fetching a single attachment are logged and skipped; we don't want
+// one missing image to abort the entire sync.
+
+export interface AttachmentApplyCounts {
+  created: number
+  updated: number
+  failed: number
+}
+
+export async function applyAttachmentClassifications(
+  classifications: PullClassification[],
+): Promise<AttachmentApplyCounts> {
+  const counts: AttachmentApplyCounts = { created: 0, updated: 0, failed: 0 }
+
+  // We need the token + repo to fetch blobs not already cached by the zipball
+  // path. Pull these once from the github store; bail out if either is unset
+  // (caller shouldn't have classified anything as an attachment without them).
+  const { token, syncRepo } = useGitHubStore.getState()
+
+  for (const c of classifications) {
+    if (c.kind !== 'attachmentCreated' && c.kind !== 'attachmentUpdated') continue
+    try {
+      // Prefer the bytes already in memory from a zipball pull.
+      const cached = takeZipballAttachmentBytes(c.path)
+      let bytes: Uint8Array
+      let mime: string
+      if (cached) {
+        bytes = cached.bytes
+        mime = cached.mime
+      } else {
+        if (!token || !syncRepo) throw new Error('No token / repo for incremental attachment fetch')
+        bytes = await getBlobBytes(token, syncRepo.owner, syncRepo.name, c.remoteSha)
+        mime = c.mime
+      }
+      // `.slice()` detaches from any SharedArrayBuffer typing so the Blob
+      // constructor accepts the bytes as a BlobPart on strict TS configs.
+      const blob = new Blob([bytes.slice()], { type: mime })
+      await putAttachmentAtPath(c.path, blob)
+      if (c.kind === 'attachmentCreated') counts.created++
+      else counts.updated++
+    } catch (err) {
+      console.error(`Failed to apply attachment ${c.path}:`, err)
+      counts.failed++
+    }
+  }
+
+  return counts
 }
