@@ -54,14 +54,17 @@ export const Modal = ({
         onClick={onClose}
       />
 
-      {/* Modal content */}
+      {/* Modal content. Capped at the viewport height with an internal
+          flex column so the header stays pinned and the body scrolls
+          when its content overflows (e.g. the Settings modal with many
+          sections). */}
       <div
-        className={`relative w-full ${sizeClasses[size]} mx-4 bg-obsidianGray rounded-lg shadow-obsidian border border-obsidianBorder`}
+        className={`relative w-full ${sizeClasses[size]} mx-4 bg-obsidianGray rounded-lg shadow-obsidian border border-obsidianBorder flex flex-col max-h-[90vh]`}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
         {(title || showCloseButton) && (
-          <div className="flex items-center justify-between px-4 py-3 border-b border-obsidianBorder">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-obsidianBorder flex-shrink-0">
             {title && (
               <h2 className="text-lg font-medium text-obsidianText">{title}</h2>
             )}
@@ -77,8 +80,8 @@ export const Modal = ({
           </div>
         )}
 
-        {/* Body */}
-        <div className="p-4">{children}</div>
+        {/* Body — scrolls when content exceeds the modal height. */}
+        <div className="p-4 overflow-y-auto flex-1 min-h-0">{children}</div>
       </div>
     </div>
   )

@@ -25,6 +25,7 @@ import { useHydration } from '@/hooks'
 import { FolderTree } from './FolderTree'
 import { FolderTreeToolbar } from './FolderTreeToolbar'
 import { CalendarView } from './CalendarView'
+import { GitHubView } from './GitHubView'
 import { ContextMenu } from './ContextMenu'
 import type { ContextMenuState } from '@/types'
 
@@ -93,9 +94,9 @@ export const Sidebar = () => {
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-2 py-2">
         {!sidebarCollapsed && (
-          currentView === 'calendar'
-            ? <CalendarView />
-            : <FolderTree onRightClick={handleRightClick} />
+          currentView === 'calendar' ? <CalendarView /> :
+          currentView === 'github' ? <GitHubView /> :
+          <FolderTree onRightClick={handleRightClick} />
         )}
       </div>
 
