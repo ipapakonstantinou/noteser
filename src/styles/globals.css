@@ -256,6 +256,17 @@
   @apply outline-none ring-2 ring-obsidianAccentPurple ring-offset-2 ring-offset-obsidianBlack;
 }
 
+/* Reveal-in-tree flash — used by src/utils/revealNote.ts when the
+   user clicks a note from a non-tree view (Recent/Tags). The row gets
+   a brief yellow glow that fades out so it's easy to spot. */
+@keyframes revealedFlash {
+  0%   { background-color: rgba(250, 204, 21, 0.45); }
+  100% { background-color: transparent; }
+}
+.is-revealed-flash {
+  animation: revealedFlash 0.8s ease-out;
+}
+
 /* Print styles */
 @media print {
   .obsidian-sidebar,

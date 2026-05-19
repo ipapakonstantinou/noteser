@@ -5,6 +5,15 @@ import { STORAGE_KEYS } from '@/utils/storageKeys'
 export type FolderSortMode = 'alphabetical' | 'modified' | 'created' | 'manual'
 export type TaskListDensity = 'compact' | 'comfortable'
 
+// Trash behaviour on note + folder deletion.
+//   'trash'      → existing soft-delete (default). Items live in the Trash
+//                  view, can be restored, are removed from the active
+//                  sidebar tree.
+//   'hardDelete' → no Trash. Deletions are immediate and irreversible
+//                  locally (sync still gets to push a tree-delete on the
+//                  next round-trip).
+export type TrashMode = 'trash' | 'hardDelete'
+
 // Bring-your-own-key AI provider. `'off'` disables every AI feature; the
 // aiClient throws if a feature is invoked while off so callers can show a
 // friendly "set up AI in settings" hint instead of silently no-op-ing.
@@ -59,6 +68,12 @@ export interface SettingsState {
   // common case.
   aiModel: string
 
+  // ── Trash ──────────────────────────────────────────────────────────────
+  // Controls what `deleteNote` / `cascadeDeleteFolder` do. 'trash' = the
+  // existing soft-delete (recoverable via the Trash view). 'hardDelete' =
+  // skip the trash and remove immediately.
+  trashMode: TrashMode
+
   // ── Keyboard shortcuts ─────────────────────────────────────────────────
   // Per-shortcut combo override. Keys are `ShortcutDef.id` values from
   // `src/utils/shortcuts.ts`; values are canonical combo strings (e.g.
@@ -82,6 +97,7 @@ export interface SettingsState {
   setShortcutOverride: (id: string, combo: string) => void
   clearShortcutOverride: (id: string) => void
   resetShortcutOverrides: () => void
+  setTrashMode: (mode: TrashMode) => void
   reset: () => void
 }
 
@@ -100,6 +116,7 @@ const DEFAULTS = {
   aiApiKey: '',
   aiModel: DEFAULT_AI_MODEL.anthropic,
   shortcutOverrides: {} as Record<string, string>,
+  trashMode: 'trash' as TrashMode,
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -131,6 +148,7 @@ export const useSettingsStore = create<SettingsState>()(
           return { shortcutOverrides: next }
         }),
       resetShortcutOverrides: () => set({ shortcutOverrides: {} }),
+      setTrashMode: (trashMode) => set({ trashMode }),
       reset: () => set(DEFAULTS),
     }),
     { name: STORAGE_KEYS.settings }

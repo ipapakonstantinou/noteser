@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 import {
   ChevronDoubleLeftIcon,
   ChevronDoubleRightIcon,
-  Cog6ToothIcon,
   CodeBracketIcon,
   CloudArrowUpIcon,
   CheckCircleIcon,
@@ -169,13 +168,6 @@ export const Sidebar = () => {
               Connect to GitHub
             </button>
           )}
-          <button
-            onClick={() => openModal({ type: 'export' })}
-            className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-obsidianSecondaryText hover:bg-obsidianDarkGray transition-colors"
-          >
-            <Cog6ToothIcon className="w-4 h-4" />
-            Export Notes
-          </button>
         </div>
       )}
 
