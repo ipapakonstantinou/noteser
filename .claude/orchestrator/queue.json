@@ -1,4 +1,60 @@
 {
   "version": 1,
-  "items": []
+  "items": [
+    {
+      "id": "20260519T051841-a1b2",
+      "brief": "Add Alt+Shift+L partner shortcut: check/uncheck in editor, prefix-removal in preview (Obsidian-style task-line shortcuts)",
+      "status": "done",
+      "created_at": "2026-05-19T05:18:41Z",
+      "started_at": "2026-05-19T05:18:45Z",
+      "completed_at": "2026-05-19T05:25:00Z",
+      "result": "Added removeTaskPrefixFromLine helper in tasks.ts (UI-task regex, preserves indent, keeps body intact including ✅ date). Wired Alt+Shift+L in CodeMirrorEditor (check/uncheck via toggleTaskLineText) and in EditorContent preview-mode handler (strip prefix via the new helper). README shortcut table updated. 6 new tests for the helper; 241 total pass.",
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T051842-c3d4",
+      "brief": "Orchestrator step 2: codify subagent definitions (docs-writer, researcher, refactorer) in .claude/agents/ with tight tool allowlists",
+      "status": "pending",
+      "created_at": "2026-05-19T05:18:42Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T051843-e5f6",
+      "brief": "Populate docs/ folder — user-guide, architecture, GitHub sync deep-dive (currently only the orchestrator research doc lives there)",
+      "status": "pending",
+      "created_at": "2026-05-19T05:18:43Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T051844-a7b8",
+      "brief": "README cleanup — hero screenshot/GIF at top, badges (license/build/Node), move long Backlog section out of README into docs/roadmap.md or GitHub Issues",
+      "status": "pending",
+      "created_at": "2026-05-19T05:18:44Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T051845-c9d0",
+      "brief": "Stale README backlog cleanup — remove the 'Live preview for ```tasks fences' Now-item (shipped as 09e8ce8)",
+      "status": "pending",
+      "created_at": "2026-05-19T05:18:45Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    }
+  ]
 }

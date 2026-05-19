@@ -4,7 +4,7 @@
  * Unit tests for src/utils/tasks.ts — pure functions, no mocks needed.
  */
 
-import { extractTasks, todayISO, toggleTaskLine, toggleTaskLineText, Task, TaskSourceNote } from '../utils/tasks'
+import { extractTasks, todayISO, toggleTaskLine, toggleTaskLineText, removeTaskPrefixFromLine, Task, TaskSourceNote } from '../utils/tasks'
 
 // ── extractTasks ──────────────────────────────────────────────────────────────
 
@@ -354,5 +354,40 @@ describe('toggleTaskLineText', () => {
     const original = '- [ ] round trip'
     const checked = toggleTaskLineText(original, FIXED_DATE)!
     expect(toggleTaskLineText(checked, FIXED_DATE)).toBe(original)
+  })
+})
+
+// ── removeTaskPrefixFromLine ──────────────────────────────────────────────────
+
+describe('removeTaskPrefixFromLine', () => {
+  test('returns null for non-task lines', () => {
+    expect(removeTaskPrefixFromLine('just text')).toBeNull()
+    expect(removeTaskPrefixFromLine('- a list item without checkbox')).toBeNull()
+    expect(removeTaskPrefixFromLine('')).toBeNull()
+  })
+
+  test('strips `- [ ] ` from an open task', () => {
+    expect(removeTaskPrefixFromLine('- [ ] buy milk')).toBe('buy milk')
+  })
+
+  test('strips `- [x] ` from a checked task and KEEPS the ✅ date', () => {
+    expect(removeTaskPrefixFromLine('- [x] buy milk ✅ 2026-05-18')).toBe('buy milk ✅ 2026-05-18')
+  })
+
+  test('preserves leading indentation', () => {
+    expect(removeTaskPrefixFromLine('    - [ ] indented')).toBe('    indented')
+    expect(removeTaskPrefixFromLine('\t- [x] tabbed')).toBe('\ttabbed')
+  })
+
+  test('works for `*`, `+`, and numbered list bullets', () => {
+    expect(removeTaskPrefixFromLine('* [ ] star')).toBe('star')
+    expect(removeTaskPrefixFromLine('+ [x] plus')).toBe('plus')
+    expect(removeTaskPrefixFromLine('1. [ ] numbered')).toBe('numbered')
+    expect(removeTaskPrefixFromLine('12. [X] long-numbered')).toBe('long-numbered')
+  })
+
+  test('strips the marker for an empty-body task line', () => {
+    // Note: the regex requires `\]\s+` so the trailing space is consumed.
+    expect(removeTaskPrefixFromLine('- [ ] ')).toBe('')
   })
 })
