@@ -24,6 +24,16 @@ export interface SettingsState {
   autoSyncOnStart: boolean
   // Run sync on this interval. 0 = off.
   autoSyncIntervalMinutes: AutoSyncInterval
+  // Repo-relative folder for daily notes. Empty falls back to the default.
+  dailyNotesFolder: string
+  // Date format used as both the title of a daily note and the calendar
+  // lookup key. Supports YYYY YY MM M DD D dddd ddd MMMM MMM.
+  dailyNoteDateFormat: string
+  // Repo-relative folder for template notes (one .md per template).
+  templatesFolder: string
+  // ID of the note (in `templatesFolder`) whose content seeds new daily
+  // notes. null = no template; new daily notes start empty.
+  dailyNoteTemplateId: string | null
 
   setFolderSortMode: (mode: FolderSortMode) => void
   setTaskListDensity: (density: TaskListDensity) => void
@@ -31,6 +41,10 @@ export interface SettingsState {
   setAttachmentsFolder: (folder: string) => void
   setAutoSyncOnStart: (value: boolean) => void
   setAutoSyncIntervalMinutes: (minutes: AutoSyncInterval) => void
+  setDailyNotesFolder: (folder: string) => void
+  setDailyNoteDateFormat: (format: string) => void
+  setTemplatesFolder: (folder: string) => void
+  setDailyNoteTemplateId: (id: string | null) => void
   reset: () => void
 }
 
@@ -41,6 +55,10 @@ const DEFAULTS = {
   attachmentsFolder: 'attachments',
   autoSyncOnStart: true,
   autoSyncIntervalMinutes: 0 as AutoSyncInterval,
+  dailyNotesFolder: 'Daily Notes',
+  dailyNoteDateFormat: 'YYYY-MM-DD',
+  templatesFolder: 'Templates',
+  dailyNoteTemplateId: null as string | null,
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -53,6 +71,10 @@ export const useSettingsStore = create<SettingsState>()(
       setAttachmentsFolder: (attachmentsFolder) => set({ attachmentsFolder }),
       setAutoSyncOnStart: (autoSyncOnStart) => set({ autoSyncOnStart }),
       setAutoSyncIntervalMinutes: (autoSyncIntervalMinutes) => set({ autoSyncIntervalMinutes }),
+      setDailyNotesFolder: (dailyNotesFolder) => set({ dailyNotesFolder }),
+      setDailyNoteDateFormat: (dailyNoteDateFormat) => set({ dailyNoteDateFormat }),
+      setTemplatesFolder: (templatesFolder) => set({ templatesFolder }),
+      setDailyNoteTemplateId: (dailyNoteTemplateId) => set({ dailyNoteTemplateId }),
       reset: () => set(DEFAULTS),
     }),
     { name: STORAGE_KEYS.settings }

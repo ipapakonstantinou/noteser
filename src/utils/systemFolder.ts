@@ -97,3 +97,18 @@ export const attachmentsFolder = new SystemFolder({
   settingKey: 'attachmentsFolder',
   defaultValue: 'attachments',
 })
+
+// Daily notes folder. Default name `Daily Notes`. New daily notes land
+// here; the calendar view also reads from here when listing days that
+// have a note.
+export const dailyNotesFolder = new SystemFolder({
+  settingKey: 'dailyNotesFolder',
+  defaultValue: 'Daily Notes',
+})
+
+// Templates folder. Default name `Templates`. The Settings panel
+// populates the daily-note template picker from notes inside this folder.
+export const templatesFolder = new SystemFolder({
+  settingKey: 'templatesFolder',
+  defaultValue: 'Templates',
+})

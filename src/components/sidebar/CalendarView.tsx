@@ -2,36 +2,16 @@
 
 import { useState, useMemo } from 'react'
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
-import { useNoteStore, useFolderStore, useWorkspaceStore } from '@/stores'
+import { useNoteStore, useFolderStore, useWorkspaceStore, useSettingsStore } from '@/stores'
 import { useHydration } from '@/hooks'
+import { dailyNotesFolder } from '@/utils/systemFolder'
+import { formatDate } from '@/utils/dateFormat'
 
 const DAY_HEADERS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ]
-
-function toDateKey(year: number, month: number, day: number): string {
-  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-}
-
-function getDailyTemplate(date: Date): string {
-  const weekday = date.toLocaleDateString('en-US', { weekday: 'long' })
-  const month = date.toLocaleDateString('en-US', { month: 'long' })
-  const day = date.getDate()
-  const year = date.getFullYear()
-  return `# ${weekday}, ${month} ${day}, ${year}
-
-## Focus
-
-
-## Notes
-
-
-## Tasks
-- [ ]
-`
-}
 
 export const CalendarView = () => {
   const hydrated = useHydration()
@@ -42,7 +22,9 @@ export const CalendarView = () => {
 
   const { notes, addNote } = useNoteStore()
   const openNote = useWorkspaceStore(s => s.openNote)
-  const { folders, addFolder } = useFolderStore()
+  const ensureFolderPath = useFolderStore(s => s.ensureFolderPath)
+  const dateFormat = useSettingsStore(s => s.dailyNoteDateFormat)
+  const dailyTemplateId = useSettingsStore(s => s.dailyNoteTemplateId)
 
   const year = viewDate.getFullYear()
   const month = viewDate.getMonth()
@@ -52,17 +34,22 @@ export const CalendarView = () => {
     [hydrated, notes]
   )
 
-  // Days in this month that have a daily note
+  // Days in this month that have a daily note — match by formatted date
+  // title against the configured format. We compute the title once per
+  // day and look it up in the active notes set.
   const notedDays = useMemo(() => {
     const set = new Set<number>()
-    activeNotes.forEach(n => {
-      const m = n.title.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-      if (m && Number(m[1]) === year && Number(m[2]) - 1 === month) {
-        set.add(Number(m[3]))
-      }
-    })
+    const daysInMonth = new Date(year, month + 1, 0).getDate()
+    const titlesByDay = new Map<string, number>()
+    for (let d = 1; d <= daysInMonth; d++) {
+      titlesByDay.set(formatDate(new Date(year, month, d), dateFormat || 'YYYY-MM-DD'), d)
+    }
+    for (const n of activeNotes) {
+      const day = titlesByDay.get(n.title)
+      if (day !== undefined) set.add(day)
+    }
     return set
-  }, [activeNotes, year, month])
+  }, [activeNotes, year, month, dateFormat])
 
   const firstDayOfWeek = new Date(year, month, 1).getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
@@ -75,16 +62,22 @@ export const CalendarView = () => {
   ]
 
   const openDay = (day: number) => {
-    const title = toDateKey(year, month, day)
-    const existing = activeNotes.find(n => n.title === title)
+    const dayDate = new Date(year, month, day)
+    const title = formatDate(dayDate, dateFormat || 'YYYY-MM-DD')
+    const folderId = ensureFolderPath(dailyNotesFolder.get().split('/'))
+    const existing = activeNotes.find(n => n.folderId === folderId && n.title === title)
     if (existing) {
       openNote(existing.id)
       return
     }
-    const folder =
-      folders.find(f => !f.isDeleted && f.name === 'Daily Notes') ??
-      addFolder({ name: 'Daily Notes' })
-    const created = addNote({ title, folderId: folder.id, content: getDailyTemplate(new Date(year, month, day)) })
+    const template = dailyTemplateId
+      ? notes.find(n => !n.isDeleted && n.id === dailyTemplateId)
+      : undefined
+    const created = addNote({
+      title,
+      folderId,
+      content: template?.content ?? '',
+    })
     openNote(created.id)
   }
 

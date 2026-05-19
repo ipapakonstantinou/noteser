@@ -4,6 +4,7 @@ import { useUIStore, useSettingsStore } from '@/stores'
 import type { FolderSortMode, TaskListDensity, AutoSyncInterval } from '@/stores'
 import { Modal } from '@/components/ui'
 import { AttachmentsSection } from './AttachmentsSection'
+import { DailyNotesSection, TemplatesSection } from './DailyNotesSection'
 import {
   Section,
   Field,
@@ -76,6 +77,14 @@ export const SettingsModal = () => {
 
         <Section title="Attachments">
           <AttachmentsSection />
+        </Section>
+
+        <Section title="Daily notes">
+          <DailyNotesSection />
+        </Section>
+
+        <Section title="Templates">
+          <TemplatesSection />
         </Section>
 
         <Section title="GitHub sync">
