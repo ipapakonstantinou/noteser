@@ -99,6 +99,17 @@
       "result": null,
       "error": null,
       "source": "telegram"
+    },
+    {
+      "id": "20260519T055506-a2d9",
+      "brief": "Image drag-and-drop into notes — flagged 'really important' by user. Images stored in the vault (likely under a per-vault attachments/ or assets/ folder), embedded via standard markdown `![alt](path)` so they round-trip through GitHub sync. Needs decisions on: storage location (default attachments folder name), naming (date-prefixed? hash?), inline preview rendering in editor + preview, optional resize-on-paste.",
+      "status": "pending",
+      "created_at": "2026-05-19T05:55:06Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
     }
   ]
 }
