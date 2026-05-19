@@ -4,17 +4,13 @@ import { useEffect, useState } from 'react'
 import {
   ChevronDoubleLeftIcon,
   ChevronDoubleRightIcon,
-  PlusIcon,
-  FolderPlusIcon,
-  MagnifyingGlassIcon,
-  DocumentDuplicateIcon,
   Cog6ToothIcon,
   CodeBracketIcon,
   CloudArrowUpIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,
 } from '@heroicons/react/24/outline'
-import { useUIStore, useNoteStore, useFolderStore, useGitHubStore, useWorkspaceStore } from '@/stores'
+import { useUIStore, useGitHubStore } from '@/stores'
 import { useGitHubSync } from '@/hooks/useGitHubSync'
 import { SYNC_REQUEST_EVENT } from '@/utils/events'
 
@@ -38,13 +34,9 @@ export const Sidebar = () => {
     sidebarCollapsed,
     toggleSidebar,
     currentView,
-    openSearch,
-    openModal
+    openModal,
   } = useUIStore()
 
-  const { addNote } = useNoteStore()
-  const { addFolder } = useFolderStore()
-  const openNote = useWorkspaceStore(s => s.openNote)
   const githubUser = useGitHubStore((s) => s.user)
   const githubSyncRepo = useGitHubStore((s) => s.syncRepo)
   const githubLastSyncedAt = useGitHubStore((s) => s.lastSyncedAt)
@@ -59,15 +51,6 @@ export const Sidebar = () => {
   }, [runSync])
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
-
-  const handleAddNote = () => {
-    const note = addNote({ folderId: null })
-    openNote(note.id)
-  }
-
-  const handleAddFolder = () => {
-    addFolder({ parentId: null })
-  }
 
   const handleRightClick = (e: React.MouseEvent, type: 'note' | 'folder', id: string) => {
     e.preventDefault()
@@ -101,51 +84,6 @@ export const Sidebar = () => {
             <ChevronDoubleLeftIcon className="w-4 h-4" />
           )}
         </button>
-      </div>
-
-      {/* Actions */}
-      <div className="flex items-center gap-1 px-2 py-2 border-b border-obsidianBorder">
-        {sidebarCollapsed ? (
-          <button
-            className="obsidian-button w-full"
-            onClick={handleAddNote}
-            title="New note"
-          >
-            <PlusIcon className="w-5 h-5" />
-          </button>
-        ) : (
-          <>
-            <button
-              className="obsidian-button flex-1 flex items-center justify-center gap-1"
-              onClick={openSearch}
-              title="Search (Ctrl+K)"
-            >
-              <MagnifyingGlassIcon className="w-4 h-4" />
-              <span className="text-xs">Search</span>
-            </button>
-            <button
-              className="obsidian-button"
-              onClick={handleAddNote}
-              title="New note (Alt+N)"
-            >
-              <PlusIcon className="w-5 h-5" />
-            </button>
-            <button
-              className="obsidian-button"
-              onClick={handleAddFolder}
-              title="New folder (Ctrl+Shift+N)"
-            >
-              <FolderPlusIcon className="w-5 h-5" />
-            </button>
-            <button
-              className="obsidian-button"
-              onClick={() => openModal({ type: 'template' })}
-              title="New from template"
-            >
-              <DocumentDuplicateIcon className="w-5 h-5" />
-            </button>
-          </>
-        )}
       </div>
 
       {/* Folder-tree toolbar (only for the notes view; calendar has its
