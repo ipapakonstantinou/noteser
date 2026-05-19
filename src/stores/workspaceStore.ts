@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid'
 import type { PullClassification } from '@/utils/githubSync'
 import { SYNC_REQUEST_EVENT } from '@/utils/events'
 import { useNoteStore } from './noteStore'
+import { STORAGE_KEYS } from '@/utils/storageKeys'
 
 export type ConflictTabData = Extract<PullClassification, { kind: 'conflict' } | { kind: 'conflictDeleted' }>
 
@@ -319,7 +320,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       },
     }),
     {
-      name: 'noteser-workspace',
+      name: STORAGE_KEYS.workspace,
       version: 2, // bumped: shape changed from tabs[] to panes[]
       migrate: (persisted, version) => {
         // v1 had { tabs, activeTabId }. Merge into a single pane.

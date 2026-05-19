@@ -7,9 +7,10 @@
 // boot-time defaults and also act as the upgrade source — they get migrated
 // into the scoped key on first load once a repo is connected.
 import type { SyncRepo } from '@/types'
+import { STORAGE_KEYS } from './storageKeys'
 
-export const DEFAULT_NOTES_KEY = 'noteser-notes'
-export const DEFAULT_FOLDERS_KEY = 'noteser-folders'
+export const DEFAULT_NOTES_KEY = STORAGE_KEYS.notes
+export const DEFAULT_FOLDERS_KEY = STORAGE_KEYS.folders
 
 export function notesKey(repo: SyncRepo | null): string {
   return repo ? `${DEFAULT_NOTES_KEY}:${repo.owner}/${repo.name}` : DEFAULT_NOTES_KEY

@@ -5,6 +5,7 @@ import type { Folder } from '@/types'
 import { idbStorage } from '@/utils/idbStorage'
 import { sanitizeFilename } from '@/utils/export'
 import { softDelete, restoreSoftDeleted, permanentlyDelete } from '@/utils/softDelete'
+import { STORAGE_KEYS } from '@/utils/storageKeys'
 
 interface FolderState {
   folders: Folder[]
@@ -174,7 +175,7 @@ export const useFolderStore = create<FolderState>()(
           .sort((a, b) => a.order - b.order)
     }),
     {
-      name: 'noteser-folders',
+      name: STORAGE_KEYS.folders,
       storage: idbStorage,
       version: 2,
       migrate: (persistedState: unknown, version: number) => {

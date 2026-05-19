@@ -15,6 +15,7 @@ import { gitBlobShaBytes } from './github'
 import { ATTACHMENTS_CHANGED_EVENT } from './events'
 import { useFolderStore } from '@/stores/folderStore'
 import { attachmentsFolder } from './systemFolder'
+import { STORAGE_KEYS } from './storageKeys'
 
 // Materialise the parent folder of an attachment path as a real Folder
 // entity. Without this, attachment files would appear "orphaned" — the
@@ -57,11 +58,11 @@ export function getAttachmentPrefixes(): string[] {
   return attachmentsFolder.prefixes()
 }
 
-const PREFIX = 'noteser-attachment:'
+const PREFIX = STORAGE_KEYS.attachmentPrefix
 // Tombstones: paths the user explicitly deleted locally. The next sync's
 // push consumes this list to also remove the file from the remote tree —
 // otherwise pull would re-download them every cycle.
-const TOMBSTONE_KEY = 'noteser-attachment-tombstones'
+const TOMBSTONE_KEY = STORAGE_KEYS.attachmentTombstones
 
 const urlCache = new Map<string, string>()
 

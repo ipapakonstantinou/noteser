@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { GitHubUser, SyncRepo } from '@/types'
+import { STORAGE_KEYS } from '@/utils/storageKeys'
 
 // Stores the user's GitHub OAuth token + identity + chosen sync repo.
 // SECURITY NOTE: localStorage is readable by any script on the page; any XSS
@@ -80,7 +81,7 @@ export const useGitHubStore = create<GitHubState>()(
       }),
     }),
     {
-      name: 'noteser-github',
+      name: STORAGE_KEYS.github,
       partialize: (state) => ({
         token: state.token,
         user: state.user,
