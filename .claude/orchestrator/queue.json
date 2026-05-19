@@ -209,6 +209,17 @@
       "result": null,
       "error": null,
       "source": "telegram"
+    },
+    {
+      "id": "20260519T152535-f3b8",
+      "brief": "Templates: configurable templates folder + template-per-note-kind. User wants to (a) define which folder holds template notes (e.g. `Templates/`) and (b) pick which template to use for daily notes and which for weekly notes. Settings UI: folder input (reuse the attachments draft pattern) + two dropdowns populated from .md files in the configured folder. On creating a daily/weekly note, the selected template's content is used as the new note's initial body. Cross-cuts with e2f1 (daily-notes folder + format).",
+      "status": "pending",
+      "created_at": "2026-05-19T15:25:35Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
     }
   ]
 }
