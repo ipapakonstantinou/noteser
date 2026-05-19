@@ -242,6 +242,61 @@
       "result": null,
       "error": null,
       "source": "telegram"
+    },
+    {
+      "id": "20260519T154348-i1c6",
+      "brief": "Refactor: split useGitHubSync into named steps. Today the hook is one big async block running pull → classify → apply → push. Extract `runPull`, `runApply`, `runPush` so each step is testable in isolation and the conflict-handling branch reads more clearly.",
+      "status": "pending",
+      "created_at": "2026-05-19T15:43:48Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T154349-j2d7",
+      "brief": "Refactor: lift drag-and-drop out of FolderTree into a `useTreeDragDrop` hook. FolderTree.tsx is ~500 lines now mixing render + drag-drop state + attachment integration. The drag/drop concerns (begin / over / drop / end for both notes and attachments) are self-contained and would test cleanly on their own.",
+      "status": "pending",
+      "created_at": "2026-05-19T15:43:49Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T154350-k3e8",
+      "brief": "Refactor: extract a small `softDelete` helper or mixin. noteStore, folderStore, (and eventually attachments) each implement isDeleted/deletedAt + restore + permanentlyDelete. Same shape, copy-pasted three times. Either a tiny generic helper or a Zustand slice would dedupe it.",
+      "status": "pending",
+      "created_at": "2026-05-19T15:43:50Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T154351-l4f9",
+      "brief": "Refactor: extract Settings primitives. SettingsModal.tsx has inline `<Section>`, `<Field>`, dropdown + checkbox + draft-input JSX duplicated across fields. Lift into `src/components/modals/settings/` as `Section`, `Field`, `SettingsSelect`, `SettingsCheckbox`, `SettingsTextInput` (with built-in normalise-on-blur). Makes future settings additions one-liners.",
+      "status": "pending",
+      "created_at": "2026-05-19T15:43:51Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T154352-m5g0",
+      "brief": "Refactor: centralise noteser-* storage keys. Today the persist `name` literals are scattered across every store + attachments.ts (with two: prefix + tombstones key). Put them all in `src/utils/storageKeys.ts` as a STORAGE_KEYS object, import everywhere. Renames become one-line; typos become compile errors instead of silently breaking reads.",
+      "status": "pending",
+      "created_at": "2026-05-19T15:43:52Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
     }
   ]
 }
