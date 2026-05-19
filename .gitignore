@@ -66,3 +66,9 @@ next-env.d.ts
 
 # VS code
 /.vscode/
+
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/
+/blob-report/
