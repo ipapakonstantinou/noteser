@@ -87,7 +87,8 @@ NEXT_PUBLIC_YJS_WS_URL=wss://your-server.example.com
 | `Ctrl + Delete` | Delete current note |
 | `Ctrl + Shift + 7` | Insert numbered list (editor) |
 | `Ctrl + Shift + T` | Insert todo item (editor) |
-| `Alt + L` | Toggle task checkbox on current line (editor) |
+| `Alt + L` | Editor: convert line to/from task. Preview: check/uncheck task at cursor |
+| `Alt + Shift + L` | Editor: check/uncheck task at cursor (stamps ✅ date). Preview: strip `- [ ]` prefix |
 | `Escape` | Close modal / search |
 
 Right-click any note or folder for rename / move / delete / new-subfolder.

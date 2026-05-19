@@ -10,6 +10,7 @@ import { useUIStore } from '@/stores'
 import { markdownLivePreview } from './markdownLivePreview'
 import { tasksLivePreview } from './tasksLivePreview'
 import { getActiveWikilinkQuery } from '@/utils/wikilinks'
+import { toggleTaskLineText } from '@/utils/tasks'
 import { WikilinkAutocomplete } from './WikilinkAutocomplete'
 import type { Note } from '@/types'
 
@@ -107,6 +108,21 @@ export function CodeMirrorEditor({
             selection: { anchor: head + 6 },
           })
         }
+        return true
+      },
+    },
+    {
+      // Partner to Alt+L. Check/uncheck the task on the current line, with
+      // Obsidian-style ✅ date stamp on check / strip on uncheck. No-op on
+      // non-task lines (falls through to default key handling).
+      key: 'Alt-Shift-l',
+      preventDefault: true,
+      run(view) {
+        const { head } = view.state.selection.main
+        const line = view.state.doc.lineAt(head)
+        const newLine = toggleTaskLineText(line.text)
+        if (newLine == null || newLine === line.text) return false
+        view.dispatch({ changes: { from: line.from, to: line.to, insert: newLine } })
         return true
       },
     },

@@ -95,3 +95,16 @@ export function toggleTaskLineText(lineText: string, now: Date = new Date()): st
   const body = hasDate ? rest : `${rest.trimEnd()} ✅ ${todayISO(now)}`
   return `${prefix}x${mid}${body}`
 }
+
+// Strip the list marker + checkbox from a task line so it becomes plain
+// text. Preserves any leading indentation. Returns the stripped line, or
+// null if the line isn't a task. E.g.
+//   "  - [x] foo ✅ 2026-05-18"  →  "  foo ✅ 2026-05-18"
+//   "regular text"               →  null
+export function removeTaskPrefixFromLine(lineText: string): string | null {
+  const m = lineText.match(UI_TASK_LINE_REGEX)
+  if (!m) return null
+  const [, prefix, , , rest] = m
+  const indent = /^(\s*)/.exec(prefix)?.[1] ?? ''
+  return `${indent}${rest}`
+}

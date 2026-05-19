@@ -8,7 +8,7 @@ import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism'
 import type { EditorView } from '@codemirror/view'
 import { useUIStore, useNoteStore, useWorkspaceStore } from '@/stores'
 import { renderWikilinks } from '@/utils/wikilinks'
-import { toggleTaskLineText } from '@/utils/tasks'
+import { toggleTaskLineText, removeTaskPrefixFromLine } from '@/utils/tasks'
 import { CodeMirrorEditor } from './CodeMirrorEditor'
 import { TaskQueryBlock } from './TaskQueryBlock'
 import type { Note } from '@/types'
@@ -86,6 +86,22 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
     setPreviewContent(view.state.doc.toString())
   }, [])
 
+  // Strip the `- [ ]` prefix from a task line at the given 1-indexed source
+  // line, leaving the body (including any ✅ date) as plain text. No-op when
+  // the line isn't a task.
+  const removeTaskPrefixAt = useCallback((sourceLine: number) => {
+    const view = cmViewRef.current
+    if (!view) return
+    if (sourceLine < 1 || sourceLine > view.state.doc.lines) return
+    const line = view.state.doc.line(sourceLine)
+    const newLine = removeTaskPrefixFromLine(line.text)
+    if (newLine == null || newLine === line.text) return
+    view.dispatch({
+      changes: { from: line.from, to: line.to, insert: newLine },
+    })
+    setPreviewContent(view.state.doc.toString())
+  }, [])
+
   // Move the editor cursor without leaving preview.
   const moveCursorByKey = useCallback((key: string) => {
     const view = cmViewRef.current
@@ -125,8 +141,19 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
         return
       }
 
+      // Alt+Shift+L: strip the `- [ ]` prefix at cursor line. Partner to the
+      // editor's existing Alt+L behavior — kept consistent across modes so the
+      // user can convert a task back to plain text from either view.
+      if (e.altKey && e.shiftKey && (e.key === 'l' || e.key === 'L')) {
+        if (cursorLine != null) {
+          e.preventDefault()
+          removeTaskPrefixAt(cursorLine)
+        }
+        return
+      }
+
       // Alt+L: toggle task at cursor line.
-      if (e.altKey && (e.key === 'l' || e.key === 'L')) {
+      if (e.altKey && !e.shiftKey && (e.key === 'l' || e.key === 'L')) {
         if (cursorLine != null) {
           e.preventDefault()
           toggleTaskAt(cursorLine)
@@ -150,7 +177,7 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPreviewMode, cursorLine, moveCursorByKey, toggleTaskAt])
+  }, [isPreviewMode, cursorLine, moveCursorByKey, toggleTaskAt, removeTaskPrefixAt])
 
   // Place a visual cursor marker inside the preview block after each render.
   useEffect(() => {
