@@ -246,11 +246,11 @@
     {
       "id": "20260519T154348-i1c6",
       "brief": "Refactor: split useGitHubSync into named steps. Today the hook is one big async block running pull → classify → apply → push. Extract `runPull`, `runApply`, `runPush` so each step is testable in isolation and the conflict-handling branch reads more clearly.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T15:43:48Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T15:55:00Z",
+      "completed_at": "2026-05-19T16:01:00Z",
+      "result": "Extracted three module-level helpers: runPull (zipball vs incremental selection + classification), runApply (notes + folders + attachment binaries), runPush (syncToGitHub). Added formatSyncMessage that composes the status-line parts. The hook itself shrinks to a clear orchestration: pull → check conflicts → apply → push → message. 310 tests still pass, dev server healthy.",
       "error": null,
       "source": "telegram"
     },

@@ -3,8 +3,11 @@
 import { useCallback, useState } from 'react'
 import { useGitHubStore, useNoteStore, useFolderStore, useWorkspaceStore } from '@/stores'
 import { syncToGitHub, pullFromGitHub, pullFromZipball } from '@/utils/githubSync'
+import type { PullClassification, SyncResult, GitPathUpdate } from '@/utils/githubSync'
 import { applyNonConflicts, applyAttachmentClassifications } from '@/utils/syncApply'
+import type { ApplyCounts, AttachmentApplyCounts } from '@/utils/syncApply'
 import type { ConflictTabData } from '@/stores/workspaceStore'
+import type { SyncRepo } from '@/types'
 
 export type SyncState =
   | { kind: 'idle' }
@@ -18,10 +21,77 @@ interface UseGitHubSyncResult {
   isConnected: boolean
 }
 
+// ── Step 1: PULL ────────────────────────────────────────────────────────────
+// Fetch classifications from the remote. On a vault that's still empty
+// locally we use the zipball fast path (one archive download instead of N
+// blob fetches). After this step we have a complete list of changes to
+// classify and apply.
+async function runPull(token: string, repo: SyncRepo): Promise<PullClassification[]> {
+  const localNotes = useNoteStore.getState().notes
+  const localFolders = useFolderStore.getState().folders
+  const isFirstClone = !localNotes.some(n => !n.isDeleted)
+    && !localFolders.some(f => !f.isDeleted)
+
+  const { classifications } = isFirstClone
+    ? await pullFromZipball({ token, repo })
+    : await pullFromGitHub({ token, repo, notes: localNotes, folders: localFolders })
+
+  return classifications
+}
+
+// ── Step 2: APPLY ───────────────────────────────────────────────────────────
+// Walk the classifications and update local stores: notes/folders for
+// remote-created/updated/deleted, IDB for attachment binaries. Conflicts
+// are skipped here — the caller opens them in the merge UI instead.
+async function runApply(
+  classifications: PullClassification[],
+): Promise<{ notes: ApplyCounts; attachments: AttachmentApplyCounts }> {
+  const notes = applyNonConflicts(classifications)
+  const attachments = await applyAttachmentClassifications(classifications)
+  return { notes, attachments }
+}
+
+// ── Step 3: PUSH ────────────────────────────────────────────────────────────
+// Upload the local diff to the remote. Returns the GitHub commit info plus
+// the per-note path updates so the caller can write them back to the
+// noteStore (so subsequent pulls don't see the just-pushed content as a
+// remote change).
+async function runPush(
+  token: string,
+  repo: SyncRepo,
+): Promise<{ result: SyncResult; pathUpdates: GitPathUpdate[] }> {
+  const { notes } = useNoteStore.getState()
+  const { folders } = useFolderStore.getState()
+  return syncToGitHub({ token, repo, notes, folders })
+}
+
+// Compose the human-readable status line shown in the sidebar's sync button.
+function formatSyncMessage(
+  pulled: ApplyCounts,
+  attached: AttachmentApplyCounts,
+  pushed: SyncResult,
+): string {
+  const totalPulled =
+    pulled.created + pulled.updated + pulled.deleted +
+    attached.created + attached.updated
+  if (pushed.unchanged && totalPulled === 0) return 'Up to date'
+
+  const parts: string[] = []
+  if (pulled.created) parts.push(`↓${pulled.created} new`)
+  if (pulled.updated) parts.push(`↓${pulled.updated} updated`)
+  if (pulled.deleted) parts.push(`↓${pulled.deleted} removed`)
+  const attachTotal = attached.created + attached.updated
+  if (attachTotal) parts.push(`↓${attachTotal} image${attachTotal === 1 ? '' : 's'}`)
+  if (pushed.created) parts.push(`↑${pushed.created} new`)
+  if (pushed.updated) parts.push(`↑${pushed.updated} updated`)
+  if (pushed.deleted) parts.push(`↑${pushed.deleted} deleted`)
+  return parts.join(' · ') || 'Synced'
+}
+
 // Shared sync handler used by the sidebar's Commit & Sync button and by the
-// conflict-resolution modal's "Apply" action.  Pulls first; if there are
-// conflicts, applies non-conflicts and opens the conflict modal (and stops).
-// Otherwise applies the pull then runs the existing push.
+// conflict-resolution modal's "Apply" action. Composes runPull → runApply
+// → runPush. On detected conflicts, applies non-conflicts only and opens
+// the merge editor instead of pushing.
 export function useGitHubSync(): UseGitHubSyncResult {
   const token = useGitHubStore((s) => s.token)
   const syncRepo = useGitHubStore((s) => s.syncRepo)
@@ -37,69 +107,43 @@ export function useGitHubSync(): UseGitHubSyncResult {
     // the previous repo.
     const { token: activeToken, syncRepo: activeRepo } = useGitHubStore.getState()
     if (!activeToken || !activeRepo) return
+
     setSyncState({ kind: 'running' })
     try {
-      // On a first clone the local vault is empty, so every remote file
-      // would otherwise become one sequential blob fetch. Switch to the
-      // zipball path in that case — one archive download instead of N API
-      // round-trips.
-      const localNotes = useNoteStore.getState().notes
-      const localFolders = useFolderStore.getState().folders
-      const isFirstClone = !localNotes.some(n => !n.isDeleted)
-        && !localFolders.some(f => !f.isDeleted)
-
-      const { classifications } = isFirstClone
-        ? await pullFromZipball({ token: activeToken, repo: activeRepo })
-        : await pullFromGitHub({
-            token: activeToken,
-            repo: activeRepo,
-            notes: localNotes,
-            folders: localFolders,
-          })
+      const classifications = await runPull(activeToken, activeRepo)
 
       const conflicts = classifications.filter(
         c => c.kind === 'conflict' || c.kind === 'conflictDeleted',
       ) as ConflictTabData[]
       if (conflicts.length > 0) {
-        applyNonConflicts(classifications)
-        await applyAttachmentClassifications(classifications)
+        // Apply everything that isn't in conflict; leave push for the user
+        // to retry after they resolve the merge tabs.
+        await runApply(classifications)
         openMergeConflicts(conflicts)
-        setSyncState({ kind: 'err', message: `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} need review` })
+        setSyncState({
+          kind: 'err',
+          message: `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} need review`,
+        })
         return
       }
-      const pullCounts = applyNonConflicts(classifications)
-      const attachCounts = await applyAttachmentClassifications(classifications)
 
-      const { notes, updateNote } = useNoteStore.getState()
-      const { folders } = useFolderStore.getState()
-      const { result, pathUpdates } = await syncToGitHub({
-        token: activeToken,
-        repo: activeRepo,
-        notes,
-        folders,
-      })
+      const { notes: pullCounts, attachments: attachCounts } = await runApply(classifications)
+      const { result, pathUpdates } = await runPush(activeToken, activeRepo)
+
+      // Write the per-note gitPath / gitLastPushedSha back so the next pull
+      // classifies us as `unchanged` instead of detecting a phantom remote
+      // change.
+      const { updateNote } = useNoteStore.getState()
       for (const u of pathUpdates) {
         updateNote(u.noteId, { gitPath: u.gitPath, gitLastPushedSha: u.gitLastPushedSha })
       }
       recordSync(result.commitSha)
 
-      const totalPulled =
-        pullCounts.created + pullCounts.updated + pullCounts.deleted +
-        attachCounts.created + attachCounts.updated
-      if (result.unchanged && totalPulled === 0) {
-        setSyncState({ kind: 'ok', message: 'Up to date', url: null })
-      } else {
-        const parts: string[] = []
-        if (pullCounts.created) parts.push(`↓${pullCounts.created} new`)
-        if (pullCounts.updated) parts.push(`↓${pullCounts.updated} updated`)
-        if (pullCounts.deleted) parts.push(`↓${pullCounts.deleted} removed`)
-        const attachTotal = attachCounts.created + attachCounts.updated
-        if (attachTotal) parts.push(`↓${attachTotal} image${attachTotal === 1 ? '' : 's'}`)
-        if (result.created) parts.push(`↑${result.created} new`)
-        if (result.updated) parts.push(`↑${result.updated} updated`)
-        if (result.deleted) parts.push(`↑${result.deleted} deleted`)
-        setSyncState({ kind: 'ok', message: parts.join(' · ') || 'Synced', url: result.commitUrl })
-      }
+      setSyncState({
+        kind: 'ok',
+        message: formatSyncMessage(pullCounts, attachCounts, result),
+        url: result.commitUrl,
+      })
       setTimeout(() => setSyncState({ kind: 'idle' }), 5000)
     } catch (err) {
       setSyncState({ kind: 'err', message: err instanceof Error ? err.message : 'Sync failed' })
