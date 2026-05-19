@@ -70,6 +70,11 @@ export function useTreeDragDrop({ getFolderRepoPath }: UseTreeDragDropOptions): 
   // key to `<target-repo-path>/<filename>`, then rewrites every active
   // note's content so `![](old-path)` becomes `![](new-path)` —
   // Obsidian-style "Update internal links". Silently no-ops on collision.
+  //
+  // Note ref rewrites are batched into a SINGLE Zustand `setState` rather
+  // than calling `updateNote` per note — otherwise N notes referencing the
+  // same attachment caused N sequential re-renders that visibly flashed
+  // the sidebar mid-drag.
   const moveAttachmentToFolder = useCallback(
     async (path: string, targetFolderId: string | null) => {
       const filename = path.split('/').pop() ?? path
@@ -84,14 +89,20 @@ export function useTreeDragDrop({ getFolderRepoPath }: UseTreeDragDropOptions): 
         console.error('Failed to move attachment:', err)
         return
       }
-      // Pull a fresh notes snapshot before rewriting refs so any in-flight
-      // edits from the user aren't clobbered.
-      const { notes, updateNote } = useNoteStore.getState()
-      for (const note of notes) {
-        if (note.isDeleted) continue
-        const next = rewriteAttachmentRefs(note.content, path, newPath)
-        if (next !== note.content) updateNote(note.id, { content: next })
-      }
+      // Compute every note's new content first; commit only the diffs in a
+      // single setState so subscribers see one batched change.
+      const now = Date.now()
+      useNoteStore.setState(state => {
+        let touched = false
+        const nextNotes = state.notes.map(note => {
+          if (note.isDeleted) return note
+          const next = rewriteAttachmentRefs(note.content, path, newPath)
+          if (next === note.content) return note
+          touched = true
+          return { ...note, content: next, updatedAt: now }
+        })
+        return touched ? { notes: nextNotes } : state
+      })
     },
     [getFolderRepoPath],
   )
