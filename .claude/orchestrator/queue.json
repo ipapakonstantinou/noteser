@@ -257,11 +257,11 @@
     {
       "id": "20260519T154349-j2d7",
       "brief": "Refactor: lift drag-and-drop out of FolderTree into a `useTreeDragDrop` hook. FolderTree.tsx is ~500 lines now mixing render + drag-drop state + attachment integration. The drag/drop concerns (begin / over / drop / end for both notes and attachments) are self-contained and would test cleanly on their own.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T15:43:49Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T16:02:00Z",
+      "completed_at": "2026-05-19T16:09:00Z",
+      "result": "Shipped src/hooks/useTreeDragDrop.ts. Owns the draggedItemRef + dragOverTarget state and exposes 10 handlers (begin/end + dragOver/dragLeave/drop for both folder and root targets). FolderTree now calls one useTreeDragDrop and consumes its handlers directly — about 100 lines lighter, and the drag-drop concern is no longer interleaved with rendering. Hook takes a `getFolderRepoPath` callback so it doesn't need to know how FolderTree computes the folder→path map. 8 new tests covering begin / over / leave / drop transitions and the attachment-move plumbing. 318 total green.",
       "error": null,
       "source": "telegram"
     },
