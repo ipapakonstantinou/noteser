@@ -9,6 +9,7 @@ import { useDebouncedCallback } from '@/hooks/useDebounce'
 import { useUIStore } from '@/stores'
 import { markdownLivePreview } from './markdownLivePreview'
 import { tasksLivePreview } from './tasksLivePreview'
+import { imagesLivePreview } from './imagesLivePreview'
 import { getActiveWikilinkQuery } from '@/utils/wikilinks'
 import { toggleTaskLineText } from '@/utils/tasks'
 import { saveAttachment } from '@/utils/attachments'
@@ -97,6 +98,7 @@ export function CodeMirrorEditor({
     markdown({ base: markdownLanguage }),
     markdownLivePreview,
     tasksLivePreview,
+    imagesLivePreview,
     obsidianTheme,
     EditorView.lineWrapping,
     // Prec.highest ensures our bindings win over any conflicting default keymap.
