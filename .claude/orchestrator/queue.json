@@ -15,11 +15,11 @@
     {
       "id": "20260519T051842-c3d4",
       "brief": "Orchestrator step 2: codify subagent definitions (docs-writer, researcher, refactorer) in .claude/agents/ with tight tool allowlists",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T05:18:42Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T05:25:30Z",
+      "completed_at": "2026-05-19T05:27:30Z",
+      "result": "Created .claude/agents/docs-writer.md (Read/Write/Edit/Grep/Glob — markdown only, no source, no commits), researcher.md (Read/Grep/Glob/WebFetch/WebSearch — no Write, returns prose findings), refactorer.md (Read/Write/Edit/Grep/Glob/Bash — behavior-preserving, runs typecheck+tests, no git). Modeled after existing tester.md. Available next Claude Code session start.",
       "error": null,
       "source": "telegram"
     },
@@ -50,6 +50,17 @@
       "brief": "Stale README backlog cleanup — remove the 'Live preview for ```tasks fences' Now-item (shipped as 09e8ce8)",
       "status": "pending",
       "created_at": "2026-05-19T05:18:45Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T052651-b5e3",
+      "brief": "Deploy only to Vercel on push — disable / fix the failing GitHub Pages workflow in .github/workflows/",
+      "status": "pending",
+      "created_at": "2026-05-19T05:26:51Z",
       "started_at": null,
       "completed_at": null,
       "result": null,
