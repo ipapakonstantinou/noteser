@@ -22,6 +22,14 @@ import { notesKey } from '@/utils/repoStorage'
 import { useNoteStore } from '@/stores/noteStore'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
 import { installTestHooks } from '@/utils/testHooks'
+import {
+  wipeNoteserState,
+  isResetRequestedFromURL,
+  readStoredResetVersion,
+  writeStoredResetVersion,
+  decideResetAction,
+  PERSISTED_RESET_VERSION,
+} from '@/utils/reset'
 
 export default function Home() {
   const hydrated = useHydration()
@@ -86,6 +94,53 @@ export default function Home() {
   useEffect(() => {
     migrateOldData()
   }, [])
+
+  // Recovery: `?reset=1` URL flag wipes all noteser-* storage + IDB then
+  // reloads cleanly. Use when state has drifted out of sync with the
+  // remote and the user wants to start fresh. Runs once on mount, before
+  // hydration — so a wipe doesn't race with a half-loaded store.
+  useEffect(() => {
+    if (!isResetRequestedFromURL()) return
+    void (async () => {
+      await wipeNoteserState()
+      // Strip the ?reset=1 from the URL so a refresh doesn't loop the wipe.
+      window.location.replace(window.location.pathname)
+    })()
+  }, [])
+
+  // Kill-switch: bump PERSISTED_RESET_VERSION in code to force every browser
+  // to wipe once on next visit. Runs after hydration so we can safely check
+  // unsynced-changes state. Confirms with the user when there's local-only
+  // work; wipes silently otherwise. Writes the new version after wipe so
+  // subsequent reloads don't repeat the prompt.
+  useEffect(() => {
+    if (!hydrated) return
+    const stored = readStoredResetVersion()
+    const decision = decideResetAction({
+      storedVersion: stored,
+      currentVersion: PERSISTED_RESET_VERSION,
+      notes: useNoteStore.getState().notes,
+      lastSyncedAt: useGitHubStore.getState().lastSyncedAt,
+    })
+    if (decision.action === 'noop') return
+    void (async () => {
+      if (decision.action === 'confirm') {
+        const ok = window.confirm(
+          'Noteser needs to reset local cache to fix a sync bug. You have ' +
+          'unsynced local changes that will be lost. Export first or sync now? ' +
+          'Click Cancel to keep your local state and skip this update.',
+        )
+        if (!ok) {
+          // User declined — DON'T write the new version, so we ask again
+          // next reload. They can /export, sync, and reload to clear.
+          return
+        }
+      }
+      await wipeNoteserState()
+      writeStoredResetVersion(PERSISTED_RESET_VERSION)
+      window.location.reload()
+    })()
+  }, [hydrated])
 
   // Expose stores + attachment helpers on window for Playwright tests.
   // Side-effect-only, no UI impact.
