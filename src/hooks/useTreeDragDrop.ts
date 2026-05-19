@@ -2,8 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react'
 import { useNoteStore } from '@/stores'
-import { moveAttachment } from '@/utils/attachments'
-import { rewriteAttachmentRefs } from '@/utils/attachmentRefs'
+import { moveAttachmentAndRewriteRefs } from '@/utils/attachments'
 
 // Drag-and-drop state + handlers for the folder tree. Owns the dragged-item
 // ref + the highlighted-drop-target state, and exposes the begin / over /
@@ -66,15 +65,10 @@ export function useTreeDragDrop({ getFolderRepoPath }: UseTreeDragDropOptions): 
     setDragOverTarget(null)
   }, [])
 
-  // Move an attachment into the given folder (or root). Renames the IDB
-  // key to `<target-repo-path>/<filename>`, then rewrites every active
-  // note's content so `![](old-path)` becomes `![](new-path)` —
-  // Obsidian-style "Update internal links". Silently no-ops on collision.
-  //
-  // Note ref rewrites are batched into a SINGLE Zustand `setState` rather
-  // than calling `updateNote` per note — otherwise N notes referencing the
-  // same attachment caused N sequential re-renders that visibly flashed
-  // the sidebar mid-drag.
+  // Compose the target path, then delegate to the module-level helper
+  // that handles the IDB rename + the batched per-note ref rewrite.
+  // Same-folder drops short-circuit before touching IDB so a misclick
+  // doesn't trigger the (no-op) move pipeline.
   const moveAttachmentToFolder = useCallback(
     async (path: string, targetFolderId: string | null) => {
       const filename = path.split('/').pop() ?? path
@@ -84,25 +78,10 @@ export function useTreeDragDrop({ getFolderRepoPath }: UseTreeDragDropOptions): 
       const newPath = targetRepoPath ? `${targetRepoPath}/${filename}` : filename
       if (newPath === path) return
       try {
-        await moveAttachment(path, newPath)
+        await moveAttachmentAndRewriteRefs(path, newPath)
       } catch (err) {
         console.error('Failed to move attachment:', err)
-        return
       }
-      // Compute every note's new content first; commit only the diffs in a
-      // single setState so subscribers see one batched change.
-      const now = Date.now()
-      useNoteStore.setState(state => {
-        let touched = false
-        const nextNotes = state.notes.map(note => {
-          if (note.isDeleted) return note
-          const next = rewriteAttachmentRefs(note.content, path, newPath)
-          if (next === note.content) return note
-          touched = true
-          return { ...note, content: next, updatedAt: now }
-        })
-        return touched ? { notes: nextNotes } : state
-      })
     },
     [getFolderRepoPath],
   )

@@ -216,6 +216,38 @@ export async function moveAttachment(oldPath: string, newPath: string): Promise<
   notifyAttachmentsChanged()
 }
 
+// Full "drag to folder" operation: rename the IDB key AND rewrite every
+// active note's content so `![](old)` → `![](new)`. Critical detail: the
+// per-note rewrites are batched into a SINGLE Zustand setState call so
+// subscribers (FolderTree, etc.) re-render exactly once. The earlier
+// per-note `updateNote` loop caused a render storm that visibly blanked
+// the sidebar mid-drag (bug p8j3, regression-tested in
+// e2e/attachment-blank.spec.ts).
+export async function moveAttachmentAndRewriteRefs(
+  oldPath: string,
+  newPath: string,
+): Promise<void> {
+  if (oldPath === newPath) return
+  await moveAttachment(oldPath, newPath)
+  // Dynamic import to avoid a static cycle (attachments.ts ← noteStore.ts
+  // imports softDelete + storageKeys but not attachments; static import
+  // of noteStore here would create one).
+  const { useNoteStore } = await import('@/stores/noteStore')
+  const { rewriteAttachmentRefs } = await import('./attachmentRefs')
+  const now = Date.now()
+  useNoteStore.setState(state => {
+    let touched = false
+    const nextNotes = state.notes.map(note => {
+      if (note.isDeleted) return note
+      const next = rewriteAttachmentRefs(note.content, oldPath, newPath)
+      if (next === note.content) return note
+      touched = true
+      return { ...note, content: next, updatedAt: now }
+    })
+    return touched ? { notes: nextNotes } : state
+  })
+}
+
 // Test-only: drop the in-memory URL cache without touching IDB. Tests that
 // stub idb-keyval need a way to reset state between cases.
 export function _clearAttachmentUrlCache(): void {

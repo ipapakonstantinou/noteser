@@ -14,10 +14,12 @@ jest.mock('idb-keyval', () => ({
   keys: jest.fn().mockResolvedValue([]),
 }))
 
-// Mock attachments.moveAttachment so we don't touch IDB; record calls instead.
+// Mock the composed move helper the hook now delegates to. Older tests
+// mocked the lower-level moveAttachment; both names are kept on the
+// module surface, but the hook only touches the composed one.
 const moveAttachmentMock = jest.fn().mockResolvedValue(undefined)
 jest.mock('../utils/attachments', () => ({
-  moveAttachment: (...args: unknown[]) => moveAttachmentMock(...args),
+  moveAttachmentAndRewriteRefs: (...args: unknown[]) => moveAttachmentMock(...args),
 }))
 
 import React, { useImperativeHandle, forwardRef } from 'react'
