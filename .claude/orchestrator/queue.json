@@ -48,11 +48,11 @@
     {
       "id": "20260519T051845-c9d0",
       "brief": "Stale README backlog cleanup — remove the 'Live preview for ```tasks fences' Now-item (shipped as 09e8ce8)",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T05:18:45Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T05:34:00Z",
+      "completed_at": "2026-05-19T05:34:30Z",
+      "result": "Removed both stale Now-items: 'Live preview for ```tasks fences' (shipped 09e8ce8) and 'Obsidian-style task-line shortcuts' (shipped via a1b2 / 2d9085b). Replaced with an italicized placeholder so it's clear the section is intentionally empty pending the next promotion from Next.",
       "error": null,
       "source": "telegram"
     },
