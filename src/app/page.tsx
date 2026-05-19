@@ -8,6 +8,7 @@ import {
   DeleteConfirmModal,
   ShortcutsModal,
   TemplatesModal,
+  SettingsModal,
   ExportModal,
   GitHubAuthModal,
   GitHubRepoModal,
@@ -82,6 +83,7 @@ export default function Home() {
       <DeleteConfirmModal />
       <ShortcutsModal />
       <TemplatesModal />
+      <SettingsModal />
       <ExportModal />
       <GitHubAuthModal />
       <GitHubRepoModal />

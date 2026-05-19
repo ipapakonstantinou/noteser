@@ -7,14 +7,16 @@ import {
   TagIcon,
   TrashIcon,
   CalendarDaysIcon,
+  Cog6ToothIcon,
 } from '@heroicons/react/24/outline'
 import { useUIStore, useNoteStore } from '@/stores'
 
 // Obsidian-style far-left ribbon. Always visible. Holds Search + nav icons
-// (All Notes, Recent, Tags, Trash, Calendar). Clicking a nav icon switches
-// the sidebar's content area to that view.
+// (All Notes, Recent, Tags, Trash, Calendar) plus a Settings gear pinned
+// to the bottom. Clicking a nav icon switches the sidebar's content area
+// to that view.
 export const Ribbon = () => {
-  const { openSearch, currentView, setCurrentView } = useUIStore()
+  const { openSearch, currentView, setCurrentView, openModal } = useUIStore()
   const { getDeletedNotes, getRecentNotes } = useNoteStore()
 
   const trashCount = getDeletedNotes().length
@@ -60,6 +62,13 @@ export const Ribbon = () => {
       >
         <TrashIcon className="w-5 h-5" />
       </RibbonNavButton>
+
+      {/* Settings — pinned to the bottom of the ribbon. */}
+      <div className="mt-auto">
+        <RibbonButton onClick={() => openModal({ type: 'settings' })} title="Settings">
+          <Cog6ToothIcon className="w-5 h-5" />
+        </RibbonButton>
+      </div>
     </div>
   )
 }

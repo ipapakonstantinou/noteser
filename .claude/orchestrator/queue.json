@@ -70,11 +70,11 @@
     {
       "id": "20260519T055200-d8a7",
       "brief": "Settings panel (Obsidian-style modal): theme, daily-note date format, default folder, sync prefs, sort-mode for folders, task-list density. Unlocks remappable shortcuts as a follow-up.",
-      "status": "pending",
+      "status": "in_progress",
       "created_at": "2026-05-19T05:52:00Z",
-      "started_at": null,
+      "started_at": "2026-05-19T06:05:00Z",
       "completed_at": null,
-      "result": null,
+      "result": "Partial: useSettingsStore (folderSortMode, taskListDensity, reset; persisted under noteser-settings), SettingsModal with both controls, gear-icon trigger pinned to bottom of Ribbon, modal mounted in page.tsx. Consumer wiring (FolderTree reads sort, TaskQueryBlock reads density) NOT yet done — settings persist but don't yet affect rendering. Following up next session: wire consumers (e9c4 + f1b8 fold into that), then remove templates feature per user (Telegram).",
       "error": null,
       "source": "telegram"
     },
