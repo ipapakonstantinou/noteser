@@ -11,6 +11,8 @@ the wider backlog.
 
 ## Next
 
+- **Auto pull githbu on init.** We need to auto-pull every X time,
+  based on the settings and to auto-pull github latest commit on init.
 - **Settings panel.** Obsidian-style settings modal — theme, daily-note
   format, default folder, sync preferences.
 - **Remappable keyboard shortcuts.** Let users rebind shortcuts from the
