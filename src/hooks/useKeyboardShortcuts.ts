@@ -65,6 +65,15 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers = {}) => {
       return
     }
 
+    // Open today's daily note - Alt+D. Creates it (with the configured
+    // template) inside the configured daily-notes folder if missing.
+    if (event.altKey && !hasCtrl && !hasShift && event.key.toLowerCase() === 'd') {
+      event.preventDefault()
+      // Lazy import keeps the keyboard hook free of a hard daily-notes dep.
+      import('@/utils/dailyNotes').then(({ openTodayNote }) => openTodayNote())
+      return
+    }
+
     // New folder - Ctrl+Shift+N (always at root).
     if (hasCtrl && hasShift && event.key.toLowerCase() === 'n') {
       event.preventDefault()
