@@ -1,7 +1,7 @@
 'use client'
 
 import { useUIStore, useSettingsStore } from '@/stores'
-import type { FolderSortMode, TaskListDensity } from '@/stores'
+import type { FolderSortMode, TaskListDensity, AutoSyncInterval } from '@/stores'
 import { Modal } from '@/components/ui'
 import { AttachmentsSection } from './AttachmentsSection'
 import {
@@ -17,9 +17,13 @@ export const SettingsModal = () => {
   const folderSortMode = useSettingsStore(s => s.folderSortMode)
   const taskListDensity = useSettingsStore(s => s.taskListDensity)
   const showHiddenFolders = useSettingsStore(s => s.showHiddenFolders)
+  const autoSyncOnStart = useSettingsStore(s => s.autoSyncOnStart)
+  const autoSyncIntervalMinutes = useSettingsStore(s => s.autoSyncIntervalMinutes)
   const setFolderSortMode = useSettingsStore(s => s.setFolderSortMode)
   const setTaskListDensity = useSettingsStore(s => s.setTaskListDensity)
   const setShowHiddenFolders = useSettingsStore(s => s.setShowHiddenFolders)
+  const setAutoSyncOnStart = useSettingsStore(s => s.setAutoSyncOnStart)
+  const setAutoSyncIntervalMinutes = useSettingsStore(s => s.setAutoSyncIntervalMinutes)
   const reset = useSettingsStore(s => s.reset)
 
   const isOpen = modal.type === 'settings'
@@ -72,6 +76,34 @@ export const SettingsModal = () => {
 
         <Section title="Attachments">
           <AttachmentsSection />
+        </Section>
+
+        <Section title="GitHub sync">
+          <Field
+            label="Auto-sync on startup"
+            description="When the app boots and a repo is connected, pull + push once automatically."
+          >
+            <SettingsCheckbox
+              checked={autoSyncOnStart}
+              onChange={setAutoSyncOnStart}
+            />
+          </Field>
+          <Field
+            label="Auto-sync every"
+            description="Repeat the sync on this cadence. Off disables periodic syncing — you can still sync manually from the sidebar."
+          >
+            <SettingsSelect<AutoSyncInterval>
+              value={autoSyncIntervalMinutes}
+              onChange={setAutoSyncIntervalMinutes}
+              options={[
+                { value: 0, label: 'Off' },
+                { value: 5, label: '5 minutes' },
+                { value: 15, label: '15 minutes' },
+                { value: 30, label: '30 minutes' },
+                { value: 60, label: '1 hour' },
+              ]}
+            />
+          </Field>
         </Section>
 
         <SettingsFooter
