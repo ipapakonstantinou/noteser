@@ -26,6 +26,8 @@ import { FolderTree } from './FolderTree'
 import { FolderTreeToolbar } from './FolderTreeToolbar'
 import { CalendarView } from './CalendarView'
 import { GitHubView } from './GitHubView'
+import { OutlineView } from './OutlineView'
+import { BacklinksView } from './BacklinksView'
 import { ContextMenu } from './ContextMenu'
 import type { ContextMenuState } from '@/types'
 
@@ -96,6 +98,8 @@ export const Sidebar = () => {
         {!sidebarCollapsed && (
           currentView === 'calendar' ? <CalendarView /> :
           currentView === 'github' ? <GitHubView /> :
+          currentView === 'outline' ? <OutlineView /> :
+          currentView === 'backlinks' ? <BacklinksView /> :
           <FolderTree onRightClick={handleRightClick} />
         )}
       </div>

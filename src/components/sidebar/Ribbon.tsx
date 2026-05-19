@@ -9,6 +9,8 @@ import {
   CalendarDaysIcon,
   CloudArrowUpIcon,
   Cog6ToothIcon,
+  ListBulletIcon,
+  LinkIcon,
 } from '@heroicons/react/24/outline'
 import { useUIStore, useNoteStore, useGitHubStore, useWorkspaceStore } from '@/stores'
 import { useHydration } from '@/hooks'
@@ -64,11 +66,25 @@ export const Ribbon = () => {
         <TagIcon className="w-5 h-5" />
       </RibbonNavButton>
       <RibbonNavButton
+        active={currentView === 'backlinks'}
+        onClick={() => setCurrentView('backlinks')}
+        title="Backlinks"
+      >
+        <LinkIcon className="w-5 h-5" />
+      </RibbonNavButton>
+      <RibbonNavButton
         active={currentView === 'calendar'}
         onClick={() => setCurrentView('calendar')}
         title="Calendar"
       >
         <CalendarDaysIcon className="w-5 h-5" />
+      </RibbonNavButton>
+      <RibbonNavButton
+        active={currentView === 'outline'}
+        onClick={() => setCurrentView('outline')}
+        title="Outline"
+      >
+        <ListBulletIcon className="w-5 h-5" />
       </RibbonNavButton>
       <RibbonNavButton
         active={currentView === 'trash'}

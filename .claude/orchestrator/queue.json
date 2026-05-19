@@ -422,11 +422,11 @@
     {
       "id": "20260519T173503-y8n2",
       "brief": "Backlinks panel — sidebar tab listing every note that links to the currently open one (via [[Title]] or unlinked text mentions). In-memory index over notes, useMemo refresh on save. Obsidian's defining feature.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T17:35:03Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T18:50:00Z",
+      "completed_at": "2026-05-19T19:25:00Z",
+      "result": "Shipped via parallel agent. New ribbon nav button (LinkIcon, after Tags) + BacklinksView sidebar panel. New src/utils/backlinks.ts exposes findBacklinks(notes, target) which matches against the target's title AND any aliases (case-insensitive, pipe-display friendly: [[Target|see this]] still matches). Returns up to 3 snippets per linker. Each row clickable to open the linker. 15 new tests cover alias matching, pipe display, deleted-notes excluded, target self-references excluded.",
       "error": null,
       "source": "researcher"
     },
@@ -466,11 +466,11 @@
     {
       "id": "20260519T173507-c2r6",
       "brief": "Outline / heading navigator — sidebar tab listing H1–H6 headings of the active note, clickable to jump to that line. Parse headings from current note content reactively.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T17:35:07Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T18:50:00Z",
+      "completed_at": "2026-05-19T19:25:00Z",
+      "result": "Shipped via parallel agent. New ribbon nav button (ListBulletIcon, after Calendar) + OutlineView sidebar panel. New src/utils/outline.ts exposes extractHeadings(content) which parses ATX headings (#, ##, …, ######) and ignores anything inside fenced code blocks (handles both ``` and ~~~, and longer-fence > shorter-fence nesting). New SCROLL_TO_LINE_EVENT in src/utils/events.ts; EditorContent listens and dispatches a CodeMirror scrollIntoView + focus when the target matches the active note. 19 new tests cover headings inside fences are skipped, nested fence lengths, no-text-after-# is rejected, indented `#` is rejected, six levels.",
       "error": null,
       "source": "researcher"
     },

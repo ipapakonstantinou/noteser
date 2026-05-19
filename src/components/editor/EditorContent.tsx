@@ -10,6 +10,7 @@ import { useUIStore, useNoteStore, useWorkspaceStore } from '@/stores'
 import { renderWikilinks } from '@/utils/wikilinks'
 import { findNoteByTitleOrAlias } from '@/utils/aliases'
 import { toggleTaskLineText, removeTaskPrefixFromLine } from '@/utils/tasks'
+import { SCROLL_TO_LINE_EVENT } from '@/utils/events'
 import { CodeMirrorEditor } from './CodeMirrorEditor'
 import { TaskQueryBlock } from './TaskQueryBlock'
 import { AttachmentImage } from './AttachmentImage'
@@ -54,6 +55,36 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
     setCursorLine(view.state.doc.lineAt(pos).number)
     view.contentDOM.blur()
   }, [isPreviewMode])
+
+  // OutlineView dispatches `noteser:scroll-to-line` with { noteId, line }
+  // when the user clicks a heading. If the event targets this note, jump
+  // the CodeMirror view to that line. Listening on window keeps the two
+  // components decoupled (same pattern as SYNC_REQUEST_EVENT).
+  useEffect(() => {
+    const handler = (evt: Event) => {
+      const detail = (evt as CustomEvent<{ noteId?: string; line?: number }>).detail
+      if (!detail) return
+      if (detail.noteId !== note.id) return
+      const targetLine = detail.line
+      if (typeof targetLine !== 'number' || targetLine < 1) return
+      const view = cmViewRef.current
+      if (!view) return
+      // Clamp to the doc — the source might have shrunk since the outline
+      // was rendered (rapid edits + click race).
+      const clamped = Math.min(targetLine, view.state.doc.lines)
+      const line = view.state.doc.line(clamped)
+      // Leaving preview mode is necessary for the editor to receive focus
+      // and for the scroll to be visible.
+      if (isPreviewMode) setPreviewMode(false)
+      view.dispatch({
+        selection: { anchor: line.from },
+        scrollIntoView: true,
+      })
+      view.focus()
+    }
+    window.addEventListener(SCROLL_TO_LINE_EVENT, handler)
+    return () => window.removeEventListener(SCROLL_TO_LINE_EVENT, handler)
+  }, [note.id, isPreviewMode, setPreviewMode])
 
   const exitPreviewAndFocus = (insertText?: string) => {
     setCursorLine(null)
