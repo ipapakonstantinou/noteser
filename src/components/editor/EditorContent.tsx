@@ -11,6 +11,7 @@ import { renderWikilinks } from '@/utils/wikilinks'
 import { toggleTaskLineText, removeTaskPrefixFromLine } from '@/utils/tasks'
 import { CodeMirrorEditor } from './CodeMirrorEditor'
 import { TaskQueryBlock } from './TaskQueryBlock'
+import { AttachmentImage } from './AttachmentImage'
 import type { Note } from '@/types'
 
 interface EditorContentProps {
@@ -433,6 +434,7 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
   const components = {
     code: CodeBlock as React.ComponentType<{ className?: string; children?: React.ReactNode }>,
     a: WikilinkAnchor as React.ComponentType<{ href?: string; children?: React.ReactNode }>,
+    img: AttachmentImage as unknown as React.ComponentType<React.ImgHTMLAttributes<HTMLImageElement>>,
     p: wrapBlock('p'),
     h1: wrapBlock('h1'),
     h2: wrapBlock('h2'),
