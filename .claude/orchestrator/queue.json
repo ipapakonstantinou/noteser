@@ -312,11 +312,11 @@
     {
       "id": "20260519T161130-r1a8",
       "brief": "Auto-pull from GitHub on init + periodic. Already in docs/roadmap.md. Two pieces: (1) on app boot after hydration, if a sync repo is configured, run an automatic pull-then-push; (2) settings field for an interval (e.g. every 5 min / 15 min / off) to repeat. Reuse useGitHubSync.runSync (already refactored into named steps via i1c6). UI: indicator on the sync button when auto-pull is in flight.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T16:11:30Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T16:42:00Z",
+      "completed_at": "2026-05-19T16:50:00Z",
+      "result": "Shipped. settingsStore adds autoSyncOnStart (default true) + autoSyncIntervalMinutes (typed AutoSyncInterval = 0|5|15|30|60, default 0=off). New useAutoSync hook runs once on hydration when on+connected, then on the chosen interval. syncState is held in a ref so the timer isn't torn down on per-transition re-renders, and skips firing if a sync is already in flight. SettingsModal gets a 'GitHub sync' section with the toggle + dropdown. SettingsSelect generalised to accept number values too. 6 new Jest tests cover one-shot + periodic + interval-rebuild paths; 354 total green. The existing sync button already shows the running state via syncState, so no extra UI tweak needed.",
       "error": null,
       "source": "telegram"
     },

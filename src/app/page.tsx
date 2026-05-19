@@ -13,7 +13,7 @@ import {
   GitHubAuthModal,
   GitHubRepoModal,
 } from '@/components/modals'
-import { useKeyboardShortcuts, useHydration } from '@/hooks'
+import { useKeyboardShortcuts, useHydration, useAutoSync } from '@/hooks'
 import { useUIStore, useWorkspaceStore, useGitHubStore } from '@/stores'
 import { switchVault } from '@/utils/switchVault'
 import { notesKey } from '@/utils/repoStorage'
@@ -64,6 +64,9 @@ export default function Home() {
 
   // Set up keyboard shortcuts
   useKeyboardShortcuts()
+
+  // Auto-sync on startup + on the configured interval (Settings → GitHub).
+  useAutoSync()
 
   // Migrate old data on first load
   useEffect(() => {
