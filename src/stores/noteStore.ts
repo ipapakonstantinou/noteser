@@ -3,6 +3,12 @@ import { persist } from 'zustand/middleware'
 import { v4 as uuidv4 } from 'uuid'
 import type { Note, Template, DEFAULT_TEMPLATES } from '@/types'
 import { idbStorage } from '@/utils/idbStorage'
+import {
+  softDelete,
+  restoreSoftDeleted,
+  permanentlyDelete,
+  emptyTrash as emptyTrashItems,
+} from '@/utils/softDelete'
 
 interface NoteState {
   notes: Note[]
@@ -73,29 +79,21 @@ export const useNoteStore = create<NoteState>()(
 
       deleteNote: (id) => {
         set(state => ({
-          notes: state.notes.map(note =>
-            note.id === id
-              ? { ...note, isDeleted: true, deletedAt: Date.now() }
-              : note
-          ),
-          selectedNoteId: state.selectedNoteId === id ? null : state.selectedNoteId
+          notes: softDelete(state.notes, id),
+          selectedNoteId: state.selectedNoteId === id ? null : state.selectedNoteId,
         }))
       },
 
       permanentlyDeleteNote: (id) => {
         set(state => ({
-          notes: state.notes.filter(note => note.id !== id),
-          selectedNoteId: state.selectedNoteId === id ? null : state.selectedNoteId
+          notes: permanentlyDelete(state.notes, id),
+          selectedNoteId: state.selectedNoteId === id ? null : state.selectedNoteId,
         }))
       },
 
       restoreNote: (id) => {
         set(state => ({
-          notes: state.notes.map(note =>
-            note.id === id
-              ? { ...note, isDeleted: false, deletedAt: null }
-              : note
-          )
+          notes: restoreSoftDeleted(state.notes, id),
         }))
       },
 
@@ -148,9 +146,7 @@ export const useNoteStore = create<NoteState>()(
       },
 
       emptyTrash: () => {
-        set(state => ({
-          notes: state.notes.filter(note => !note.isDeleted)
-        }))
+        set(state => ({ notes: emptyTrashItems(state.notes) }))
       },
 
       createFromTemplate: (template, folderId = null) => {

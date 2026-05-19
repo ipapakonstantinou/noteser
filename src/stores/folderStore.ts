@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid'
 import type { Folder } from '@/types'
 import { idbStorage } from '@/utils/idbStorage'
 import { sanitizeFilename } from '@/utils/export'
+import { softDelete, restoreSoftDeleted, permanentlyDelete } from '@/utils/softDelete'
 
 interface FolderState {
   folders: Folder[]
@@ -83,29 +84,21 @@ export const useFolderStore = create<FolderState>()(
 
       deleteFolder: (id) => {
         set(state => ({
-          folders: state.folders.map(folder =>
-            folder.id === id
-              ? { ...folder, isDeleted: true, deletedAt: Date.now() }
-              : folder
-          ),
-          activeFolderId: state.activeFolderId === id ? null : state.activeFolderId
+          folders: softDelete(state.folders, id),
+          activeFolderId: state.activeFolderId === id ? null : state.activeFolderId,
         }))
       },
 
       permanentlyDeleteFolder: (id) => {
         set(state => ({
-          folders: state.folders.filter(folder => folder.id !== id),
-          activeFolderId: state.activeFolderId === id ? null : state.activeFolderId
+          folders: permanentlyDelete(state.folders, id),
+          activeFolderId: state.activeFolderId === id ? null : state.activeFolderId,
         }))
       },
 
       restoreFolder: (id) => {
         set(state => ({
-          folders: state.folders.map(folder =>
-            folder.id === id
-              ? { ...folder, isDeleted: false, deletedAt: null }
-              : folder
-          )
+          folders: restoreSoftDeleted(state.folders, id),
         }))
       },
 
