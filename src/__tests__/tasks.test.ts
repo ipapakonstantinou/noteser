@@ -594,3 +594,77 @@ describe('toggleTaskLineText — recurring task creates next instance', () => {
     expect(lines[1].startsWith('  * [x] ')).toBe(true)
   })
 })
+
+// ── toggleTaskLine (whole-note path used by TaskQueryBlock) ──────────────────
+
+describe('toggleTaskLine — recurring task splicing', () => {
+  const NOW = new Date(2026, 4, 19) // 2026-05-19
+
+  test('recurring task at line 0 of a single-line note produces 2-line content', () => {
+    const content = '- [ ] water plants 🔁 every week 📅 2026-05-20'
+    const result = toggleTaskLine(content, 0, NOW)
+    const lines = result.split('\n')
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toContain('- [ ]')
+    expect(lines[0]).toContain('📅 2026-05-27')
+    expect(lines[1]).toContain('- [x]')
+    expect(lines[1]).toContain('✅ 2026-05-19')
+  })
+
+  test('recurring task in a multi-line note: surrounding lines are preserved', () => {
+    const content = [
+      'Some heading',
+      '- [ ] water plants 🔁 every week 📅 2026-05-20',
+      'Trailing text',
+    ].join('\n')
+
+    const result = toggleTaskLine(content, 1, NOW)
+    const lines = result.split('\n')
+    expect(lines).toHaveLength(4)
+    expect(lines[0]).toBe('Some heading')
+    expect(lines[1]).toContain('- [ ]')
+    expect(lines[1]).toContain('📅 2026-05-27')
+    expect(lines[2]).toContain('- [x]')
+    expect(lines[2]).toContain('✅ 2026-05-19')
+    expect(lines[3]).toBe('Trailing text')
+  })
+
+  test('recurring task at last line: no trailing blank line added', () => {
+    const content = [
+      'First line',
+      '- [ ] water plants 🔁 every week 📅 2026-05-20',
+    ].join('\n')
+
+    const result = toggleTaskLine(content, 1, NOW)
+    const lines = result.split('\n')
+    expect(lines).toHaveLength(3)
+    expect(lines[0]).toBe('First line')
+    expect(lines[1]).toContain('- [ ]')
+    expect(lines[2]).toContain('- [x]')
+  })
+
+  test('non-recurring task at same position still produces a single completed line', () => {
+    const content = '- [ ] water plants 📅 2026-05-20'
+    const result = toggleTaskLine(content, 0, NOW)
+    const lines = result.split('\n')
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toContain('- [x]')
+    expect(lines[0]).toContain('✅ 2026-05-19')
+  })
+
+  test('out-of-range lineNumber returns content unchanged', () => {
+    const content = '- [ ] water plants 🔁 every week 📅 2026-05-20'
+    expect(toggleTaskLine(content, -1, NOW)).toBe(content)
+    expect(toggleTaskLine(content, 5, NOW)).toBe(content)
+  })
+
+  test('CRLF content is normalised to LF in the toggled result', () => {
+    const content = '- [ ] water plants 🔁 every week 📅 2026-05-20\r\nNext line'
+    const result = toggleTaskLine(content, 0, NOW)
+    expect(result).not.toContain('\r')
+    const lines = result.split('\n')
+    // 3 lines: new open instance, completed, Next line
+    expect(lines).toHaveLength(3)
+    expect(lines[2]).toBe('Next line')
+  })
+})

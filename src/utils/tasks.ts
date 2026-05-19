@@ -36,7 +36,12 @@ const PRIORITY_REGEX       = /\s*(⏫|🔼|🔽|⏬)\s*/g
 // Recurrence rule is free-form text after 🔁, terminated by the next emoji
 // marker or end-of-line. Negative lookahead keeps us from swallowing other
 // metadata. `+` is greedy — naturally stops at any other marker.
-const RECURRENCE_REGEX     = /\s*🔁\s*((?:(?!📅|⏳|🛫|✅|⏫|🔼|🔽|⏬|🔁).)+)/g
+//
+// The `️?` accepts the variant-selector form of 🔁 that macOS, iOS, and
+// some Linux emoji pickers produce — without it we'd capture the U+FE0F
+// codepoint INTO the rule string and parseRule would reject the result.
+// This was the "recurrence doesn't work even though tests pass" bug.
+const RECURRENCE_REGEX     = /\s*🔁️?\s*((?:(?!📅|⏳|🛫|✅|⏫|🔼|🔽|⏬|🔁).)+)/g
 
 export type TaskPriority = 'highest' | 'high' | 'normal' | 'low' | 'lowest'
 

@@ -21,7 +21,15 @@ interface ParsedRule {
 }
 
 function parseRule(rrule: string): ParsedRule | null {
-  const norm = rrule.trim().toLowerCase().replace(/\s+/g, ' ')
+  // Strip variant-selector + zero-width characters that emoji pickers leak
+  // into the rule string. Without this, a literal "🔁️ every week" produces
+  // a rule with a leading U+FE0F (variant selector) which the strict
+  // grammar below would reject. See RECURRENCE_REGEX in tasks.ts.
+  //   U+FE00–U+FE0F : Variation Selectors (incl. VS16 = emoji style)
+  //   U+200B–U+200D : zero-width space / non-joiner / joiner
+  //   U+FEFF        : BOM / zero-width no-break space
+  const cleaned = rrule.replace(/[︀-️​-‍﻿]/g, '')
+  const norm = cleaned.trim().toLowerCase().replace(/\s+/g, ' ')
   const m = RULE_REGEX.exec(norm)
   if (!m) return null
   const count = m[1] ? parseInt(m[1], 10) : 1
