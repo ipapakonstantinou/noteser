@@ -81,6 +81,10 @@ export function getAttachmentPrefixes(): string[] {
 export const ATTACHMENT_DIR = DEFAULT_ATTACHMENT_DIR
 
 const PREFIX = 'noteser-attachment:'
+// Tombstones: paths the user explicitly deleted locally. The next sync's
+// push consumes this list to also remove the file from the remote tree —
+// otherwise pull would re-download them every cycle.
+const TOMBSTONE_KEY = 'noteser-attachment-tombstones'
 
 const urlCache = new Map<string, string>()
 
@@ -178,7 +182,35 @@ export async function deleteAttachment(path: string): Promise<void> {
     URL.revokeObjectURL(url)
     urlCache.delete(path)
   }
+  await addAttachmentTombstone(path)
   notifyAttachmentsChanged()
+}
+
+// ── Tombstone helpers ────────────────────────────────────────────────────
+// Tombstones survive page reloads and apply on the next sync's push so an
+// explicit local delete propagates to the remote vault. The sync layer is
+// expected to call `clearAttachmentTombstones` once the push has applied
+// the deletions — otherwise we'd keep trying to delete the same paths on
+// every subsequent sync.
+
+export async function getAttachmentTombstones(): Promise<string[]> {
+  const stored = await get<string[]>(TOMBSTONE_KEY)
+  return Array.isArray(stored) ? stored.slice() : []
+}
+
+export async function addAttachmentTombstone(path: string): Promise<void> {
+  const current = await getAttachmentTombstones()
+  if (current.includes(path)) return
+  current.push(path)
+  await set(TOMBSTONE_KEY, current)
+}
+
+export async function clearAttachmentTombstones(paths: string[]): Promise<void> {
+  if (paths.length === 0) return
+  const current = await getAttachmentTombstones()
+  const remaining = current.filter(p => !paths.includes(p))
+  if (remaining.length === current.length) return
+  await set(TOMBSTONE_KEY, remaining)
 }
 
 // Move an attachment from one path to another inside IDB. Throws if there's
