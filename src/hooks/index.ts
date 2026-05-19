@@ -4,3 +4,5 @@ export { useDebounce, useDebouncedCallback, useThrottledCallback } from './useDe
 export { useHydration } from './useHydration'
 export { useGitHubSync } from './useGitHubSync'
 export { useTabDragActive, TAB_DRAG_MIME } from './useTabDragActive'
+export { useTreeDragDrop } from './useTreeDragDrop'
+export type { TreeDragDropApi, UseTreeDragDropOptions } from './useTreeDragDrop'

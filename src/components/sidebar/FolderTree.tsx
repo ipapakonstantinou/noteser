@@ -9,18 +9,16 @@ import {
 } from '@heroicons/react/24/outline'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
 import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore, useSettingsStore } from '@/stores'
-import { useHydration } from '@/hooks'
+import { useHydration, useTreeDragDrop } from '@/hooks'
 import { EditableText } from '../shared/EditableText'
 import { collectAllTags } from '@/utils/tags'
 import { sortNotes } from '@/utils/sortNotes'
 import {
   listAttachmentMeta,
   getAttachmentUrl,
-  moveAttachment,
   type AttachmentMeta,
 } from '@/utils/attachments'
 import { ATTACHMENTS_CHANGED_EVENT } from '@/utils/events'
-import { rewriteAttachmentRefs } from '@/utils/attachmentRefs'
 
 interface FolderTreeProps {
   onRightClick: (e: React.MouseEvent, type: 'note' | 'folder', id: string) => void
@@ -37,7 +35,6 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     notes,
     selectedNoteId,
     updateNote,
-    moveNoteToFolder,
     getActiveNotes,
     getDeletedNotes,
     getRecentNotes,
@@ -88,16 +85,6 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     }
   }, [hydrated])
 
-  // ── Drag & drop state ───────────────────────────────────────────────────
-  // Generalised across notes + attachments so the same drop zones accept
-  // both. Kept in a ref so dragstart doesn't trigger a re-render.
-  type DraggedItem =
-    | { kind: 'note'; id: string }
-    | { kind: 'attachment'; path: string }
-  const draggedItemRef = useRef<DraggedItem | null>(null)
-  // Visual highlight target: folder id, or '__root__' for the root drop zone.
-  const [dragOverTarget, setDragOverTarget] = useState<string | null>(null)
-
   // ── Single vs double click on a note ────────────────────────────────────
   // Single click = open as preview (italic, replaceable). Double click =
   // open as pinned. We delay the single-click handler so a quick second
@@ -118,80 +105,10 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     openNote(id, { preview: false })
   }
 
-  const beginNoteDrag = (e: React.DragEvent, noteId: string) => {
-    draggedItemRef.current = { kind: 'note', id: noteId }
-    // Required for Firefox to register the drag; also exposes the id to drop.
-    e.dataTransfer.setData('application/x-noteser-note', noteId)
-    e.dataTransfer.effectAllowed = 'move'
-  }
-  const beginAttachmentDrag = (e: React.DragEvent, path: string) => {
-    draggedItemRef.current = { kind: 'attachment', path }
-    e.dataTransfer.setData('application/x-noteser-attachment', path)
-    e.dataTransfer.effectAllowed = 'move'
-  }
-  const endDrag = () => {
-    draggedItemRef.current = null
-    setDragOverTarget(null)
-  }
-
-  // Move an attachment into the given folder (or root). Renames the IDB key
-  // to `<target-repo-path>/<filename>`, then rewrites every note's content
-  // so `![](old-path)` becomes `![](new-path)` — Obsidian-style "Update
-  // internal links". Silently no-ops on collision (rare; user can rename
-  // and try again).
-  const moveAttachmentToFolder = async (path: string, targetFolderId: string | null) => {
-    const filename = path.split('/').pop() ?? path
-    const targetRepoPath = targetFolderId
-      ? folderRepoPathById.get(targetFolderId) ?? ''
-      : ''
-    const newPath = targetRepoPath ? `${targetRepoPath}/${filename}` : filename
-    if (newPath === path) return
-    try {
-      await moveAttachment(path, newPath)
-    } catch (err) {
-      console.error('Failed to move attachment:', err)
-      return
-    }
-    // Update note content. Pull a fresh snapshot of notes and rewrite refs.
-    const { notes: liveNotes, updateNote } = useNoteStore.getState()
-    for (const note of liveNotes) {
-      if (note.isDeleted) continue
-      const next = rewriteAttachmentRefs(note.content, path, newPath)
-      if (next !== note.content) updateNote(note.id, { content: next })
-    }
-  }
-
-  const onFolderDragOver = (e: React.DragEvent, folderId: string) => {
-    if (!draggedItemRef.current) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    if (dragOverTarget !== folderId) setDragOverTarget(folderId)
-  }
-  const onFolderDrop = (e: React.DragEvent, folderId: string) => {
-    e.preventDefault()
-    const item = draggedItemRef.current
-    if (item?.kind === 'note') moveNoteToFolder(item.id, folderId)
-    else if (item?.kind === 'attachment') void moveAttachmentToFolder(item.path, folderId)
-    endDrag()
-  }
-  const onRootDragOver = (e: React.DragEvent) => {
-    if (!draggedItemRef.current) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    if (dragOverTarget !== '__root__') setDragOverTarget('__root__')
-  }
-  const onRootDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    const item = draggedItemRef.current
-    if (item?.kind === 'note') moveNoteToFolder(item.id, null)
-    else if (item?.kind === 'attachment') void moveAttachmentToFolder(item.path, null)
-    endDrag()
-  }
-
-  // ── Attachment-as-file render helpers ────────────────────────────────────
-  // Attachments live in real Folder entities now (materialised on save / pull
-  // via folderStore.ensureFolderPath). Inside any FolderItem we render the
-  // matching attachments alongside the folder's notes.
+  // ── Attachment helpers ─────────────────────────────────────────────────
+  // Attachments live in real Folder entities now (materialised on save /
+  // pull via folderStore.ensureFolderPath). Inside any FolderItem we
+  // render the matching attachments alongside the folder's notes.
 
   const openAttachment = async (path: string) => {
     const url = await getAttachmentUrl(path)
@@ -239,6 +156,25 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     }
     return out
   }, [attachmentMeta])
+
+  // ── Drag & drop ───────────────────────────────────────────────────────
+  // All begin/over/drop/end handlers + the dragOverTarget state come from
+  // the useTreeDragDrop hook, which also owns the cross-cutting logic of
+  // moving an attachment (rename IDB key + rewrite refs across notes).
+  const {
+    dragOverTarget,
+    beginNoteDrag,
+    beginAttachmentDrag,
+    endDrag,
+    onFolderDragOver,
+    onFolderDragLeave,
+    onFolderDrop,
+    onRootDragOver,
+    onRootDragLeave,
+    onRootDrop,
+  } = useTreeDragDrop({
+    getFolderRepoPath: (id) => folderRepoPathById.get(id),
+  })
 
   const AttachmentItem = ({ m }: { m: AttachmentMeta }) => (
     <div
@@ -317,7 +253,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
           onClick={() => setActiveFolder(folder.id)}
           onContextMenu={e => onRightClick(e, 'folder', folder.id)}
           onDragOver={e => onFolderDragOver(e, folder.id)}
-          onDragLeave={() => { if (dragOverTarget === folder.id) setDragOverTarget(null) }}
+          onDragLeave={() => onFolderDragLeave(folder.id)}
           onDrop={e => onFolderDrop(e, folder.id)}
         >
           <button
@@ -495,7 +431,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
           dragOverTarget === '__root__' ? 'outline outline-2 outline-obsidianAccentPurple' : ''
         }`}
         onDragOver={onRootDragOver}
-        onDragLeave={() => { if (dragOverTarget === '__root__') setDragOverTarget(null) }}
+        onDragLeave={onRootDragLeave}
         onDrop={onRootDrop}
       >
         <p className="text-sm">No notes yet</p>
@@ -520,10 +456,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     <div
       className={`min-h-full ${rootHighlighted ? 'outline outline-2 outline-obsidianAccentPurple rounded' : ''}`}
       onDragOver={onRootDragOver}
-      onDragLeave={(e) => {
-        // Only clear when leaving the wrapper itself, not when crossing children.
-        if (e.currentTarget === e.target && dragOverTarget === '__root__') setDragOverTarget(null)
-      }}
+      onDragLeave={onRootDragLeave}
       onDrop={onRootDrop}
     >
       {visibleRootFolders.map(folder => (
