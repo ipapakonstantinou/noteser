@@ -279,11 +279,11 @@
     {
       "id": "20260519T154351-l4f9",
       "brief": "Refactor: extract Settings primitives. SettingsModal.tsx has inline `<Section>`, `<Field>`, dropdown + checkbox + draft-input JSX duplicated across fields. Lift into `src/components/modals/settings/` as `Section`, `Field`, `SettingsSelect`, `SettingsCheckbox`, `SettingsTextInput` (with built-in normalise-on-blur). Makes future settings additions one-liners.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T15:43:51Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T16:00:00Z",
+      "completed_at": "2026-05-19T16:09:00Z",
+      "result": "Six primitives in src/components/modals/settings/: Section, Field, SettingsSelect (typed-generic select), SettingsCheckbox, SettingsTextInput (built-in draft + commit on blur/Enter + Escape-revert + optional normalize), SettingsFooter (Reset/Apply row). SettingsModal shrank 126→91 lines. AttachmentsSection shrank 129→97 lines. 18 new tests, 348 total. Pre-existing Escape-stale-closure quirk preserved (separate fix).",
       "error": null,
       "source": "telegram"
     },
@@ -292,6 +292,28 @@
       "brief": "Reveal-in-tree: clicking a note in Recent (or any non-default view) should also scroll/highlight the note's row in the folder tree so the user can see where it lives. Likely: setActiveFolder(note.folderId), expand its ancestors, scrollIntoView the row, brief flash highlight.",
       "status": "pending",
       "created_at": "2026-05-19T15:58:58Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T160841-p8j3",
+      "brief": "Drag-drop bug: UI blanks during attachment move. User reports the sidebar becomes blank / unstable while dragging an attachment to a different folder. Suspect cause: many simultaneous updateNote calls (one per rewritten ref) trigger a render storm; possible secondary causes are race between moveAttachment's IDB ops and the attachmentMeta reload effect.",
+      "status": "pending",
+      "created_at": "2026-05-19T16:08:41Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T160842-q9k4",
+      "brief": "Drop-between-rows reorder: dragging an item to a position BELOW a folder (rather than ON it) should reorder siblings in that position. Today we only support drop-onto-folder (move into). Need a between-rows hit zone, a different highlight (horizontal line), and persistence of the new order. Applies to notes, folders, and attachments.",
+      "status": "pending",
+      "created_at": "2026-05-19T16:08:42Z",
       "started_at": null,
       "completed_at": null,
       "result": null,
@@ -312,11 +334,11 @@
     {
       "id": "20260519T154352-m5g0",
       "brief": "Refactor: centralise noteser-* storage keys. Today the persist `name` literals are scattered across every store + attachments.ts (with two: prefix + tombstones key). Put them all in `src/utils/storageKeys.ts` as a STORAGE_KEYS object, import everywhere. Renames become one-line; typos become compile errors instead of silently breaking reads.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T15:43:52Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T16:00:00Z",
+      "completed_at": "2026-05-19T16:07:00Z",
+      "result": "src/utils/storageKeys.ts exports STORAGE_KEYS (with `as const` for literal types) covering all 9 noteser-* keys. Updated 10 consumers: 7 stores, repoStorage.ts (per-repo derived keys still build off STORAGE_KEYS), attachments.ts, page.tsx (migrate path). String values byte-for-byte identical — existing user data unaffected.",
       "error": null,
       "source": "telegram"
     }

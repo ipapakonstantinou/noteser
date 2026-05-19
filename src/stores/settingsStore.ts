@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { STORAGE_KEYS } from '@/utils/storageKeys'
 
 export type FolderSortMode = 'alphabetical' | 'modified' | 'created' | 'manual'
 export type TaskListDensity = 'compact' | 'comfortable'
@@ -39,6 +40,6 @@ export const useSettingsStore = create<SettingsState>()(
       setAttachmentsFolder: (attachmentsFolder) => set({ attachmentsFolder }),
       reset: () => set(DEFAULTS),
     }),
-    { name: 'noteser-settings' }
+    { name: STORAGE_KEYS.settings }
   )
 )

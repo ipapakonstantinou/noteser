@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { ContextMenuState, ModalState } from '@/types'
+import { STORAGE_KEYS } from '@/utils/storageKeys'
 
 interface UIState {
   // Sidebar
@@ -111,7 +112,7 @@ export const useUIStore = create<UIState>()(
       clearRenameRequest: () => set({ renameRequest: null }),
     }),
     {
-      name: 'noteser-ui',
+      name: STORAGE_KEYS.ui,
       partialize: (state) => ({
         sidebarCollapsed: state.sidebarCollapsed,
         sidebarWidth: state.sidebarWidth,

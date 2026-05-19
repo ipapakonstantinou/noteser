@@ -9,6 +9,7 @@ import {
   permanentlyDelete,
   emptyTrash as emptyTrashItems,
 } from '@/utils/softDelete'
+import { STORAGE_KEYS } from '@/utils/storageKeys'
 
 interface NoteState {
   notes: Note[]
@@ -202,7 +203,7 @@ export const useNoteStore = create<NoteState>()(
           .slice(0, limit)
     }),
     {
-      name: 'noteser-notes',
+      name: STORAGE_KEYS.notes,
       storage: idbStorage,
       version: 2,
       migrate: (persistedState: unknown, version: number) => {

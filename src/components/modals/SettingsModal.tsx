@@ -4,6 +4,13 @@ import { useUIStore, useSettingsStore } from '@/stores'
 import type { FolderSortMode, TaskListDensity } from '@/stores'
 import { Modal } from '@/components/ui'
 import { AttachmentsSection } from './AttachmentsSection'
+import {
+  Section,
+  Field,
+  SettingsSelect,
+  SettingsCheckbox,
+  SettingsFooter,
+} from './settings'
 
 export const SettingsModal = () => {
   const { modal, closeModal } = useUIStore()
@@ -25,26 +32,24 @@ export const SettingsModal = () => {
             label="Sort notes within folders"
             description="How notes are ordered in the sidebar. Manual = insertion order (current behavior)."
           >
-            <select
+            <SettingsSelect<FolderSortMode>
               value={folderSortMode}
-              onChange={(e) => setFolderSortMode(e.target.value as FolderSortMode)}
-              className="bg-obsidianDarkGray border border-obsidianBorder rounded px-2 py-1 text-sm text-obsidianText focus:outline-none focus:border-obsidianAccentPurple"
-            >
-              <option value="alphabetical">Alphabetical (A → Z)</option>
-              <option value="modified">Last modified (newest first)</option>
-              <option value="created">Date created (newest first)</option>
-              <option value="manual">Manual (insertion order)</option>
-            </select>
+              onChange={setFolderSortMode}
+              options={[
+                { value: 'alphabetical', label: 'Alphabetical (A → Z)' },
+                { value: 'modified', label: 'Last modified (newest first)' },
+                { value: 'created', label: 'Date created (newest first)' },
+                { value: 'manual', label: 'Manual (insertion order)' },
+              ]}
+            />
           </Field>
           <Field
             label="Show hidden folders"
             description="Folders whose name starts with a dot (`.obsidian`, `.github`, …). Turn off to suppress them from the sidebar."
           >
-            <input
-              type="checkbox"
+            <SettingsCheckbox
               checked={showHiddenFolders}
-              onChange={(e) => setShowHiddenFolders(e.target.checked)}
-              className="h-4 w-4 accent-obsidianAccentPurple cursor-pointer"
+              onChange={setShowHiddenFolders}
             />
           </Field>
         </Section>
@@ -54,14 +59,14 @@ export const SettingsModal = () => {
             label="Task list density"
             description='Spacing inside `tasks` query blocks. "Comfortable" matches Obsidian; "Compact" is the legacy noteser default.'
           >
-            <select
+            <SettingsSelect<TaskListDensity>
               value={taskListDensity}
-              onChange={(e) => setTaskListDensity(e.target.value as TaskListDensity)}
-              className="bg-obsidianDarkGray border border-obsidianBorder rounded px-2 py-1 text-sm text-obsidianText focus:outline-none focus:border-obsidianAccentPurple"
-            >
-              <option value="compact">Compact</option>
-              <option value="comfortable">Comfortable</option>
-            </select>
+              onChange={setTaskListDensity}
+              options={[
+                { value: 'compact', label: 'Compact' },
+                { value: 'comfortable', label: 'Comfortable' },
+              ]}
+            />
           </Field>
         </Section>
 
@@ -69,57 +74,18 @@ export const SettingsModal = () => {
           <AttachmentsSection />
         </Section>
 
-        <div className="pt-4 border-t border-obsidianBorder flex justify-between items-center gap-2">
-          <button
-            onClick={() => {
-              if (confirm('Reset all settings to defaults?')) reset()
-            }}
-            className="text-sm px-3 py-1.5 rounded border border-obsidianBorder text-obsidianSecondaryText hover:text-obsidianText hover:bg-obsidianDarkGray"
-          >
-            Reset to defaults
-          </button>
-          <button
-            onClick={() => {
-              // Commit any pending draft inputs (e.g. the attachments folder
-              // field) by blurring whatever input is focused, then close.
-              ;(document.activeElement as HTMLElement | null)?.blur?.()
-              closeModal()
-            }}
-            className="text-sm px-3 py-1.5 rounded bg-obsidianAccentPurple text-white hover:opacity-90"
-          >
-            Apply
-          </button>
-        </div>
+        <SettingsFooter
+          onReset={reset}
+          onApply={() => {
+            // Commit any pending draft inputs (e.g. the attachments folder
+            // field) by blurring whatever input is focused, then close.
+            ;(document.activeElement as HTMLElement | null)?.blur?.()
+            closeModal()
+          }}
+        />
       </div>
     </Modal>
   )
 }
-
-const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <div>
-    <h4 className="text-sm font-medium text-obsidianSecondaryText uppercase tracking-wide mb-3">
-      {title}
-    </h4>
-    <div className="space-y-3">{children}</div>
-  </div>
-)
-
-const Field = ({
-  label,
-  description,
-  children,
-}: {
-  label: string
-  description: string
-  children: React.ReactNode
-}) => (
-  <div className="flex items-start justify-between gap-4">
-    <div className="flex-1 min-w-0">
-      <div className="text-obsidianText text-sm">{label}</div>
-      <div className="text-obsidianSecondaryText text-xs mt-0.5">{description}</div>
-    </div>
-    <div className="flex-shrink-0">{children}</div>
-  </div>
-)
 
 export default SettingsModal

@@ -9,6 +9,7 @@ import {
   type AttachmentMeta,
 } from '@/utils/attachments'
 import { findOrphanAttachments } from '@/utils/attachmentRefs'
+import { SettingsTextInput } from './settings'
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
@@ -26,17 +27,6 @@ export const AttachmentsSection = () => {
   const [meta, setMeta] = useState<AttachmentMeta[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
-  // Draft value so the user can edit freely and we only commit (with
-  // normalisation) on blur. Resets when the persisted setting changes
-  // from elsewhere.
-  const [draft, setDraft] = useState(attachmentsFolderSetting)
-  useEffect(() => { setDraft(attachmentsFolderSetting) }, [attachmentsFolderSetting])
-
-  const commitDraft = () => {
-    const normalised = normalizeAttachmentDir(draft)
-    if (normalised !== attachmentsFolderSetting) setAttachmentsFolder(normalised)
-    setDraft(normalised)
-  }
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -63,6 +53,10 @@ export const AttachmentsSection = () => {
     } finally { setBusy(false) }
   }
 
+  const handleCommit = (normalised: string) => {
+    if (normalised !== attachmentsFolderSetting) setAttachmentsFolder(normalised)
+  }
+
   return (
     <div className="space-y-3">
       <div className="text-xs text-obsidianSecondaryText leading-relaxed">
@@ -73,18 +67,12 @@ export const AttachmentsSection = () => {
 
       <div className="flex items-center gap-2 text-sm">
         <span className="text-obsidianSecondaryText">Folder</span>
-        <input
-          type="text"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commitDraft}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur() }
-            if (e.key === 'Escape') { setDraft(attachmentsFolderSetting); (e.target as HTMLInputElement).blur() }
-          }}
-          spellCheck={false}
+        <SettingsTextInput
+          value={attachmentsFolderSetting}
+          onCommit={handleCommit}
+          normalize={normalizeAttachmentDir}
           placeholder="attachments"
-          className="bg-obsidianDarkGray border border-obsidianBorder rounded px-2 py-1 text-sm text-obsidianText focus:outline-none focus:border-obsidianAccentPurple font-mono"
+          mono
         />
         <span className="text-obsidianSecondaryText">/</span>
       </div>

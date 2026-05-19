@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 import { v4 as uuidv4 } from 'uuid'
 import type { Tag } from '@/types'
 import { TAG_COLORS } from '@/types'
+import { STORAGE_KEYS } from '@/utils/storageKeys'
 
 interface TagState {
   tags: Tag[]
@@ -73,7 +74,7 @@ export const useTagStore = create<TagState>()(
       }
     }),
     {
-      name: 'noteser-tags'
+      name: STORAGE_KEYS.tags
     }
   )
 )

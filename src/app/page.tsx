@@ -18,6 +18,7 @@ import { useUIStore, useWorkspaceStore, useGitHubStore } from '@/stores'
 import { switchVault } from '@/utils/switchVault'
 import { notesKey } from '@/utils/repoStorage'
 import { useNoteStore } from '@/stores/noteStore'
+import { STORAGE_KEYS } from '@/utils/storageKeys'
 
 export default function Home() {
   const hydrated = useHydration()
@@ -116,8 +117,8 @@ function migrateOldData() {
     const oldSidebarState = localStorage.getItem('sidebarCollapsed')
 
     // Check if new stores already have data
-    const newNotesData = localStorage.getItem('noteser-notes')
-    const newFoldersData = localStorage.getItem('noteser-folders')
+    const newNotesData = localStorage.getItem(STORAGE_KEYS.notes)
+    const newFoldersData = localStorage.getItem(STORAGE_KEYS.folders)
 
     if (oldNotes && !newNotesData) {
       // Parse old notes
@@ -139,7 +140,7 @@ function migrateOldData() {
         }))
 
         // Store in new format
-        localStorage.setItem('noteser-notes', JSON.stringify({
+        localStorage.setItem(STORAGE_KEYS.notes, JSON.stringify({
           state: { notes: migratedNotes, selectedNoteId: null },
           version: 2
         }))
@@ -163,7 +164,7 @@ function migrateOldData() {
           order: index
         }))
 
-        localStorage.setItem('noteser-folders', JSON.stringify({
+        localStorage.setItem(STORAGE_KEYS.folders, JSON.stringify({
           state: { folders: migratedFolders, activeFolderId: null, expandedFolders: {} },
           version: 2
         }))
