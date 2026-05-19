@@ -1,7 +1,7 @@
 'use client'
 
 import { useUIStore, useSettingsStore } from '@/stores'
-import type { FolderSortMode, TaskListDensity, AutoSyncInterval } from '@/stores'
+import type { FolderSortMode, TaskListDensity } from '@/stores'
 import { Modal } from '@/components/ui'
 import { AttachmentsSection } from './AttachmentsSection'
 import { DailyNotesSection, TemplatesSection } from './DailyNotesSection'
@@ -10,6 +10,7 @@ import {
   Field,
   SettingsSelect,
   SettingsCheckbox,
+  SettingsTextInput,
   SettingsFooter,
 } from './settings'
 
@@ -99,19 +100,26 @@ export const SettingsModal = () => {
           </Field>
           <Field
             label="Auto-sync every"
-            description="Repeat the sync on this cadence. Off disables periodic syncing — you can still sync manually from the sidebar."
+            description="Minutes between auto-syncs. 0 disables periodic syncing."
           >
-            <SettingsSelect<AutoSyncInterval>
-              value={autoSyncIntervalMinutes}
-              onChange={setAutoSyncIntervalMinutes}
-              options={[
-                { value: 0, label: 'Off' },
-                { value: 5, label: '5 minutes' },
-                { value: 15, label: '15 minutes' },
-                { value: 30, label: '30 minutes' },
-                { value: 60, label: '1 hour' },
-              ]}
-            />
+            <div className="flex items-center gap-2">
+              <SettingsTextInput
+                value={String(autoSyncIntervalMinutes)}
+                onCommit={(raw) => {
+                  const n = parseInt(raw, 10)
+                  const clamped = isNaN(n) || n < 0 ? 0 : Math.min(n, 1440)
+                  setAutoSyncIntervalMinutes(clamped)
+                }}
+                normalize={(raw) => {
+                  const n = parseInt(raw, 10)
+                  const clamped = isNaN(n) || n < 0 ? 0 : Math.min(n, 1440)
+                  return String(clamped)
+                }}
+                placeholder="0"
+                mono
+              />
+              <span className="text-sm text-obsidianMuted">min</span>
+            </div>
           </Field>
         </Section>
 

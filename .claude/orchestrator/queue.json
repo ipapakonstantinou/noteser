@@ -495,6 +495,61 @@
       "result": null,
       "error": null,
       "source": "researcher"
+    },
+    {
+      "id": "20260519T172410-x8c4",
+      "brief": "Replace the auto-sync interval dropdown with a free-form custom-minutes input. Any positive integer is valid; 0 disables. Drops the AutoSyncInterval union type.",
+      "status": "in_progress",
+      "created_at": "2026-05-19T17:24:10Z",
+      "started_at": "2026-05-19T18:15:00Z",
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T172411-w7b3",
+      "brief": "Smart 3-way merge for non-overlapping conflict regions. Currently any divergence (both local + remote changed since lastPushed) fires a manual merge tab. Add: fetch the lastPushed blob from GitHub as the common ancestor, run a proper 3-way merge — if the changes don't overlap (different lines), auto-pick both. Only fall back to the merge editor when there's genuine overlap. Reduces sync friction for the common 'edited two different parts on two devices' case.",
+      "status": "pending",
+      "created_at": "2026-05-19T17:24:11Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T172412-y9d5",
+      "brief": "AI settings + client wrapper. Settings UI for BYO API key + provider (Anthropic/OpenAI/off) + model name. New aiClient.ts exposes runPrompt({ system, messages }) that picks the provider, handles browser-direct headers (anthropic-dangerous-direct-browser-access), and surfaces errors. Foundation for z0e6 + a1f7.",
+      "status": "in_progress",
+      "created_at": "2026-05-19T17:24:12Z",
+      "started_at": "2026-05-19T18:15:00Z",
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T172413-z0e6",
+      "brief": "Note-level AI actions. Right-click menu (and command palette once that exists) for: Summarize note, Extract tasks, Suggest tags, Rewrite for clarity, Translate. Uses aiClient.runPrompt with a per-action system prompt; result either replaces selection, inserts at cursor, or opens a comparison modal. Requires y9d5.",
+      "status": "pending",
+      "created_at": "2026-05-19T17:24:13Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T172414-a1f7",
+      "brief": "Embeddings + semantic search. Index every note via an embedding model (OpenAI text-embedding-3-small or Voyage); store vectors in IDB. New 'find related notes' panel that ranks by cosine similarity to the active note's embedding, and a semantic-search mode in the search modal. Requires y9d5. Re-index on save (debounced).",
+      "status": "pending",
+      "created_at": "2026-05-19T17:24:14Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
     }
   ]
 }

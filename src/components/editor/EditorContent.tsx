@@ -8,6 +8,7 @@ import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism'
 import type { EditorView } from '@codemirror/view'
 import { useUIStore, useNoteStore, useWorkspaceStore } from '@/stores'
 import { renderWikilinks } from '@/utils/wikilinks'
+import { findNoteByTitleOrAlias } from '@/utils/aliases'
 import { toggleTaskLineText, removeTaskPrefixFromLine } from '@/utils/tasks'
 import { CodeMirrorEditor } from './CodeMirrorEditor'
 import { TaskQueryBlock } from './TaskQueryBlock'
@@ -374,7 +375,7 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
   const WikilinkAnchor = ({ href, children }: { href?: string; children?: React.ReactNode }) => {
     if (href?.startsWith('wikilink://')) {
       const title = decodeURIComponent(href.slice('wikilink://'.length))
-      const target = activeNotes.find(n => n.title.toLowerCase() === title.toLowerCase())
+      const target = findNoteByTitleOrAlias(activeNotes, title)
       return (
         <span
           onClick={e => { e.stopPropagation(); if (target) openNote(target.id) }}

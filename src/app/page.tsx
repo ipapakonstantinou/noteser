@@ -34,20 +34,32 @@ export default function Home() {
     if (hydrated) pruneStaleTabs()
   }, [hydrated, pruneStaleTabs])
 
-  // After hydration + prune, if there are still no open tabs but we
-  // remember a last-selected note, reopen it pinned. This makes startup
-  // continue where the user left off even if they closed the tab before
-  // reloading.
+  // After hydration + prune, if there are still no open tabs, restore
+  // *something* useful so the user lands on a note instead of "No note
+  // selected." Preference order:
+  //   1. The previously-active note (`selectedNoteId`) if it still
+  //      exists and isn't soft-deleted.
+  //   2. The most-recently-updated non-deleted note as a fallback —
+  //      covers the case where the previously-selected note got purged
+  //      (trash, sync, etc.) since the last session.
   useEffect(() => {
     if (!hydrated) return
     const ws = useWorkspaceStore.getState()
     const hasOpenTabs = ws.panes.some(p => p.tabs.length > 0)
     if (hasOpenTabs) return
-    const selectedId = useNoteStore.getState().selectedNoteId
-    if (!selectedId) return
-    const note = useNoteStore.getState().notes.find(n => n.id === selectedId && !n.isDeleted)
-    if (!note) return
-    ws.openNote(selectedId, { preview: false })
+    const { notes, selectedNoteId } = useNoteStore.getState()
+    const activeNotes = notes.filter(n => !n.isDeleted)
+    if (activeNotes.length === 0) return
+
+    let target: typeof activeNotes[number] | undefined
+    if (selectedNoteId) {
+      target = activeNotes.find(n => n.id === selectedNoteId)
+    }
+    if (!target) {
+      // Pick the most-recently-updated note as a fallback.
+      target = activeNotes.slice().sort((a, b) => b.updatedAt - a.updatedAt)[0]
+    }
+    if (target) ws.openNote(target.id, { preview: false })
   }, [hydrated])
 
   // After hydration, if a repo is connected but the stores are still pointed

@@ -72,3 +72,4 @@ next-env.d.ts
 /playwright-report/
 /playwright/.cache/
 /blob-report/
+.claude/worktrees/

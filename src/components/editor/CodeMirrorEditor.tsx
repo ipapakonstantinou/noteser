@@ -11,6 +11,7 @@ import { markdownLivePreview } from './markdownLivePreview'
 import { tasksLivePreview } from './tasksLivePreview'
 import { imagesLivePreview } from './imagesLivePreview'
 import { getActiveWikilinkQuery } from '@/utils/wikilinks'
+import { findNoteByTitleOrAlias } from '@/utils/aliases'
 import { toggleTaskLineText } from '@/utils/tasks'
 import { saveAttachment } from '@/utils/attachments'
 import { WikilinkAutocomplete } from './WikilinkAutocomplete'
@@ -219,9 +220,7 @@ export function CodeMirrorEditor({
             const rawTitle = content.slice(openIdx + 2, pos + closeIdx)
             if (!rawTitle.includes('\n') && !rawTitle.includes('[[')) {
               const title = rawTitle.split('|')[0].trim()
-              const note = activeNotesRef.current.find(
-                n => n.title.toLowerCase() === title.toLowerCase()
-              )
+              const note = findNoteByTitleOrAlias(activeNotesRef.current, title)
               if (note) {
                 event.preventDefault()
                 navigateRef.current(note)

@@ -105,54 +105,61 @@ export function serializeNote(note: Note): string {
 }
 
 // ── Parser (Phase 4 pull) ───────────────────────────────────────────────────
-// We only support the YAML subset we ourselves emit: `tags: [a, "b", c]` on a
-// single line. Anything else in the frontmatter is preserved into the body so
-// we don't silently destroy custom user metadata.
+// We only support the YAML subset we ourselves emit / commonly see in
+// Obsidian vaults: `tags: [a, "b", c]` or `aliases: [Short, "Even Shorter"]`
+// on a single line. Anything else in the frontmatter is preserved into the
+// body so we don't silently destroy custom user metadata.
 export interface ParsedNote {
   tags: string[]
+  aliases: string[]
   body: string
+}
+
+// Parse a single-line YAML inline-array field (e.g. `tags: [a, "b", c]`) out
+// of the given frontmatter block. Returns [] when the field is absent or the
+// list is empty. Splits on commas, but ignores commas inside double quotes —
+// good enough for the formats we produce or encounter in real Obsidian vaults.
+function parseInlineArrayField(fmBlock: string, fieldName: string): string[] {
+  const re = new RegExp(`^${fieldName}:\\s*\\[(.*)\\]\\s*$`, 'm')
+  const lineMatch = fmBlock.match(re)
+  if (!lineMatch) return []
+  const inner = lineMatch[1].trim()
+  if (!inner) return []
+  const out: string[] = []
+  let cur = ''
+  let inQuote = false
+  for (let i = 0; i < inner.length; i++) {
+    const c = inner[i]
+    if (c === '"') { inQuote = !inQuote; continue }
+    if (c === ',' && !inQuote) {
+      const t = cur.trim()
+      if (t) out.push(t)
+      cur = ''
+      continue
+    }
+    cur += c
+  }
+  const t = cur.trim()
+  if (t) out.push(t)
+  return out
 }
 
 export function parseNote(raw: string): ParsedNote {
   // No frontmatter — everything is body.
   if (!raw.startsWith('---\n') && !raw.startsWith('---\r\n')) {
-    return { tags: [], body: raw }
+    return { tags: [], aliases: [], body: raw }
   }
   // Find the closing delimiter starting at line 1.
   const endMatch = raw.match(/\n---\r?\n/)
-  if (!endMatch || endMatch.index === undefined) return { tags: [], body: raw }
+  if (!endMatch || endMatch.index === undefined) return { tags: [], aliases: [], body: raw }
 
   const fmBlock = raw.slice(4, endMatch.index)
   const bodyStart = endMatch.index + endMatch[0].length
   const body = raw.slice(bodyStart)
 
-  // Pull the tags line if present. Accept both inline `[a, b]` and our quoted
-  // variant `["a", "b"]`. Unknown fields fall through to body untouched.
-  const tagsLineMatch = fmBlock.match(/^tags:\s*\[(.*)\]\s*$/m)
-  const tags: string[] = []
-  if (tagsLineMatch) {
-    const inner = tagsLineMatch[1].trim()
-    if (inner) {
-      // Split on commas not inside quotes. Simple state-machine; good enough
-      // for the format we produce.
-      let cur = ''
-      let inQuote = false
-      for (let i = 0; i < inner.length; i++) {
-        const c = inner[i]
-        if (c === '"') { inQuote = !inQuote; continue }
-        if (c === ',' && !inQuote) {
-          const t = cur.trim()
-          if (t) tags.push(t)
-          cur = ''
-          continue
-        }
-        cur += c
-      }
-      const t = cur.trim()
-      if (t) tags.push(t)
-    }
-  }
-  return { tags, body }
+  const tags = parseInlineArrayField(fmBlock, 'tags')
+  const aliases = parseInlineArrayField(fmBlock, 'aliases')
+  return { tags, aliases, body }
 }
 
 // ── Pull (Phase 4) ──────────────────────────────────────────────────────────
