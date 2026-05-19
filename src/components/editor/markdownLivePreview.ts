@@ -6,6 +6,7 @@ import { StateField, RangeSetBuilder } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
 import type { EditorState } from '@codemirror/state'
 import type { SyntaxNode } from '@lezer/common'
+import { toggleTaskLineText } from '@/utils/tasks'
 
 /**
  * Live-preview markdown decorations.
@@ -253,8 +254,8 @@ const livePreviewTheme = EditorView.baseTheme({
   },
   '.cm-lp-list': { paddingLeft: '4px' },
   '.cm-lp-list-mark': { color: '#8b6dd9', fontWeight: '600' },
-  '.cm-lp-task-unchecked': { color: '#8b6dd9' },
-  '.cm-lp-task-checked':   { color: '#8b6dd9' },
+  '.cm-lp-task-unchecked': { color: '#8b6dd9', cursor: 'pointer' },
+  '.cm-lp-task-checked':   { color: '#8b6dd9', cursor: 'pointer' },
   '.cm-lp-task-done': { textDecoration: 'line-through', opacity: '0.55' },
   '.cm-lp-tag': {
     color: '#8b6dd9',
@@ -265,4 +266,28 @@ const livePreviewTheme = EditorView.baseTheme({
   },
 })
 
-export const markdownLivePreview = [markdownLivePreviewField, livePreviewTheme]
+// Click on a `[ ]` / `[x]` marker in the editor → toggle the task and stamp/
+// strip the ✅ date. Matches Obsidian's live-preview behavior.
+const taskMarkerClickHandler = EditorView.domEventHandlers({
+  mousedown(event, view) {
+    if (event.button !== 0) return false
+    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false
+    const target = event.target as HTMLElement | null
+    const marker = target?.closest?.('.cm-lp-task-unchecked, .cm-lp-task-checked') as HTMLElement | null
+    if (!marker) return false
+    let pos: number
+    try {
+      pos = view.posAtDOM(marker)
+    } catch {
+      return false
+    }
+    const line = view.state.doc.lineAt(pos)
+    const newLine = toggleTaskLineText(line.text)
+    if (newLine == null || newLine === line.text) return false
+    view.dispatch({ changes: { from: line.from, to: line.to, insert: newLine } })
+    event.preventDefault()
+    return true
+  },
+})
+
+export const markdownLivePreview = [markdownLivePreviewField, livePreviewTheme, taskMarkerClickHandler]
