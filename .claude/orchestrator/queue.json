@@ -125,11 +125,11 @@
     {
       "id": "20260519T095123-c4f8",
       "brief": "Dedicated GitHub view in the sidebar — surface sync status, current repo, last commit, conflicts pending, pull/push buttons in one place (instead of buried in modals). Should hang off a new ribbon icon and reuse useGitHubStore + useGitHubSync.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T09:51:23Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T17:15:00Z",
+      "completed_at": "2026-05-19T17:33:00Z",
+      "result": "New CloudArrowUpIcon ribbon entry (only shown when GitHub is connected) switches currentView to 'github'. New GitHubView component shows account info, vault repo (with GitHub link to the branch), last sync time + short commit SHA (with link to the commit), pending merge-conflict list with click-to-focus, Sync-now button reusing useGitHubSync.runSync, Change-vault-repo trigger, and a Disconnect action behind a confirm. Pending-conflicts badge on the ribbon icon turns red when any merge tabs are open. Uses a 60s useTick to keep relative-time labels honest.",
       "error": null,
       "source": "telegram"
     },
@@ -321,6 +321,28 @@
       "source": "telegram"
     },
     {
+      "id": "20260519T172700-t3d4",
+      "brief": "Settings modal needs to be scrollable. With Files & Folders + Tasks + Attachments + Daily notes + Templates + GitHub sync sections now stacked, the content overflows the modal's height and the user can't reach the lower sections. Add overflow-y-auto + max-height to the modal body (or the Settings content wrapper).",
+      "status": "done",
+      "created_at": "2026-05-19T17:27:00Z",
+      "started_at": "2026-05-19T17:32:00Z",
+      "completed_at": "2026-05-19T17:33:00Z",
+      "result": "Fixed Modal.tsx: wrapper is now a flex column capped at max-h-[90vh] with the header pinned (flex-shrink-0) and the body scrollable (overflow-y-auto flex-1 min-h-0). Applies to every modal globally, not just Settings — keeps tall content within the viewport across the board.",
+      "error": null,
+      "source": "telegram"
+    },
+    {
+      "id": "20260519T172701-u4e5",
+      "brief": "Bug: deleting the attachments folder and syncing brings it back. The folder is soft-deleted (Folder.isDeleted=true) but the IDB attachments inside it aren't touched. On next sync, ensureFolderPath (which skips deleted folders) creates a fresh duplicate folder entity, and pull keeps the remote files alive. Need: folder deletion cascades — for any attachment whose path is under the folder's repo path, tombstone it so the next push deletes it remotely; and for child notes, soft-delete them too. Separate from the per-attachment orphan delete (which works correctly via tombstones since p8j3/c65e08b).",
+      "status": "pending",
+      "created_at": "2026-05-19T17:27:01Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
+    },
+    {
       "id": "20260519T160841-p8j3",
       "brief": "Drag-drop bug: UI blanks during attachment move. User reports the sidebar becomes blank / unstable while dragging an attachment to a different folder. Suspect cause: many simultaneous updateNote calls (one per rewritten ref) trigger a render storm; possible secondary causes are race between moveAttachment's IDB ops and the attachmentMeta reload effect.",
       "status": "done",
@@ -363,6 +385,116 @@
       "result": "src/utils/storageKeys.ts exports STORAGE_KEYS (with `as const` for literal types) covering all 9 noteser-* keys. Updated 10 consumers: 7 stores, repoStorage.ts (per-repo derived keys still build off STORAGE_KEYS), attachments.ts, page.tsx (migrate path). String values byte-for-byte identical — existing user data unaffected.",
       "error": null,
       "source": "telegram"
+    },
+    {
+      "id": "20260519T173500-v5h7",
+      "brief": "Tasks metadata milestone (bundled): inline emoji syntax for due / scheduled / start dates and priority markers (⏫🔼🔽⏬). Extends Task type, taskQuery parser, and rendered preview. Foundation for v5j8 (task modal) and v6k9 (recurring tasks). Reference: Obsidian Tasks plugin Emoji Format.",
+      "status": "pending",
+      "created_at": "2026-05-19T17:35:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "researcher"
+    },
+    {
+      "id": "20260519T173501-w6l0",
+      "brief": "Task create/edit modal — dedicated modal (Cmd+Shift+T?) with date pickers, priority dropdown, recurrence input, description field. Writes back the emoji-format syntax to the current line. Builds on v5h7's data model.",
+      "status": "pending",
+      "created_at": "2026-05-19T17:35:01Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "researcher"
+    },
+    {
+      "id": "20260519T173502-x7m1",
+      "brief": "Recurring tasks — 🔁 every week / 🔁 every month on the 1st syntax. Toggling a recurring task as done creates the next instance one period out and stamps the current one ✅. Builds on v5h7.",
+      "status": "pending",
+      "created_at": "2026-05-19T17:35:02Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "researcher"
+    },
+    {
+      "id": "20260519T173503-y8n2",
+      "brief": "Backlinks panel — sidebar tab listing every note that links to the currently open one (via [[Title]] or unlinked text mentions). In-memory index over notes, useMemo refresh on save. Obsidian's defining feature.",
+      "status": "pending",
+      "created_at": "2026-05-19T17:35:03Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "researcher"
+    },
+    {
+      "id": "20260519T173504-z9o3",
+      "brief": "Note embeds / transclusion ![[Title]] — render another note's full content inline in both live-preview and rendered-preview. Resolves from the note store at render time; depth-cap for circular embeds.",
+      "status": "pending",
+      "created_at": "2026-05-19T17:35:04Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "researcher"
+    },
+    {
+      "id": "20260519T173505-a0p4",
+      "brief": "YAML frontmatter properties UI — render --- … --- as a structured key-value table above the note body (date / number / checkbox / list). Must not corrupt the tags: field GitHub sync already round-trips.",
+      "status": "pending",
+      "created_at": "2026-05-19T17:35:05Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "researcher"
+    },
+    {
+      "id": "20260519T173506-b1q5",
+      "brief": "Note aliases — aliases: [Short Name] frontmatter key lets [[Short Name]] resolve to the note. Extend wikilinks.ts autocomplete + resolver. Small scope.",
+      "status": "pending",
+      "created_at": "2026-05-19T17:35:06Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "researcher"
+    },
+    {
+      "id": "20260519T173507-c2r6",
+      "brief": "Outline / heading navigator — sidebar tab listing H1–H6 headings of the active note, clickable to jump to that line. Parse headings from current note content reactively.",
+      "status": "pending",
+      "created_at": "2026-05-19T17:35:07Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "researcher"
+    },
+    {
+      "id": "20260519T173508-d3s7",
+      "brief": "Task query: extend group by / sort by — group by tag (already have folder/filename/status), sort by due / priority / created. Builds on v5h7.",
+      "status": "pending",
+      "created_at": "2026-05-19T17:35:08Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "researcher"
+    },
+    {
+      "id": "20260519T173509-e4t8",
+      "brief": "Block-level linking [[Note#^block-id]] — link to a specific paragraph / list item with an auto-generated block ID anchor. Touches sync (block IDs modify note content on link creation).",
+      "status": "pending",
+      "created_at": "2026-05-19T17:35:09Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "researcher"
     }
   ]
 }

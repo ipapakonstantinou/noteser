@@ -7,9 +7,10 @@ import {
   TagIcon,
   TrashIcon,
   CalendarDaysIcon,
+  CloudArrowUpIcon,
   Cog6ToothIcon,
 } from '@heroicons/react/24/outline'
-import { useUIStore, useNoteStore } from '@/stores'
+import { useUIStore, useNoteStore, useGitHubStore, useWorkspaceStore } from '@/stores'
 import { useHydration } from '@/hooks'
 
 // Obsidian-style far-left ribbon. Always visible. Holds Search + nav icons
@@ -26,6 +27,15 @@ export const Ribbon = () => {
   // matches the first client render — once hydrated, the badge shows.
   const trashCount = hydrated ? getDeletedNotes().length : 0
   const recentCount = hydrated ? getRecentNotes(99).length : 0
+  // GitHub conflict count drives the badge on the GitHub nav icon. Same
+  // hydration dance: the workspace store is persisted, so SSR sees zero.
+  const conflictCount = useWorkspaceStore(s => {
+    if (!hydrated) return 0
+    let n = 0
+    for (const pane of s.panes) for (const t of pane.tabs) if (t.kind === 'merge-conflict') n++
+    return n
+  })
+  const githubConnected = useGitHubStore(s => hydrated && !!s.token)
 
   return (
     <div className="h-full w-[44px] flex flex-col items-center gap-1 py-2 bg-obsidianBlack border-r border-obsidianBorder">
@@ -67,6 +77,22 @@ export const Ribbon = () => {
       >
         <TrashIcon className="w-5 h-5" />
       </RibbonNavButton>
+      {/* GitHub — shown only after the user has connected. The badge
+          mirrors any pending merge-conflict tabs. */}
+      {githubConnected && (
+        <RibbonNavButton
+          active={currentView === 'github'}
+          onClick={() => setCurrentView('github')}
+          title={`GitHub${conflictCount ? ` — ${conflictCount} conflict${conflictCount === 1 ? '' : 's'}` : ''}`}
+        >
+          <div className="relative">
+            <CloudArrowUpIcon className="w-5 h-5" />
+            {conflictCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500" />
+            )}
+          </div>
+        </RibbonNavButton>
+      )}
 
       {/* Settings — pinned to the bottom of the ribbon. */}
       <div className="mt-auto">

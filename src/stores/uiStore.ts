@@ -22,7 +22,7 @@ interface UIState {
   modal: ModalState
 
   // View
-  currentView: 'notes' | 'trash' | 'tags' | 'templates' | 'recent' | 'calendar'
+  currentView: 'notes' | 'trash' | 'tags' | 'templates' | 'recent' | 'calendar' | 'github'
 
   // Inline-rename request from the context menu. FolderTree watches this
   // and puts the matching EditableText into edit mode, then clears it.
