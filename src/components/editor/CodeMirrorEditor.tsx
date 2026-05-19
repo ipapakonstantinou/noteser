@@ -11,6 +11,7 @@ import { markdownLivePreview } from './markdownLivePreview'
 import { tasksLivePreview } from './tasksLivePreview'
 import { getActiveWikilinkQuery } from '@/utils/wikilinks'
 import { toggleTaskLineText } from '@/utils/tasks'
+import { saveAttachment } from '@/utils/attachments'
 import { WikilinkAutocomplete } from './WikilinkAutocomplete'
 import type { Note } from '@/types'
 
@@ -27,6 +28,31 @@ interface CodeMirrorEditorProps {
   onSave: (content: string) => void
   onWikilinkNavigate: (note: Note) => void
   viewRef?: React.MutableRefObject<EditorView | null>
+}
+
+// Save dropped/pasted images to IndexedDB and splice markdown image
+// references into the document at `pos`. Async on purpose — the drop/paste
+// event handler kicks this off and returns immediately so CodeMirror doesn't
+// block on the IDB write.
+async function insertImagesAt(view: EditorView, files: File[], pos: number): Promise<void> {
+  const refs: string[] = []
+  for (const file of files) {
+    try {
+      const path = await saveAttachment(file, file.name || 'image.png')
+      const alt = (file.name || 'image').replace(/\.[^.]+$/, '')
+      refs.push(`![${alt}](${path})`)
+    } catch (err) {
+      console.error('Failed to save dropped attachment', err)
+    }
+  }
+  if (refs.length === 0) return
+  // Join with blank lines so each image renders as its own block. Anchor the
+  // caret immediately after the last reference.
+  const insert = refs.join('\n\n')
+  view.dispatch({
+    changes: { from: pos, to: pos, insert },
+    selection: { anchor: pos + insert.length },
+  })
 }
 
 const obsidianTheme = EditorView.theme({
@@ -128,6 +154,37 @@ export function CodeMirrorEditor({
     },
     ])),
     EditorView.domEventHandlers({
+      dragover(event) {
+        // Allow drop only when files are being dragged. Without preventDefault
+        // on dragover, the browser refuses the subsequent drop event.
+        if (event.dataTransfer?.types?.includes('Files')) {
+          event.preventDefault()
+        }
+        return false
+      },
+      drop(event, view) {
+        const files = Array.from(event.dataTransfer?.files ?? [])
+        const images = files.filter(f => f.type.startsWith('image/'))
+        if (images.length === 0) return false
+        event.preventDefault()
+        const dropPos = view.posAtCoords({ x: event.clientX, y: event.clientY })
+          ?? view.state.selection.main.head
+        insertImagesAt(view, images, dropPos)
+        return true
+      },
+      paste(event, view) {
+        const files = Array.from(event.clipboardData?.files ?? [])
+        const images = files.filter(f => f.type.startsWith('image/'))
+        // Skip if no images, or if there's text alongside (rich paste — let
+        // CodeMirror handle that path so user keeps the text).
+        if (images.length === 0) return false
+        const hasText = (event.clipboardData?.getData('text/plain') ?? '') !== ''
+        if (hasText) return false
+        event.preventDefault()
+        const head = view.state.selection.main.head
+        insertImagesAt(view, images, head)
+        return true
+      },
       mousedown(event, view) {
         const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
         if (pos == null) return false
