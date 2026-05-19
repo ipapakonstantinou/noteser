@@ -198,3 +198,82 @@ describe('markdownLivePreview StateField', () => {
     expect(hasDirectDecoSet).toBe(true)
   })
 })
+
+// ── Task-marker click handler ────────────────────────────────────────────────
+//
+// Mounts a real EditorView in jsdom and clicks the task-marker span to
+// exercise the mousedown handler end-to-end. Date logic is fixed via
+// jest.useFakeTimers so the ✅ stamp is deterministic.
+
+describe('task marker click handler', () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date(2026, 4, 18, 12, 0)) // 2026-05-18
+  })
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  function mountView(doc: string): { view: EditorView; parent: HTMLElement } {
+    const parent = document.createElement('div')
+    document.body.appendChild(parent)
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc,
+        extensions: [markdown({ base: markdownLanguage }), markdownLivePreview],
+      }),
+    })
+    return { view, parent }
+  }
+
+  function clickMarker(parent: HTMLElement, selector: string): boolean {
+    const marker = parent.querySelector(selector) as HTMLElement | null
+    if (!marker) return false
+    const evt = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 })
+    marker.dispatchEvent(evt)
+    return true
+  }
+
+  test('clicking an unchecked `[ ]` marker checks it and stamps today\'s date', () => {
+    const { view, parent } = mountView('- [ ] buy milk')
+    const clicked = clickMarker(parent, '.cm-lp-task-unchecked')
+    expect(clicked).toBe(true)
+    expect(view.state.doc.toString()).toBe('- [x] buy milk ✅ 2026-05-18')
+    view.destroy()
+    parent.remove()
+  })
+
+  test('clicking a checked `[x]` marker unchecks it and strips the ✅ date', () => {
+    const { view, parent } = mountView('- [x] buy milk ✅ 2026-05-18')
+    const clicked = clickMarker(parent, '.cm-lp-task-checked')
+    expect(clicked).toBe(true)
+    expect(view.state.doc.toString()).toBe('- [ ] buy milk')
+    view.destroy()
+    parent.remove()
+  })
+
+  test('clicking outside a task marker does not modify the document', () => {
+    const original = 'just a plain line'
+    const { view, parent } = mountView(original)
+    // Click on the line wrapper, not a task marker
+    const someLine = parent.querySelector('.cm-line') as HTMLElement | null
+    expect(someLine).not.toBeNull()
+    const evt = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 })
+    someLine!.dispatchEvent(evt)
+    expect(view.state.doc.toString()).toBe(original)
+    view.destroy()
+    parent.remove()
+  })
+
+  test('click with Shift modifier is ignored (so range selection still works)', () => {
+    const { view, parent } = mountView('- [ ] foo')
+    const marker = parent.querySelector('.cm-lp-task-unchecked') as HTMLElement | null
+    expect(marker).not.toBeNull()
+    const evt = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, shiftKey: true })
+    marker!.dispatchEvent(evt)
+    // Doc unchanged because the handler bails on modifier clicks
+    expect(view.state.doc.toString()).toBe('- [ ] foo')
+    view.destroy()
+    parent.remove()
+  })
+})
