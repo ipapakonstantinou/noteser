@@ -3,11 +3,12 @@
 import { useUIStore, useNoteStore, useFolderStore } from '@/stores'
 import { Modal, Button } from '@/components/ui'
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline'
+import { cascadeDeleteFolder } from '@/utils/cascadeDelete'
 
 export const DeleteConfirmModal = () => {
   const { modal, closeModal } = useUIStore()
   const { deleteNote, permanentlyDeleteNote, getNoteById } = useNoteStore()
-  const { deleteFolder, permanentlyDeleteFolder, getFolderById } = useFolderStore()
+  const { permanentlyDeleteFolder, getFolderById } = useFolderStore()
   const { notes } = useNoteStore()
 
   const isOpen = modal.type === 'delete'
@@ -33,17 +34,17 @@ export const DeleteConfirmModal = () => {
         deleteNote(data.id)
       }
     } else {
-      // Move notes out of folder before deleting
-      if (notesInFolder.length > 0) {
-        const { updateNote } = useNoteStore.getState()
-        notesInFolder.forEach(note => {
-          updateNote(note.id, { folderId: null })
-        })
-      }
       if (isPermanent) {
+        // Permanent path stays surgical — just remove the folder entity.
+        // (Permanent deletion of a folder + its attachments is handled
+        // by Settings → Attachments → Clean up orphans for the binaries.)
         permanentlyDeleteFolder(data.id)
       } else {
-        deleteFolder(data.id)
+        // Soft delete: cascade. Tombstones attachments inside the folder
+        // so the next sync push removes them remotely (otherwise pull
+        // would re-derive the folder and resurrect it), cascade-deletes
+        // descendant folders, and moves any contained notes to root.
+        cascadeDeleteFolder(data.id)
       }
     }
     closeModal()
