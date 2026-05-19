@@ -219,14 +219,19 @@ export function CodeMirrorEditor({
         if (cbMatch) {
           const cbStart = line.from + cbMatch[1].length // index of '['
           const cbEnd   = cbStart + 3                   // index after ']'
-          // Only toggle if the click landed on or near the [ ] glyph
+          // Only toggle if the click landed on or near the [ ] glyph. We
+          // route through toggleTaskLineText (rather than a single-char
+          // swap) so recurring tasks get the ✅-stamp + new-instance
+          // behavior on click.
           if (pos >= cbStart && pos <= cbEnd) {
-            const isChecked = cbMatch[2].toLowerCase() === 'x'
-            view.dispatch({
-              changes: { from: cbStart + 1, to: cbStart + 2, insert: isChecked ? ' ' : 'x' },
-            })
-            event.preventDefault()
-            return true
+            const newLine = toggleTaskLineText(line.text)
+            if (newLine != null && newLine !== line.text) {
+              view.dispatch({
+                changes: { from: line.from, to: line.to, insert: newLine },
+              })
+              event.preventDefault()
+              return true
+            }
           }
         }
 
