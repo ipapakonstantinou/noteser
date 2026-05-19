@@ -25,6 +25,7 @@ import {
   type AttachmentMeta,
 } from '@/utils/attachments'
 import { ATTACHMENTS_CHANGED_EVENT } from '@/utils/events'
+import { revealNote } from '@/utils/revealNote'
 
 interface FolderTreeProps {
   onRightClick: (e: React.MouseEvent, type: 'note' | 'folder', id: string) => void
@@ -95,20 +96,28 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   // Single click = open as preview (italic, replaceable). Double click =
   // open as pinned. We delay the single-click handler so a quick second
   // click cancels it (matches VS Code's explorer behaviour).
+  //
+  // When the click originates from a non-tree view (Recent/Tags/etc.) we
+  // also call revealNote so the user sees where the note lives. Reveal
+  // switches the current view to 'notes' as a side-effect.
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const handleNoteClick = (id: string) => {
+    const fromNonTreeView = currentView !== 'notes' && currentView !== 'trash'
     if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
     clickTimerRef.current = setTimeout(() => {
       openNote(id, { preview: true })
+      if (fromNonTreeView) revealNote(id)
       clickTimerRef.current = null
     }, 200)
   }
   const handleNoteDoubleClick = (id: string) => {
+    const fromNonTreeView = currentView !== 'notes' && currentView !== 'trash'
     if (clickTimerRef.current) {
       clearTimeout(clickTimerRef.current)
       clickTimerRef.current = null
     }
     openNote(id, { preview: false })
+    if (fromNonTreeView) revealNote(id)
   }
 
   // ── Attachment helpers ─────────────────────────────────────────────────

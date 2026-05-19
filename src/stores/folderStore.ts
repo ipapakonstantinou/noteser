@@ -6,6 +6,9 @@ import { idbStorage } from '@/utils/idbStorage'
 import { sanitizeFilename } from '@/utils/export'
 import { softDelete, restoreSoftDeleted, permanentlyDelete } from '@/utils/softDelete'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
+// folderStore doesn't read settings directly today — the trash-mode
+// dispatch lives in DeleteConfirmModal so the folder deletion path can
+// pick between cascadeDeleteFolder (soft) and permanentlyDeleteFolder.
 
 interface FolderState {
   folders: Folder[]
@@ -20,6 +23,7 @@ interface FolderState {
   restoreFolder: (id: string) => void
   setActiveFolder: (id: string | null) => void
   toggleFolderExpanded: (id: string) => void
+  setFolderExpanded: (id: string, expanded: boolean) => void
   setAllFoldersExpanded: (expanded: boolean) => void
   reorderFolders: (folders: Folder[]) => void
   // Walks a repo path (e.g. ["images"]) creating any missing folder
@@ -114,6 +118,21 @@ export const useFolderStore = create<FolderState>()(
             [id]: !state.expandedFolders[id]
           }
         }))
+      },
+
+      // Directly set a folder's expanded flag. Distinct from toggle so
+      // callers (e.g. revealNote walking up ancestors) can ensure a
+      // folder is expanded without flipping an already-expanded one.
+      setFolderExpanded: (id, expanded) => {
+        set(state => {
+          if (!!state.expandedFolders[id] === expanded) return state
+          return {
+            expandedFolders: {
+              ...state.expandedFolders,
+              [id]: expanded
+            }
+          }
+        })
       },
 
       // Bulk action used by the folder-tree toolbar. Expanded = true sets

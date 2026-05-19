@@ -136,11 +136,11 @@
     {
       "id": "20260519T095124-d5a9",
       "brief": "Explicit 'Pull from GitHub' action — today the sync hook does pull-then-push as one operation. User wants a dedicated pull-only trigger (button in the GitHub view + maybe keyboard shortcut) that fetches remote, applies non-conflicts, and opens merge tabs without pushing.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T09:51:24Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T19:50:00Z",
+      "completed_at": "2026-05-19T20:00:00Z",
+      "result": "Shipped via parallel agent. useGitHubSync exposes runPullOnly() alongside runSync — mirrors runSync structure (isSyncing guard, conflict branch opens merge tabs and returns, finally releases) but skips runPush entirely. GitHubView gets a secondary 'Pull only' button below the primary 'Sync now' (transparent border + cloud-down icon). 6 new tests cover pulls/applies/never-pushes, conflict branch, guard, disconnected no-op, error recovery.",
       "error": null,
       "source": "telegram"
     },
@@ -169,11 +169,11 @@
     {
       "id": "20260519T130702-a8d3",
       "brief": "Export notes: swap the icon (current one mismatched) and move the entry into the Settings panel rather than its own ribbon/topbar surface. Keep the existing markdown/JSON/HTML export functionality intact — purely a UI relocation.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T13:07:02Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T19:50:00Z",
+      "completed_at": "2026-05-19T20:00:00Z",
+      "result": "Shipped via parallel agent. Sidebar's footer 'Export Notes' button (with the wrong Cog icon) removed. New ExportSection in Settings → Export with an ArrowDownTray button that opens the existing ExportModal. 3 new tests assert the section renders and the click dispatches openModal({type:'export'}).",
       "error": null,
       "source": "telegram"
     },
@@ -235,11 +235,11 @@
     {
       "id": "20260519T153227-h8b5",
       "brief": "Trash behaviour: configurable `.trash/` folder for deleted notes + setting to disable trash entirely (hard-delete). Today deletion is soft (note stays with isDeleted=true, hidden from default view, restorable from the Trash sidebar view). User wants either (a) materialise deletions as moves into a `.trash/` folder so they show up in the synced repo, or (b) toggle that hard-deletes immediately. Settings UI: dropdown {keep in trash view / move to .trash/ folder / hard-delete}.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T15:32:27Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T19:45:00Z",
+      "completed_at": "2026-05-19T20:05:00Z",
+      "result": "Shipped two modes: 'trash' (default, existing soft-delete + Trash view) and 'hardDelete' (immediate, irreversible). settingsStore.trashMode + setTrashMode wired through. noteStore.deleteNote reads trashMode and dispatches to softDelete vs permanentlyDelete. DeleteConfirmModal's title + body + button label adapt ('Permanently Delete' / 'Delete Forever' when in hardDelete mode); folder deletion calls cascadeDeleteFolder regardless, then also permanentlyDeleteFolder when hardDelete (so the folder entity doesn't linger in trash). Settings UI: new dropdown under Files & Folders. The 'move to .trash/ folder' third option deferred — needs a real sync path for the materialised trash, separate task. 4 new tests cover soft / hard / switching mode / selection clear.",
       "error": null,
       "source": "telegram"
     },
@@ -290,11 +290,11 @@
     {
       "id": "20260519T155858-n6h1",
       "brief": "Reveal-in-tree: clicking a note in Recent (or any non-default view) should also scroll/highlight the note's row in the folder tree so the user can see where it lives. Likely: setActiveFolder(note.folderId), expand its ancestors, scrollIntoView the row, brief flash highlight.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T15:58:58Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-19T19:50:00Z",
+      "completed_at": "2026-05-19T20:00:00Z",
+      "result": "Shipped via parallel agent. New src/utils/revealNote.ts walks the note's ancestor folders expanding each via folderStore.setFolderExpanded (new action), switches currentView to 'notes', scrolls the row into view by data-note-id, and adds an is-revealed-flash class for ~800ms (CSS keyframe in globals.css). FolderTree's note click handlers in Recent/Tags views call revealNote after openNote. Edge cases handled: root-level notes (no ancestor walk), soft-deleted notes (bail early), deleted ancestor folders (stop walking), trash view excluded (no reveal). 11 new tests.",
       "error": null,
       "source": "telegram"
     },

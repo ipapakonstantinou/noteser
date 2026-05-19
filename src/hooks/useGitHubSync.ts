@@ -18,6 +18,7 @@ export type SyncState =
 interface UseGitHubSyncResult {
   syncState: SyncState
   runSync: () => Promise<void>
+  runPullOnly: () => Promise<void>
   isConnected: boolean
 }
 
@@ -89,6 +90,28 @@ function formatSyncMessage(
   // skipped on their behalf.
   if (pulled.autoMerged) parts.push(`auto-merged ${pulled.autoMerged}`)
   return parts.join(' · ') || 'Synced'
+}
+
+// Pull-only counterpart to formatSyncMessage — no push counts to report.
+// Used by runPullOnly so the sidebar shows what came down without
+// pretending we uploaded anything.
+function formatPullMessage(
+  pulled: ApplyCounts,
+  attached: AttachmentApplyCounts,
+): string {
+  const totalPulled =
+    pulled.created + pulled.updated + pulled.deleted +
+    attached.created + attached.updated
+  if (totalPulled === 0) return 'Up to date'
+
+  const parts: string[] = []
+  if (pulled.created) parts.push(`↓${pulled.created} new`)
+  if (pulled.updated) parts.push(`↓${pulled.updated} updated`)
+  if (pulled.deleted) parts.push(`↓${pulled.deleted} removed`)
+  const attachTotal = attached.created + attached.updated
+  if (attachTotal) parts.push(`↓${attachTotal} image${attachTotal === 1 ? '' : 's'}`)
+  if (pulled.autoMerged) parts.push(`auto-merged ${pulled.autoMerged}`)
+  return `Pulled ${parts.join(' · ')}`
 }
 
 // Shared sync handler used by the sidebar's Commit & Sync button and by the
@@ -165,5 +188,51 @@ export function useGitHubSync(): UseGitHubSyncResult {
     }
   }, [token, syncRepo, recordSync, openMergeConflicts])
 
-  return { syncState, runSync, isConnected: !!(token && syncRepo) }
+  // Pull-only path: fetch remote, apply non-conflicts, open merge tabs for
+  // conflicts, and STOP. Never calls runPush, so local-only edits stay local.
+  // Useful before resolving a tough merge by hand, or when the user just
+  // wants to grab the latest remote state without uploading work-in-progress.
+  const runPullOnly = useCallback(async () => {
+    const { token: activeToken, syncRepo: activeRepo, isSyncing, setIsSyncing } = useGitHubStore.getState()
+    if (!activeToken || !activeRepo) return
+    // Share the same global guard as runSync — a pull-only and a full sync
+    // touch the same noteStore, so we can't let them race.
+    if (isSyncing) return
+    setIsSyncing(true)
+
+    setSyncState({ kind: 'running' })
+    try {
+      const classifications = await runPull(activeToken, activeRepo)
+
+      const conflicts = classifications.filter(
+        c => c.kind === 'conflict' || c.kind === 'conflictDeleted',
+      ) as ConflictTabData[]
+      if (conflicts.length > 0) {
+        // Same conflict-handling branch as runSync: apply everything that
+        // isn't in conflict, open merge tabs for the user to resolve.
+        await runApply(classifications)
+        openMergeConflicts(conflicts)
+        setSyncState({
+          kind: 'err',
+          message: `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} need review`,
+        })
+        return
+      }
+
+      const { notes: pullCounts, attachments: attachCounts } = await runApply(classifications)
+
+      setSyncState({
+        kind: 'ok',
+        message: formatPullMessage(pullCounts, attachCounts),
+        url: null,
+      })
+      setTimeout(() => setSyncState({ kind: 'idle' }), 5000)
+    } catch (err) {
+      setSyncState({ kind: 'err', message: err instanceof Error ? err.message : 'Pull failed' })
+    } finally {
+      useGitHubStore.getState().setIsSyncing(false)
+    }
+  }, [token, syncRepo, openMergeConflicts])
+
+  return { syncState, runSync, runPullOnly, isConnected: !!(token && syncRepo) }
 }

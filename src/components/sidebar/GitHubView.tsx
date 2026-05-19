@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import {
   CloudArrowUpIcon,
+  CloudArrowDownIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,
   ExclamationTriangleIcon,
@@ -59,7 +60,7 @@ export const GitHubView = () => {
   })
   const focusTab = useWorkspaceStore(s => s.focusTab)
 
-  const { runSync, syncState } = useGitHubSync()
+  const { runSync, runPullOnly, syncState } = useGitHubSync()
 
   if (!hydrated || !user) {
     return (
@@ -166,38 +167,53 @@ export const GitHubView = () => {
 
       {/* Sync action */}
       {repo && (
-        <button
-          onClick={runSync}
-          disabled={syncState.kind === 'running'}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded bg-obsidianAccentPurple text-white text-sm hover:opacity-90 disabled:opacity-60"
-        >
-          {syncState.kind === 'running' ? (
-            <ArrowPathIcon className="w-4 h-4 animate-spin" />
-          ) : syncState.kind === 'ok' ? (
-            <CheckCircleIcon className="w-4 h-4" />
-          ) : syncState.kind === 'err' ? (
-            <ExclamationCircleIcon className="w-4 h-4" />
-          ) : (
-            <CloudArrowUpIcon className="w-4 h-4" />
-          )}
-          <span className="flex-1 text-left truncate">
-            {syncState.kind === 'running' && 'Syncing…'}
-            {syncState.kind === 'ok' && syncState.message}
-            {syncState.kind === 'err' && syncState.message}
-            {syncState.kind === 'idle' && 'Sync now'}
-          </span>
-          {syncState.kind === 'ok' && syncState.url && (
-            <a
-              href={syncState.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="text-[11px] underline opacity-80 hover:opacity-100"
-            >
-              view
-            </a>
-          )}
-        </button>
+        <div className="space-y-1.5">
+          <button
+            onClick={runSync}
+            disabled={syncState.kind === 'running'}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded bg-obsidianAccentPurple text-white text-sm hover:opacity-90 disabled:opacity-60"
+          >
+            {syncState.kind === 'running' ? (
+              <ArrowPathIcon className="w-4 h-4 animate-spin" />
+            ) : syncState.kind === 'ok' ? (
+              <CheckCircleIcon className="w-4 h-4" />
+            ) : syncState.kind === 'err' ? (
+              <ExclamationCircleIcon className="w-4 h-4" />
+            ) : (
+              <CloudArrowUpIcon className="w-4 h-4" />
+            )}
+            <span className="flex-1 text-left truncate">
+              {syncState.kind === 'running' && 'Syncing…'}
+              {syncState.kind === 'ok' && syncState.message}
+              {syncState.kind === 'err' && syncState.message}
+              {syncState.kind === 'idle' && 'Sync now'}
+            </span>
+            {syncState.kind === 'ok' && syncState.url && (
+              <a
+                href={syncState.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-[11px] underline opacity-80 hover:opacity-100"
+              >
+                view
+              </a>
+            )}
+          </button>
+          {/* Secondary: one-way pull. Same disabled rule as primary —
+              the shared isSyncing guard means either action blocks the
+              other anyway, but disabling the button here gives clearer
+              visual feedback. */}
+          <button
+            onClick={runPullOnly}
+            disabled={syncState.kind === 'running'}
+            className="w-full flex items-center gap-2 px-3 py-1.5 rounded border border-obsidianBorder bg-transparent text-obsidianText text-xs hover:bg-obsidianDarkGray disabled:opacity-60"
+            title="Fetch and apply remote changes without uploading local edits"
+          >
+            <CloudArrowDownIcon className="w-4 h-4" />
+            <span className="flex-1 text-left">Pull only</span>
+          </button>
+        </div>
       )}
 
       {/* Pick / switch repo */}

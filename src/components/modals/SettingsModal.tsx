@@ -2,10 +2,12 @@
 
 import { useUIStore, useSettingsStore } from '@/stores'
 import type { FolderSortMode, TaskListDensity } from '@/stores'
+import type { TrashMode } from '@/stores/settingsStore'
 import { Modal } from '@/components/ui'
 import { AttachmentsSection } from './AttachmentsSection'
 import { AISection } from './AISection'
 import { DailyNotesSection, TemplatesSection } from './DailyNotesSection'
+import { ExportSection } from './ExportSection'
 import { ShortcutsSection } from './ShortcutsSection'
 import {
   Section,
@@ -21,6 +23,8 @@ export const SettingsModal = () => {
   const folderSortMode = useSettingsStore(s => s.folderSortMode)
   const taskListDensity = useSettingsStore(s => s.taskListDensity)
   const showHiddenFolders = useSettingsStore(s => s.showHiddenFolders)
+  const trashMode = useSettingsStore(s => s.trashMode)
+  const setTrashMode = useSettingsStore(s => s.setTrashMode)
   const autoSyncOnStart = useSettingsStore(s => s.autoSyncOnStart)
   const autoSyncIntervalMinutes = useSettingsStore(s => s.autoSyncIntervalMinutes)
   const setFolderSortMode = useSettingsStore(s => s.setFolderSortMode)
@@ -60,6 +64,19 @@ export const SettingsModal = () => {
               onChange={setShowHiddenFolders}
             />
           </Field>
+          <Field
+            label="Delete behaviour"
+            description="What happens when you delete a note. Trash keeps it recoverable via the Trash view. No trash deletes immediately."
+          >
+            <SettingsSelect<TrashMode>
+              value={trashMode}
+              onChange={setTrashMode}
+              options={[
+                { value: 'trash', label: 'Move to trash (recoverable)' },
+                { value: 'hardDelete', label: 'Delete immediately (no trash)' },
+              ]}
+            />
+          </Field>
         </Section>
 
         <Section title="Tasks">
@@ -96,6 +113,10 @@ export const SettingsModal = () => {
 
         <Section title="Keyboard shortcuts">
           <ShortcutsSection />
+        </Section>
+
+        <Section title="Export">
+          <ExportSection />
         </Section>
 
         <Section title="GitHub sync">

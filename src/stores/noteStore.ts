@@ -10,6 +10,7 @@ import {
   emptyTrash as emptyTrashItems,
 } from '@/utils/softDelete'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
+import { useSettingsStore } from '@/stores/settingsStore'
 
 interface NoteState {
   notes: Note[]
@@ -79,6 +80,17 @@ export const useNoteStore = create<NoteState>()(
       },
 
       deleteNote: (id) => {
+        // Respect the user's trash-mode setting: 'trash' (default) keeps
+        // the soft-delete behaviour so the note shows in the Trash view
+        // and can be restored; 'hardDelete' removes it immediately.
+        const trashMode = useSettingsStore.getState().trashMode
+        if (trashMode === 'hardDelete') {
+          set(state => ({
+            notes: permanentlyDelete(state.notes, id),
+            selectedNoteId: state.selectedNoteId === id ? null : state.selectedNoteId,
+          }))
+          return
+        }
         set(state => ({
           notes: softDelete(state.notes, id),
           selectedNoteId: state.selectedNoteId === id ? null : state.selectedNoteId,

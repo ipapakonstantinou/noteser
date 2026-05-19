@@ -1,6 +1,6 @@
 'use client'
 
-import { useUIStore, useNoteStore, useFolderStore } from '@/stores'
+import { useUIStore, useNoteStore, useFolderStore, useSettingsStore } from '@/stores'
 import { Modal, Button } from '@/components/ui'
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline'
 import { cascadeDeleteFolder } from '@/utils/cascadeDelete'
@@ -10,6 +10,7 @@ export const DeleteConfirmModal = () => {
   const { deleteNote, permanentlyDeleteNote, getNoteById } = useNoteStore()
   const { permanentlyDeleteFolder, getFolderById } = useFolderStore()
   const { notes } = useNoteStore()
+  const trashMode = useSettingsStore(s => s.trashMode)
 
   const isOpen = modal.type === 'delete'
   const data = modal.data as { type: 'note' | 'folder'; id: string; permanent?: boolean } | undefined
@@ -34,10 +35,13 @@ export const DeleteConfirmModal = () => {
         deleteNote(data.id)
       }
     } else {
-      if (isPermanent) {
-        // Permanent path stays surgical — just remove the folder entity.
-        // (Permanent deletion of a folder + its attachments is handled
-        // by Settings → Attachments → Clean up orphans for the binaries.)
+      // For folders, hardDelete and "soft" both cascade attachment
+      // tombstones + relocate notes to root. The only difference is
+      // whether the folder entity is left in trash (recoverable) or
+      // dropped outright. We always run cascade so the sync side stays
+      // consistent regardless of the user's trash preference.
+      if (isPermanent || trashMode === 'hardDelete') {
+        cascadeDeleteFolder(data.id)
         permanentlyDeleteFolder(data.id)
       } else {
         // Soft delete: cascade. Tombstones attachments inside the folder
@@ -58,14 +62,20 @@ export const DeleteConfirmModal = () => {
         </div>
 
         <h3 className="text-lg font-medium text-obsidianText mb-2">
-          {isPermanent ? 'Permanently Delete' : 'Delete'} {isNote ? 'Note' : 'Folder'}?
+          {isPermanent || trashMode === 'hardDelete' ? 'Permanently Delete' : 'Delete'} {isNote ? 'Note' : 'Folder'}?
         </h3>
 
         <p className="text-sm text-obsidianSecondaryText mb-4">
-          {isPermanent ? (
+          {isPermanent || trashMode === 'hardDelete' ? (
             <>
               This action cannot be undone. &quot;{itemName}&quot; will be
               permanently deleted.
+              {!isNote && notesInFolder.length > 0 && (
+                <span className="block mt-2 text-yellow-500">
+                  {notesInFolder.length} note{notesInFolder.length > 1 ? 's' : ''} in this
+                  folder will be moved to root.
+                </span>
+              )}
             </>
           ) : (
             <>
@@ -85,7 +95,7 @@ export const DeleteConfirmModal = () => {
             Cancel
           </Button>
           <Button variant="danger" onClick={handleDelete}>
-            {isPermanent ? 'Delete Forever' : 'Move to Trash'}
+            {isPermanent || trashMode === 'hardDelete' ? 'Delete Forever' : 'Move to Trash'}
           </Button>
         </div>
       </div>
