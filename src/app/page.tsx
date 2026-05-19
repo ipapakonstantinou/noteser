@@ -19,6 +19,7 @@ import { switchVault } from '@/utils/switchVault'
 import { notesKey } from '@/utils/repoStorage'
 import { useNoteStore } from '@/stores/noteStore'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
+import { installTestHooks } from '@/utils/testHooks'
 
 export default function Home() {
   const hydrated = useHydration()
@@ -67,6 +68,12 @@ export default function Home() {
   // Migrate old data on first load
   useEffect(() => {
     migrateOldData()
+  }, [])
+
+  // Expose stores + attachment helpers on window for Playwright tests.
+  // Side-effect-only, no UI impact.
+  useEffect(() => {
+    installTestHooks()
   }, [])
 
   return (
