@@ -14,12 +14,13 @@ import { EditableText } from '../shared/EditableText'
 import { collectAllTags } from '@/utils/tags'
 import { sortNotes } from '@/utils/sortNotes'
 import {
-  ATTACHMENT_DIR,
   listAttachmentMeta,
   getAttachmentUrl,
+  moveAttachment,
   type AttachmentMeta,
 } from '@/utils/attachments'
 import { ATTACHMENTS_CHANGED_EVENT } from '@/utils/events'
+import { rewriteAttachmentRefs } from '@/utils/attachmentRefs'
 
 interface FolderTreeProps {
   onRightClick: (e: React.MouseEvent, type: 'note' | 'folder', id: string) => void
@@ -66,12 +67,11 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   // notes change. No more entity store.
   const tagCounts = useMemo(() => collectAllTags(activeNotes), [activeNotes])
 
-  // ── Attachments folder (synthetic) ──────────────────────────────────────
-  // Surfaces the IDB-backed attachment store as a read-only folder at the
-  // bottom of the root tree. Refreshed on any save/put/delete via the
-  // global ATTACHMENTS_CHANGED_EVENT.
+  // ── Attachment metadata (for rendering inside parent folders) ────────────
+  // The IDB attachment store is mirrored here so we can render each
+  // attachment file inside its parent folder (alongside notes). Refreshed on
+  // any save / put / delete via the global ATTACHMENTS_CHANGED_EVENT.
   const [attachmentMeta, setAttachmentMeta] = useState<AttachmentMeta[]>([])
-  const [attachmentsExpanded, setAttachmentsExpanded] = useState(false)
   useEffect(() => {
     if (!hydrated) return
     let cancelled = false
@@ -89,9 +89,12 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   }, [hydrated])
 
   // ── Drag & drop state ───────────────────────────────────────────────────
-  // The id of the note currently being dragged (null when nothing is held);
-  // kept in a ref so dragstart doesn't trigger a re-render.
-  const draggedNoteIdRef = useRef<string | null>(null)
+  // Generalised across notes + attachments so the same drop zones accept
+  // both. Kept in a ref so dragstart doesn't trigger a re-render.
+  type DraggedItem =
+    | { kind: 'note'; id: string }
+    | { kind: 'attachment'; path: string }
+  const draggedItemRef = useRef<DraggedItem | null>(null)
   // Visual highlight target: folder id, or '__root__' for the root drop zone.
   const [dragOverTarget, setDragOverTarget] = useState<string | null>(null)
 
@@ -116,100 +119,140 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   }
 
   const beginNoteDrag = (e: React.DragEvent, noteId: string) => {
-    draggedNoteIdRef.current = noteId
+    draggedItemRef.current = { kind: 'note', id: noteId }
     // Required for Firefox to register the drag; also exposes the id to drop.
     e.dataTransfer.setData('application/x-noteser-note', noteId)
     e.dataTransfer.effectAllowed = 'move'
   }
-  const endNoteDrag = () => {
-    draggedNoteIdRef.current = null
+  const beginAttachmentDrag = (e: React.DragEvent, path: string) => {
+    draggedItemRef.current = { kind: 'attachment', path }
+    e.dataTransfer.setData('application/x-noteser-attachment', path)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+  const endDrag = () => {
+    draggedItemRef.current = null
     setDragOverTarget(null)
   }
+
+  // Move an attachment into the given folder (or root). Renames the IDB key
+  // to `<target-repo-path>/<filename>`, then rewrites every note's content
+  // so `![](old-path)` becomes `![](new-path)` — Obsidian-style "Update
+  // internal links". Silently no-ops on collision (rare; user can rename
+  // and try again).
+  const moveAttachmentToFolder = async (path: string, targetFolderId: string | null) => {
+    const filename = path.split('/').pop() ?? path
+    const targetRepoPath = targetFolderId
+      ? folderRepoPathById.get(targetFolderId) ?? ''
+      : ''
+    const newPath = targetRepoPath ? `${targetRepoPath}/${filename}` : filename
+    if (newPath === path) return
+    try {
+      await moveAttachment(path, newPath)
+    } catch (err) {
+      console.error('Failed to move attachment:', err)
+      return
+    }
+    // Update note content. Pull a fresh snapshot of notes and rewrite refs.
+    const { notes: liveNotes, updateNote } = useNoteStore.getState()
+    for (const note of liveNotes) {
+      if (note.isDeleted) continue
+      const next = rewriteAttachmentRefs(note.content, path, newPath)
+      if (next !== note.content) updateNote(note.id, { content: next })
+    }
+  }
+
   const onFolderDragOver = (e: React.DragEvent, folderId: string) => {
-    if (!draggedNoteIdRef.current) return
+    if (!draggedItemRef.current) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     if (dragOverTarget !== folderId) setDragOverTarget(folderId)
   }
   const onFolderDrop = (e: React.DragEvent, folderId: string) => {
     e.preventDefault()
-    const id = draggedNoteIdRef.current
-    if (id) moveNoteToFolder(id, folderId)
-    endNoteDrag()
+    const item = draggedItemRef.current
+    if (item?.kind === 'note') moveNoteToFolder(item.id, folderId)
+    else if (item?.kind === 'attachment') void moveAttachmentToFolder(item.path, folderId)
+    endDrag()
   }
   const onRootDragOver = (e: React.DragEvent) => {
-    if (!draggedNoteIdRef.current) return
+    if (!draggedItemRef.current) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     if (dragOverTarget !== '__root__') setDragOverTarget('__root__')
   }
   const onRootDrop = (e: React.DragEvent) => {
     e.preventDefault()
-    const id = draggedNoteIdRef.current
-    if (id) moveNoteToFolder(id, null)
-    endNoteDrag()
+    const item = draggedItemRef.current
+    if (item?.kind === 'note') moveNoteToFolder(item.id, null)
+    else if (item?.kind === 'attachment') void moveAttachmentToFolder(item.path, null)
+    endDrag()
   }
 
-  // ── Synthetic attachments folder render helpers ─────────────────────────
-  // Rendered with the same icons/affordances as user folders + notes — see
-  // commit history if you're tempted to give it a special PhotoIcon back.
-  // The folder is treated as "hidden" and suppressed when the
-  // `showHiddenFolders` setting is off.
+  // ── Attachment-as-file render helpers ────────────────────────────────────
+  // Attachments live in real Folder entities now (materialised on save / pull
+  // via folderStore.ensureFolderPath). Inside any FolderItem we render the
+  // matching attachments alongside the folder's notes.
 
   const openAttachment = async (path: string) => {
     const url = await getAttachmentUrl(path)
     if (url) window.open(url, '_blank', 'noopener')
   }
 
-  // Strip the timestamp prefix our saver adds so the original filename shows.
+  // Strip the leading directory + the timestamp prefix our saver adds so
+  // the original filename shows.
   const attachmentDisplayName = (path: string): string => {
-    const file = path.replace(/^attachments\//, '')
+    const file = path.replace(/^.*\//, '')
     const match = file.match(/^\d{14}-(.+)$/)
     return match ? match[1] : file
   }
 
-  const AttachmentsFolder = () => {
-    const count = attachmentMeta.length
-    if (count === 0) return null
-    if (!showHiddenFolders) return null
-    return (
-      <div className="mb-0.5">
-        <div
-          className="obsidian-folder-item"
-          onClick={() => setAttachmentsExpanded(v => !v)}
-        >
-          <button
-            className="mr-1 focus:outline-none"
-            onClick={e => { e.stopPropagation(); setAttachmentsExpanded(v => !v) }}
-          >
-            {attachmentsExpanded ? (
-              <ChevronDownIcon className="w-3.5 h-3.5" />
-            ) : (
-              <ChevronRightIcon className="w-3.5 h-3.5" />
-            )}
-          </button>
-          <FolderIcon className="w-4 h-4 mr-1.5 text-obsidianSecondaryText" />
-          <span className="text-obsidianText">{ATTACHMENT_DIR}</span>
-          <span className="ml-auto text-xs text-obsidianSecondaryText">{count}</span>
-        </div>
-        {attachmentsExpanded && (
-          <div style={{ paddingLeft: '20px' }}>
-            {attachmentMeta.map(m => (
-              <div
-                key={m.path}
-                className="obsidian-file-item"
-                onClick={() => openAttachment(m.path)}
-                title={m.path}
-              >
-                <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
-                <span className="flex-1 truncate">{attachmentDisplayName(m.path)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    )
-  }
+  // Repo path (e.g. "attachments" or "Notes/Daily") for every non-deleted
+  // folder. Built once per render so attachment → folder lookup is O(1).
+  const folderRepoPathById = useMemo(() => {
+    const byId = new Map(folders.map(f => [f.id, f]))
+    const out = new Map<string, string>()
+    for (const f of folders) {
+      if (f.isDeleted) continue
+      const segs: string[] = []
+      let cur: typeof folders[0] | undefined = f
+      for (let i = 0; cur && i < 32; i++) {
+        if (cur.isDeleted) break
+        segs.unshift(cur.name)
+        cur = cur.parentId ? byId.get(cur.parentId) : undefined
+      }
+      out.set(f.id, segs.join('/'))
+    }
+    return out
+  }, [folders])
+
+  // Group attachments by their parent directory path so each FolderItem can
+  // grab "its" attachments without scanning the whole list.
+  const attachmentsByParentPath = useMemo(() => {
+    const out = new Map<string, AttachmentMeta[]>()
+    for (const m of attachmentMeta) {
+      const slash = m.path.lastIndexOf('/')
+      if (slash === -1) continue
+      const parent = m.path.slice(0, slash)
+      const existing = out.get(parent)
+      if (existing) existing.push(m)
+      else out.set(parent, [m])
+    }
+    return out
+  }, [attachmentMeta])
+
+  const AttachmentItem = ({ m }: { m: AttachmentMeta }) => (
+    <div
+      className="obsidian-file-item"
+      draggable
+      onDragStart={e => beginAttachmentDrag(e, m.path)}
+      onDragEnd={endDrag}
+      onClick={() => openAttachment(m.path)}
+      title={m.path}
+    >
+      <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
+      <span className="flex-1 truncate">{attachmentDisplayName(m.path)}</span>
+    </div>
+  )
 
   // Render note item
   const NoteItem = ({ note, className = '' }: { note: typeof notes[0]; className?: string }) => {
@@ -220,7 +263,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
         } ${className}`}
         draggable={currentView !== 'trash'}
         onDragStart={e => beginNoteDrag(e, note.id)}
-        onDragEnd={endNoteDrag}
+        onDragEnd={endDrag}
         onClick={() => handleNoteClick(note.id)}
         onDoubleClick={() => handleNoteDoubleClick(note.id)}
         onContextMenu={e => onRightClick(e, 'note', note.id)}
@@ -259,7 +302,9 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     const isActive = activeFolderId === folder.id
     const folderNotes = sortNotes(activeNotes.filter(n => n.folderId === folder.id), folderSortMode)
     const childFolders = filterHidden(hydrated ? getChildFolders(folder.id) : [])
-    const childCount = folderNotes.length + childFolders.length
+    const repoPath = folderRepoPathById.get(folder.id) ?? ''
+    const folderAttachments = attachmentsByParentPath.get(repoPath) ?? []
+    const childCount = folderNotes.length + childFolders.length + folderAttachments.length
 
     const isDropTarget = dragOverTarget === folder.id
     return (
@@ -307,12 +352,15 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
             {childFolders.map(child => (
               <FolderItem key={child.id} folder={child} depth={depth + 1} />
             ))}
-            {/* Then notes inside this folder */}
+            {/* Then notes + attachments inside this folder */}
             <div style={{ paddingLeft: `${(depth + 1) * 12 + 8}px` }}>
               {folderNotes.map(note => (
                 <NoteItem key={note.id} note={note} />
               ))}
-              {folderNotes.length === 0 && childFolders.length === 0 && (
+              {folderAttachments.map(m => (
+                <AttachmentItem key={m.path} m={m} />
+              ))}
+              {folderNotes.length === 0 && childFolders.length === 0 && folderAttachments.length === 0 && (
                 <div className="px-3 py-2 text-xs text-obsidianSecondaryText italic">
                   Empty folder
                 </div>
@@ -458,22 +506,15 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
 
   const rootHighlighted = dragOverTarget === '__root__'
 
-  // Merge the synthetic attachments folder into the root list and sort
-  // alphabetically (case-insensitive) so it sits in its natural place rather
-  // than being pinned to the bottom. Each entry is rendered by its `kind`.
-  type RootEntry =
-    | { kind: 'folder'; name: string; folder: typeof folders[0] }
-    | { kind: 'attachments'; name: string }
-  const rootEntries: RootEntry[] = filterHidden(rootFolders).map(f => ({
-    kind: 'folder' as const, name: f.name, folder: f,
-  }))
-  // The attachments folder is treated as hidden by design (regardless of
-  // its actual name, which doesn't start with a dot), so it only renders
-  // when the showHiddenFolders toggle is on.
-  if (attachmentMeta.length > 0 && showHiddenFolders) {
-    rootEntries.push({ kind: 'attachments', name: ATTACHMENT_DIR })
-  }
-  rootEntries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+  // Root folders sort alphabetically (case-insensitive) — `filterHidden`
+  // drops dotfile names when the setting is off.
+  const visibleRootFolders = filterHidden(rootFolders).slice().sort(
+    (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+  )
+
+  // Root-level attachments (path with no slash before the file part) —
+  // unusual but supported. Render them inline with root notes.
+  const rootAttachments = attachmentsByParentPath.get('') ?? []
 
   return (
     <div
@@ -485,13 +526,14 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
       }}
       onDrop={onRootDrop}
     >
-      {rootEntries.map(entry => entry.kind === 'folder' ? (
-        <FolderItem key={entry.folder.id} folder={entry.folder} />
-      ) : (
-        <AttachmentsFolder key="__attachments__" />
+      {visibleRootFolders.map(folder => (
+        <FolderItem key={folder.id} folder={folder} />
       ))}
       {rootNotes.map(note => (
         <NoteItem key={note.id} note={note} />
+      ))}
+      {rootAttachments.map(m => (
+        <AttachmentItem key={m.path} m={m} />
       ))}
     </div>
   )

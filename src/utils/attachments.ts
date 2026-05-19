@@ -13,6 +13,22 @@
 import { get, set, del, keys } from 'idb-keyval'
 import { gitBlobShaBytes } from './github'
 import { ATTACHMENTS_CHANGED_EVENT } from './events'
+import { useSettingsStore } from '@/stores/settingsStore'
+import { useFolderStore } from '@/stores/folderStore'
+
+// Materialise the parent folder of an attachment path as a real Folder
+// entity. Without this, attachment files would appear "orphaned" — the
+// sidebar tree only renders items belonging to known folders.
+function ensureAttachmentParentFolder(path: string): void {
+  try {
+    const parts = path.split('/')
+    parts.pop() // drop the filename
+    if (parts.length === 0) return
+    useFolderStore.getState().ensureFolderPath(parts)
+  } catch {
+    // Outside a browser / test environment without the store wired up.
+  }
+}
 
 // Notify any listening UI (FolderTree, Settings) that the attachment store
 // changed. No-op outside a browser environment.
@@ -21,8 +37,50 @@ function notifyAttachmentsChanged(): void {
   window.dispatchEvent(new CustomEvent(ATTACHMENTS_CHANGED_EVENT))
 }
 
+// Historical attachments folder. Always recognised in path-prefix checks
+// (back-compat: old notes reference `attachments/foo.png` and must keep
+// resolving even after the user picks a new folder).
+export const DEFAULT_ATTACHMENT_DIR = 'attachments'
+
+// Sanitise user input from the Settings folder field. Strips slashes that
+// would create accidental root paths, collapses repeated separators, trims
+// whitespace, and falls back to the default when the result is empty.
+export function normalizeAttachmentDir(input: string | undefined | null): string {
+  if (!input) return DEFAULT_ATTACHMENT_DIR
+  const trimmed = input
+    .trim()
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '')
+    .replace(/\/{2,}/g, '/')
+  return trimmed || DEFAULT_ATTACHMENT_DIR
+}
+
+// Folder currently used for NEW attachments. Reads the latest setting at
+// call time so changes apply immediately without re-mounting consumers.
+// Wrapped in try/catch so non-browser test environments without the store
+// initialised fall back to the default rather than throw.
+export function getAttachmentDir(): string {
+  try {
+    return normalizeAttachmentDir(useSettingsStore.getState().attachmentsFolder)
+  } catch {
+    return DEFAULT_ATTACHMENT_DIR
+  }
+}
+
+// Path prefixes a file could have to be considered an attachment. Always
+// includes the historical default so old refs keep working; adds the
+// currently configured folder when it differs.
+export function getAttachmentPrefixes(): string[] {
+  const current = getAttachmentDir()
+  if (current === DEFAULT_ATTACHMENT_DIR) return [`${DEFAULT_ATTACHMENT_DIR}/`]
+  return [`${current}/`, `${DEFAULT_ATTACHMENT_DIR}/`]
+}
+
+// Back-compat alias — older imports still pull this name. New code should
+// call getAttachmentDir() since the value can change at runtime.
+export const ATTACHMENT_DIR = DEFAULT_ATTACHMENT_DIR
+
 const PREFIX = 'noteser-attachment:'
-export const ATTACHMENT_DIR = 'attachments'
 
 const urlCache = new Map<string, string>()
 
@@ -58,26 +116,28 @@ export function sanitizeAttachmentName(name: string): string {
 }
 
 export function isAttachmentPath(path: string): boolean {
-  return path.startsWith(`${ATTACHMENT_DIR}/`)
+  return getAttachmentPrefixes().some(prefix => path.startsWith(prefix))
 }
 
 // Save a blob under a unique, timestamped path. Sub-second collisions append a
 // counter to the stem so the path stays unique even when two drops fire in the
-// same wall-clock second.
+// same wall-clock second. New saves land under the currently-configured
+// attachments folder; old saves remain at their original path.
 export async function saveAttachment(
   blob: Blob,
   originalName: string,
   now: Date = new Date(),
 ): Promise<string> {
+  const dir = getAttachmentDir()
   const safeName = sanitizeAttachmentName(originalName)
   const ts = timestamp(now)
-  let path = `${ATTACHMENT_DIR}/${ts}-${safeName}`
+  let path = `${dir}/${ts}-${safeName}`
   let counter = 1
   while ((await get(PREFIX + path)) !== undefined) {
     const dotIdx = safeName.lastIndexOf('.')
     const stem = dotIdx === -1 ? safeName : safeName.slice(0, dotIdx)
     const ext = dotIdx === -1 ? '' : safeName.slice(dotIdx)
-    path = `${ATTACHMENT_DIR}/${ts}-${stem}-${counter}${ext}`
+    path = `${dir}/${ts}-${stem}-${counter}${ext}`
     counter++
   }
   const record: StoredAttachment = {
@@ -87,6 +147,7 @@ export async function saveAttachment(
     createdAt: Date.now(),
   }
   await set(PREFIX + path, record)
+  ensureAttachmentParentFolder(path)
   notifyAttachmentsChanged()
   return path
 }
@@ -117,6 +178,31 @@ export async function deleteAttachment(path: string): Promise<void> {
     URL.revokeObjectURL(url)
     urlCache.delete(path)
   }
+  notifyAttachmentsChanged()
+}
+
+// Move an attachment from one path to another inside IDB. Throws if there's
+// already an attachment at the target path (callers should disambiguate by
+// adjusting the filename). Note references are NOT rewritten here — see
+// `rewriteAttachmentRefs` for that, and `moveAttachmentAndRewriteRefs` for
+// the full "drag to folder" operation.
+export async function moveAttachment(oldPath: string, newPath: string): Promise<void> {
+  if (oldPath === newPath) return
+  const record = await get<StoredAttachment>(PREFIX + oldPath)
+  if (!record) throw new Error(`No attachment at ${oldPath}`)
+  const existing = await get(PREFIX + newPath)
+  if (existing !== undefined) {
+    throw new Error(`An attachment already exists at ${newPath}`)
+  }
+  await set(PREFIX + newPath, record)
+  await del(PREFIX + oldPath)
+  // Drop the cached URL — the new path will mint its own next read.
+  const oldUrl = urlCache.get(oldPath)
+  if (oldUrl) {
+    URL.revokeObjectURL(oldUrl)
+    urlCache.delete(oldPath)
+  }
+  ensureAttachmentParentFolder(newPath)
   notifyAttachmentsChanged()
 }
 
@@ -202,5 +288,6 @@ export async function putAttachmentAtPath(
     URL.revokeObjectURL(oldUrl)
     urlCache.delete(path)
   }
+  ensureAttachmentParentFolder(path)
   notifyAttachmentsChanged()
 }

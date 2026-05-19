@@ -18,7 +18,6 @@ import {
   type GitTreeEntry,
 } from './github'
 import {
-  ATTACHMENT_DIR,
   isAttachmentPath,
   listAttachmentPaths,
   getAttachmentBlob,
@@ -288,8 +287,6 @@ export async function pullFromGitHub(input: {
       if (!cur) break
       if (seenDirPaths.has(cur)) break
       seenDirPaths.add(cur)
-      const firstSeg = cur.split('/')[0]
-      if (firstSeg === ATTACHMENT_DIR) continue
       if (localFolderPaths.has(cur)) continue
       out.push({ kind: 'folderCreated', path: cur })
     }
@@ -376,11 +373,17 @@ export async function pullFromZipball(input: {
   const entries: Array<{ rel: string; file: JSZip.JSZipObject }> = []
   zip.forEach((rel, file) => {
     if (file.dir) return
-    // Pull both .md notes and binary files under attachments/. Anything else
-    // in the repo (root README, .github/, etc.) is ignored on the first
-    // clone — same as before the binary-sync work.
-    if (!rel.endsWith('.md') && !rel.includes(`/${ATTACHMENT_DIR}/`)) return
-    entries.push({ rel, file })
+    // Pull both .md notes and binary files under the attachments folder
+    // (configured or historical default). Anything else in the repo (root
+    // README, .github/, etc.) is ignored on the first clone.
+    if (rel.endsWith('.md')) {
+      entries.push({ rel, file })
+      return
+    }
+    const slashIdx = rel.indexOf('/')
+    if (slashIdx !== -1 && isAttachmentPath(rel.slice(slashIdx + 1))) {
+      entries.push({ rel, file })
+    }
   })
 
   for (const { rel, file } of entries) {

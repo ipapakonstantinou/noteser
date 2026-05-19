@@ -1,32 +1,15 @@
 import { useNoteStore, useFolderStore, useGitHubStore } from '@/stores'
 import type { PullClassification } from './githubSync'
 import { parseNote, takeZipballAttachmentBytes } from './githubSync'
-import { sanitizeFilename } from './export'
 import { putAttachmentAtPath } from './attachments'
 import { getBlobBytes } from './github'
 
 // ── Folder + tag find-or-create helpers ─────────────────────────────────────
 
-// Walk a `Foo/Bar/Baz` path, ensuring each segment exists as a (non-deleted)
-// folder. Returns the leaf folder id, or null for an empty path (= root).
+// Delegate to folderStore — the action there is the canonical implementation
+// (used by attachments.ts too, so attachment drops materialise their parent).
 function ensureFolderPath(segments: string[]): string | null {
-  if (segments.length === 0) return null
-  const { folders, addFolder } = useFolderStore.getState()
-  let parentId: string | null = null
-  for (const segment of segments) {
-    const desired = sanitizeFilename(segment)
-    const existing = folders.find(
-      f => !f.isDeleted && (f.parentId ?? null) === parentId
-        && sanitizeFilename(f.name) === desired,
-    )
-    if (existing) {
-      parentId = existing.id
-    } else {
-      const created = addFolder({ name: segment, parentId })
-      parentId = created.id
-    }
-  }
-  return parentId
+  return useFolderStore.getState().ensureFolderPath(segments)
 }
 
 // Tags from frontmatter are merged into the body as `#tag` so they survive

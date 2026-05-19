@@ -32,6 +32,22 @@ export default function Home() {
     if (hydrated) pruneStaleTabs()
   }, [hydrated, pruneStaleTabs])
 
+  // After hydration + prune, if there are still no open tabs but we
+  // remember a last-selected note, reopen it pinned. This makes startup
+  // continue where the user left off even if they closed the tab before
+  // reloading.
+  useEffect(() => {
+    if (!hydrated) return
+    const ws = useWorkspaceStore.getState()
+    const hasOpenTabs = ws.panes.some(p => p.tabs.length > 0)
+    if (hasOpenTabs) return
+    const selectedId = useNoteStore.getState().selectedNoteId
+    if (!selectedId) return
+    const note = useNoteStore.getState().notes.find(n => n.id === selectedId && !n.isDeleted)
+    if (!note) return
+    ws.openNote(selectedId, { preview: false })
+  }, [hydrated])
+
   // After hydration, if a repo is connected but the stores are still pointed
   // at the unscoped default key (e.g. first run after upgrading to per-repo
   // vaults), move them to the scoped key so subsequent writes are isolated.

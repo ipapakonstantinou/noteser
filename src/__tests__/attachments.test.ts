@@ -39,12 +39,17 @@ import {
   sanitizeAttachmentName,
   isAttachmentPath,
   ATTACHMENT_DIR,
+  DEFAULT_ATTACHMENT_DIR,
+  normalizeAttachmentDir,
+  getAttachmentDir,
+  getAttachmentPrefixes,
   listAttachmentPaths,
   listAttachmentMeta,
   putAttachmentAtPath,
   getAttachmentGitSha,
   _clearAttachmentUrlCache,
 } from '../utils/attachments'
+import { useSettingsStore } from '../stores/settingsStore'
 
 // ── URL.createObjectURL / revokeObjectURL stubs ───────────────────────────────
 let nextUrlId = 1
@@ -75,6 +80,8 @@ beforeEach(() => {
   _clearAttachmentUrlCache()
   createSpy.mockClear()
   revokeSpy.mockClear()
+  // Reset the configurable folder to the default so tests don't leak state.
+  useSettingsStore.getState().setAttachmentsFolder(DEFAULT_ATTACHMENT_DIR)
 })
 
 // ── sanitizeAttachmentName ────────────────────────────────────────────────────
@@ -112,6 +119,75 @@ describe('isAttachmentPath', () => {
     expect(isAttachmentPath('https://example.com/foo.png')).toBe(false)
     expect(isAttachmentPath('data:image/png;base64,xyz')).toBe(false)
     expect(isAttachmentPath('other/foo.png')).toBe(false)
+  })
+
+  test('accepts both the configured folder and the historical default', () => {
+    useSettingsStore.getState().setAttachmentsFolder('images')
+    expect(isAttachmentPath('images/foo.png')).toBe(true)
+    expect(isAttachmentPath('attachments/old.png')).toBe(true) // back-compat
+    expect(isAttachmentPath('other/foo.png')).toBe(false)
+  })
+
+  test('supports nested configured paths', () => {
+    useSettingsStore.getState().setAttachmentsFolder('assets/images')
+    expect(isAttachmentPath('assets/images/foo.png')).toBe(true)
+    expect(isAttachmentPath('assets/other.png')).toBe(false)
+    expect(isAttachmentPath('attachments/legacy.png')).toBe(true) // still recognised
+  })
+})
+
+// ── normalizeAttachmentDir ────────────────────────────────────────────────────
+
+describe('normalizeAttachmentDir', () => {
+  test('trims leading/trailing slashes and collapses repeats', () => {
+    expect(normalizeAttachmentDir('/foo/bar/')).toBe('foo/bar')
+    expect(normalizeAttachmentDir('foo//bar')).toBe('foo/bar')
+    expect(normalizeAttachmentDir('  attachments  ')).toBe('attachments')
+  })
+
+  test('falls back to the default for empty / whitespace / null input', () => {
+    expect(normalizeAttachmentDir('')).toBe(DEFAULT_ATTACHMENT_DIR)
+    expect(normalizeAttachmentDir('  ')).toBe(DEFAULT_ATTACHMENT_DIR)
+    expect(normalizeAttachmentDir(null)).toBe(DEFAULT_ATTACHMENT_DIR)
+    expect(normalizeAttachmentDir(undefined)).toBe(DEFAULT_ATTACHMENT_DIR)
+    expect(normalizeAttachmentDir('///')).toBe(DEFAULT_ATTACHMENT_DIR)
+  })
+})
+
+// ── getAttachmentDir / getAttachmentPrefixes ─────────────────────────────────
+
+describe('getAttachmentDir / getAttachmentPrefixes', () => {
+  test('returns the configured folder', () => {
+    useSettingsStore.getState().setAttachmentsFolder('images')
+    expect(getAttachmentDir()).toBe('images')
+  })
+
+  test('prefix list contains only the default when the setting matches it', () => {
+    useSettingsStore.getState().setAttachmentsFolder(DEFAULT_ATTACHMENT_DIR)
+    expect(getAttachmentPrefixes()).toEqual([`${DEFAULT_ATTACHMENT_DIR}/`])
+  })
+
+  test('prefix list contains configured folder first plus the default for back-compat', () => {
+    useSettingsStore.getState().setAttachmentsFolder('images')
+    expect(getAttachmentPrefixes()).toEqual(['images/', `${DEFAULT_ATTACHMENT_DIR}/`])
+  })
+})
+
+// ── saveAttachment honours the configured folder ─────────────────────────────
+
+describe('saveAttachment with configured folder', () => {
+  test('new saves land under the configured folder', async () => {
+    useSettingsStore.getState().setAttachmentsFolder('images')
+    const blob = new Blob(['x'], { type: 'image/png' })
+    const path = await saveAttachment(blob, 'pic.png', new Date(2026, 4, 19, 9, 56, 12))
+    expect(path).toBe('images/20260519095612-pic.png')
+  })
+
+  test('nested configured paths work', async () => {
+    useSettingsStore.getState().setAttachmentsFolder('assets/images')
+    const blob = new Blob(['x'], { type: 'image/png' })
+    const path = await saveAttachment(blob, 'pic.png', new Date(2026, 4, 19, 9, 56, 12))
+    expect(path).toBe('assets/images/20260519095612-pic.png')
   })
 })
 
