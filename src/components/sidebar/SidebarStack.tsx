@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   CalendarDaysIcon,
   ListBulletIcon,
@@ -167,24 +167,79 @@ export const SidebarStack = ({ onRightClick }: Props) => {
       .filter(g => g.length > 0)
     setPinnedPanels(next)
   }
+  // pinAsNewGroupAt creates a NEW solo group at a specific position
+  // in the stack. Used by the inter-group drop zones so the user
+  // can insert a new pane between two existing ones precisely.
+  const pinAsNewGroupAt = (id: SidebarTabId, insertAt: number) => {
+    const next = pinnedGroups
+      .map(g => g.filter(p => p !== id))
+      .filter(g => g.length > 0)
+    next.splice(Math.max(0, Math.min(insertAt, next.length)), 0, [id])
+    setPinnedPanels(next)
+  }
+
+  // Track whether a sidebar drag is in flight. Used to inflate the
+  // drop zones (main pin-zone + inter-group zones) so the user can
+  // hit them more easily. Window-level dragstart / dragend listener
+  // so we react regardless of which child started the drag.
+  const [dragActive, setDragActive] = useState(false)
+  useEffect(() => {
+    const onStart = (e: DragEvent) => {
+      const t = e.dataTransfer?.types
+      if (!t) return
+      if (t.includes(TAB_DRAG_MIME) || t.includes(SIDEBAR_PANEL_DRAG_MIME)) {
+        setDragActive(true)
+      }
+    }
+    const onEnd = () => setDragActive(false)
+    window.addEventListener('dragstart', onStart)
+    window.addEventListener('dragend', onEnd)
+    window.addEventListener('drop', onEnd)
+    return () => {
+      window.removeEventListener('dragstart', onStart)
+      window.removeEventListener('dragend', onEnd)
+      window.removeEventListener('drop', onEnd)
+    }
+  }, [])
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      {pinnedGroups.map((group, groupIndex) => (
-        <PinnedGroup
-          key={group.join(',')}
-          group={group}
-          onUnpin={unpinPanel}
-          onAddToThisGroup={(otherId) => pinIntoGroup(otherId, groupIndex)}
-          onRightClick={onRightClick}
-        />
-      ))}
+      {/* Scrollable pinned area — lets the user stack arbitrarily
+          many groups without crowding out the main tab strip below.
+          max-h-[60%] caps it so the bottom switcher stays reachable;
+          internal scroll handles the rest. */}
+      {pinnedGroups.length > 0 && (
+        <div className="flex-shrink min-h-0 overflow-y-auto" style={{ maxHeight: '60%' }}>
+          {pinnedGroups.map((group, groupIndex) => (
+            <div key={group.join(',')}>
+              {/* Inter-group drop zone ABOVE this group. During drag
+                  it's tall + visibly highlighted; otherwise zero-height. */}
+              <InterGroupDropZone
+                active={dragActive}
+                onDropId={(id) => pinAsNewGroupAt(id, groupIndex)}
+              />
+              <PinnedGroup
+                group={group}
+                onUnpin={unpinPanel}
+                onAddToThisGroup={(otherId) => pinIntoGroup(otherId, groupIndex)}
+                onRightClick={onRightClick}
+              />
+            </div>
+          ))}
+          {/* Trailing zone — insert a new group at the end. */}
+          <InterGroupDropZone
+            active={dragActive}
+            onDropId={(id) => pinAsNewGroupAt(id, pinnedGroups.length)}
+          />
+        </div>
+      )}
       <TabSwitcher
         pinnedIds={pinnedFlat}
         tabOrderSaved={tabOrderSaved}
         onRightClick={onRightClick}
         onPinPanel={pinAsNewGroup}
         onUnpinPanel={unpinPanel}
+        dragActive={dragActive}
       />
     </div>
   )
@@ -198,10 +253,13 @@ interface TabSwitcherProps {
   onRightClick: Props['onRightClick']
   onPinPanel: (id: SidebarTabId) => void
   onUnpinPanel: (id: SidebarTabId) => void
+  // True when ANY sidebar drag is in flight — inflates the pin-zone
+  // so the user can land a drop without pixel-precise hovering.
+  dragActive: boolean
 }
 
 const TabSwitcher = ({
-  pinnedIds, tabOrderSaved, onRightClick, onPinPanel, onUnpinPanel,
+  pinnedIds, tabOrderSaved, onRightClick, onPinPanel, onUnpinPanel, dragActive,
 }: TabSwitcherProps) => {
   const tabId = useUIStore(s => s.sidebarTabId)
   const setTab = useUIStore(s => s.setSidebarTab)
@@ -306,17 +364,26 @@ const TabSwitcher = ({
 
   return (
     <div className="flex-1 min-h-0 flex flex-col border-t border-obsidianBorder">
-      {/* Pin drop zone — only meaningful when a tab is being dragged. */}
+      {/* Pin drop zone — visible whenever ANY sidebar drag is in
+          flight, not just a drag started from this strip. The
+          inflated 24px height makes the target easy to land on
+          (the user complained that 6px was too thin). */}
       <div
         onDragOver={onPinDropOver}
         onDragLeave={() => setPinDropActive(false)}
         onDrop={onPinDrop}
-        className={`${draggingId ? 'h-1.5' : 'h-0'} transition-all flex-shrink-0 ${
-          pinDropActive ? 'bg-obsidianAccentPurple' : 'bg-transparent'
+        className={`${(draggingId || dragActive) ? 'h-6' : 'h-0'} transition-all flex-shrink-0 flex items-center justify-center text-[10px] uppercase tracking-wide ${
+          pinDropActive
+            ? 'bg-obsidianAccentPurple text-white'
+            : (draggingId || dragActive)
+              ? 'bg-obsidianAccentPurple/15 text-obsidianAccentPurple'
+              : 'bg-transparent text-transparent'
         }`}
         aria-label="Drop here to pin tab at top"
         data-testid="sidebar-pin-dropzone"
-      />
+      >
+        {(draggingId || dragActive) && (pinDropActive ? 'Drop to pin' : '↑ pin to top')}
+      </div>
 
       <div className="flex items-center gap-0.5 px-1 py-1 border-b border-obsidianBorder bg-obsidianDarkGray/40">
         {orderedIds.map(id => {
@@ -501,6 +568,55 @@ const PinnedMiniStrip = ({
           </button>
         )
       })}
+    </div>
+  )
+}
+
+// Thin drop zone rendered ABOVE each pinned group (and once at the
+// end of the pinned area) so the user can position a new group
+// between two existing ones. Zero-height when nothing's being
+// dragged, inflates to 24px during a drag for an easy target.
+interface InterGroupDropZoneProps {
+  active: boolean
+  onDropId: (id: SidebarTabId) => void
+}
+
+const InterGroupDropZone = ({ active, onDropId }: InterGroupDropZoneProps) => {
+  const [hot, setHot] = useState(false)
+
+  const handleDragOver = (e: React.DragEvent) => {
+    const t = e.dataTransfer.types
+    if (!t.includes(TAB_DRAG_MIME) && !t.includes(SIDEBAR_PANEL_DRAG_MIME)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setHot(true)
+  }
+  const handleDragLeave = () => setHot(false)
+  const handleDrop = (e: React.DragEvent) => {
+    setHot(false)
+    const tabDrag = e.dataTransfer.getData(TAB_DRAG_MIME) as SidebarTabId
+    const panelDrag = e.dataTransfer.getData(SIDEBAR_PANEL_DRAG_MIME) as SidebarTabId
+    const id = (tabDrag || panelDrag) as SidebarTabId
+    if (!id) return
+    e.preventDefault()
+    onDropId(id)
+  }
+
+  return (
+    <div
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={`${active ? 'h-6' : 'h-0'} transition-all flex-shrink-0 flex items-center justify-center text-[10px] uppercase tracking-wide ${
+        hot
+          ? 'bg-obsidianAccentPurple text-white'
+          : active
+            ? 'bg-obsidianAccentPurple/10 text-obsidianAccentPurple/70 border-y border-dashed border-obsidianAccentPurple/30'
+            : 'bg-transparent text-transparent'
+      }`}
+      data-testid="sidebar-inter-group-dropzone"
+    >
+      {active && (hot ? 'Drop here for a new pane' : '↓ new pane here')}
     </div>
   )
 }
