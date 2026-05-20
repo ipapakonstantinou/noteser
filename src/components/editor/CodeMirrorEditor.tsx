@@ -9,6 +9,7 @@ import { useDebouncedCallback } from '@/hooks/useDebounce'
 import { useUIStore } from '@/stores'
 import { markdownLivePreview } from './markdownLivePreview'
 import { tasksLivePreview } from './tasksLivePreview'
+import { basesLivePreview } from './basesLivePreview'
 import { imagesLivePreview } from './imagesLivePreview'
 import { getActiveWikilinkQuery } from '@/utils/wikilinks'
 import { findNoteByTitleOrAlias } from '@/utils/aliases'
@@ -101,6 +102,7 @@ export function CodeMirrorEditor({
     markdown({ base: markdownLanguage }),
     markdownLivePreview,
     tasksLivePreview,
+    basesLivePreview,
     imagesLivePreview,
     obsidianTheme,
     EditorView.lineWrapping,
