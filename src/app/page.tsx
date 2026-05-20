@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Sidebar, Ribbon } from '@/components/sidebar'
 import { Editor } from '@/components/editor'
 import {
@@ -16,6 +16,8 @@ import {
   CommandPalette,
   BugReportModal,
 } from '@/components/modals'
+import { OnboardingModal } from '@/components/modals/OnboardingModal'
+import { useSettingsStore } from '@/stores/settingsStore'
 import { useKeyboardShortcuts, useHydration, useAutoSync } from '@/hooks'
 import { useUIStore, useWorkspaceStore, useGitHubStore } from '@/stores'
 import { switchVault } from '@/utils/switchVault'
@@ -90,6 +92,20 @@ export default function Home() {
 
   // Auto-sync on startup + on the configured interval (Settings → GitHub).
   useAutoSync()
+
+  // First-run onboarding: show the starter-vault picker when the user
+  // has nothing in the store AND hasn't dismissed the modal before.
+  // Local state holds the open flag so picking/skipping doesn't depend on
+  // a store round-trip.
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  const onboardingShown = useSettingsStore(s => s.onboardingShown)
+  useEffect(() => {
+    if (!hydrated) return
+    if (onboardingShown) return
+    const noteCount = useNoteStore.getState().notes.filter(n => !n.isDeleted).length
+    if (noteCount > 0) return
+    setShowOnboarding(true)
+  }, [hydrated, onboardingShown])
 
   // Migrate old data on first load
   useEffect(() => {
@@ -193,6 +209,7 @@ export default function Home() {
       <TaskEditModal />
       <CommandPalette />
       <BugReportModal />
+      <OnboardingModal isOpen={showOnboarding} onDismiss={() => setShowOnboarding(false)} />
     </div>
   )
 }
