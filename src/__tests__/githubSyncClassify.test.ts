@@ -51,7 +51,7 @@ jest.mock('../utils/github', () => ({
 import { pullFromGitHub } from '../utils/githubSync'
 import type { Note, Folder, SyncRepo } from '@/types'
 
-const REPO: SyncRepo = { owner: 'me', name: 'vault', branch: 'main' }
+const REPO: SyncRepo = { owner: 'me', name: 'vault', branch: 'main', isPrivate: false }
 
 function note(input: Partial<Note> & { id: string; title: string }): Note {
   return {

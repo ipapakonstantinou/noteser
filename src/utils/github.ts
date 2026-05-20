@@ -1,4 +1,5 @@
 import type { GitHubUser, GitHubRepo } from '@/types'
+import { githubFetch } from './githubFetch'
 
 export interface DeviceFlowStart {
   device_code: string
@@ -17,7 +18,7 @@ export class DeviceFlowError extends Error {
 
 // ── Step 1: ask the proxy to request a device code from GitHub ──────────────
 export async function startDeviceFlow(): Promise<DeviceFlowStart> {
-  const res = await fetch('/api/github/device-code', { method: 'POST' })
+  const res = await githubFetch('/api/github/device-code', { method: 'POST' })
   const json = await res.json().catch(() => ({}))
   if (!res.ok || json.error) {
     if (json.error === 'missing_client_id') {
@@ -44,7 +45,7 @@ export async function pollForToken({ deviceCode, interval, expiresIn, signal }: 
     if (signal.aborted) throw new DeviceFlowError('aborted', 'Polling aborted')
     await sleep(currentInterval * 1000, signal)
 
-    const res = await fetch('/api/github/access-token', {
+    const res = await githubFetch('/api/github/access-token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ device_code: deviceCode }),
@@ -74,7 +75,7 @@ export async function pollForToken({ deviceCode, interval, expiresIn, signal }: 
 
 // ── Step 3: use the token to fetch identifying info ─────────────────────────
 export async function fetchGitHubUser(token: string): Promise<GitHubUser> {
-  const res = await fetch('https://api.github.com/user', {
+  const res = await githubFetch('https://api.github.com/user', {
     headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' },
   })
   if (!res.ok) throw new Error(`GitHub /user returned ${res.status}`)
@@ -104,7 +105,7 @@ export async function listUserRepos(token: string): Promise<GitHubRepo[]> {
   const MAX_PAGES = 5
   for (let page = 1; page <= MAX_PAGES; page++) {
     const url = `https://api.github.com/user/repos?per_page=${PER_PAGE}&sort=updated&affiliation=owner,collaborator,organization_member&page=${page}`
-    const res = await fetch(url, { headers: GH_HEADERS(token) })
+    const res = await githubFetch(url, { headers: GH_HEADERS(token) })
     if (!res.ok) throw new Error(`Failed to list repos (${res.status})`)
     const batch: GitHubRepo[] = await res.json()
     out.push(...batch)
@@ -114,7 +115,7 @@ export async function listUserRepos(token: string): Promise<GitHubRepo[]> {
 }
 
 export async function listRepoBranches(token: string, owner: string, repo: string): Promise<{ name: string }[]> {
-  const res = await fetch(
+  const res = await githubFetch(
     `https://api.github.com/repos/${owner}/${repo}/branches?per_page=100`,
     { headers: GH_HEADERS(token) },
   )
@@ -123,7 +124,7 @@ export async function listRepoBranches(token: string, owner: string, repo: strin
 }
 
 export async function getRepo(token: string, owner: string, repo: string): Promise<GitHubRepo> {
-  const res = await fetch(
+  const res = await githubFetch(
     `https://api.github.com/repos/${owner}/${repo}`,
     { headers: GH_HEADERS(token) },
   )
@@ -138,7 +139,7 @@ export async function createRepo(
   name: string,
   isPrivate: boolean,
 ): Promise<GitHubRepo> {
-  const res = await fetch('https://api.github.com/user/repos', {
+  const res = await githubFetch('https://api.github.com/user/repos', {
     method: 'POST',
     headers: { ...GH_HEADERS(token), 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -181,7 +182,7 @@ export async function getBranchRefSha(token: string, owner: string, repo: string
   // with a timestamp; GitHub ignores unknown query params, but any cache in
   // the path keys on the URL and so always misses.
   const url = `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}?_=${Date.now()}`
-  const res = await fetch(url, { headers: GH_HEADERS(token), cache: 'no-store' })
+  const res = await githubFetch(url, { headers: GH_HEADERS(token), cache: 'no-store' })
   if (!res.ok) throw new Error(`Failed to read ref (${res.status})`)
   const data = await res.json()
   // The `/refs/heads/{branch}` endpoint returns an array when the supplied
@@ -196,7 +197,7 @@ export async function getBranchRefSha(token: string, owner: string, repo: string
 }
 
 export async function getCommitTreeSha(token: string, owner: string, repo: string, commitSha: string): Promise<string> {
-  const res = await fetch(
+  const res = await githubFetch(
     `https://api.github.com/repos/${owner}/${repo}/git/commits/${commitSha}`,
     { headers: GH_HEADERS(token) },
   )
@@ -207,7 +208,7 @@ export async function getCommitTreeSha(token: string, owner: string, repo: strin
 
 // Map of repo path → existing blob SHA (only blob entries, not subtrees).
 export async function getTreeMap(token: string, owner: string, repo: string, treeSha: string): Promise<Map<string, string>> {
-  const res = await fetch(
+  const res = await githubFetch(
     `https://api.github.com/repos/${owner}/${repo}/git/trees/${treeSha}?recursive=1`,
     { headers: GH_HEADERS(token) },
   )
@@ -221,7 +222,7 @@ export async function getTreeMap(token: string, owner: string, repo: string, tre
 }
 
 export async function createBlob(token: string, owner: string, repo: string, content: string): Promise<string> {
-  const res = await fetch(
+  const res = await githubFetch(
     `https://api.github.com/repos/${owner}/${repo}/git/blobs`,
     {
       method: 'POST',
@@ -241,7 +242,7 @@ export async function createTree(
   baseTreeSha: string,
   entries: GitTreeEntry[],
 ): Promise<string> {
-  const res = await fetch(
+  const res = await githubFetch(
     `https://api.github.com/repos/${owner}/${repo}/git/trees`,
     {
       method: 'POST',
@@ -262,7 +263,7 @@ export async function createCommit(
   treeSha: string,
   parentSha: string,
 ): Promise<{ sha: string; html_url: string }> {
-  const res = await fetch(
+  const res = await githubFetch(
     `https://api.github.com/repos/${owner}/${repo}/git/commits`,
     {
       method: 'POST',
@@ -282,7 +283,7 @@ export async function updateBranchRef(
   branch: string,
   commitSha: string,
 ): Promise<void> {
-  const res = await fetch(
+  const res = await githubFetch(
     `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`,
     {
       method: 'PATCH',
@@ -308,7 +309,7 @@ export async function updateBranchRef(
 // (the whole archive lives in an ArrayBuffer before JSZip parses it), but
 // for typical vaults (≤100 MB) that's well within browser limits.
 export async function fetchZipball(token: string, owner: string, repo: string, ref: string): Promise<ArrayBuffer> {
-  const res = await fetch('/api/github/zipball', {
+  const res = await githubFetch('/api/github/zipball', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ owner, repo, ref }),
@@ -322,7 +323,7 @@ export async function fetchZipball(token: string, owner: string, repo: string, r
 
 // Fetch a blob's content by SHA. GitHub returns it base64-encoded.
 export async function getBlobContent(token: string, owner: string, repo: string, sha: string): Promise<string> {
-  const res = await fetch(
+  const res = await githubFetch(
     `https://api.github.com/repos/${owner}/${repo}/git/blobs/${sha}`,
     { headers: GH_HEADERS(token) },
   )
@@ -412,7 +413,7 @@ export async function createBlobBinary(
   blob: Blob,
 ): Promise<string> {
   const base64 = await blobToBase64(blob)
-  const res = await fetch(
+  const res = await githubFetch(
     `https://api.github.com/repos/${owner}/${repo}/git/blobs`,
     {
       method: 'POST',
@@ -434,7 +435,7 @@ export async function getBlobBytes(
   repo: string,
   sha: string,
 ): Promise<Uint8Array> {
-  const res = await fetch(
+  const res = await githubFetch(
     `https://api.github.com/repos/${owner}/${repo}/git/blobs/${sha}`,
     { headers: GH_HEADERS(token) },
   )
