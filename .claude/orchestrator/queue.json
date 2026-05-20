@@ -433,11 +433,11 @@
     {
       "id": "20260519T173504-z9o3",
       "brief": "Note embeds / transclusion ![[Title]] — render another note's full content inline in both live-preview and rendered-preview. Resolves from the note store at render time; depth-cap for circular embeds.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T17:35:04Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-20T05:30:00Z",
+      "completed_at": "2026-05-20T05:45:00Z",
+      "result": "Shipped (rendered-preview path): src/utils/embeds.ts (expandEmbeds + extractEmbedTitles, MAX_EMBED_DEPTH=4). Recursive expansion, cycle detection, depth cap, missing-target callout. Wired before renderWikilinks in EditorContent. 13 new tests. Live-preview path not yet wired — rendered preview only for v1.",
       "error": null,
       "source": "researcher"
     },

@@ -8,6 +8,7 @@ import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism'
 import type { EditorView } from '@codemirror/view'
 import { useUIStore, useNoteStore, useWorkspaceStore } from '@/stores'
 import { renderWikilinks } from '@/utils/wikilinks'
+import { expandEmbeds } from '@/utils/embeds'
 import { findNoteByTitleOrAlias } from '@/utils/aliases'
 import { toggleTaskLineText, removeTaskPrefixFromLine } from '@/utils/tasks'
 import { SCROLL_TO_LINE_EVENT } from '@/utils/events'
@@ -499,7 +500,7 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
               remarkPlugins={[remarkGfm]}
               components={components}
             >
-              {renderWikilinks(previewContent) || '*Start writing...*'}
+              {renderWikilinks(expandEmbeds(previewContent, getActiveNotes())) || '*Start writing...*'}
             </ReactMarkdown>
           </div>
         </div>

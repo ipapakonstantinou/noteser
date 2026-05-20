@@ -136,6 +136,15 @@ ship date. Last updated 2026-05-20.
 - [ ] Diagnostics dump never contains the OAuth token, AI key, or any `*secret*` field
 - [ ] Closing the modal resets the form
 
+## Note embeds (z9o3)
+
+- [ ] `![[Title]]` in rendered preview shows the referenced note's content as a blockquote
+- [ ] Embedded blockquote header shows `📎 [[Title]]`
+- [ ] Resolving by note alias works (`![[Alias]]` finds the aliased note)
+- [ ] Missing target renders `*[no note found for \`Title\`]*`
+- [ ] Cycle (A embeds B, B embeds A) renders `*[circular embed: \`A\`]*`
+- [ ] Depth cap at 4 levels of nesting
+
 ## Beta features (b3t1)
 
 - [ ] Settings → Beta → master toggle gates the flag list
