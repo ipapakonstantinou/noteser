@@ -83,6 +83,15 @@ export interface SettingsState {
   // Empty array = default order.
   ribbonOrder: string[]
 
+  // ── Sidebar tab strip order (s4r3 v2) ──────────────────────────────────
+  // Order of the 5 tabs in the lower switcher (files / outline /
+  // source-control / search / bookmarks). Same merge semantics as
+  // ribbonOrder — unknown ids dropped, new ids appended, empty = source
+  // order. The strings here are SidebarTabId values, but we widen to
+  // string[] so the store stays portable and a future-added tab id
+  // doesn't break old persisted state.
+  sidebarTabOrder: string[]
+
   // ── Onboarding ─────────────────────────────────────────────────────────
   // True once the first-run onboarding modal has been dismissed (either by
   // picking a starter vault or by skipping). We only ever flip it forward;
@@ -143,6 +152,7 @@ export interface SettingsState {
   setBetaEnabled: (value: boolean) => void
   setBetaFlag: (id: string, value: boolean) => void
   setRibbonOrder: (order: string[]) => void
+  setSidebarTabOrder: (order: string[]) => void
   setOnboardingShown: (value: boolean) => void
   reset: () => void
 }
@@ -171,6 +181,7 @@ const DEFAULTS = {
   betaEnabled: false,
   betaFlags: {} as Record<string, boolean>,
   ribbonOrder: [] as string[],
+  sidebarTabOrder: [] as string[],
   onboardingShown: false,
 }
 
@@ -213,6 +224,7 @@ export const useSettingsStore = create<SettingsState>()(
       setBetaFlag: (id, value) =>
         set((state) => ({ betaFlags: { ...state.betaFlags, [id]: value } })),
       setRibbonOrder: (ribbonOrder) => set({ ribbonOrder }),
+      setSidebarTabOrder: (sidebarTabOrder) => set({ sidebarTabOrder }),
       setOnboardingShown: (onboardingShown) => set({ onboardingShown }),
       reset: () => set(DEFAULTS),
     }),
