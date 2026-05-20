@@ -7,6 +7,10 @@ wider backlog.
 
 Last refresh: 2026-05-20.
 
+> Latest sweep: AI commit messages, daily-note streak counter, and the
+> SidebarStack module split (per-file components for the pinned-group
+> machinery) all landed this morning.
+
 ## In flight
 
 _Nothing right now — promote from Next when starting work._
@@ -52,12 +56,9 @@ _Nothing right now — promote from Next when starting work._
   markdown / JSON / HTML / ZIP via `file-saver` + `jszip`. PDF is the
   obvious missing format — would need a print-stylesheet or a client-side
   PDF library.
-- **AI commit messages.** Use the existing `aiClient.runPrompt` to suggest
-  a commit message from the pending-changes diff. Toggleable in Settings →
-  AI; otherwise the auto-generated `Sync from Noteser (N changes)` stands.
-- **Daily-note streak / weekly review.** Periodic-note features exist;
-  surface a streak counter ("12-day streak") + a weekly-review template
-  that scrapes the week's notes for tasks + tags.
+- **Weekly review template.** Periodic-note feature — a template that
+  scrapes the week's notes for tasks + tags and stitches a Sunday-night
+  summary. (Streak counter shipped; weekly review still pending.)
 - **Backup encryption.** Optional passphrase-protected blob encryption
   before push so the GitHub repo can stay public-safe.
 
