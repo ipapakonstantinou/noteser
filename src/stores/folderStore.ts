@@ -14,11 +14,20 @@ interface FolderState {
   folders: Folder[]
   activeFolderId: string | null
   expandedFolders: Record<string, boolean>
+  // Repo paths the user explicitly deleted. The pull layer skips
+  // folder-derivation for any directory whose path is in here (or
+  // nested inside a tombstoned dir), so a hidden folder like
+  // `.obsidian/` doesn't reappear next pull just because its
+  // non-noteser-managed files still exist remotely. Cleared when the
+  // user re-creates a folder that resolves to the same repo path.
+  deletedFolderPaths: string[]
 
   // Actions
   addFolder: (folder?: Partial<Folder>) => Folder
   updateFolder: (id: string, updates: Partial<Folder>) => void
   deleteFolder: (id: string) => void
+  addDeletedFolderPath: (path: string) => void
+  removeDeletedFolderPath: (path: string) => void
   permanentlyDeleteFolder: (id: string) => void
   restoreFolder: (id: string) => void
   setActiveFolder: (id: string | null) => void
@@ -45,6 +54,7 @@ export const useFolderStore = create<FolderState>()(
       folders: [],
       activeFolderId: null,
       expandedFolders: {},
+      deletedFolderPaths: [],
 
       addFolder: (folderData = {}) => {
         const now = Date.now()
@@ -94,6 +104,20 @@ export const useFolderStore = create<FolderState>()(
         }))
       },
 
+      addDeletedFolderPath: (path) => {
+        if (!path) return
+        set(state => state.deletedFolderPaths.includes(path)
+          ? state
+          : { deletedFolderPaths: [...state.deletedFolderPaths, path] })
+      },
+
+      removeDeletedFolderPath: (path) => {
+        if (!path) return
+        set(state => state.deletedFolderPaths.includes(path)
+          ? { deletedFolderPaths: state.deletedFolderPaths.filter(p => p !== path) }
+          : state)
+      },
+
       permanentlyDeleteFolder: (id) => {
         set(state => ({
           folders: permanentlyDelete(state.folders, id),
@@ -102,9 +126,30 @@ export const useFolderStore = create<FolderState>()(
       },
 
       restoreFolder: (id) => {
-        set(state => ({
-          folders: restoreSoftDeleted(state.folders, id),
-        }))
+        set(state => {
+          const restored = restoreSoftDeleted(state.folders, id)
+          // Drop the tombstone for this folder's path (if any) so the
+          // next pull re-derives any remote children. We compute the
+          // path from the freshly-restored folders array so ancestors
+          // that are still trashed don't truncate the result.
+          const f = restored.find(x => x.id === id)
+          if (!f) return { folders: restored }
+          // Walk up using the restored array.
+          const byId = new Map(restored.map(x => [x.id, x]))
+          const segs: string[] = []
+          let cur = f
+          for (let i = 0; cur && i < 32; i++) {
+            if (cur.isDeleted) break
+            segs.unshift(sanitizeFilename(cur.name))
+            const p: string | null = cur.parentId ?? null
+            cur = p ? byId.get(p)! : undefined as unknown as Folder
+          }
+          const path = segs.join('/')
+          const deletedFolderPaths = path
+            ? state.deletedFolderPaths.filter(p => p !== path)
+            : state.deletedFolderPaths
+          return { folders: restored, deletedFolderPaths }
+        })
       },
 
       setActiveFolder: (id) => {

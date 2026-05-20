@@ -427,3 +427,62 @@ test('folder derivation skips parents of soft-deleted notes', async () => {
   const folderCreates = classifications.filter(c => c.kind === 'folderCreated')
   expect(folderCreates).toHaveLength(0)
 })
+
+// ── tombstones for explicitly-deleted folders ──────────────────────────────
+// The "skip pending-removed parents" branch only catches paths matching
+// LOCAL NOTES. A hidden folder like .obsidian/ contains JSON / config
+// files that have no local note record — without an explicit tombstone
+// the pull walks those parents and re-derives the folder the user just
+// removed.
+
+test('excludedFolderPaths tombstones a hidden folder from being re-derived', async () => {
+  mockGetTreeMap.mockResolvedValue(new Map([
+    ['.obsidian/config.json', 'sha-cfg'],
+    ['.obsidian/plugins/foo.js', 'sha-plug'],
+  ]))
+
+  const { classifications } = await pullFromGitHub({
+    token: 't', repo: REPO, notes: [], folders: [],
+    excludedFolderPaths: ['.obsidian'],
+  })
+
+  const folderCreates = classifications.filter(c => c.kind === 'folderCreated')
+  expect(folderCreates).toHaveLength(0)
+})
+
+test('excludedFolderPaths also blocks nested paths inside the tombstone', async () => {
+  // `.obsidian/themes/dark/` should also be blocked because `.obsidian`
+  // is tombstoned — otherwise the dir-walk would emit folderCreated for
+  // `.obsidian/themes` and `.obsidian/themes/dark` as separate entries.
+  mockGetTreeMap.mockResolvedValue(new Map([
+    ['.obsidian/themes/dark/theme.css', 'sha-css'],
+  ]))
+
+  const { classifications } = await pullFromGitHub({
+    token: 't', repo: REPO, notes: [], folders: [],
+    excludedFolderPaths: ['.obsidian'],
+  })
+
+  const folderCreates = classifications.filter(c => c.kind === 'folderCreated')
+  expect(folderCreates).toHaveLength(0)
+})
+
+test('excludedFolderPaths leaves OTHER folders alone', async () => {
+  // Sibling folders not in the tombstone list should still be derived.
+  mockGetTreeMap.mockResolvedValue(new Map([
+    ['.obsidian/config.json', 'sha-cfg'],
+    ['Daily-Notes/2026-05-20.md', 'sha-daily'],
+  ]))
+  mockGetBlobContent.mockResolvedValue('body')
+
+  const { classifications } = await pullFromGitHub({
+    token: 't', repo: REPO, notes: [], folders: [],
+    excludedFolderPaths: ['.obsidian'],
+  })
+
+  const folderCreates = classifications
+    .filter(c => c.kind === 'folderCreated')
+    .map(c => (c as { path: string }).path)
+  expect(folderCreates).toContain('Daily-Notes')
+  expect(folderCreates).not.toContain('.obsidian')
+})
