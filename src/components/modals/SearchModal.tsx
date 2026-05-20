@@ -1,32 +1,119 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { MagnifyingGlassIcon, DocumentTextIcon } from '@heroicons/react/24/outline'
-import { useUIStore, useNoteStore, useFolderStore, useWorkspaceStore } from '@/stores'
+import { MagnifyingGlassIcon, DocumentTextIcon, SparklesIcon } from '@heroicons/react/24/outline'
+import { useUIStore, useNoteStore, useFolderStore, useWorkspaceStore, useSettingsStore } from '@/stores'
 import { searchNotes, getMatchSnippet } from '@/utils/search'
+import type { SearchResult } from '@/types'
 import { useDebounce } from '@/hooks/useDebounce'
+import { embedText } from '@/utils/aiClient'
+import { cosineSimilarity, listAllEmbeddings } from '@/utils/embeddings'
+
+type SearchMode = 'fuzzy' | 'semantic'
 
 export const SearchModal = () => {
   const { isSearchOpen, closeSearch, searchQuery, setSearchQuery } = useUIStore()
   const { notes, getActiveNotes } = useNoteStore()
   const openNote = useWorkspaceStore(s => s.openNote)
   const { getFolderById } = useFolderStore()
+  const aiEmbeddingsEnabled = useSettingsStore(s => s.aiEmbeddingsEnabled)
+  const aiProvider = useSettingsStore(s => s.aiProvider)
+  const aiApiKey = useSettingsStore(s => s.aiApiKey)
 
+  // Semantic mode is only meaningful when embeddings are wired up AND
+  // the user has an OpenAI key. Surface the toggle either way so users
+  // discover the feature, but disable it when prerequisites aren't met.
+  const semanticAvailable = aiEmbeddingsEnabled && aiProvider === 'openai' && !!aiApiKey
+
+  const [mode, setMode] = useState<SearchMode>('fuzzy')
+  const [semanticResults, setSemanticResults] = useState<SearchResult[]>([])
+  const [semanticError, setSemanticError] = useState<string | null>(null)
+  const [semanticPending, setSemanticPending] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
 
-  const debouncedQuery = useDebounce(searchQuery, 150)
+  // Fuzzy mode uses a 150ms debounce; semantic uses 400ms because every
+  // query string change hits the OpenAI API. Both share the same input.
+  const fuzzyDebounced = useDebounce(searchQuery, 150)
+  const semanticDebounced = useDebounce(searchQuery, 400)
 
   // `notes` is the trigger; getActiveNotes pulls fresh state internally so it
   // doesn't need to be in the deps array.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const activeNotes = useMemo(() => getActiveNotes(), [notes])
 
-  const results = useMemo(() => {
-    if (!debouncedQuery.trim()) return []
-    return searchNotes(activeNotes, debouncedQuery).slice(0, 10)
-  }, [activeNotes, debouncedQuery])
+  const fuzzyResults = useMemo(() => {
+    if (!fuzzyDebounced.trim()) return []
+    return searchNotes(activeNotes, fuzzyDebounced).slice(0, 10)
+  }, [activeNotes, fuzzyDebounced])
+
+  // Run semantic search when in semantic mode + debounced query changes.
+  // Each call: embed the query, cosine-rank against every cached note
+  // embedding, surface the top 10. Falls back to fuzzy results when
+  // the embed call fails (network / quota).
+  useEffect(() => {
+    if (mode !== 'semantic' || !semanticAvailable) {
+      setSemanticResults([])
+      setSemanticError(null)
+      setSemanticPending(false)
+      return
+    }
+    const query = semanticDebounced.trim()
+    if (!query) {
+      setSemanticResults([])
+      setSemanticError(null)
+      setSemanticPending(false)
+      return
+    }
+    let cancelled = false
+    setSemanticPending(true)
+    setSemanticError(null)
+    ;(async () => {
+      try {
+        const [queryVec, cached] = await Promise.all([
+          embedText({ text: query }),
+          listAllEmbeddings(),
+        ])
+        if (cancelled) return
+        if (queryVec.length === 0 || cached.length === 0) {
+          setSemanticResults([])
+          if (cached.length === 0) {
+            setSemanticError('No notes are indexed yet. Run Settings → AI → Index all notes.')
+          }
+          return
+        }
+        const ids = new Set(activeNotes.map(n => n.id))
+        const ranked = cached
+          .filter(c => ids.has(c.noteId))
+          .map(c => ({ noteId: c.noteId, score: cosineSimilarity(queryVec, c.vector) }))
+          .filter(r => r.score > 0)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 10)
+        const byId = new Map(activeNotes.map(n => [n.id, n]))
+        const results: SearchResult[] = ranked.map(r => {
+          const n = byId.get(r.noteId)
+          return {
+            noteId: r.noteId,
+            title: n?.title ?? 'Untitled',
+            content: n?.content ?? '',
+            matches: [],
+            score: r.score,
+          }
+        })
+        setSemanticResults(results)
+      } catch (err) {
+        if (cancelled) return
+        setSemanticError(err instanceof Error ? err.message : 'Semantic search failed.')
+        setSemanticResults([])
+      } finally {
+        if (!cancelled) setSemanticPending(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [mode, semanticDebounced, semanticAvailable, activeNotes])
+
+  const results = mode === 'semantic' ? semanticResults : fuzzyResults
 
   // Focus input when modal opens
   useEffect(() => {
@@ -35,6 +122,10 @@ export const SearchModal = () => {
       setSelectedIndex(0)
     }
   }, [isSearchOpen])
+
+  // Reset selection when switching modes so the user doesn't end up
+  // with a stale index pointing past the end of the new results list.
+  useEffect(() => { setSelectedIndex(0) }, [mode])
 
   // Handle keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -96,13 +187,55 @@ export const SearchModal = () => {
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Search notes..."
+            placeholder={mode === 'semantic' ? 'Describe what you’re looking for…' : 'Search notes…'}
             className="flex-1 bg-transparent text-obsidianText placeholder-obsidianSecondaryText focus:outline-none"
             autoComplete="off"
+            data-testid="search-input"
           />
           <span className="text-xs text-obsidianSecondaryText px-2 py-1 bg-obsidianDarkGray rounded">
             ESC
           </span>
+        </div>
+
+        {/* Mode toggle — fuzzy vs semantic. Semantic is disabled with
+            a hint when the embeddings prerequisites aren't met so the
+            user discovers what's needed to enable it. */}
+        <div className="flex items-center gap-1 px-3 py-1.5 border-b border-obsidianBorder bg-obsidianDarkGray/30 text-xs">
+          <button
+            type="button"
+            onClick={() => setMode('fuzzy')}
+            className={`px-2 py-0.5 rounded transition-colors ${
+              mode === 'fuzzy'
+                ? 'bg-obsidianHighlight text-obsidianText'
+                : 'text-obsidianSecondaryText hover:text-obsidianText'
+            }`}
+            data-testid="search-mode-fuzzy"
+          >
+            Fuzzy
+          </button>
+          <button
+            type="button"
+            onClick={() => semanticAvailable && setMode('semantic')}
+            disabled={!semanticAvailable}
+            title={semanticAvailable ? 'Semantic search via OpenAI embeddings' : 'Enable AI embeddings in Settings → AI to use semantic search'}
+            className={`px-2 py-0.5 rounded inline-flex items-center gap-1 transition-colors ${
+              mode === 'semantic'
+                ? 'bg-obsidianAccentPurple text-white'
+                : semanticAvailable
+                  ? 'text-obsidianSecondaryText hover:text-obsidianText'
+                  : 'text-obsidianSecondaryText/40 cursor-not-allowed'
+            }`}
+            data-testid="search-mode-semantic"
+          >
+            <SparklesIcon className="w-3 h-3" />
+            Semantic
+          </button>
+          {mode === 'semantic' && semanticPending && (
+            <span className="ml-auto text-obsidianSecondaryText">searching…</span>
+          )}
+          {mode === 'semantic' && !semanticPending && semanticError && (
+            <span className="ml-auto text-red-400 truncate" title={semanticError}>{semanticError}</span>
+          )}
         </div>
 
         {/* Results */}
@@ -145,8 +278,15 @@ export const SearchModal = () => {
                     )}
                   </div>
                   <p className="text-sm text-obsidianSecondaryText truncate mt-1">
-                    {getMatchSnippet(result.content, result.matches)}
+                    {mode === 'semantic'
+                      ? (result.content.trim().slice(0, 120) || '(empty note)')
+                      : getMatchSnippet(result.content, result.matches)}
                   </p>
+                  {mode === 'semantic' && (
+                    <span className="text-[10px] text-obsidianSecondaryText/60 font-mono">
+                      {(result.score * 100).toFixed(0)}% match
+                    </span>
+                  )}
                 </div>
               </button>
             )

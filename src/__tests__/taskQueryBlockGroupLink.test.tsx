@@ -67,7 +67,7 @@ test('clicking the filename link opens the source note in the workspace', () => 
     activePaneId: 'p1',
     mergeAppliedCount: 0,
     openNote: openSpy,
-  } as Parameters<typeof useWorkspaceStore.setState>[0])
+  } as unknown as Parameters<typeof useWorkspaceStore.setState>[0])
 
   render(<TaskQueryBlock source={'not done\ngroup by filename'} />)
   fireEvent.click(screen.getByTestId('task-query-header-link-n1'))
