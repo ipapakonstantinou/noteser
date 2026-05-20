@@ -19,7 +19,7 @@ import {
 } from '@/components/modals'
 import { OnboardingModal } from '@/components/modals/OnboardingModal'
 import { useSettingsStore } from '@/stores/settingsStore'
-import { useKeyboardShortcuts, useHydration, useAutoSync } from '@/hooks'
+import { useKeyboardShortcuts, useHydration, useAutoSync, useAutoEmbedNotes } from '@/hooks'
 import { useUIStore, useWorkspaceStore, useGitHubStore } from '@/stores'
 import { switchVault } from '@/utils/switchVault'
 import { notesKey } from '@/utils/repoStorage'
@@ -96,6 +96,10 @@ export default function Home() {
 
   // Auto-sync on startup + on the configured interval (Settings → GitHub).
   useAutoSync()
+
+  // Auto re-embed notes on save when AI embeddings are enabled (a1f7
+  // phase B). No-ops when the feature is off; per-note 5s debounce.
+  useAutoEmbedNotes()
 
   // First-run onboarding: show the starter-vault picker only for genuine
   // first-run users — no notes, no GitHub configured, and the user hasn't

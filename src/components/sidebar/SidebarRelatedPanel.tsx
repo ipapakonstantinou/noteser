@@ -10,6 +10,7 @@ import {
   topRelated,
   type RelatedNote,
 } from '@/utils/embeddings'
+import { EMBEDDING_CHANGED_EVENT } from '@/utils/events'
 
 // Related-notes panel. Surfaces the top cosine-similar notes to the
 // currently-active note. If the active note hasn't been embedded yet
@@ -60,10 +61,16 @@ export const SidebarRelatedPanel = () => {
     setRelated(topRelated(active.vector, candidates, active.noteId, 8))
   }, [activeNote, notes])
 
-  // Re-compute whenever the active note changes. We don't subscribe to
-  // every note save (that'd hit IDB constantly) — phase B will add
-  // debounced re-index + refresh wiring.
+  // Re-compute on active-note change.
   useEffect(() => { void refresh() }, [refresh])
+
+  // Phase B: also refresh whenever any note's embedding lands, so the
+  // ranking reflects fresh edits without a manual click on the spinner.
+  useEffect(() => {
+    const handler = () => { void refresh() }
+    window.addEventListener(EMBEDDING_CHANGED_EVENT, handler)
+    return () => window.removeEventListener(EMBEDDING_CHANGED_EVENT, handler)
+  }, [refresh])
 
   const handleIndexThis = useCallback(async () => {
     if (!activeNote) return

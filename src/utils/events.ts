@@ -13,3 +13,8 @@ export const ATTACHMENTS_CHANGED_EVENT = 'noteser:attachments-changed'
 // view to the target line.
 //   detail: { noteId: string; line: number }   // line is 1-indexed
 export const SCROLL_TO_LINE_EVENT = 'noteser:scroll-to-line'
+
+// Fired whenever a note's cached embedding lands (auto re-index or
+// manual). Consumers (Related notes panel) refresh their ranking.
+//   detail: { noteId: string }
+export const EMBEDDING_CHANGED_EVENT = 'noteser:embedding-changed'
