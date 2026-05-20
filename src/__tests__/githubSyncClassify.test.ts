@@ -371,3 +371,59 @@ test('non-.md entries route to separate kinds (attachments, folderCreated)', asy
   const noteClassifications = classifications.filter(c => c.kind === 'remoteCreated')
   expect(noteClassifications).toHaveLength(1)
 })
+
+// ── folder derivation skips dying paths ────────────────────────────────────
+// Regression: deleting a folder (and moving its notes to root) used to
+// re-derive the folder on the very next pull, because the moved notes
+// still carried the old `.foo/note.md` gitPath. Pull saw the remote blob
+// at `.foo/note.md`, classified the note as "unchanged" (SHA matched),
+// but ALSO walked the parent dir `.foo/` and emitted folderCreated.
+// Push would clean the remote afterwards — too late, the folder was
+// already back locally.
+test('folder derivation skips parents of dying paths (deleted-folder re-derive bug)', async () => {
+  mockGetTreeMap.mockResolvedValue(new Map([
+    ['.foo/note.md', 'sha-foo'],
+  ]))
+  mockGitBlobSha.mockResolvedValue('sha-foo')
+
+  // Note still carries its old gitPath inside .foo, but folderId is now
+  // null (user deleted .foo, cascadeDelete moved the note to root).
+  const local: Note[] = [
+    note({ id: '1', title: 'note', content: '', gitPath: '.foo/note.md', gitLastPushedSha: 'sha-foo', folderId: null }),
+  ]
+
+  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+
+  const folderCreates = classifications.filter(c => c.kind === 'folderCreated')
+  expect(folderCreates).toHaveLength(0)
+})
+
+test('folder derivation still fires for genuinely-remote folders', async () => {
+  // Same tree, but NO local note for the file → folder is real and
+  // should be materialised so the user sees it in the sidebar.
+  mockGetTreeMap.mockResolvedValue(new Map([
+    ['.foo/note.md', 'sha-foo'],
+  ]))
+  mockGetBlobContent.mockResolvedValue('body')
+
+  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: [], folders: [] })
+
+  const folderCreates = classifications.filter(c => c.kind === 'folderCreated')
+  expect(folderCreates.map(c => (c as { path: string }).path)).toContain('.foo')
+})
+
+test('folder derivation skips parents of soft-deleted notes', async () => {
+  mockGetTreeMap.mockResolvedValue(new Map([
+    ['.foo/note.md', 'sha-foo'],
+  ]))
+  mockGitBlobSha.mockResolvedValue('sha-foo')
+
+  const local: Note[] = [
+    note({ id: '1', title: 'note', content: '', gitPath: '.foo/note.md', gitLastPushedSha: 'sha-foo', isDeleted: true }),
+  ]
+
+  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+
+  const folderCreates = classifications.filter(c => c.kind === 'folderCreated')
+  expect(folderCreates).toHaveLength(0)
+})

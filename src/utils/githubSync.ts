@@ -351,9 +351,29 @@ export async function pullFromGitHub(input: {
   // `.obsidian/themes/` show in the sidebar even though we don't pull their
   // file contents. The `attachments/` tree is excluded — it stays rendered
   // by the sidebar's synthetic folder, not as a real Folder entity.
+  //
+  // Skip "dying" paths: blobs whose matched local note is soft-deleted, OR
+  // whose matched note's desired path differs from its stale gitPath (the
+  // note moved — push will sha:null the old path). Without this skip,
+  // deleting a folder re-derives it on the very next pull because the
+  // moved-to-root notes still carry the old gitPath. See bug "delete
+  // hidden folder, it appears again."
   const localFolderPaths = collectLocalFolderRepoPaths(input.folders)
+  const pendingRemovedPaths = new Set<string>()
+  for (const [path] of remoteTree) {
+    if (!path.endsWith('.md')) continue
+    const localMatch = notes.find(n => n.gitPath === path)
+    if (!localMatch) continue
+    if (localMatch.isDeleted) {
+      pendingRemovedPaths.add(path)
+      continue
+    }
+    const desiredPath = notePath(localMatch, input.folders)
+    if (desiredPath !== path) pendingRemovedPaths.add(path)
+  }
   const seenDirPaths = new Set<string>()
   for (const [path] of remoteTree) {
+    if (pendingRemovedPaths.has(path)) continue
     let cur = path
     while (true) {
       const lastSlash = cur.lastIndexOf('/')
