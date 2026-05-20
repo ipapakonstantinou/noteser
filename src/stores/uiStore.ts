@@ -13,26 +13,32 @@ import { STORAGE_KEYS } from '@/utils/storageKeys'
 //   │ Active tab body  │ ← flex-fill
 //   └──────────────────┘
 //
-// `sidebarSections` is now used ONLY for the Calendar pinned panel. The
-// other former sections (outline / backlinks / source-control) are tabs
-// in the lower switcher and don't have height/collapse state of their
-// own. We keep the type union so old persisted entries don't lose their
-// height — they're just ignored.
+// `sidebarSections` stores collapse + height state for ANY panel that
+// can be pinned at the top of the sidebar. The union mirrors
+// SidebarTabId — when a panel is in the tab strip its section state is
+// ignored. 'backlinks' remains in the union for backwards compat with
+// old persisted entries.
 export type SidebarSectionId =
   | 'calendar'
   | 'outline'
   | 'backlinks'
   | 'source-control'
+  | 'files'
+  | 'search'
+  | 'bookmarks'
 
-// IDs of the tabs in the lower switcher. `setSidebarTab` flips between
-// them; ribbon clicks for outline/source-control/bookmarks now route
-// here instead of expanding a section. `files` is the default.
+// IDs of panels that can live in either the pinned-top zone OR the
+// lower tab switcher. settingsStore.pinnedPanels controls which zone
+// each panel belongs to; the rest fall into the tab strip in
+// sidebarTabOrder order. Calendar defaults to pinned; the rest to
+// tabs.
 export type SidebarTabId =
   | 'files'
   | 'outline'
   | 'source-control'
   | 'search'
   | 'bookmarks'
+  | 'calendar'
 
 export interface SidebarSectionState {
   collapsed: boolean

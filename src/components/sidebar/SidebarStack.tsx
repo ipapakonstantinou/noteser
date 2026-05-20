@@ -15,7 +15,7 @@ import { FolderTreeToolbar } from './FolderTreeToolbar'
 import { CalendarView } from './CalendarView'
 import { OutlineView } from './OutlineView'
 import { GitHubView } from './GitHubView'
-import { SidebarSection } from './SidebarSection'
+import { SidebarSection, SIDEBAR_PANEL_DRAG_MIME } from './SidebarSection'
 import { SidebarSearchPanel } from './SidebarSearchPanel'
 import { SidebarBookmarksPanel } from './SidebarBookmarksPanel'
 
@@ -23,37 +23,17 @@ interface Props {
   onRightClick: (e: React.MouseEvent, type: 'note' | 'folder', id: string) => void
 }
 
-// Stacked sidebar (s4r3 v2 — Obsidian model). Top: pinned Calendar
-// (collapsible + resizable). Middle: tab strip with five tabs. Bottom:
-// the active tab's panel content (flex-fills remaining space).
-export const SidebarStack = ({ onRightClick }: Props) => {
-  return (
-    <div className="flex-1 min-h-0 flex flex-col">
-      <SidebarSection
-        id="calendar"
-        title="Calendar"
-        icon={<CalendarDaysIcon className="w-3.5 h-3.5" />}
-      >
-        <CalendarView />
-      </SidebarSection>
-      <TabSwitcher onRightClick={onRightClick} />
-    </div>
-  )
-}
-
-// ── Tab definitions + order resolver ───────────────────────────────────────
-// Source order. Drag-reorder writes the user's order into
-// settingsStore.sidebarTabOrder; we merge it with this list at render
-// time so a future-added tab appears at the end of the user's
-// customised order rather than disappearing.
-
-interface TabDef {
+// Panel registry. Every entry can live in either zone — pinnedPanels
+// determines which. The Files panel uses the FolderTreeToolbar shell;
+// the others render their view component directly.
+interface PanelDef {
   id: SidebarTabId
   Icon: typeof DocumentDuplicateIcon
   title: string
 }
 
-const TABS: readonly TabDef[] = [
+const PANELS: readonly PanelDef[] = [
+  { id: 'calendar',       Icon: CalendarDaysIcon,      title: 'Calendar' },
   { id: 'files',          Icon: DocumentDuplicateIcon, title: 'Files' },
   { id: 'outline',        Icon: ListBulletIcon,        title: 'Outline' },
   { id: 'source-control', Icon: CodeBracketIcon,       title: 'Source control' },
@@ -61,42 +41,154 @@ const TABS: readonly TabDef[] = [
   { id: 'bookmarks',      Icon: BookmarkIcon,          title: 'Bookmarks' },
 ]
 
-// Pure: merge the saved order with the source order. Unknown ids
-// dropped; missing ids appended at the end; duplicates de-duped.
-// Exported for the unit test (same shape as resolveRibbonOrder).
-export function resolveTabOrder(saved: string[]): SidebarTabId[] {
-  const known = new Set(TABS.map(t => t.id))
+const KNOWN_IDS = new Set<SidebarTabId>(PANELS.map(p => p.id))
+
+// Pure: merge the saved tab order with the source order, then filter
+// out anything that's pinned (so the strip never duplicates pinned
+// panels). Exported for the unit test.
+export function resolveTabOrder(saved: string[], pinned: string[] = []): SidebarTabId[] {
+  const pinnedSet = new Set(pinned)
   const seen = new Set<string>()
   const out: SidebarTabId[] = []
   for (const id of saved) {
-    if (known.has(id as SidebarTabId) && !seen.has(id)) {
+    if (KNOWN_IDS.has(id as SidebarTabId) && !seen.has(id) && !pinnedSet.has(id)) {
       seen.add(id)
       out.push(id as SidebarTabId)
     }
   }
-  for (const t of TABS) {
-    if (!seen.has(t.id)) out.push(t.id)
+  for (const p of PANELS) {
+    // Skip pinned. Calendar specifically is pinned by default and only
+    // shows in the strip when the user has explicitly unpinned it.
+    if (pinnedSet.has(p.id)) continue
+    if (seen.has(p.id)) continue
+    out.push(p.id)
   }
   return out
 }
 
+// Render the panel body for a given id — used by both zones so the
+// pinned section and the tab strip's active content stay in sync.
+const PanelBody = ({
+  id, onRightClick,
+}: { id: SidebarTabId; onRightClick: Props['onRightClick'] }) => {
+  switch (id) {
+    case 'calendar':       return <CalendarView />
+    case 'files':
+      return (
+        <div className="flex flex-col h-full">
+          <FolderTreeToolbar />
+          <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
+            <FolderTree onRightClick={onRightClick} />
+          </div>
+        </div>
+      )
+    case 'outline':        return <OutlineView />
+    case 'source-control': return <GitHubView />
+    case 'search':         return <SidebarSearchPanel />
+    case 'bookmarks':      return <SidebarBookmarksPanel />
+  }
+}
+
+export const SidebarStack = ({ onRightClick }: Props) => {
+  const pinnedSaved = useSettingsStore(s => s.pinnedPanels)
+  const setPinnedPanels = useSettingsStore(s => s.setPinnedPanels)
+  const tabOrderSaved = useSettingsStore(s => s.sidebarTabOrder)
+
+  // Sanitise pinnedPanels: drop unknowns, de-dupe. Without this an old
+  // persisted entry would render a phantom section.
+  const pinnedIds = useMemo(() => {
+    const seen = new Set<string>()
+    const out: SidebarTabId[] = []
+    for (const id of pinnedSaved) {
+      if (KNOWN_IDS.has(id as SidebarTabId) && !seen.has(id)) {
+        seen.add(id)
+        out.push(id as SidebarTabId)
+      }
+    }
+    return out
+  }, [pinnedSaved])
+
+  // ── Pin/unpin operations ─────────────────────────────────────────────
+  // Move a panel from the tab strip up into the pinned zone, or move a
+  // pinned panel down into the tab strip. Both writes go through
+  // setPinnedPanels (sidebarTabOrder is left alone — resolveTabOrder
+  // filters out pinned ids at render).
+  const pinPanel = (id: SidebarTabId) => {
+    if (pinnedIds.includes(id)) return
+    setPinnedPanels([...pinnedIds, id])
+  }
+  const unpinPanel = (id: SidebarTabId) => {
+    if (!pinnedIds.includes(id)) return
+    setPinnedPanels(pinnedIds.filter(p => p !== id))
+  }
+
+  return (
+    <div className="flex-1 min-h-0 flex flex-col">
+      {pinnedIds.map(id => {
+        const def = PANELS.find(p => p.id === id)
+        if (!def) return null
+        const Icon = def.Icon
+        return (
+          <SidebarSection
+            key={id}
+            id={id}
+            title={def.title}
+            icon={<Icon className="w-3.5 h-3.5" />}
+            draggablePanelId={id}
+          >
+            <PanelBody id={id} onRightClick={onRightClick} />
+          </SidebarSection>
+        )
+      })}
+      <TabSwitcher
+        pinnedIds={pinnedIds}
+        tabOrderSaved={tabOrderSaved}
+        onRightClick={onRightClick}
+        onPinPanel={pinPanel}
+        onUnpinPanel={unpinPanel}
+      />
+    </div>
+  )
+}
+
 const TAB_DRAG_MIME = 'application/x-noteser-sidebar-tab'
 
-const TabSwitcher = ({ onRightClick }: { onRightClick: Props['onRightClick'] }) => {
+interface TabSwitcherProps {
+  pinnedIds: SidebarTabId[]
+  tabOrderSaved: string[]
+  onRightClick: Props['onRightClick']
+  onPinPanel: (id: SidebarTabId) => void
+  onUnpinPanel: (id: SidebarTabId) => void
+}
+
+const TabSwitcher = ({
+  pinnedIds, tabOrderSaved, onRightClick, onPinPanel, onUnpinPanel,
+}: TabSwitcherProps) => {
   const tabId = useUIStore(s => s.sidebarTabId)
   const setTab = useUIStore(s => s.setSidebarTab)
-  const savedOrder = useSettingsStore(s => s.sidebarTabOrder)
   const setSidebarTabOrder = useSettingsStore(s => s.setSidebarTabOrder)
 
-  const orderedIds = useMemo(() => resolveTabOrder(savedOrder), [savedOrder])
-  const tabsById = useMemo(() => new Map(TABS.map(t => [t.id, t])), [])
+  const orderedIds = useMemo(
+    () => resolveTabOrder(tabOrderSaved, pinnedIds),
+    [tabOrderSaved, pinnedIds],
+  )
+  // The store may hold a tabId that's currently pinned (e.g. user just
+  // pinned the active tab). In that case fall back to the first id in
+  // the strip so the panel content area isn't blank.
+  const effectiveTabId: SidebarTabId | null = pinnedIds.includes(tabId)
+    ? (orderedIds[0] ?? null)
+    : tabId
+
+  const panelsById = useMemo(() => new Map(PANELS.map(p => [p.id, p])), [])
 
   const [draggingId, setDraggingId] = useState<SidebarTabId | null>(null)
   const [dropTargetId, setDropTargetId] = useState<SidebarTabId | null>(null)
-  // Horizontal halfway-point detection for the strip — left half = drop
-  // BEFORE the target, right half = AFTER. Stored in a ref because the
-  // drop event needs the most-recent value (state would lag a tick).
   const dropPos = useRef<'before' | 'after'>('before')
+
+  // Pin-zone drop indicator. When a tab is being dragged near the top
+  // edge of the strip we light up a horizontal bar that doubles as the
+  // pin-target — drop here = move to pinned-top.
+  const [pinDropActive, setPinDropActive] = useState(false)
 
   const handleDragStart = (id: SidebarTabId) => (e: React.DragEvent) => {
     e.dataTransfer.setData(TAB_DRAG_MIME, id)
@@ -105,7 +197,7 @@ const TabSwitcher = ({ onRightClick }: { onRightClick: Props['onRightClick'] }) 
   }
 
   const handleDragOver = (id: SidebarTabId) => (e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
+    if (!e.dataTransfer.types.includes(TAB_DRAG_MIME) && !e.dataTransfer.types.includes(SIDEBAR_PANEL_DRAG_MIME)) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
@@ -118,12 +210,31 @@ const TabSwitcher = ({ onRightClick }: { onRightClick: Props['onRightClick'] }) 
   }
 
   const handleDrop = (targetId: SidebarTabId) => (e: React.DragEvent) => {
-    const droppedId = e.dataTransfer.getData(TAB_DRAG_MIME) as SidebarTabId
-    if (!droppedId || droppedId === targetId) {
+    // Two kinds of payload: a tab-strip drag (reorder within strip)
+    // or a pinned-section drag (move from pinned-top to strip).
+    const droppedFromTab = e.dataTransfer.getData(TAB_DRAG_MIME) as SidebarTabId
+    const droppedFromPin = e.dataTransfer.getData(SIDEBAR_PANEL_DRAG_MIME) as SidebarTabId
+    const droppedId = (droppedFromTab || droppedFromPin) as SidebarTabId | ''
+    if (!droppedId) {
       setDraggingId(null); setDropTargetId(null); return
     }
     e.preventDefault()
-    const next = orderedIds.filter(id => id !== droppedId)
+
+    // Coming FROM pinned → unpin first, then place in tab order.
+    if (droppedFromPin) {
+      onUnpinPanel(droppedId)
+    }
+    if (droppedId === targetId) {
+      setDraggingId(null); setDropTargetId(null); return
+    }
+
+    // Compute the new tab order. We use the freshly-computed strip
+    // (orderedIds) as the base — for the pin→tab case we add the
+    // unpinned id; for the in-strip case we already have it.
+    const base = droppedFromPin
+      ? [...orderedIds, droppedId]
+      : orderedIds
+    const next = base.filter(id => id !== droppedId)
     const idx = next.indexOf(targetId)
     if (idx === -1) {
       next.push(droppedId)
@@ -135,16 +246,44 @@ const TabSwitcher = ({ onRightClick }: { onRightClick: Props['onRightClick'] }) 
   }
 
   const handleDragEnd = () => {
-    setDraggingId(null); setDropTargetId(null)
+    setDraggingId(null); setDropTargetId(null); setPinDropActive(false)
+  }
+
+  // Pin drop-zone (a 6px-tall strip above the tab strip). Listens for
+  // tab-MIME payloads; on drop, pins the dragged tab.
+  const onPinDropOver = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setPinDropActive(true)
+  }
+  const onPinDrop = (e: React.DragEvent) => {
+    const id = e.dataTransfer.getData(TAB_DRAG_MIME) as SidebarTabId
+    setPinDropActive(false)
+    if (!id) return
+    e.preventDefault()
+    onPinPanel(id)
   }
 
   return (
     <div className="flex-1 min-h-0 flex flex-col border-t border-obsidianBorder">
+      {/* Pin drop zone — only meaningful when a tab is being dragged. */}
+      <div
+        onDragOver={onPinDropOver}
+        onDragLeave={() => setPinDropActive(false)}
+        onDrop={onPinDrop}
+        className={`${draggingId ? 'h-1.5' : 'h-0'} transition-all flex-shrink-0 ${
+          pinDropActive ? 'bg-obsidianAccentPurple' : 'bg-transparent'
+        }`}
+        aria-label="Drop here to pin tab at top"
+        data-testid="sidebar-pin-dropzone"
+      />
+
       <div className="flex items-center gap-0.5 px-1 py-1 border-b border-obsidianBorder bg-obsidianDarkGray/40">
         {orderedIds.map(id => {
-          const def = tabsById.get(id)
+          const def = panelsById.get(id)
           if (!def) return null
-          const active = tabId === id
+          const active = effectiveTabId === id
           const dragging = draggingId === id
           const isDropTarget = dropTargetId === id
           const Icon = def.Icon
@@ -185,18 +324,7 @@ const TabSwitcher = ({ onRightClick }: { onRightClick: Props['onRightClick'] }) 
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {tabId === 'files' && (
-          <div className="flex flex-col h-full">
-            <FolderTreeToolbar />
-            <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
-              <FolderTree onRightClick={onRightClick} />
-            </div>
-          </div>
-        )}
-        {tabId === 'outline'        && <OutlineView />}
-        {tabId === 'source-control' && <GitHubView />}
-        {tabId === 'search'         && <SidebarSearchPanel />}
-        {tabId === 'bookmarks'      && <SidebarBookmarksPanel />}
+        {effectiveTabId && <PanelBody id={effectiveTabId} onRightClick={onRightClick} />}
       </div>
     </div>
   )
