@@ -16,37 +16,72 @@ import { keys, del } from 'idb-keyval'
 // Bump this when you want to ship a forced one-time wipe to every user
 // running an older copy. Compare against `localStorage[RESET_VERSION_KEY]`
 // — mismatch = wipe. Same value = no-op.
+//
+// Held at 1 even though the partial-wipe path is now available — bumping
+// would re-prompt every user who already escaped with `?reset=1`. Bump
+// to 2 the next time we actually need a wipe; the modal + partial-wipe
+// path will Just Work then.
 export const PERSISTED_RESET_VERSION = 1
 
 export const RESET_VERSION_KEY = 'noteser-reset-version'
 // Storage prefix every noteser key (localStorage + IDB) shares.
 const NOTESER_PREFIX = 'noteser-'
 
-// Wipes every noteser-owned key in localStorage AND in the idb-keyval store.
-// Caller is responsible for reloading the page afterwards — we don't reload
-// from here so tests can assert intermediate state.
-export async function wipeNoteserState(): Promise<void> {
-  // localStorage — synchronous, safe to iterate.
+// Keys preserved by a kill-switch wipe (we DON'T want users to lose
+// their GitHub session + UI preferences just because we bumped the
+// reset version to recover note/folder drift).
+export const PRESERVE_ON_KILLSWITCH: readonly string[] = [
+  'noteser-github',       // OAuth token + connected repo
+  'noteser-settings',     // user preferences (folder paths, AI keys, etc)
+  'noteser-ui',           // sidebar width, view, etc
+  'noteser-attachment:',  // PREFIX — every attachment blob in IDB
+]
+
+export interface WipeOpts {
+  /** Keys (or key prefixes ending in `:`) to preserve. Defaults to []
+   *  for a full wipe — that's the `?reset=1` escape-hatch behaviour. */
+  preserve?: readonly string[]
+}
+
+// Wipes noteser-owned keys in localStorage AND idb-keyval. The `preserve`
+// list lets the kill-switch path keep GitHub creds + settings while
+// dropping notes/folders/workspace state. Caller is responsible for
+// reloading the page — we don't reload from here so tests can assert.
+export async function wipeNoteserState(opts: WipeOpts = {}): Promise<void> {
+  const preserve = opts.preserve ?? []
+  const shouldPreserve = (key: string): boolean => {
+    for (const p of preserve) {
+      if (p.endsWith(':')) {
+        if (key.startsWith(p)) return true
+      } else if (key === p) {
+        return true
+      }
+    }
+    return false
+  }
+
   if (typeof localStorage !== 'undefined') {
     const toRemove: string[] = []
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i)
-      if (k && k.startsWith(NOTESER_PREFIX)) toRemove.push(k)
+      if (k && k.startsWith(NOTESER_PREFIX) && !shouldPreserve(k)) {
+        toRemove.push(k)
+      }
     }
     for (const k of toRemove) localStorage.removeItem(k)
   }
 
-  // IndexedDB via idb-keyval — async, may not be available in some test
-  // environments. Skip silently if `keys()` throws.
   try {
     const all = await keys()
-    const targets = all.filter(
-      (k): k is string => typeof k === 'string' && k.startsWith(NOTESER_PREFIX),
+    const targets = all.filter((k): k is string =>
+      typeof k === 'string'
+        && k.startsWith(NOTESER_PREFIX)
+        && !shouldPreserve(k),
     )
     await Promise.all(targets.map(k => del(k)))
   } catch {
-    // No IDB available (e.g. jsdom without a fake-indexeddb shim). Nothing
-    // to clean up there; the localStorage wipe above is the recovery path.
+    // No IDB available (jsdom without a shim). Local-storage wipe is the
+    // recovery path in that env anyway.
   }
 }
 
