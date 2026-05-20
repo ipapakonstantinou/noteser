@@ -241,6 +241,19 @@ Brief description of the project.
     createdAt: Date.now()
   },
   {
+    id: 'weekly-review',
+    name: 'Weekly Review',
+    description: 'Auto-generated from the last 7 days — open tasks, done tasks, top tags',
+    icon: '🗓️',
+    // Content is computed at click time from the current notes — the
+    // TemplatesModal swaps in `buildWeeklyReview(...)` output before
+    // creating the note. This static string is the fallback used when
+    // the dynamic builder isn't available (e.g. in unit tests that
+    // exercise the noteStore directly).
+    content: '# Weekly Review\n\n_(no notes touched this week)_\n',
+    createdAt: Date.now()
+  },
+  {
     id: 'blank',
     name: 'Blank Note',
     description: 'Start with a clean slate',

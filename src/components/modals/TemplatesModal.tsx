@@ -3,15 +3,32 @@
 import { useUIStore, useNoteStore, useFolderStore } from '@/stores'
 import { Modal } from '@/components/ui'
 import { DEFAULT_TEMPLATES, type Template } from '@/types'
+import { buildWeeklyReview } from '@/utils/weeklyReview'
 
 export const TemplatesModal = () => {
   const { modal, closeModal } = useUIStore()
-  const { createFromTemplate } = useNoteStore()
+  const { createFromTemplate, notes } = useNoteStore()
   const { activeFolderId } = useFolderStore()
 
   const isOpen = modal.type === 'template'
 
   const handleSelectTemplate = (template: Template) => {
+    // The Weekly Review template is computed from current notes rather
+    // than dropped in verbatim. Swap the static content out for the
+    // dynamic body before creating the note. We override `name` too so
+    // the new note has a date-stamped title (otherwise every Sunday's
+    // review would have the same name and collide).
+    if (template.id === 'weekly-review') {
+      const now = new Date()
+      const built = buildWeeklyReview(notes, now)
+      const yyyyMmDd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+      createFromTemplate(
+        { ...template, name: `Weekly Review ${yyyyMmDd}`, content: built.body },
+        activeFolderId,
+      )
+      closeModal()
+      return
+    }
     createFromTemplate(template, activeFolderId)
     closeModal()
   }
