@@ -64,7 +64,40 @@ export const TaskQueryBlock = ({ source }: { source: string }) => {
           <div key={gi} className={gi > 0 ? 'mt-3' : ''}>
             {g.keys.length > 0 && (
               <div className="text-[11px] uppercase tracking-wide text-obsidianSecondaryText mb-1">
-                {g.keys.join(' › ')}
+                {g.keys.map((key, ki) => {
+                  // When the key corresponds to a 'filename' segment of
+                  // the groupBy, make it a clickable link to the source
+                  // note. All tasks in a filename-grouped bucket share
+                  // the same noteId, so g.tasks[0] is a safe handle.
+                  const axis = query.groupBy[ki]
+                  const isFile = axis === 'filename' && g.tasks.length > 0
+                  const noteId = isFile ? g.tasks[0].noteId : null
+                  return (
+                    <span key={ki}>
+                      {ki > 0 && ' › '}
+                      {noteId ? (
+                        <span
+                          role="link"
+                          tabIndex={0}
+                          onClick={() => openNote(noteId, { preview: false })}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              openNote(noteId, { preview: false })
+                            }
+                          }}
+                          title={`Open ${key}`}
+                          data-testid={`task-query-header-link-${noteId}`}
+                          className="text-obsidianAccentPurple hover:underline cursor-pointer focus:outline-none focus:ring-1 focus:ring-obsidianAccentPurple rounded"
+                        >
+                          {key}
+                        </span>
+                      ) : (
+                        key
+                      )}
+                    </span>
+                  )
+                })}
               </div>
             )}
             <ul className={isComfortable ? 'space-y-2.5' : 'space-y-1'}>
