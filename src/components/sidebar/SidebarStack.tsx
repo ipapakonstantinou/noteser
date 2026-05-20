@@ -8,6 +8,7 @@ import {
   MagnifyingGlassIcon,
   BookmarkIcon,
   CodeBracketIcon,
+  LinkIcon,
 } from '@heroicons/react/24/outline'
 import { useUIStore, useSettingsStore, type SidebarTabId } from '@/stores'
 import { FolderTree } from './FolderTree'
@@ -18,6 +19,7 @@ import { GitHubView } from './GitHubView'
 import { SidebarSection, SIDEBAR_PANEL_DRAG_MIME } from './SidebarSection'
 import { SidebarSearchPanel } from './SidebarSearchPanel'
 import { SidebarBookmarksPanel } from './SidebarBookmarksPanel'
+import { SidebarRelatedPanel } from './SidebarRelatedPanel'
 
 interface Props {
   onRightClick: (e: React.MouseEvent, type: 'note' | 'folder', id: string) => void
@@ -39,6 +41,7 @@ const PANELS: readonly PanelDef[] = [
   { id: 'source-control', Icon: CodeBracketIcon,       title: 'Source control' },
   { id: 'search',         Icon: MagnifyingGlassIcon,   title: 'Search' },
   { id: 'bookmarks',      Icon: BookmarkIcon,          title: 'Bookmarks' },
+  { id: 'related',        Icon: LinkIcon,              title: 'Related notes' },
 ]
 
 const KNOWN_IDS = new Set<SidebarTabId>(PANELS.map(p => p.id))
@@ -86,6 +89,7 @@ const PanelBody = ({
     case 'source-control': return <GitHubView />
     case 'search':         return <SidebarSearchPanel />
     case 'bookmarks':      return <SidebarBookmarksPanel />
+    case 'related':        return <SidebarRelatedPanel />
   }
 }
 

@@ -26,6 +26,7 @@ export type SidebarSectionId =
   | 'files'
   | 'search'
   | 'bookmarks'
+  | 'related'
 
 // IDs of panels that can live in either the pinned-top zone OR the
 // lower tab switcher. settingsStore.pinnedPanels controls which zone
@@ -39,6 +40,7 @@ export type SidebarTabId =
   | 'search'
   | 'bookmarks'
   | 'calendar'
+  | 'related'
 
 export interface SidebarSectionState {
   collapsed: boolean
