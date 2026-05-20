@@ -8,6 +8,7 @@ import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism'
 import type { EditorView } from '@codemirror/view'
 import { useUIStore, useNoteStore, useWorkspaceStore } from '@/stores'
 import { renderWikilinks } from '@/utils/wikilinks'
+import { decodeWikilinkHref, findFragmentLine } from '@/utils/wikilinkTarget'
 import { expandEmbeds } from '@/utils/embeds'
 import { findNoteByTitleOrAlias } from '@/utils/aliases'
 import { toggleTaskLineText, removeTaskPrefixFromLine } from '@/utils/tasks'
@@ -411,15 +412,28 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
   // Link renderer that handles wikilink:// hrefs
   const WikilinkAnchor = ({ href, children }: { href?: string; children?: React.ReactNode }) => {
     if (href?.startsWith('wikilink://')) {
-      const title = decodeURIComponent(href.slice('wikilink://'.length))
-      const target = findNoteByTitleOrAlias(activeNotes, title)
+      const decoded = decodeWikilinkHref(href)!
+      const target = findNoteByTitleOrAlias(activeNotes, decoded.title)
       return (
         <span
-          onClick={e => { e.stopPropagation(); if (target) openNote(target.id) }}
+          onClick={e => {
+            e.stopPropagation()
+            if (!target) return
+            openNote(target.id)
+            if (decoded.fragment && typeof window !== 'undefined') {
+              // Defer so the editor for the target note has time to mount
+              // before we dispatch the scroll-to-fragment event.
+              setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('noteser:scroll-to-fragment', {
+                  detail: { noteId: target.id, fragment: decoded.fragment },
+                }))
+              }, 0)
+            }
+          }}
           className={`cursor-pointer rounded px-0.5 transition-colors ${
             target ? 'text-obsidianAccentPurple hover:underline' : 'text-red-400 hover:underline'
           }`}
-          title={target ? `Open: ${target.title}` : `Note not found: ${title}`}
+          title={target ? `Open: ${target.title}${decoded.fragment ? ` → ${decoded.fragment}` : ''}` : `Note not found: ${decoded.title}`}
         >
           {children}
         </span>
