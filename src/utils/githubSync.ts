@@ -712,6 +712,12 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   let updated = 0
   let deleted = 0
 
+  // We snapshot per-note pushed content so the editor's gutter diff
+  // (109) can compare against it. The IDB write is fire-and-forget
+  // outside the loop — collect first, write after the loop ends to
+  // avoid serial awaits per note.
+  const lastPushedToSnapshot: Array<{ noteId: string; content: string }> = []
+
   for (const [path, { content, note }] of desired) {
     // Skip ignored paths entirely (gi9n). The user's .gitignore — or
     // the default OS-junk preset when no file exists — should never
@@ -731,7 +737,18 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     if (note.gitPath !== path || note.gitLastPushedSha !== finalSha) {
       pathUpdates.push({ noteId: note.id, gitPath: path, gitLastPushedSha: finalSha ?? localSha })
     }
+    lastPushedToSnapshot.push({ noteId: note.id, content })
   }
+
+  // Fire-and-forget the per-note snapshot writes. The gutter will pick
+  // them up on the next render — we don't await because a slow IDB
+  // flush shouldn't block the push completing.
+  void (async () => {
+    const { setLastPushedContent } = await import('./lastPushedContent')
+    for (const { noteId, content } of lastPushedToSnapshot) {
+      try { await setLastPushedContent(noteId, content) } catch { /* silent — gutter is best-effort */ }
+    }
+  })()
 
   // 3b. Local attachments → binary blob entries. Push uploads any local
   // attachment whose SHA differs from the remote. Files only present
