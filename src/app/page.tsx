@@ -16,6 +16,7 @@ import {
   CommandPalette,
   BugReportModal,
   AIResultModal,
+  VaultSettingsConflictModal,
 } from '@/components/modals'
 import { OnboardingModal } from '@/components/modals/OnboardingModal'
 import { useSettingsStore } from '@/stores/settingsStore'
@@ -287,6 +288,7 @@ export default function Home() {
       <CommandPalette />
       <BugReportModal />
       <AIResultModal />
+      <VaultSettingsConflictModal />
       <OnboardingModal isOpen={showOnboarding} onDismiss={() => setShowOnboarding(false)} />
       <ResetConfirmModal
         isOpen={showResetModal}

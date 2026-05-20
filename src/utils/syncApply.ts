@@ -89,6 +89,26 @@ export function applyNonConflicts(classifications: PullClassification[]): ApplyC
       continue
     }
 
+    if (c.kind === 'vaultSettingsConflict') {
+      // vs8x-conflict: open the merge modal with both sides + the
+      // differing keys. The user picks per-key + clicks Apply to
+      // write the resolution. Until they do, the LOCAL settings
+      // stay intact so we never silently clobber unsynced edits.
+      const { useUIStore } = require('@/stores/uiStore') as typeof import('@/stores/uiStore')
+      useUIStore.getState().openModal({
+        type: 'vault-settings-conflict',
+        data: {
+          remoteUpdatedAt: c.remoteUpdatedAt,
+          remoteHash: c.remoteHash,
+          remoteVault: c.remoteVault,
+          localVault: c.localVault,
+          diffKeys: c.diffKeys,
+        },
+      })
+      // Not counted as updated — it's pending the user's resolution.
+      continue
+    }
+
     if (c.kind === 'remoteCreated') {
       const { segments, title } = splitRepoPath(c.path)
       const folderId = ensureFolderPath(segments)

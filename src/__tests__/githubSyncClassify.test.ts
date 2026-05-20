@@ -520,6 +520,84 @@ test('pull skips remote .md files matching a vault .gitignore', async () => {
   expect(folderCreates.map(c => (c as { path: string }).path)).not.toContain('private')
 })
 
+// ── vs8x conflict detection ────────────────────────────────────────────────
+
+test('vault settings conflict — local + remote both dirty since last sync', async () => {
+  const { useSettingsStore, VAULT_SETTING_KEYS } = await import('../stores/settingsStore')
+  // Simulate "local has unpushed edits": vaultSettingsLastPushedHash
+  // is set to an OLD value, the current local slice hashes to
+  // something different.
+  void VAULT_SETTING_KEYS
+  useSettingsStore.setState({
+    vaultSettingsLastPushedHash: 'stale-hash',
+    vaultSettingsUpdatedAt: 1000,
+    folderSortMode: 'modified',  // local change
+    taskListDensity: 'comfortable',
+  })
+
+  mockGetTreeMap.mockResolvedValue(new Map([
+    ['.noteser/settings.json', 'sha-settings'],
+  ]))
+  // Remote settings file: newer + a DIFFERENT folderSortMode.
+  mockGetBlobContent.mockResolvedValue(JSON.stringify({
+    version: 1,
+    updatedAt: 9999,
+    vault: { folderSortMode: 'alphabetical', taskListDensity: 'compact' },
+  }))
+
+  const { classifications } = await pullFromGitHub({
+    token: 't', repo: REPO, notes: [], folders: [],
+    vaultSettingsPath: '.noteser/settings.json',
+    vaultSettingsLocalUpdatedAt: 1000,
+  })
+
+  const conflict = classifications.find(c => c.kind === 'vaultSettingsConflict')
+  expect(conflict).toBeDefined()
+  if (conflict?.kind === 'vaultSettingsConflict') {
+    // The two keys I explicitly changed in local + the remote MUST
+    // both appear. Other vault keys may also be in diffKeys because
+    // the remote payload only carries a partial vault — that's fine,
+    // the modal lets the user resolve each one.
+    expect(conflict.diffKeys).toEqual(expect.arrayContaining(['folderSortMode', 'taskListDensity']))
+    expect(conflict.localVault.folderSortMode).toBe('modified')
+    expect(conflict.remoteVault.folderSortMode).toBe('alphabetical')
+  }
+})
+
+test('vault settings updates (not conflict) when local is clean', async () => {
+  const { useSettingsStore, pickVaultSlice } = await import('../stores/settingsStore')
+  void pickVaultSlice
+  // Simulate "local matches last pushed": current slice hashes to
+  // exactly vaultSettingsLastPushedHash so there's no unsynced change.
+  // We pin both by serializing once + storing the hash + state.
+  const { serializeVaultSettings, vaultSettingsHash, pickVaultSlice: pick } = await import('../utils/vaultSettings')
+  useSettingsStore.setState({
+    vaultSettingsUpdatedAt: 1000,
+    folderSortMode: 'alphabetical',
+  })
+  const localCanonical = serializeVaultSettings(pick(useSettingsStore.getState()), 1000)
+  useSettingsStore.setState({ vaultSettingsLastPushedHash: vaultSettingsHash(localCanonical) })
+
+  mockGetTreeMap.mockResolvedValue(new Map([
+    ['.noteser/settings.json', 'sha-settings'],
+  ]))
+  mockGetBlobContent.mockResolvedValue(JSON.stringify({
+    version: 1,
+    updatedAt: 9999,
+    vault: { folderSortMode: 'modified' },
+  }))
+
+  const { classifications } = await pullFromGitHub({
+    token: 't', repo: REPO, notes: [], folders: [],
+    vaultSettingsPath: '.noteser/settings.json',
+    vaultSettingsLocalUpdatedAt: 1000,
+  })
+
+  // Local was clean → simple update path, no conflict.
+  expect(classifications.find(c => c.kind === 'vaultSettingsConflict')).toBeUndefined()
+  expect(classifications.find(c => c.kind === 'vaultSettingsUpdated')).toBeDefined()
+})
+
 test('pull combines the remote .gitignore with the local overlay (gi9n UI)', async () => {
   // Remote .gitignore ignores private/; local overlay adds drafts/.
   // Both should be filtered; sibling Notes/ files unaffected.
