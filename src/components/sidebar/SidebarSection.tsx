@@ -14,6 +14,10 @@ interface Props {
   // Minimum content height (in px) when expanded. Header chrome is added
   // on top of this. Default 80.
   minHeight?: number
+  // When set, the header carries a draggable handle that emits this
+  // panel id on dragstart. SidebarStack listens for the matching MIME
+  // and lets users drop pinned-top sections into the tab strip below.
+  draggablePanelId?: string
 }
 
 // A collapsible, vertically-resizable section in the stacked sidebar.
@@ -24,6 +28,11 @@ interface Props {
 // the header. When collapsed, only the header (~28px) is visible. The
 // FilesTree section is NOT one of these — it uses flex-fill and doesn't
 // import this component.
+// MIME used when a pinned section header is dragged. Matches the
+// constant in SidebarStack so cross-zone drops work without coupling
+// the two files. Exported for tests / external listeners.
+export const SIDEBAR_PANEL_DRAG_MIME = 'application/x-noteser-sidebar-panel'
+
 export const SidebarSection = ({
   id,
   title,
@@ -32,6 +41,7 @@ export const SidebarSection = ({
   actions,
   children,
   minHeight = 80,
+  draggablePanelId,
 }: Props) => {
   const section = useUIStore(s => s.sidebarSections[id])
   const toggle = useUIStore(s => s.toggleSidebarSection)
@@ -85,11 +95,21 @@ export const SidebarSection = ({
       style={collapsed ? undefined : { height: effectiveHeight }}
       data-section-id={id}
     >
-      {/* Header */}
+      {/* Header. When draggablePanelId is set, the header becomes a
+          drag source so SidebarStack can let the user move this panel
+          from the pinned area into the tab strip. */}
       <button
         type="button"
         onClick={() => toggle(id)}
-        className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium uppercase tracking-wide text-obsidianSecondaryText hover:bg-obsidianDarkGray transition-colors w-full text-left"
+        draggable={Boolean(draggablePanelId)}
+        onDragStart={(e: React.DragEvent) => {
+          if (!draggablePanelId) return
+          e.dataTransfer.setData(SIDEBAR_PANEL_DRAG_MIME, draggablePanelId)
+          e.dataTransfer.effectAllowed = 'move'
+        }}
+        className={`flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium uppercase tracking-wide text-obsidianSecondaryText hover:bg-obsidianDarkGray transition-colors w-full text-left ${
+          draggablePanelId ? 'cursor-grab active:cursor-grabbing' : ''
+        }`}
         aria-expanded={!collapsed}
         aria-controls={`sidebar-section-content-${id}`}
       >

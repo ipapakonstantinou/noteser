@@ -20,43 +20,63 @@ jest.mock('idb-keyval', () => ({
 
 import { resolveTabOrder } from '../components/sidebar/SidebarStack'
 
-const DEFAULT_ORDER = [
+// Default strip is everything EXCEPT calendar — calendar is pinned by
+// default and resolveTabOrder filters pinned ids out.
+const STRIP_DEFAULT = [
   'files', 'outline', 'source-control', 'search', 'bookmarks',
 ] as const
 
-test('empty saved list returns the full source order', () => {
-  expect(resolveTabOrder([])).toEqual(DEFAULT_ORDER)
+test('empty saved list + default pin returns the strip-default order', () => {
+  expect(resolveTabOrder([], ['calendar'])).toEqual(STRIP_DEFAULT)
+})
+
+test('with no pin, calendar appears in the strip too', () => {
+  // resolveTabOrder defaults to pinned=[]; calendar is then known and
+  // appended at the tail of source order.
+  expect(resolveTabOrder([])).toEqual([
+    'calendar', 'files', 'outline', 'source-control', 'search', 'bookmarks',
+  ])
 })
 
 test('respects the user-saved order verbatim when complete', () => {
   const saved = ['bookmarks', 'search', 'source-control', 'outline', 'files']
-  expect(resolveTabOrder(saved)).toEqual(saved)
+  expect(resolveTabOrder(saved, ['calendar'])).toEqual(saved)
 })
 
 test('appends missing ids in source-order at the tail', () => {
-  // User only customised position of files and outline; the other 3
-  // should follow in source order.
-  expect(resolveTabOrder(['outline', 'files'])).toEqual([
+  expect(resolveTabOrder(['outline', 'files'], ['calendar'])).toEqual([
     'outline', 'files', 'source-control', 'search', 'bookmarks',
   ])
 })
 
 test('drops unknown ids', () => {
-  expect(resolveTabOrder(['files', 'ancient-deleted-tab', 'outline'])).toEqual([
+  expect(resolveTabOrder(['files', 'ancient-deleted-tab', 'outline'], ['calendar'])).toEqual([
     'files', 'outline', 'source-control', 'search', 'bookmarks',
   ])
 })
 
 test('de-duplicates repeated ids', () => {
-  expect(resolveTabOrder(['files', 'outline', 'files', 'outline'])).toEqual([
+  expect(resolveTabOrder(['files', 'outline', 'files', 'outline'], ['calendar'])).toEqual([
     'files', 'outline', 'source-control', 'search', 'bookmarks',
   ])
 })
 
-test('saved order plus missing newly-added ids = saved + new', () => {
-  // Simulates upgrade where the user had a custom order before
-  // bookmarks shipped: bookmarks should appear at the tail.
-  expect(resolveTabOrder(['search', 'files', 'outline', 'source-control'])).toEqual([
-    'search', 'files', 'outline', 'source-control', 'bookmarks',
+test('filters out pinned ids no matter where they appear in saved', () => {
+  // User saved an order that included calendar; once pinned, it must
+  // be removed from the strip.
+  expect(resolveTabOrder(['calendar', 'files', 'outline'], ['calendar'])).toEqual([
+    'files', 'outline', 'source-control', 'search', 'bookmarks',
   ])
+})
+
+test('multiple pinned ids all skip the strip', () => {
+  expect(resolveTabOrder([], ['calendar', 'outline'])).toEqual([
+    'files', 'source-control', 'search', 'bookmarks',
+  ])
+})
+
+test('all panels pinned → strip is empty', () => {
+  expect(resolveTabOrder([], [
+    'calendar', 'files', 'outline', 'source-control', 'search', 'bookmarks',
+  ])).toEqual([])
 })

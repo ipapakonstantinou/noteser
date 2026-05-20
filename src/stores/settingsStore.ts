@@ -84,13 +84,20 @@ export interface SettingsState {
   ribbonOrder: string[]
 
   // ── Sidebar tab strip order (s4r3 v2) ──────────────────────────────────
-  // Order of the 5 tabs in the lower switcher (files / outline /
-  // source-control / search / bookmarks). Same merge semantics as
+  // Order of panels in the lower switcher. Same merge semantics as
   // ribbonOrder — unknown ids dropped, new ids appended, empty = source
   // order. The strings here are SidebarTabId values, but we widen to
   // string[] so the store stays portable and a future-added tab id
   // doesn't break old persisted state.
   sidebarTabOrder: string[]
+
+  // Panels currently pinned at the TOP of the sidebar (rendered above
+  // the tab strip as their own collapsible sections). The default
+  // pins Calendar; users drag the section header into the tab strip
+  // to convert it to a tab, or drag a tab onto the pinned drop-zone
+  // to pin it. Order within the array determines top-to-bottom order
+  // of pinned sections.
+  pinnedPanels: string[]
 
   // ── Onboarding ─────────────────────────────────────────────────────────
   // True once the first-run onboarding modal has been dismissed (either by
@@ -153,6 +160,7 @@ export interface SettingsState {
   setBetaFlag: (id: string, value: boolean) => void
   setRibbonOrder: (order: string[]) => void
   setSidebarTabOrder: (order: string[]) => void
+  setPinnedPanels: (panels: string[]) => void
   setOnboardingShown: (value: boolean) => void
   reset: () => void
 }
@@ -182,6 +190,7 @@ const DEFAULTS = {
   betaFlags: {} as Record<string, boolean>,
   ribbonOrder: [] as string[],
   sidebarTabOrder: [] as string[],
+  pinnedPanels: ['calendar'] as string[],
   onboardingShown: false,
 }
 
@@ -225,6 +234,7 @@ export const useSettingsStore = create<SettingsState>()(
         set((state) => ({ betaFlags: { ...state.betaFlags, [id]: value } })),
       setRibbonOrder: (ribbonOrder) => set({ ribbonOrder }),
       setSidebarTabOrder: (sidebarTabOrder) => set({ sidebarTabOrder }),
+      setPinnedPanels: (pinnedPanels) => set({ pinnedPanels }),
       setOnboardingShown: (onboardingShown) => set({ onboardingShown }),
       reset: () => set(DEFAULTS),
     }),
