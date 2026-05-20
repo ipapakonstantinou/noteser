@@ -411,11 +411,11 @@
     {
       "id": "20260519T173502-x7m1",
       "brief": "Recurring tasks — 🔁 every week / 🔁 every month on the 1st syntax. Toggling a recurring task as done creates the next instance one period out and stamps the current one ✅. Builds on v5h7.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T17:35:02Z",
       "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "completed_at": "2026-05-20T04:40:00Z",
+      "result": "Shipped in commit 3b3bea2 + VS16 fix in 06d0dce. See docs/feature-test-checklist.md.",
       "error": null,
       "source": "researcher"
     },
@@ -455,11 +455,11 @@
     {
       "id": "20260519T173506-b1q5",
       "brief": "Note aliases — aliases: [Short Name] frontmatter key lets [[Short Name]] resolve to the note. Extend wikilinks.ts autocomplete + resolver. Small scope.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T17:35:06Z",
       "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "completed_at": "2026-05-20T04:40:00Z",
+      "result": "Shipped earlier. src/utils/aliases.ts + wikilink resolver updates.",
       "error": null,
       "source": "researcher"
     },
@@ -499,11 +499,11 @@
     {
       "id": "20260519T172410-x8c4",
       "brief": "Replace the auto-sync interval dropdown with a free-form custom-minutes input. Any positive integer is valid; 0 disables. Drops the AutoSyncInterval union type.",
-      "status": "in_progress",
+      "status": "done",
       "created_at": "2026-05-19T17:24:10Z",
       "started_at": "2026-05-19T18:15:00Z",
-      "completed_at": null,
-      "result": null,
+      "completed_at": "2026-05-20T04:40:00Z",
+      "result": "Shipped in a81bcb9.",
       "error": null,
       "source": "telegram"
     },
@@ -576,11 +576,11 @@
     {
       "id": "20260519T213717-s9r4",
       "brief": "Settings redesign — category navigator on the LEFT (Obsidian-style two-pane layout). Each category (General, Editor, Tasks, GitHub, AI, Shortcuts, About) is its own pane on the right. Replaces the current single-column form. User confirmation via Telegram screenshot 2026-05-19.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T21:37:17Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-20T04:40:00Z",
+      "completed_at": "2026-05-20T05:00:00Z",
+      "result": "Shipped. New file src/components/modals/SettingsModal.tsx is now a 2-pane layout: left-rail category navigator + right-pane panels. Categories: General, Editor, Attachments, Daily Notes, Templates, GitHub, AI, Shortcuts, Export, About. Modal grew a 2xl/3xl size + bodyless prop. 7 new tests in settingsModal.test.tsx; 40 suites / 763 tests green.",
       "error": null,
       "source": "telegram"
     },
