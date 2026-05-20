@@ -31,8 +31,7 @@ export async function githubFetch(
   const delay = opts.delayMs ?? realDelay
 
   let attempt = 0
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
+  for (;;) {
     let res: Response
     try {
       res = await fetch(url, init)

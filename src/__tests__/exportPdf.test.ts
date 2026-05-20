@@ -122,8 +122,7 @@ test('openPrintWindow writes the html into a new window', () => {
     onload: null as null | (() => void),
   } as unknown as Window
   const origOpen = window.open
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ;(window as any).open = jest.fn(() => fakeWin)
+  window.open = jest.fn(() => fakeWin) as unknown as typeof window.open
   try {
     const w = openPrintWindow('<html></html>')
     expect(w).toBe(fakeWin)
@@ -136,10 +135,8 @@ test('openPrintWindow writes the html into a new window', () => {
 test('openPrintWindow returns null when popup is blocked', () => {
   const origAlert = window.alert
   const origOpen = window.open
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ;(window as any).open = jest.fn(() => null)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ;(window as any).alert = jest.fn()
+  window.open = jest.fn(() => null) as unknown as typeof window.open
+  window.alert = jest.fn() as unknown as typeof window.alert
   try {
     const w = openPrintWindow('<html></html>')
     expect(w).toBeNull()
