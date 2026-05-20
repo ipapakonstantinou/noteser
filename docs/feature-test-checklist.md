@@ -136,6 +136,31 @@ ship date. Last updated 2026-05-20.
 - [ ] Diagnostics dump never contains the OAuth token, AI key, or any `*secret*` field
 - [ ] Closing the modal resets the form
 
+## Database / table view (d6v8)
+
+- [ ] `` ```bases `` fence renders inline as a table (live preview)
+- [ ] Same fence renders inline in the rendered preview (Ctrl+E)
+- [ ] Default columns when omitted: `title`, `tags`, `modified`
+- [ ] `from <folder>` filters to that folder + descendants
+- [ ] `where tag <name>` filters by inline `#tag`
+- [ ] `where property <key>=<value>` filters by frontmatter equality
+- [ ] `columns: a, b, c` selects which columns appear
+- [ ] `sort <column> [asc|desc]` orders rows
+- [ ] `limit <N>` caps the row count
+- [ ] Clicking a row's title opens the underlying note
+- [ ] Empty result set shows "No matching notes"
+- [ ] Cursor inside the fence shows the raw source for editing
+
+### Example query
+
+```bases
+from Projects
+where tag important
+columns: title, tags, modified
+sort modified desc
+limit 10
+```
+
 ## Frontmatter UI (a0p4)
 
 - [ ] Note WITH `---\n...\n---` block shows a "Properties (N)" header above the editor

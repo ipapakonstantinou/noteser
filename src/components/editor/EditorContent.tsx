@@ -15,6 +15,7 @@ import { SCROLL_TO_LINE_EVENT } from '@/utils/events'
 import { CodeMirrorEditor } from './CodeMirrorEditor'
 import { FrontmatterPanel } from './FrontmatterPanel'
 import { TaskQueryBlock } from './TaskQueryBlock'
+import { BasesBlock } from './BasesBlock'
 import { AttachmentImage } from './AttachmentImage'
 import type { Note } from '@/types'
 
@@ -383,6 +384,9 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
     const language = match ? match[1] : ''
     if (!inline && language === 'tasks') {
       return <TaskQueryBlock source={String(children).replace(/\n$/, '')} />
+    }
+    if (!inline && language === 'bases') {
+      return <BasesBlock source={String(children).replace(/\n$/, '')} />
     }
     if (!inline && language) {
       return (
