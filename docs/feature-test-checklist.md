@@ -202,6 +202,15 @@ in production longer.
 - [ ] Bucket counts sum to the "N pending" header
 - [ ] Items in each bucket sorted alphabetically by title
 
+## Share-link import (im5v · s8h3 v2)
+
+- [ ] `/share` page shows an "Import to my vault" button next to "Open Noteser →"
+- [ ] Clicking it navigates to `/?import=<fragment>` (same encoded payload)
+- [ ] Main app prompts with a confirm dialog "Import 'Title' to your vault?"
+- [ ] Accepting adds the note at root + opens it in the editor
+- [ ] Declining leaves the vault unchanged
+- [ ] The `?import=` param is stripped from the URL after handling
+
 ## Share via URL (s8h3)
 
 - [ ] Command palette → "Copy share link for current note" with a note open

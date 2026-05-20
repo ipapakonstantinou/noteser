@@ -19,10 +19,12 @@ interface DecodedNote {
 
 export default function SharePage() {
   const [note, setNote] = useState<DecodedNote | null>(null)
+  const [fragment, setFragment] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const frag = window.location.hash.slice(1)
+    setFragment(frag)
     if (!frag) {
       setError('No content found in the link. Make sure you copied the full URL including everything after the # symbol.')
       return
@@ -65,17 +67,29 @@ export default function SharePage() {
 
   return (
     <div className="min-h-screen bg-obsidianBlack text-obsidianText">
-      <header className="border-b border-obsidianBorder px-6 py-4 flex items-center justify-between bg-obsidianBlack/80 backdrop-blur sticky top-0 z-10">
-        <div>
+      <header className="border-b border-obsidianBorder px-6 py-4 flex items-center justify-between bg-obsidianBlack/80 backdrop-blur sticky top-0 z-10 gap-4">
+        <div className="min-w-0">
           <div className="text-xs text-obsidianSecondaryText">Shared via Noteser · {generatedDate}</div>
-          <h1 className="text-xl font-medium">{note.title}</h1>
+          <h1 className="text-xl font-medium truncate">{note.title}</h1>
         </div>
-        <Link
-          href="/"
-          className="text-sm px-3 py-1.5 bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors"
-        >
-          Open Noteser →
-        </Link>
+        <div className="flex items-center gap-2 flex-none">
+          {/* Import passes the same fragment through to the main app — it
+              decodes + adds the note + opens it. Hash fragments stay
+              client-side so the payload never touches the server. */}
+          <Link
+            href={`/?import=${encodeURIComponent(fragment)}`}
+            data-testid="share-import-cta"
+            className="text-sm px-3 py-1.5 bg-obsidianAccentPurple text-white rounded hover:bg-obsidianAccentPurple/85 transition-colors"
+          >
+            Import to my vault
+          </Link>
+          <Link
+            href="/"
+            className="text-sm px-3 py-1.5 bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors"
+          >
+            Open Noteser →
+          </Link>
+        </div>
       </header>
       <main className="max-w-3xl mx-auto px-6 py-8">
         <article className="prose prose-invert max-w-none">

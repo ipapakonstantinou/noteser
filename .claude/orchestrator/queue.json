@@ -741,11 +741,11 @@
     {
       "id": "20260520T073010-im5v",
       "brief": "s8h3 v2 — \"Import to my vault\" CTA on the /share page that creates a copy of the shared note in the recipient's noteStore.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-20T07:30:00Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-20T08:20:00Z",
+      "completed_at": "2026-05-20T08:30:00Z",
+      "result": "Shipped: /share page gets an Import to my vault button that redirects to /?import=<fragment>. Main app on mount decodes + prompts confirm + addNote + openNote, then strips the URL param. Same fragment format as s8h3 so the import IS the share payload.",
       "error": null,
       "source": "terminal"
     }
