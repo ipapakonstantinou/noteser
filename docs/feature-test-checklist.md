@@ -233,6 +233,16 @@ in production longer.
 - [ ] Missing fragment opens the note but doesn't scroll (no error)
 - [ ] Display-text form `[[Note#Heading|see section]]` still works
 
+## Database / table view — inline edits (de8c · d6v8 v2)
+
+- [ ] Click a frontmatter cell in a `bases` table → switches to inline input
+- [ ] Enter saves the value; Escape cancels; blur saves
+- [ ] Saved value writes back to the source note's frontmatter (verify by opening the note)
+- [ ] Empty value removes the frontmatter property entirely
+- [ ] Clicking the `title` cell opens the underlying note (doesn't switch to edit mode)
+- [ ] `folder`, `path`, `modified`, `created`, `tags` columns are READ-ONLY (cursor doesn't change to text-edit)
+- [ ] Caption below the table says "Click a cell to edit · Read-only: …"
+
 ## Database / table view (d6v8)
 
 - [ ] `` ```bases `` fence renders inline as a table (live preview)

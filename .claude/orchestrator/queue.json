@@ -730,11 +730,11 @@
     {
       "id": "20260520T073009-de8c",
       "brief": "d6v8 v2 — inline cell editing in the Bases table view. Edits write back to the source note frontmatter via writeFrontmatter.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-20T07:30:00Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-20T08:32:00Z",
+      "completed_at": "2026-05-20T08:40:00Z",
+      "result": "Shipped: BasesBlock cells are now click-to-edit. Frontmatter fields write back via writeFrontmatter; title field writes to note.title; folder/path/modified/created/tags are read-only. Empty value removes the property. Enter saves, Escape cancels, blur saves.",
       "error": null,
       "source": "terminal"
     },
