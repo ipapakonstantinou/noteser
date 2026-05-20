@@ -13,6 +13,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { useGitHubStore, useUIStore, useWorkspaceStore } from '@/stores'
 import { useGitHubSync, useHydration } from '@/hooks'
+import { SourceControlPanel } from './SourceControlPanel'
 
 // Sidebar's GitHub panel: status, repo info, last commit, conflicts,
 // and the sync action all in one place. Reuses useGitHubSync.runSync —
@@ -141,6 +142,11 @@ export const GitHubView = () => {
           )}
         </div>
       )}
+
+      {/* Source-control panel (vsg1) — VS Code-style pending-changes list.
+          Sits between "Last sync" and the conflicts box so the user sees
+          what's about to go up BEFORE they hit Sync. */}
+      {repo && <SourceControlPanel />}
 
       {/* Conflicts */}
       {conflictTabs.length > 0 && (

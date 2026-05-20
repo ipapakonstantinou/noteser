@@ -136,6 +136,18 @@ ship date. Last updated 2026-05-20.
 - [ ] Diagnostics dump never contains the OAuth token, AI key, or any `*secret*` field
 - [ ] Closing the modal resets the form
 
+## Source control panel (vsg1)
+
+- [ ] Sidebar → GitHub view shows "Source control" section below "Last sync"
+- [ ] Header shows "N pending" when there are changes, "clean" otherwise
+- [ ] Created bucket (green +) lists notes that have content but no remote path
+- [ ] Modified bucket (yellow pencil) lists notes whose `updatedAt > lastSyncedAt`
+- [ ] Deleted bucket (red trash) lists soft-deleted notes that have a remote path
+- [ ] Empty notes are NOT surfaced as Created
+- [ ] Click a row → opens the underlying note (or shows the path for deleted)
+- [ ] Bucket counts sum to the "N pending" header
+- [ ] Items in each bucket sorted alphabetically by title
+
 ## Share via URL (s8h3)
 
 - [ ] Command palette → "Copy share link for current note" with a note open
