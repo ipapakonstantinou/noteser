@@ -147,15 +147,19 @@ export default function Home() {
     migrateOldData()
   }, [])
 
-  // Recovery: `?reset=1` URL flag wipes all noteser-* storage + IDB then
-  // reloads cleanly. Use when state has drifted out of sync with the
-  // remote and the user wants to start fresh. Runs once on mount, before
-  // hydration — so a wipe doesn't race with a half-loaded store.
+  // Recovery: `?reset=1` URL flag wipes all noteser-* storage + IDB.
+  // Strip the param FIRST (via history.replaceState — doesn't navigate),
+  // then run the async wipe, then reload cleanly. The previous order
+  // meant a user reload mid-wipe re-fired the handler indefinitely
+  // because `?reset=1` was still in the URL until the async finished.
   useEffect(() => {
     if (!isResetRequestedFromURL()) return
+    // 1. Strip ?reset=1 immediately so any user reload during the wipe
+    //    doesn't loop back into this handler.
+    window.history.replaceState({}, '', window.location.pathname)
+    // 2. Do the wipe + force a clean reload of the now-bare URL.
     void (async () => {
       await wipeNoteserState()
-      // Strip the ?reset=1 from the URL so a refresh doesn't loop the wipe.
       window.location.replace(window.location.pathname)
     })()
   }, [])
