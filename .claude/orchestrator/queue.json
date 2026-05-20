@@ -638,6 +638,116 @@
       "result": "Shipped: hash-fragment share-via-URL. No backend — payload (title + content) encoded as URL-safe base64 in the URL fragment. New /share route decodes + renders read-only markdown. Command palette has Copy share link for current note. Confirm dialog for >8KB notes. 11 new tests.",
       "error": null,
       "source": "telegram"
+    },
+    {
+      "id": "20260520T073001-vsg1",
+      "brief": "VS Code-style Git UI — source-control sidebar panel showing per-note pending changes (created / modified / deleted) before push. Per-file include/exclude. Diff preview on click. Replaces the blind \"Commit & Sync\" button.",
+      "status": "in_progress",
+      "created_at": "2026-05-20T07:30:00Z",
+      "started_at": "2026-05-20T07:32:00Z",
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "terminal"
+    },
+    {
+      "id": "20260520T073002-sb7y",
+      "brief": "Status bar footer — Obsidian-style bottom strip: word + character count of the active note, sync status, current GitHub branch, last-sync relative time.",
+      "status": "pending",
+      "created_at": "2026-05-20T07:30:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "terminal"
+    },
+    {
+      "id": "20260520T073003-sr9b",
+      "brief": "Sync robustness — large-vault paging (>1000 notes), rate-limit handling (429 backoff), partial-failure recovery (resume from last successful blob).",
+      "status": "pending",
+      "created_at": "2026-05-20T07:30:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "terminal"
+    },
+    {
+      "id": "20260520T073004-tc8h",
+      "brief": "Test coverage for githubSync.ts orchestration — pull/push classification, conflict + autoMerged branches, gitLastPushedSha bookkeeping.",
+      "status": "pending",
+      "created_at": "2026-05-20T07:30:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "terminal"
+    },
+    {
+      "id": "20260520T073005-mb6r",
+      "brief": "Mobile / small-screen responsive layout — collapsible sidebar by default below a width threshold, single-pane mode, touch-friendly tab bar.",
+      "status": "pending",
+      "created_at": "2026-05-20T07:30:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "terminal"
+    },
+    {
+      "id": "20260520T073006-sh3d",
+      "brief": "Security hardening — XSS surface review in rendered markdown (ReactMarkdown defaults are safe but custom code-block paths may not be), tighter auth on /api/github/* proxy routes.",
+      "status": "pending",
+      "created_at": "2026-05-20T07:30:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "terminal"
+    },
+    {
+      "id": "20260520T073007-on4b",
+      "brief": "Guided onboarding — first-run vault picker with starter templates (Zettelkasten, Daily Notes system, Project tracker, Research). Top researcher recommendation for top-of-funnel.",
+      "status": "pending",
+      "created_at": "2026-05-20T07:30:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "terminal"
+    },
+    {
+      "id": "20260520T073008-bc3v",
+      "brief": "e4t8 v2 — \"Copy block ref\" command that auto-mints a ^block-id marker on the current paragraph + copies the [[Note#^id]] link to clipboard.",
+      "status": "pending",
+      "created_at": "2026-05-20T07:30:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "terminal"
+    },
+    {
+      "id": "20260520T073009-de8c",
+      "brief": "d6v8 v2 — inline cell editing in the Bases table view. Edits write back to the source note frontmatter via writeFrontmatter.",
+      "status": "pending",
+      "created_at": "2026-05-20T07:30:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "terminal"
+    },
+    {
+      "id": "20260520T073010-im5v",
+      "brief": "s8h3 v2 — \"Import to my vault\" CTA on the /share page that creates a copy of the shared note in the recipient's noteStore.",
+      "status": "pending",
+      "created_at": "2026-05-20T07:30:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "terminal"
     }
   ]
 }
