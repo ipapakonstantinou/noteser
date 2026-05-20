@@ -157,10 +157,14 @@ function GeneralPanel() {
   const showHiddenFolders = useSettingsStore(s => s.showHiddenFolders)
   const trashMode = useSettingsStore(s => s.trashMode)
   const confirmBulkDelete = useSettingsStore(s => s.confirmBulkDelete)
+  const shareDefaultExpiryDays = useSettingsStore(s => s.shareDefaultExpiryDays)
+  const shareDefaultBurn = useSettingsStore(s => s.shareDefaultBurn)
   const setFolderSortMode = useSettingsStore(s => s.setFolderSortMode)
   const setShowHiddenFolders = useSettingsStore(s => s.setShowHiddenFolders)
   const setTrashMode = useSettingsStore(s => s.setTrashMode)
   const setConfirmBulkDelete = useSettingsStore(s => s.setConfirmBulkDelete)
+  const setShareDefaultExpiryDays = useSettingsStore(s => s.setShareDefaultExpiryDays)
+  const setShareDefaultBurn = useSettingsStore(s => s.setShareDefaultBurn)
 
   return (
     <div className="space-y-4">
@@ -211,6 +215,47 @@ function GeneralPanel() {
           onChange={setConfirmBulkDelete}
         />
       </Field>
+
+      {/* Share defaults (shr2). Both fields piggy-back on the General
+          panel because they're tiny — a dedicated "Sharing" category
+          can graduate them later if more options accumulate. */}
+      <div className="pt-3 mt-3 border-t border-obsidianBorder space-y-3">
+        <div className="text-xs uppercase tracking-wide text-obsidianSecondaryText">
+          Sharing
+        </div>
+        <Field
+          label="Default expiry"
+          description="Days until newly-generated /share links stop rendering. 0 = no expiry. Recipient browser enforces, so it's an honor-system check, not a server-revoke."
+        >
+          <div className="flex items-center gap-2">
+            <SettingsTextInput
+              value={String(shareDefaultExpiryDays)}
+              onCommit={(raw) => {
+                const n = parseInt(raw, 10)
+                const clamped = isNaN(n) || n < 0 ? 0 : Math.min(n, 3650)
+                setShareDefaultExpiryDays(clamped)
+              }}
+              normalize={(raw) => {
+                const n = parseInt(raw, 10)
+                const clamped = isNaN(n) || n < 0 ? 0 : Math.min(n, 3650)
+                return String(clamped)
+              }}
+              placeholder="0"
+              mono
+            />
+            <span className="text-sm text-obsidianMuted">days</span>
+          </div>
+        </Field>
+        <Field
+          label="Burn after first view"
+          description="Mark /share links so the recipient's browser refuses to re-render after the first successful view. Best-effort: another device opening the same URL will still see it once."
+        >
+          <SettingsCheckbox
+            checked={shareDefaultBurn}
+            onChange={setShareDefaultBurn}
+          />
+        </Field>
+      </div>
     </div>
   )
 }
