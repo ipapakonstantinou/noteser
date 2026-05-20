@@ -1,96 +1,24 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  CalendarDaysIcon,
-  ListBulletIcon,
-  DocumentDuplicateIcon,
-  MagnifyingGlassIcon,
-  BookmarkIcon,
-  CodeBracketIcon,
-  LinkIcon,
-} from '@heroicons/react/24/outline'
+import { DocumentDuplicateIcon } from '@heroicons/react/24/outline'
 import { useUIStore, useSettingsStore, type SidebarTabId } from '@/stores'
-import { FolderTree } from './FolderTree'
-import { FolderTreeToolbar } from './FolderTreeToolbar'
-import { CalendarView } from './CalendarView'
-import { OutlineView } from './OutlineView'
-import { GitHubView } from './GitHubView'
 import { SidebarSection, SIDEBAR_PANEL_DRAG_MIME } from './SidebarSection'
-import { SidebarSearchPanel } from './SidebarSearchPanel'
-import { SidebarBookmarksPanel } from './SidebarBookmarksPanel'
-import { SidebarRelatedPanel } from './SidebarRelatedPanel'
+import {
+  PANELS,
+  KNOWN_IDS,
+  TAB_DRAG_MIME,
+  PanelBody,
+  resolveTabOrder,
+  type PanelRightClick,
+} from './sidebarPanelRegistry'
+
+// Re-export resolveTabOrder so older callers (the unit test, future
+// consumers) keep their existing `from './SidebarStack'` import path.
+export { resolveTabOrder }
 
 interface Props {
-  onRightClick: (e: React.MouseEvent, type: 'note' | 'folder', id: string) => void
-}
-
-// Panel registry. Every entry can live in either zone — pinnedPanels
-// determines which. The Files panel uses the FolderTreeToolbar shell;
-// the others render their view component directly.
-interface PanelDef {
-  id: SidebarTabId
-  Icon: typeof DocumentDuplicateIcon
-  title: string
-}
-
-const PANELS: readonly PanelDef[] = [
-  { id: 'calendar',       Icon: CalendarDaysIcon,      title: 'Calendar' },
-  { id: 'files',          Icon: DocumentDuplicateIcon, title: 'Files' },
-  { id: 'outline',        Icon: ListBulletIcon,        title: 'Outline' },
-  { id: 'source-control', Icon: CodeBracketIcon,       title: 'Source control' },
-  { id: 'search',         Icon: MagnifyingGlassIcon,   title: 'Search' },
-  { id: 'bookmarks',      Icon: BookmarkIcon,          title: 'Bookmarks' },
-  { id: 'related',        Icon: LinkIcon,              title: 'Related notes' },
-]
-
-const KNOWN_IDS = new Set<SidebarTabId>(PANELS.map(p => p.id))
-
-// Pure: merge the saved tab order with the source order, filtering
-// out anything in `pinned` so the main bottom strip doesn't
-// duplicate the per-pinned mini-strips above. Each pinned panel
-// gets its OWN tab strip at the top of the sidebar (Obsidian pane
-// model), so seeing the same icon down here too would be noise.
-// Exported for the unit test.
-export function resolveTabOrder(saved: string[], pinned: string[] = []): SidebarTabId[] {
-  const pinnedSet = new Set(pinned)
-  const seen = new Set<string>()
-  const out: SidebarTabId[] = []
-  for (const id of saved) {
-    if (KNOWN_IDS.has(id as SidebarTabId) && !seen.has(id) && !pinnedSet.has(id)) {
-      seen.add(id)
-      out.push(id as SidebarTabId)
-    }
-  }
-  for (const p of PANELS) {
-    if (pinnedSet.has(p.id)) continue
-    if (!seen.has(p.id)) out.push(p.id)
-  }
-  return out
-}
-
-// Render the panel body for a given id — used by both zones so the
-// pinned section and the tab strip's active content stay in sync.
-const PanelBody = ({
-  id, onRightClick,
-}: { id: SidebarTabId; onRightClick: Props['onRightClick'] }) => {
-  switch (id) {
-    case 'calendar':       return <CalendarView />
-    case 'files':
-      return (
-        <div className="flex flex-col h-full">
-          <FolderTreeToolbar />
-          <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
-            <FolderTree onRightClick={onRightClick} />
-          </div>
-        </div>
-      )
-    case 'outline':        return <OutlineView />
-    case 'source-control': return <GitHubView />
-    case 'search':         return <SidebarSearchPanel />
-    case 'bookmarks':      return <SidebarBookmarksPanel />
-    case 'related':        return <SidebarRelatedPanel />
-  }
+  onRightClick: PanelRightClick
 }
 
 export const SidebarStack = ({ onRightClick }: Props) => {
@@ -245,12 +173,10 @@ export const SidebarStack = ({ onRightClick }: Props) => {
   )
 }
 
-const TAB_DRAG_MIME = 'application/x-noteser-sidebar-tab'
-
 interface TabSwitcherProps {
   pinnedIds: SidebarTabId[]
   tabOrderSaved: string[]
-  onRightClick: Props['onRightClick']
+  onRightClick: PanelRightClick
   onPinPanel: (id: SidebarTabId) => void
   onUnpinPanel: (id: SidebarTabId) => void
   // True when ANY sidebar drag is in flight — inflates the pin-zone
@@ -459,7 +385,7 @@ interface PinnedGroupProps {
   // the mini-strip's drop handler when a tab is dragged from
   // elsewhere onto this group's strip.
   onAddToThisGroup: (id: SidebarTabId) => void
-  onRightClick: Props['onRightClick']
+  onRightClick: PanelRightClick
 }
 
 const PinnedGroup = ({
