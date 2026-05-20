@@ -136,6 +136,13 @@ export function useTreeDragDrop({ getFolderRepoPath }: UseTreeDragDropOptions): 
   const onFolderDragOver = useCallback((e: React.DragEvent, folderId: string) => {
     if (!draggedItemRef.current) return
     e.preventDefault()
+    // stopPropagation is the key fix for "drop to root doesn't work":
+    // without it, the dragOver event bubbles up to the tree wrapper's
+    // onRootDragOver, which overrides the highlight to '__root__' even
+    // though the cursor is over a folder row. The drop then goes into
+    // the folder (child handler fires first), confusingly mismatching
+    // the highlight.
+    e.stopPropagation()
     e.dataTransfer.dropEffect = 'move'
     setDragOverTarget(prev => (prev !== folderId ? folderId : prev))
   }, [])
@@ -150,6 +157,10 @@ export function useTreeDragDrop({ getFolderRepoPath }: UseTreeDragDropOptions): 
   const onFolderDrop = useCallback(
     (e: React.DragEvent, folderId: string) => {
       e.preventDefault()
+      // Pair with stopPropagation in onFolderDragOver — keeps the root
+      // drop handler from running on top of this and re-applying the
+      // wrong move.
+      e.stopPropagation()
       const item = draggedItemRef.current
       if (item?.kind === 'note') moveNoteToFolder(item.id, folderId)
       else if (item?.kind === 'attachment') void moveAttachmentToFolder(item.path, folderId)

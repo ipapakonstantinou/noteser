@@ -356,11 +356,11 @@
     {
       "id": "20260519T160842-q9k4",
       "brief": "Drop-between-rows reorder: dragging an item to a position BELOW a folder (rather than ON it) should reorder siblings in that position. Today we only support drop-onto-folder (move into). Need a between-rows hit zone, a different highlight (horizontal line), and persistence of the new order. Applies to notes, folders, and attachments.",
-      "status": "pending",
+      "status": "cancelled",
       "created_at": "2026-05-19T16:08:42Z",
-      "started_at": "2026-05-20T06:05:00Z",
-      "completed_at": null,
-      "result": "Deferred — needs manual sort mode + per-note order index to be meaningful (alphabetical/modified/created sorts would ignore the drop position). Bigger lift than a UI tweak.",
+      "started_at": null,
+      "completed_at": "2026-05-20T14:30:00Z",
+      "result": "Cancelled per user — they don't want manual reordering. Folder hierarchy moves (drag folder INTO folder) shipped instead in 158e09f. The folderSortMode setting still controls how siblings sort (alphabetical / modified / created — 'manual' is now unused).",
       "error": null,
       "source": "telegram"
     },
