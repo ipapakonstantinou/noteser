@@ -543,11 +543,11 @@
     {
       "id": "20260519T172414-a1f7",
       "brief": "Embeddings + semantic search. Index every note via an embedding model (OpenAI text-embedding-3-small or Voyage); store vectors in IDB. New 'find related notes' panel that ranks by cosine similarity to the active note's embedding, and a semantic-search mode in the search modal. Requires y9d5. Re-index on save (debounced).",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T17:24:14Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-20T14:30:00Z",
+      "completed_at": "2026-05-20T15:00:00Z",
+      "result": "Shipped phase A in 9a6cda3. aiClient.embedText hits OpenAI /v1/embeddings (text-embedding-3-small by default). utils/embeddings.ts: cosineSimilarity, topRelated, indexNote, indexAllNotes, FNV-1a content hash so re-runs skip unchanged notes. settingsStore aiEmbeddingsEnabled flag (default off). New 'Related notes' sidebar tab — gated three ways (embeddings off / wrong provider / no active note) with appropriate empty states; offers a per-note 'Index this note' button. Settings → AI gains 'Embeddings' group with opt-in toggle, 'Index all notes' bulk button with progress counter, 'Clear embeddings' reset. 18 new tests (11 embeddings + 7 aiClient.embedText). Phase B (auto re-index on debounced save) and phase C (semantic-search mode in Ctrl+K modal) deferred to follow-up commits.",
       "error": null,
       "source": "telegram"
     },
@@ -802,6 +802,28 @@
       "started_at": "2026-05-20T13:45:00Z",
       "completed_at": "2026-05-20T14:00:00Z",
       "result": "Shipped in 53bd491. New src/utils/gitignore.ts with compileGitignore/parseGitignore + DEFAULT_MATCHER (.DS_Store, Thumbs.db, *.tmp, *.swp). Supports literal names, *, **, ?, leading-slash anchor, trailing-slash dir-only, negation, comments. pullFromGitHub reads .gitignore from remote tree, filters md/attachment/folder-derivation. syncToGitHub omits ignored paths from tree entries. Settings UI not yet exposed (the matcher just works automatically). 14 matcher tests + 2 integration tests.",
+      "error": null,
+      "source": "terminal"
+    },
+    {
+      "id": "20260520T150000-a1f7p2",
+      "brief": "a1f7 phase B — auto re-index embeddings on note save (debounced). Subscribe to noteStore, queue indexNote() per noteId on a ~5s debounce, refresh the Related-notes panel on completion. Skip when aiEmbeddingsEnabled is off or aiProvider !== openai. Network/quota failures should drop silently so a 4xx doesn't pop a modal every keystroke.",
+      "status": "pending",
+      "created_at": "2026-05-20T15:00:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "terminal"
+    },
+    {
+      "id": "20260520T150100-a1f7p3",
+      "brief": "a1f7 phase C — semantic-search mode in the Ctrl+K modal. Toggle between fuzzy (Fuse) and semantic (embedText query + cosine vs cached vectors). Falls back to fuzzy when embeddings disabled / unavailable.",
+      "status": "pending",
+      "created_at": "2026-05-20T15:01:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
       "error": null,
       "source": "terminal"
     },
