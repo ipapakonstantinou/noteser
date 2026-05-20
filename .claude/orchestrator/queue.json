@@ -752,11 +752,11 @@
     {
       "id": "20260520T082500-s4r3",
       "brief": "Sidebar redesign — split panel layout. Files tree on top, secondary nav (Calendar, Backlinks, Outline, Bookmarks, Source Control) as collapsible mini-panels BELOW the tree (Obsidian-style). Replaces the current one-view-at-a-time ribbon model.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-20T08:25:00Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-20T10:30:00Z",
+      "completed_at": "2026-05-20T11:00:00Z",
+      "result": "Shipped v1 in 3eeb9a0. New SidebarStack composes FolderTree (flex-fill, top) + four collapsible mini-panels: Calendar, Outline, Backlinks, Source Control. New SidebarSection is the reusable shell (click header to toggle, drag bottom border to resize). uiStore gains sidebarSections (Record<id, {collapsed, height}>) with toggle/setCollapsed/setHeight/expand actions; height clamped [80, 2000], persisted. Ribbon icons for calendar/outline/backlinks/github now expand+scroll to the matching section instead of swapping views; filter-mode icons (notes/recent/tags/trash/templates) unchanged. Bookmarks deferred — no underlying view yet. 8 new tests for section state. 55 suites / 934 tests green.",
       "error": null,
       "source": "telegram"
     },
@@ -770,6 +770,18 @@
       "result": null,
       "error": null,
       "source": "terminal"
+    },
+    {
+      "id": "20260520T104500-vscg",
+      "brief": "Redesign Source Control panel to mirror VS Code: SOURCE CONTROL header, collapsible CHANGES group, multiline message input with a 'Commit' split-button (dropdown for Commit & Push / Commit & Sync), Changes list with file row + status indicator on the right (M / A / D / U / + line-count). Per-file actions on hover: stage, discard, open diff. Empty state when no changes. Click a row to open the diff/merge view. Matches the screenshot. Comes AFTER s4r3 (Source Control is one of the new stack sections).",
+      "status": "pending",
+      "created_at": "2026-05-20T10:45:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram",
+      "blocked_by": "20260520T082500-s4r3"
     },
     {
       "id": "20260520T103000-gi9n",
