@@ -75,10 +75,14 @@ function note(input: Partial<Note> & { id: string; title: string }): Note {
   } as Note
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   jest.clearAllMocks()
   mockGetBranchRefSha.mockResolvedValue('headsha')
   mockGetCommitTreeSha.mockResolvedValue('treesha')
+  // Reset the per-device gitignore overlay so a setting from a
+  // previous test doesn't leak through into the next pull.
+  const { useSettingsStore } = await import('../stores/settingsStore')
+  useSettingsStore.setState({ localGitignoreOverlay: '' })
 })
 
 // ── unchanged ───────────────────────────────────────────────────────────────
@@ -514,6 +518,34 @@ test('pull skips remote .md files matching a vault .gitignore', async () => {
   // The parent dir of the ignored file shouldn't be derived either.
   const folderCreates = classifications.filter(c => c.kind === 'folderCreated')
   expect(folderCreates.map(c => (c as { path: string }).path)).not.toContain('private')
+})
+
+test('pull combines the remote .gitignore with the local overlay (gi9n UI)', async () => {
+  // Remote .gitignore ignores private/; local overlay adds drafts/.
+  // Both should be filtered; sibling Notes/ files unaffected.
+  const { useSettingsStore } = await import('../stores/settingsStore')
+  useSettingsStore.setState({ localGitignoreOverlay: 'drafts/' })
+
+  mockGetTreeMap.mockResolvedValue(new Map([
+    ['.gitignore', 'sha-gi'],
+    ['private/secret.md', 'sha-secret'],  // remote-ignored
+    ['drafts/wip.md', 'sha-wip'],         // overlay-ignored
+    ['Notes/normal.md', 'sha-normal'],    // unaffected
+  ]))
+  mockGetBlobContent.mockImplementation(async (_t, _o, _n, sha: string) => {
+    if (sha === 'sha-gi') return 'private/\n'
+    return 'body'
+  })
+
+  const { classifications } = await pullFromGitHub({
+    token: 't', repo: REPO, notes: [], folders: [],
+  })
+
+  const paths = classifications
+    .filter(c => c.kind === 'remoteCreated')
+    .map(c => (c as { path: string }).path)
+    .sort()
+  expect(paths).toEqual(['Notes/normal.md'])
 })
 
 test('pull applies the default OS-junk preset when no .gitignore exists', async () => {

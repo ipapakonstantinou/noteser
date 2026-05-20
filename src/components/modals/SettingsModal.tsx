@@ -294,7 +294,38 @@ function GitHubPanel() {
           mono
         />
       </Field>
+      <GitignoreOverlayField />
     </div>
+  )
+}
+
+// Editable local .gitignore overlay. Per-DEVICE — combined with the
+// remote vault `.gitignore` at sync time so the user can add personal
+// ignores (e.g. scratch files) without touching the shared file. The
+// remote `.gitignore` itself is NOT edited here; users round-trip
+// through GitHub for that today (a separate task tracks an in-app
+// editor for the remote file too).
+function GitignoreOverlayField() {
+  const overlay = useSettingsStore(s => s.localGitignoreOverlay)
+  const setOverlay = useSettingsStore(s => s.setLocalGitignoreOverlay)
+  // Local draft so the textarea can render multi-line without the
+  // SettingsTextInput's commit-on-blur dance — we save on every
+  // keystroke via the store directly (cheap; it's a tiny string).
+  return (
+    <Field
+      label="Local ignore patterns"
+      description="Per-device additions to the vault's .gitignore — combined at sync time. One pattern per line. Useful for personal scratch files you don't want anyone else to see. Use a leading ! to un-ignore a remote rule."
+    >
+      <textarea
+        value={overlay}
+        onChange={e => setOverlay(e.target.value)}
+        placeholder={'# extras only on this device\n*.scratch\n!important.scratch'}
+        rows={5}
+        spellCheck={false}
+        className="w-full px-2 py-1.5 text-sm bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple font-mono resize-y"
+        data-testid="local-gitignore-overlay"
+      />
+    </Field>
   )
 }
 
