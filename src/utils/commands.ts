@@ -179,6 +179,69 @@ export function getAllCommands(): Command[] {
     run: () => ui.togglePreview(),
   })
 
+  // z0e6 — Note-level AI actions in the command palette. Gated on a
+  // configured provider (no point listing them when AI is off) AND on
+  // an active note in the workspace (each action needs a target).
+  if (activeNoteId) {
+    const aiProvider = useSettingsStore.getState().aiProvider
+    if (aiProvider !== 'off') {
+      // Lazy-imported so non-AI users don't pay the runNoteAIAction
+      // module weight just for opening the palette.
+      const dispatchAction = async (
+        actionId: 'summarize' | 'extractTasks' | 'suggestTags' | 'rewriteClarity' | 'translate',
+        extra?: string,
+      ) => {
+        const { runNoteAIAction } = await import('@/utils/runNoteAIAction')
+        await runNoteAIAction({ actionId, noteId: activeNoteId, extraInput: extra })
+      }
+      const aiKeywords = ['ai', 'assistant', 'llm', 'gpt', 'claude']
+      out.push({
+        id: 'app.ai.summarize',
+        label: 'AI: Summarize note',
+        description: '3-5 sentence summary of the active note.',
+        keywords: [...aiKeywords, 'summary', 'tldr'],
+        group: 'AI',
+        run: () => { void dispatchAction('summarize') },
+      })
+      out.push({
+        id: 'app.ai.extractTasks',
+        label: 'AI: Extract tasks',
+        description: 'Pull actionable items out of the note as a markdown checklist.',
+        keywords: [...aiKeywords, 'todo', 'tasks', 'action', 'items'],
+        group: 'AI',
+        run: () => { void dispatchAction('extractTasks') },
+      })
+      out.push({
+        id: 'app.ai.suggestTags',
+        label: 'AI: Suggest tags',
+        description: 'Suggest 3-7 #tags based on the note content.',
+        keywords: [...aiKeywords, 'tags', 'labels', 'categorize'],
+        group: 'AI',
+        run: () => { void dispatchAction('suggestTags') },
+      })
+      out.push({
+        id: 'app.ai.rewriteClarity',
+        label: 'AI: Rewrite for clarity',
+        description: 'Rewrite the note for clearer, more concise prose without changing meaning.',
+        keywords: [...aiKeywords, 'rewrite', 'edit', 'clarity', 'polish'],
+        group: 'AI',
+        run: () => { void dispatchAction('rewriteClarity') },
+      })
+      out.push({
+        id: 'app.ai.translate',
+        label: 'AI: Translate…',
+        description: 'Translate the note into a target language you specify.',
+        keywords: [...aiKeywords, 'translate', 'language', 'i18n'],
+        group: 'AI',
+        run: () => {
+          const target = window.prompt('Translate into which language?', 'Spanish')
+          if (!target) return
+          void dispatchAction('translate', target)
+        },
+      })
+    }
+  }
+
   // Periodic notes (week / month). Daily lives in SHORTCUTS as `openToday`.
   out.push({
     id: 'app.openThisWeek',

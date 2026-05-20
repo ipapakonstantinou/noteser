@@ -15,6 +15,7 @@ import {
   TaskEditModal,
   CommandPalette,
   BugReportModal,
+  AIResultModal,
 } from '@/components/modals'
 import { OnboardingModal } from '@/components/modals/OnboardingModal'
 import { useSettingsStore } from '@/stores/settingsStore'
@@ -276,6 +277,7 @@ export default function Home() {
       <TaskEditModal />
       <CommandPalette />
       <BugReportModal />
+      <AIResultModal />
       <OnboardingModal isOpen={showOnboarding} onDismiss={() => setShowOnboarding(false)} />
       <ResetConfirmModal
         isOpen={showResetModal}
