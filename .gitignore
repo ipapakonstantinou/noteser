@@ -73,3 +73,6 @@ next-env.d.ts
 /playwright/.cache/
 /blob-report/
 .claude/worktrees/
+
+# Vercel
+.vercel/

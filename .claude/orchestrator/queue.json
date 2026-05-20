@@ -759,6 +759,28 @@
       "result": null,
       "error": null,
       "source": "telegram"
+    },
+    {
+      "id": "20260520T100000-vs8x",
+      "brief": "Vault settings sync via configurable settings folder. Partition useSettingsStore into vault slice (synced via ${settingsFolderPath}/settings.json) and device slice (IDB only, includes settingsFolderPath itself so devices can stay independent by using different paths). Default path .noteser/, exposed in Settings → Sync. LWW via embedded updatedAt; skip push when content-equal. Vault keys: trashMode, confirmBulkDelete, defaultNotesFolder, defaultAttachmentsFolder, taskListDensity, folderSortMode, periodicNotesPath, dailyNoteDateFormat, betaFlags, theme, themeOverrides. Device keys: settingsFolderPath, sidebarWidth, sidebarCollapsed, onboardingShown, lastVisitedView. Migration partitions existing noteser-settings on first load. Templates/shortcuts deferred to follow-ups.",
+      "status": "pending",
+      "created_at": "2026-05-20T10:00:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "terminal"
+    },
+    {
+      "id": "20260520T103000-gi9n",
+      "brief": "Vault-level .gitignore support. Parse a `.gitignore` at the vault root (and optionally `.noteser/ignore` for noteser-specific overrides) and skip matching paths on BOTH push (don't upload) and pull (don't materialize as notes/folders/attachments). Use a lightweight gitignore matcher (no external lib — globs + negation + dir-only patterns); cache the compiled matcher per sync. Default ignore presets baked-in if no file exists: `.DS_Store`, `Thumbs.db`, `*.tmp`. Settings → Sync surfaces the resolved file content read-only with an 'Edit in editor' button that opens it as a regular note. Tests: matcher correctness (globs, dir patterns, negation), pull skips ignored, push omits ignored, no infinite re-derive cycle when a previously-tracked file becomes ignored.",
+      "status": "pending",
+      "created_at": "2026-05-20T10:30:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "terminal"
     }
   ]
 }
