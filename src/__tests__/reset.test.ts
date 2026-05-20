@@ -161,14 +161,29 @@ describe('decideResetAction', () => {
     expect(out.action).toBe('confirm')
   })
 
-  test('wipe when version stale + never-synced + no active notes (e.g. fresh install)', () => {
-    // never-synced + zero notes = nothing to lose, safe to wipe silently.
+  test('markOnly when fresh install (no notes, never synced)', () => {
+    // The previous behaviour wiped + reloaded here; that flashed for new
+    // visitors and broke E2E tests. Now we just stamp the version
+    // forward — nothing to wipe anyway.
     const out = decideResetAction({
       storedVersion: null,
       currentVersion: 1,
       notes: [],
       lastSyncedAt: null,
     })
-    expect(out.action).toBe('wipe')
+    expect(out.action).toBe('markOnly')
+  })
+
+  test('markOnly also covers a previously-installed user with no active notes', () => {
+    // Soft-deleted notes still imply state worth not losing, but for the
+    // "never synced + nothing left active" case we still markOnly. The
+    // confirm branch only fires when hasUnsyncedChanges is true.
+    const out = decideResetAction({
+      storedVersion: 0,
+      currentVersion: 1,
+      notes: [{ updatedAt: 100, isDeleted: true }],
+      lastSyncedAt: null,
+    })
+    expect(out.action).toBe('markOnly')
   })
 })

@@ -97,20 +97,30 @@ export function writeStoredResetVersion(version: number = PERSISTED_RESET_VERSIO
 }
 
 // Decision helper for the kill-switch check. Returns one of:
-//   { action: 'noop' }      — version matches, do nothing
-//   { action: 'wipe' }      — version mismatch + no unsynced work, safe to wipe
-//   { action: 'confirm' }   — version mismatch + unsynced work, ask the user
+//   { action: 'noop' }       — version matches, do nothing
+//   { action: 'markOnly' }   — fresh install (no notes, never synced): just
+//                              persist the version, no wipe + no reload
+//   { action: 'wipe' }       — version mismatch + persisted state worth
+//                              wiping, no unsynced work
+//   { action: 'confirm' }    — version mismatch + unsynced work, ask user
 //
-// Page-mount code uses this to decide whether to call `wipeNoteserState`
-// directly, prompt the user, or do nothing. Keeping the decision pure makes
-// it easy to test without spinning up the full store graph.
+// `markOnly` is what stops a first-time visitor from hitting a redundant
+// wipe + reload — without it, every fresh browser triggered an immediate
+// reload on mount which broke E2E tests AND created a visible flash for
+// new users.
 export function decideResetAction(input: {
   storedVersion: number | null
   currentVersion: number
   notes: Array<{ updatedAt: number; isDeleted?: boolean }>
   lastSyncedAt: number | null
-}): { action: 'noop' | 'wipe' | 'confirm' } {
+}): { action: 'noop' | 'markOnly' | 'wipe' | 'confirm' } {
   if (input.storedVersion === input.currentVersion) return { action: 'noop' }
+  const activeNotes = input.notes.filter(n => !n.isDeleted)
+  // Fresh install: nothing in the store, never synced. Just stamp the
+  // version forward so subsequent loads are no-ops; no wipe / no reload.
+  if (activeNotes.length === 0 && input.lastSyncedAt == null) {
+    return { action: 'markOnly' }
+  }
   if (hasUnsyncedChanges(input.notes, input.lastSyncedAt)) {
     return { action: 'confirm' }
   }
