@@ -18,6 +18,9 @@ export const SearchModal = () => {
 
   const debouncedQuery = useDebounce(searchQuery, 150)
 
+  // `notes` is the trigger; getActiveNotes pulls fresh state internally so it
+  // doesn't need to be in the deps array.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const activeNotes = useMemo(() => getActiveNotes(), [notes])
 
   const results = useMemo(() => {

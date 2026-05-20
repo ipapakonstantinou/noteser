@@ -61,11 +61,15 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     getChildFolders
   } = useFolderStore()
 
-  // Use empty arrays during SSR to avoid hydration mismatch
+  // Use empty arrays during SSR to avoid hydration mismatch. `folders`/
+  // `notes` are the triggers; the get*() helpers pull fresh state from
+  // their stores internally so they don't need to be in the deps.
+  /* eslint-disable react-hooks/exhaustive-deps */
   const rootFolders = useMemo(() => hydrated ? getRootFolders() : [], [folders, hydrated])
   const activeNotes = useMemo(() => hydrated ? getActiveNotes() : [], [notes, hydrated])
   const deletedNotes = useMemo(() => hydrated ? getDeletedNotes() : [], [notes, hydrated])
   const recentNotes = useMemo(() => hydrated ? getRecentNotes(10) : [], [notes, hydrated])
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   // Tags are derived from #word patterns in note bodies — recomputed when
   // notes change. No more entity store.

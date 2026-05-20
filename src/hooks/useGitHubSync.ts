@@ -210,6 +210,11 @@ export function useGitHubSync(): UseGitHubSyncResult {
       // sync attempt forever.
       useGitHubStore.getState().setIsSyncing(false)
     }
+    // token + syncRepo are read from useGitHubStore.getState() inside the
+    // callback, so they're triggers (so the callback re-binds when the user
+    // connects/disconnects) but their values aren't captured. ESLint can't
+    // see that — disable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, syncRepo, recordSync, openMergeConflicts])
 
   // Pull-only path: fetch remote, apply non-conflicts, open merge tabs for
@@ -258,6 +263,8 @@ export function useGitHubSync(): UseGitHubSyncResult {
     } finally {
       useGitHubStore.getState().setIsSyncing(false)
     }
+    // See note above re: token + syncRepo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, syncRepo, openMergeConflicts])
 
   return { syncState, runSync, runPullOnly, isConnected: !!(token && syncRepo) }

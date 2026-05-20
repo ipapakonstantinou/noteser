@@ -165,6 +165,9 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers = {}) => {
       useUIStore.getState().closeModal()
       useUIStore.getState().closeContextMenu()
     }
+    // deleteNote is referenced via useNoteStore.getState() inside the
+    // handler — it stays in deps as a trigger but isn't read directly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     openSearch,
     toggleSidebar,

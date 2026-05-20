@@ -49,9 +49,16 @@ export const AttachmentImage = ({ src: srcProp, alt, title }: AttachmentImagePro
         </span>
       )
     }
+    // next/image doesn't work here: `resolved` is a blob: URL pointing at an
+    // IndexedDB-stored attachment, which next/image's optimizer can't fetch.
+    // Plain <img> is the right call.
+    // eslint-disable-next-line @next/next/no-img-element
     return <img src={resolved} alt={alt} title={title} className="max-w-full rounded" />
   }
 
+  // Same reason as above — `src` may be a wikilink-style ref we resolved to a
+  // blob URL elsewhere, or a remote URL we don't want next/image to proxy.
+  // eslint-disable-next-line @next/next/no-img-element
   return <img src={src} alt={alt} title={title} className="max-w-full rounded" />
 }
 
