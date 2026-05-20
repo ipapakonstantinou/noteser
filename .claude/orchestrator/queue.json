@@ -837,6 +837,50 @@
       "result": "Shipped. New src/utils/aiActions.ts (registry of 5 actions with per-action system prompts), src/utils/runNoteAIAction.ts (dispatcher with in-flight guard + modal orchestration), src/components/modals/AIResultModal.tsx (shared result UI). ContextMenu.tsx gains an AI submenu (only when aiProvider !== 'off'); commands.ts adds 5 palette entries grouped 'AI' when an active note exists. Translate prompts for target language via native prompt(). 17 new tests (action registry shape + dispatcher orchestration including error path, in-flight guard, modal-closed mid-flight no-resurrect). 60 suites / 996 tests green.",
       "error": null,
       "source": "telegram"
+    },
+    {
+      "id": "20260520T190000-shr2",
+      "brief": "Share without account v2 — burn-after-read / expiry / view count on the existing /share URL flow. Today's /share embeds the entire note in the URL fragment so anyone with the link can read; need: (1) optional expiry timestamp in the encoded payload that the share page enforces, (2) optional 'destroy after first view' flag that flips a local key in the recipient browser, (3) a recipient-side view counter so the sender can see (in the originating browser, since there's no backend) that the link was opened. Plus: a Settings → Share group exposing default expiry / burn settings.",
+      "status": "pending",
+      "created_at": "2026-05-20T19:00:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "terminal"
+    },
+    {
+      "id": "20260520T190100-th3m",
+      "brief": "Custom theme editor — let users override the obsidianBlack / obsidianGray / obsidianText / obsidianAccentPurple / obsidianHighlight / obsidianBorder / obsidianSecondaryText palette. Settings → Appearance gains a color-picker grid wired to CSS variables on :root. settingsStore gains themeOverrides: Record<token, hexString>. The Tailwind theme reads from CSS vars so overrides take effect live without rebuild. Reset-to-default button. Preset themes (light, sepia, solarized-dark) as starting points.",
+      "status": "pending",
+      "created_at": "2026-05-20T19:01:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "terminal"
+    },
+    {
+      "id": "20260520T190200-gi9n-ui",
+      "brief": "gi9n Settings UI — Settings → Sync gets a section that shows the resolved .gitignore (read from remote on demand) and lets the user edit it via a textarea. Save uploads a new blob + tree on the next sync. Locally there's an OPTIONAL '.noteser/ignore.local' overlay (combined with the remote .gitignore at match time) for per-device extras. Default lines (.DS_Store, Thumbs.db, *.tmp, *.swp) shown as placeholder when no file exists.",
+      "status": "pending",
+      "created_at": "2026-05-20T19:02:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "terminal"
+    },
+    {
+      "id": "20260520T190300-vs8x-conflict",
+      "brief": "vs8x conflict UI — vault settings sync today is LWW (last writer wins). Build a key-by-key merge tab (like notes have) that opens when pullFromGitHub detects the remote vault settings file has updatedAt > local AND local has uncommitted changes since the last push. The tab lists every differing key with local / remote values + 'take local' / 'take remote' / 'keep both (where multivalue, e.g. betaFlags)' radios. On apply, settings update + a fresh updatedAt is written.",
+      "status": "pending",
+      "created_at": "2026-05-20T19:03:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "terminal"
     }
   ]
 }

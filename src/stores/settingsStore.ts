@@ -157,6 +157,14 @@ export interface SettingsState {
   // re-uploading the file).
   vaultSettingsLastPushedHash: string
 
+  // ── Vault .gitignore overlay (gi9n) ────────────────────────────────────
+  // Per-DEVICE extra gitignore patterns combined with the vault's remote
+  // `.gitignore` at sync time. Lets users add a few personal ignores
+  // (e.g. their own scratch files) without touching the shared file.
+  // Stored verbatim — the matcher in src/utils/gitignore.ts parses it
+  // along with the remote lines.
+  localGitignoreOverlay: string
+
   setFolderSortMode: (mode: FolderSortMode) => void
   setTaskListDensity: (density: TaskListDensity) => void
   setShowHiddenFolders: (value: boolean) => void
@@ -188,6 +196,7 @@ export interface SettingsState {
   setOnboardingShown: (value: boolean) => void
   setSettingsFolderPath: (path: string) => void
   setVaultSettingsLastPushedHash: (hash: string) => void
+  setLocalGitignoreOverlay: (text: string) => void
   // Applies a remote vault-settings payload received via sync. Sets the
   // fields AND moves vaultSettingsUpdatedAt to the remote timestamp +
   // refreshes lastPushedHash so the next push doesn't think this is a
@@ -261,6 +270,7 @@ const DEFAULTS = {
   settingsFolderPath: '.noteser',
   vaultSettingsUpdatedAt: 0,
   vaultSettingsLastPushedHash: '',
+  localGitignoreOverlay: '',
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -317,6 +327,7 @@ export const useSettingsStore = create<SettingsState>()(
         setOnboardingShown: (onboardingShown) => set({ onboardingShown }),
         setSettingsFolderPath: (path) => set({ settingsFolderPath: path }),
         setVaultSettingsLastPushedHash: (hash) => set({ vaultSettingsLastPushedHash: hash }),
+        setLocalGitignoreOverlay: (localGitignoreOverlay) => set({ localGitignoreOverlay }),
         applyRemoteVaultSettings: (fields, remoteUpdatedAt, remoteHash) => {
           set({
             ...fields,

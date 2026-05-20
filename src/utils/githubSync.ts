@@ -270,12 +270,6 @@ export async function pullFromGitHub(input: {
   const vaultSettingsPath = input.vaultSettingsPath ?? null
   const vaultSettingsLocalUpdatedAt = input.vaultSettingsLocalUpdatedAt ?? 0
   const { owner, name, branch } = repo
-  // .gitignore matcher (gi9n). Compile from the remote `.gitignore`
-  // blob if present; otherwise use the default OS-junk preset. The
-  // matcher decides whether each remote entry is materialised locally;
-  // ignored entries are skipped silently.
-  const { parseGitignore, DEFAULT_MATCHER, GITIGNORE_PATH } = await import('./gitignore')
-
   const headSha = await getBranchRefSha(token, owner, name, branch)
   const treeSha = await getCommitTreeSha(token, owner, name, headSha)
   const remoteTree = await getTreeMap(token, owner, name, treeSha)
@@ -284,16 +278,37 @@ export async function pullFromGitHub(input: {
   // .md loop can short-circuit on ignored paths. The matcher is also
   // reused for step 1b (folder derivation), 1c (attachments), and
   // step 2 (orphan detection).
+  // Layered gitignore (gi9n):
+  //   1. baked-in OS-junk defaults (.DS_Store, Thumbs.db, *.tmp, *.swp)
+  //   2. the vault's remote `.gitignore` (if any)
+  //   3. the per-device overlay from settingsStore
+  // Each layer is appended after the previous so a later negation
+  // (e.g. `!keep.tmp` in the overlay) can un-ignore an earlier rule.
+  // We ALWAYS include the defaults — otherwise an empty remote with
+  // an empty overlay would lose the OS-junk fallback.
+  const { parseGitignore, DEFAULT_MATCHER, DEFAULT_IGNORE_LINES, GITIGNORE_PATH } = await import('./gitignore')
   let gitignoreMatcher = DEFAULT_MATCHER
   const gitignoreSha = remoteTree.get(GITIGNORE_PATH)
+  let remoteRaw = ''
   if (gitignoreSha) {
     try {
-      const raw = await getBlobContent(token, owner, name, gitignoreSha)
-      gitignoreMatcher = parseGitignore(raw)
+      remoteRaw = await getBlobContent(token, owner, name, gitignoreSha)
     } catch {
-      // Fall back to the default matcher on parse / network failure —
-      // don't fail the entire pull because of a malformed .gitignore.
+      remoteRaw = ''
     }
+  }
+  try {
+    const { useSettingsStore } = await import('@/stores/settingsStore')
+    const overlay = useSettingsStore.getState().localGitignoreOverlay || ''
+    const combined = [
+      DEFAULT_IGNORE_LINES.join('\n'),
+      remoteRaw,
+      overlay,
+    ].filter(s => s && s.trim().length > 0).join('\n')
+    gitignoreMatcher = parseGitignore(combined)
+  } catch {
+    // Defaults already applied above — pulls shouldn't die over a
+    // malformed ignore file or a missing store.
   }
 
   const out: PullClassification[] = []
@@ -691,18 +706,31 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   const baseTreeSha = await getCommitTreeSha(token, owner, name, parentCommitSha)
   const remoteTree = await getTreeMap(token, owner, name, baseTreeSha)
 
-  // Build the gitignore matcher (gi9n) from the remote `.gitignore`
-  // (if any). Used downstream to skip uploading ignored paths.
-  const { parseGitignore, DEFAULT_MATCHER, GITIGNORE_PATH } = await import('./gitignore')
+  // Layered gitignore matcher for push (gi9n): defaults + remote +
+  // local overlay. Same composition as the pull side so push and pull
+  // agree on what to skip.
+  const { parseGitignore, DEFAULT_MATCHER, DEFAULT_IGNORE_LINES, GITIGNORE_PATH } = await import('./gitignore')
   let pushMatcher = DEFAULT_MATCHER
   const remoteGitignoreSha = remoteTree.get(GITIGNORE_PATH)
+  let pushRemoteRaw = ''
   if (remoteGitignoreSha) {
     try {
-      const raw = await getBlobContent(token, owner, name, remoteGitignoreSha)
-      pushMatcher = parseGitignore(raw)
+      pushRemoteRaw = await getBlobContent(token, owner, name, remoteGitignoreSha)
     } catch {
-      // Bad / missing — fall back to defaults so we still ignore OS junk.
+      pushRemoteRaw = ''
     }
+  }
+  try {
+    const { useSettingsStore } = await import('@/stores/settingsStore')
+    const overlay = useSettingsStore.getState().localGitignoreOverlay || ''
+    const combined = [
+      DEFAULT_IGNORE_LINES.join('\n'),
+      pushRemoteRaw,
+      overlay,
+    ].filter(s => s && s.trim().length > 0).join('\n')
+    pushMatcher = parseGitignore(combined)
+  } catch {
+    // Defaults already applied above.
   }
 
   // 3. Build tree entries for changes only.
