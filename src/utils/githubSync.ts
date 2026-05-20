@@ -254,7 +254,21 @@ export async function pullFromGitHub(input: {
   // 1. Walk every remote .md file.
   for (const [path, remoteSha] of remoteTree) {
     if (!path.endsWith('.md')) continue
-    const localMatch = notes.find(n => !n.isDeleted && n.gitPath === path)
+    // Look up by gitPath in ALL notes (incl. soft-deleted). A
+    // soft-deleted note at the same path means the user explicitly
+    // wants this gone — we MUST NOT treat the remote file as a new
+    // creation and resurrect it. Push step 4 will emit the
+    // `sha: null` tree entry to actually delete it.
+    const localMatch = notes.find(n => n.gitPath === path)
+
+    if (localMatch && localMatch.isDeleted) {
+      // Pending deletion — skip the fetch + classification entirely.
+      // seenLocalIds includes it so the orphan-detection branch below
+      // doesn't double-count.
+      seenLocalIds.add(localMatch.id)
+      out.push({ kind: 'unchanged', noteId: localMatch.id })
+      continue
+    }
 
     // Fetch the remote content lazily — only when we need it.
     let remoteContent: string | null = null
