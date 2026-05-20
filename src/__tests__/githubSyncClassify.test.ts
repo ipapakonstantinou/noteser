@@ -486,3 +486,51 @@ test('excludedFolderPaths leaves OTHER folders alone', async () => {
   expect(folderCreates).toContain('Daily-Notes')
   expect(folderCreates).not.toContain('.obsidian')
 })
+
+// ── gi9n: vault-level .gitignore ───────────────────────────────────────────
+// The pull layer reads `.gitignore` from the remote tree, compiles it,
+// and filters classifications + folder derivation through the matcher.
+// When no `.gitignore` exists, the OS-junk defaults still kick in.
+
+test('pull skips remote .md files matching a vault .gitignore', async () => {
+  // Remote has a .gitignore that excludes private/ + a normal note.
+  mockGetTreeMap.mockResolvedValue(new Map([
+    ['.gitignore', 'sha-gi'],
+    ['private/secret.md', 'sha-secret'],
+    ['Notes/keep.md', 'sha-keep'],
+  ]))
+  mockGetBlobContent.mockImplementation(async (_t, _o, _n, sha: string) => {
+    if (sha === 'sha-gi') return 'private/\n'
+    return 'body'
+  })
+
+  const { classifications } = await pullFromGitHub({
+    token: 't', repo: REPO, notes: [], folders: [],
+  })
+
+  // The keeper survives; the ignored one is filtered out completely.
+  const remoteCreates = classifications.filter(c => c.kind === 'remoteCreated')
+  expect(remoteCreates.map(c => (c as { path: string }).path)).toEqual(['Notes/keep.md'])
+  // The parent dir of the ignored file shouldn't be derived either.
+  const folderCreates = classifications.filter(c => c.kind === 'folderCreated')
+  expect(folderCreates.map(c => (c as { path: string }).path)).not.toContain('private')
+})
+
+test('pull applies the default OS-junk preset when no .gitignore exists', async () => {
+  // No .gitignore on remote, but a .DS_Store has snuck into the tree.
+  // The .md files attached via attachments classification kind would
+  // surface — we check that .DS_Store doesn't reach attachmentCreated.
+  mockGetTreeMap.mockResolvedValue(new Map([
+    ['attachments/.DS_Store', 'sha-ds'],
+    ['attachments/diagram.png', 'sha-png'],
+  ]))
+
+  const { classifications } = await pullFromGitHub({
+    token: 't', repo: REPO, notes: [], folders: [],
+  })
+
+  const attaches = classifications.filter(c => c.kind === 'attachmentCreated')
+  const paths = attaches.map(c => (c as { path: string }).path)
+  expect(paths).toContain('attachments/diagram.png')
+  expect(paths).not.toContain('attachments/.DS_Store')
+})
