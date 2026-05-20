@@ -697,11 +697,11 @@
     {
       "id": "20260520T073006-sh3d",
       "brief": "Security hardening — XSS surface review in rendered markdown (ReactMarkdown defaults are safe but custom code-block paths may not be), tighter auth on /api/github/* proxy routes.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-20T07:30:00Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-20T09:15:00Z",
+      "completed_at": "2026-05-20T09:30:00Z",
+      "result": "Shipped: docs/security.md threat model + audit log + known limitations. Plus wikilinkSafety.test.ts confirming hostile titles like [[javascript:alert]] encode safely + non-wikilink markdown passes through (ReactMarkdown defaultUrlTransform handles those). No code vulnerabilities found in this pass; multi-tenant follow-ups documented.",
       "error": null,
       "source": "terminal"
     },
