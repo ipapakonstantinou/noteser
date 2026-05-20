@@ -21,12 +21,7 @@ function relativeTime(ts: number): string {
   return `${Math.floor(seconds / 86400)}d ago`
 }
 import { useHydration, useViewport } from '@/hooks'
-import { FolderTree } from './FolderTree'
-import { FolderTreeToolbar } from './FolderTreeToolbar'
-import { CalendarView } from './CalendarView'
-import { GitHubView } from './GitHubView'
-import { OutlineView } from './OutlineView'
-import { BacklinksView } from './BacklinksView'
+import { SidebarStack } from './SidebarStack'
 import { ContextMenu } from './ContextMenu'
 import type { ContextMenuState } from '@/types'
 
@@ -35,7 +30,6 @@ export const Sidebar = () => {
   const {
     sidebarCollapsed,
     toggleSidebar,
-    currentView,
     openModal,
   } = useUIStore()
 
@@ -100,20 +94,10 @@ export const Sidebar = () => {
         </button>
       </div>
 
-      {/* Folder-tree toolbar (only for the notes view; calendar has its
-          own controls). */}
-      {!sidebarCollapsed && currentView === 'notes' && <FolderTreeToolbar />}
-
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto px-2 py-2">
-        {!sidebarCollapsed && (
-          currentView === 'calendar' ? <CalendarView /> :
-          currentView === 'github' ? <GitHubView /> :
-          currentView === 'outline' ? <OutlineView /> :
-          currentView === 'backlinks' ? <BacklinksView /> :
-          <FolderTree onRightClick={handleRightClick} />
-        )}
-      </div>
+      {/* Content — stacked sidebar (files tree + collapsible mini-panels) */}
+      {!sidebarCollapsed && (
+        <SidebarStack onRightClick={handleRightClick} />
+      )}
 
       {/* Footer */}
       {!sidebarCollapsed && (

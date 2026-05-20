@@ -82,8 +82,20 @@ export function resolveRibbonOrder(saved: string[]): ItemView[] {
 
 const RIBBON_DRAG_MIME = 'application/x-noteser-ribbon-item'
 
+// Ribbon nav items that target a stack section (s4r3). Clicking these
+// expands + scrolls to the matching panel inside the new SidebarStack
+// instead of swapping the entire sidebar view. The other items
+// (notes/recent/tags/trash/templates) remain filter modes on the
+// FolderTree section.
+const VIEW_TO_SECTION_ID: Partial<Record<ItemView, 'calendar' | 'outline' | 'backlinks' | 'source-control'>> = {
+  calendar: 'calendar',
+  outline: 'outline',
+  backlinks: 'backlinks',
+  github: 'source-control',
+}
+
 export const Ribbon = () => {
-  const { openSearch, currentView, setCurrentView, openModal } = useUIStore()
+  const { openSearch, currentView, setCurrentView, openModal, expandSidebarSection } = useUIStore()
   const { getDeletedNotes, getRecentNotes } = useNoteStore()
   const ribbonOrder = useSettingsStore(s => s.ribbonOrder)
   const setRibbonOrder = useSettingsStore(s => s.setRibbonOrder)
@@ -168,11 +180,31 @@ export const Ribbon = () => {
       </RibbonButton>
 
       {orderedItems.map(item => {
-        const active = currentView === item.id
+        const sectionId = VIEW_TO_SECTION_ID[item.id]
+        // Items that target a stack section don't have a persistent
+        // "active" highlight — they expand a panel, then return focus.
+        // Filter-mode items keep the active highlight (matches existing
+        // FolderTree filter behaviour).
+        const active = !sectionId && currentView === item.id
         const dragging = draggingId === item.id
         const isDropTarget = dropTargetId === item.id
         const Icon = item.Icon
         const badgeRed = item.badgeRed?.(ctx) ?? false
+        const handleClick = () => {
+          if (sectionId) {
+            expandSidebarSection(sectionId)
+            // Bring the section into view after Zustand commits + the
+            // SidebarSection's content mounts.
+            requestAnimationFrame(() => {
+              const el = document.querySelector(`[data-section-id="${sectionId}"]`)
+              if (el && typeof (el as HTMLElement).scrollIntoView === 'function') {
+                (el as HTMLElement).scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+              }
+            })
+          } else {
+            setCurrentView(item.id)
+          }
+        }
         return (
           <div
             key={item.id}
@@ -192,7 +224,7 @@ export const Ribbon = () => {
           >
             <RibbonNavButton
               active={active}
-              onClick={() => setCurrentView(item.id)}
+              onClick={handleClick}
               title={item.title(ctx)}
             >
               {badgeRed ? (
