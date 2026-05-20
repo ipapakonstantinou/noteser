@@ -67,6 +67,12 @@ export interface SettingsState {
   // burn OpenAI tokens. Requires aiProvider === 'openai' to function;
   // the toggle is visible regardless so users discover the feature.
   aiEmbeddingsEnabled: boolean
+  // AI-generated commit messages. When on, the sync flow asks
+  // aiClient.runPrompt to draft a short message from the pending
+  // diff (created/modified/deleted note titles + paths). Falls back
+  // to the auto-generated "Sync from Noteser (N changes)" when off
+  // or when the AI call fails. Costs 1 small AI call per sync.
+  aiCommitMessages: boolean
   // SECURITY NOTE: localStorage is readable by any script on the page; any
   // XSS would expose the key. Same trust model the GitHub OAuth token uses
   // (see `githubStore.ts`). Acceptable for a personal note tool, NOT for a
@@ -200,6 +206,7 @@ export interface SettingsState {
   setAiApiKey: (key: string) => void
   setAiModel: (model: string) => void
   setAiEmbeddingsEnabled: (enabled: boolean) => void
+  setAiCommitMessages: (enabled: boolean) => void
   setShortcutOverride: (id: string, combo: string) => void
   clearShortcutOverride: (id: string) => void
   resetShortcutOverrides: () => void
@@ -278,6 +285,7 @@ const DEFAULTS = {
   aiApiKey: '',
   aiModel: DEFAULT_AI_MODEL.anthropic,
   aiEmbeddingsEnabled: false,
+  aiCommitMessages: false,
   shortcutOverrides: {} as Record<string, string>,
   trashMode: 'trash' as TrashMode,
   confirmBulkDelete: true,
@@ -327,6 +335,7 @@ export const useSettingsStore = create<SettingsState>()(
         setAiApiKey: (aiApiKey) => set({ aiApiKey }),
         setAiModel: (aiModel) => set({ aiModel }),
         setAiEmbeddingsEnabled: (aiEmbeddingsEnabled) => set({ aiEmbeddingsEnabled }),
+        setAiCommitMessages: (aiCommitMessages) => set({ aiCommitMessages }),
         setShortcutOverride: (id, combo) =>
           set((state) => ({
             shortcutOverrides: { ...state.shortcutOverrides, [id]: combo },

@@ -226,7 +226,24 @@ export function useGitHubSync(): UseGitHubSyncResult {
       }
 
       const { notes: pullCounts, attachments: attachCounts } = await runApply(classifications)
-      const { result, pathUpdates, vaultSettingsHashPushed } = await runPush(activeToken, activeRepo, commitMessage)
+
+      // AI commit messages: when the user has opted in AND didn't
+      // pass a custom message via the SCM input, ask the model to
+      // draft one from the pending diff. Null result → fall back to
+      // the auto-generated default in syncToGitHub.
+      let effectiveCommitMessage = commitMessage
+      const s = useSettingsStore.getState()
+      if (!effectiveCommitMessage && s.aiCommitMessages && s.aiProvider !== 'off' && s.aiApiKey) {
+        try {
+          const { draftAiCommitMessage } = await import('@/utils/aiCommitMessage')
+          const drafted = await draftAiCommitMessage()
+          if (drafted) effectiveCommitMessage = drafted
+        } catch {
+          // Stay silent on AI failure — never block a sync over it.
+        }
+      }
+
+      const { result, pathUpdates, vaultSettingsHashPushed } = await runPush(activeToken, activeRepo, effectiveCommitMessage)
 
       // Write the per-note gitPath / gitLastPushedSha back so the next pull
       // classifies us as `unchanged` instead of detecting a phantom remote

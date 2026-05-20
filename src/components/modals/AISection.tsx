@@ -15,6 +15,8 @@ export const AISection = () => {
   const aiApiKey = useSettingsStore(s => s.aiApiKey)
   const aiModel = useSettingsStore(s => s.aiModel)
   const aiEmbeddingsEnabled = useSettingsStore(s => s.aiEmbeddingsEnabled)
+  const aiCommitMessages = useSettingsStore(s => s.aiCommitMessages)
+  const setAiCommitMessages = useSettingsStore(s => s.setAiCommitMessages)
   const setAiProvider = useSettingsStore(s => s.setAiProvider)
   const setAiApiKey = useSettingsStore(s => s.setAiApiKey)
   const setAiModel = useSettingsStore(s => s.setAiModel)
@@ -167,6 +169,25 @@ export const AISection = () => {
             )}
           </div>
         )}
+      </div>
+
+      {/* AI commit messages. Independent of embeddings — uses the
+          chat provider, not the embeddings one. Visible regardless of
+          aiProvider so users discover the feature; falls back to the
+          auto-generated message when AI is off or the call fails. */}
+      <div className="pt-3 mt-3 border-t border-obsidianBorder space-y-3">
+        <div className="text-xs uppercase tracking-wide text-obsidianSecondaryText">
+          Commit messages
+        </div>
+        <Field
+          label="AI-drafted commit messages"
+          description="When syncing, ask the model to draft a one-line commit message from the pending diff instead of the auto-generated 'Sync from Noteser (N changes)'. Uses the chat provider above; one small call per sync. Manual messages in the SCM input override this."
+        >
+          <SettingsCheckbox
+            checked={aiCommitMessages}
+            onChange={setAiCommitMessages}
+          />
+        </Field>
       </div>
     </div>
   )
