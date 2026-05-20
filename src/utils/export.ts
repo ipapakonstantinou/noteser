@@ -130,6 +130,116 @@ const convertToMarkdown = (
   return content
 }
 
+// Build a printable HTML document for one or many notes. Each note is
+// rendered as its own section with a CSS page-break so the system
+// print dialog produces a clean per-note PDF. No new dependency —
+// the browser's print-to-PDF does the work.
+//
+// Exported so the ExportModal can hand the output to openPrintWindow.
+// Pure (no side effects) so tests can assert against the markup.
+export const buildPrintableHtml = (
+  notes: Note[],
+  includeTags: boolean,
+  docTitle: string,
+): string => {
+  const sections = notes.map((n, idx) => {
+    const noteTags = extractTags(n.content)
+    const tagsHtml = includeTags && noteTags.length > 0
+      ? `<div class="tags">${noteTags.map(t => `<span class="tag">#${escapeHTML(t)}</span>`).join(' ')}</div>`
+      : ''
+    // page-break-before on every section EXCEPT the first so a single-
+    // note export doesn't print a blank leading page.
+    const breakClass = idx === 0 ? '' : ' class="page-break"'
+    return `<section${breakClass}>
+  <h1>${escapeHTML(n.title || '(untitled)')}</h1>
+  ${tagsHtml}
+  <div class="content">
+    ${convertMarkdownToHTML(escapeHTML(n.content))}
+  </div>
+</section>`
+  }).join('\n')
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>${escapeHTML(docTitle)}</title>
+  <style>
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .page-break { page-break-before: always; }
+    }
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 24px; line-height: 1.6; color: #222; }
+    h1 { border-bottom: 2px solid #eee; padding-bottom: 10px; }
+    h2 { margin-top: 1.5em; }
+    .tags { margin-bottom: 16px; }
+    .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; background: #eef; color: #335; font-size: 12px; margin-right: 4px; }
+    pre { background: #f4f4f4; padding: 10px; border-radius: 4px; overflow-x: auto; }
+    code { background: #f4f4f4; padding: 2px 4px; border-radius: 2px; }
+    section + section { margin-top: 2em; }
+  </style>
+</head>
+<body>
+  ${sections}
+</body>
+</html>`
+}
+
+// Side-effecting: spawn a new window, write the HTML, fire print().
+// Returns the window handle so callers can close/test it; null if the
+// browser blocked the popup. Kept separate from buildPrintableHtml so
+// the pure helper is unit-testable in jsdom (which doesn't print).
+export const openPrintWindow = (html: string): Window | null => {
+  if (typeof window === 'undefined') return null
+  const w = window.open('', '_blank', 'noopener,noreferrer')
+  if (!w) {
+    // Popup blocker. We surface a user-visible alert here rather than
+    // failing silently — there's no other obvious recovery.
+    if (typeof window !== 'undefined') {
+      window.alert('Pop-up blocked. Please allow pop-ups for this site to export as PDF.')
+    }
+    return null
+  }
+  w.document.open()
+  w.document.write(html)
+  w.document.close()
+  // Give the new document a tick to lay out before we trigger the
+  // print dialog — some browsers race otherwise and print a blank.
+  w.onload = () => {
+    try { w.focus(); w.print() } catch { /* ignore */ }
+  }
+  return w
+}
+
+// Single-note PDF export. Builds a printable HTML doc and opens the
+// system print dialog (which lets the user "Save as PDF").
+export const exportNoteAsPdf = (note: Note): void => {
+  const html = buildPrintableHtml([note], true, note.title || 'Note')
+  openPrintWindow(html)
+}
+
+// All-notes PDF export — concatenates active notes into one printable
+// doc with page breaks between them.
+export const exportAllNotesAsPdf = (
+  notes: Note[],
+  options: ExportOptions,
+): void => {
+  const active = notes.filter(n => !n.isDeleted)
+  const date = new Date().toISOString().split('T')[0]
+  const html = buildPrintableHtml(active, options.includeTags, `Noteser export ${date}`)
+  openPrintWindow(html)
+}
+
+// Single-note HTML export — previously only reachable via the all-notes
+// zip path; surfacing it here so the modal's "Current Note + HTML"
+// combination produces an HTML file instead of silently downgrading
+// to markdown.
+export const exportNoteAsHTML = (note: Note, includeTags = true): void => {
+  const html = buildPrintableHtml([note], includeTags, note.title || 'Note')
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+  saveAs(blob, `${sanitizeFilename(note.title)}.html`)
+}
+
 // Convert note to HTML
 const convertToHTML = (note: Note, _tags: Tag[], includeTags: boolean): string => {
   const noteTags = extractTags(note.content)

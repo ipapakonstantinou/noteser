@@ -7,9 +7,10 @@ wider backlog.
 
 Last refresh: 2026-05-20.
 
-> Latest sweep: AI commit messages, daily-note streak counter, and the
-> SidebarStack module split (per-file components for the pinned-group
-> machinery) all landed this morning.
+> Latest sweep: AI commit messages, daily-note streak counter, weekly
+> review template, PDF export, and the SidebarStack module split (per-
+> file components for the pinned-group machinery) all landed this
+> morning.
 
 ## In flight
 
@@ -52,10 +53,6 @@ _Nothing right now — promote from Next when starting work._
 - **Live collaboration.** `useCollaboration` already has Yjs WS plumbing
   (opt-in via `NEXT_PUBLIC_YJS_WS_URL`); needs a UI to invite collaborators,
   show remote cursors, and surface presence in the editor footer.
-- **Export to PDF.** The export pipeline (`src/utils/export.ts`) handles
-  markdown / JSON / HTML / ZIP via `file-saver` + `jszip`. PDF is the
-  obvious missing format — would need a print-stylesheet or a client-side
-  PDF library.
 - **Weekly review template.** Periodic-note feature — a template that
   scrapes the week's notes for tasks + tags and stitches a Sunday-night
   summary. (Streak counter shipped; weekly review still pending.)

@@ -66,7 +66,7 @@ export interface SearchResult {
 }
 
 export interface ExportOptions {
-  format: 'markdown' | 'json' | 'html'
+  format: 'markdown' | 'json' | 'html' | 'pdf'
   includeMetadata: boolean
   includeTags: boolean
 }
