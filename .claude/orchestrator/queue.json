@@ -642,11 +642,11 @@
     {
       "id": "20260520T073001-vsg1",
       "brief": "VS Code-style Git UI — source-control sidebar panel showing per-note pending changes (created / modified / deleted) before push. Per-file include/exclude. Diff preview on click. Replaces the blind \"Commit & Sync\" button.",
-      "status": "in_progress",
+      "status": "done",
       "created_at": "2026-05-20T07:30:00Z",
       "started_at": "2026-05-20T07:32:00Z",
-      "completed_at": null,
-      "result": null,
+      "completed_at": "2026-05-20T07:45:00Z",
+      "result": "Shipped v1: SourceControlPanel.tsx mounted inside GitHubView. Cheap heuristic classifier (gitPath + updatedAt vs lastSyncedAt) so it runs on every store change without burning CPU. Three buckets — created (green +), modified (yellow pencil), deleted (red trash). Click row opens the note. v2 ideas: per-file include/exclude + inline diff preview.",
       "error": null,
       "source": "terminal"
     },
