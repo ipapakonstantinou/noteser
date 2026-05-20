@@ -24,6 +24,7 @@ import { AISection } from './AISection'
 import { DailyNotesSection, TemplatesSection } from './DailyNotesSection'
 import { ExportSection } from './ExportSection'
 import { ShortcutsSection } from './ShortcutsSection'
+import { FLAGS } from '@/utils/featureFlags'
 import {
   Field,
   SettingsSelect,
@@ -277,9 +278,6 @@ function BetaPanel() {
   const betaFlags = useSettingsStore(s => s.betaFlags)
   const setBetaEnabled = useSettingsStore(s => s.setBetaEnabled)
   const setBetaFlag = useSettingsStore(s => s.setBetaFlag)
-  // Lazy-required so Settings doesn't pull featureFlags at module-load.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { FLAGS } = require('@/utils/featureFlags') as typeof import('@/utils/featureFlags')
 
   return (
     <div className="space-y-4" data-testid="settings-beta-panel">
