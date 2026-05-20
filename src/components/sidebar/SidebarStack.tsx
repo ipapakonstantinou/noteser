@@ -46,25 +46,25 @@ const PANELS: readonly PanelDef[] = [
 
 const KNOWN_IDS = new Set<SidebarTabId>(PANELS.map(p => p.id))
 
-// Pure: merge the saved tab order with the source order, then filter
-// out anything that's pinned (so the strip never duplicates pinned
-// panels). Exported for the unit test.
-export function resolveTabOrder(saved: string[], pinned: string[] = []): SidebarTabId[] {
-  const pinnedSet = new Set(pinned)
+// Pure: merge the saved tab order with the source order. The
+// `pinned` argument is unused for filtering — pinned panels stay in
+// the strip so their icons remain discoverable even while their
+// content is rendered at the top. Kept as a parameter for API
+// stability + future opt-in filtering.
+// Exported for the unit test.
+export function resolveTabOrder(saved: string[], _pinned: string[] = []): SidebarTabId[] {
+  // Suppress unused param lint without changing the public signature.
+  void _pinned
   const seen = new Set<string>()
   const out: SidebarTabId[] = []
   for (const id of saved) {
-    if (KNOWN_IDS.has(id as SidebarTabId) && !seen.has(id) && !pinnedSet.has(id)) {
+    if (KNOWN_IDS.has(id as SidebarTabId) && !seen.has(id)) {
       seen.add(id)
       out.push(id as SidebarTabId)
     }
   }
   for (const p of PANELS) {
-    // Skip pinned. Calendar specifically is pinned by default and only
-    // shows in the strip when the user has explicitly unpinned it.
-    if (pinnedSet.has(p.id)) continue
-    if (seen.has(p.id)) continue
-    out.push(p.id)
+    if (!seen.has(p.id)) out.push(p.id)
   }
   return out
 }
@@ -139,12 +139,14 @@ export const SidebarStack = ({ onRightClick }: Props) => {
             title={def.title}
             icon={<Icon className="w-3.5 h-3.5" />}
             draggablePanelId={id}
-            // The Calendar panel renders without a section header —
-            // the user explicitly asked for it to look like the file
-            // tree below (no chevron + "CALENDAR" bar). Other panels
-            // keep the standard header so they're still discoverable
-            // when stacked.
-            hideHeader={id === 'calendar'}
+            // Every pinned panel renders header-less. The user's
+            // model: pinning = "make this always visible like the
+            // file tree", so the chevron + uppercase title bar is
+            // pure chrome that gets in the way. The panel's own
+            // internal labels (e.g. SCM's "Source control" caption,
+            // its action toolbar) stay — those are the panel's
+            // identity, not the wrapper's.
+            hideHeader={true}
             onHeaderContextMenu={e => {
               // Right-click on a pinned section header (or content
               // body, when the header is hidden) unpins it back into
@@ -301,10 +303,27 @@ const TabSwitcher = ({
         {orderedIds.map(id => {
           const def = panelsById.get(id)
           if (!def) return null
-          const active = effectiveTabId === id
+          const isPinned = pinnedIds.includes(id)
+          // For a pinned panel the icon is purely a "jump to"
+          // affordance — its content is already rendered above. The
+          // strip's active-highlight stays on the actual lower-pane
+          // tab so the user can tell what's in the lower pane.
+          const active = !isPinned && effectiveTabId === id
           const dragging = draggingId === id
           const isDropTarget = dropTargetId === id
           const Icon = def.Icon
+          const handleIconClick = () => {
+            if (isPinned) {
+              // Scroll the pinned section into view rather than
+              // re-rendering the same content in the lower pane.
+              const el = document.querySelector(`[data-section-id="${id}"]`)
+              if (el && typeof (el as HTMLElement).scrollIntoView === 'function') {
+                (el as HTMLElement).scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+              }
+              return
+            }
+            setTab(id)
+          }
           return (
             <div
               key={id}
@@ -323,26 +342,35 @@ const TabSwitcher = ({
             >
               <button
                 type="button"
-                onClick={() => setTab(id)}
+                onClick={handleIconClick}
                 onContextMenu={e => {
-                  // Right-click pins the tab to the top section. The
-                  // drag-up-to-pin gesture also works but is invisible
-                  // until drag starts — this is the discoverable
+                  // Right-click toggles pin/unpin. Pinned → unpin;
+                  // unpinned → pin to top. Mirrors the drag-to-pin /
+                  // drag-out-of-pin gestures with a discoverable
                   // alternative.
                   e.preventDefault()
-                  onPinPanel(id)
+                  if (isPinned) onUnpinPanel(id)
+                  else onPinPanel(id)
                 }}
-                title={`${def.title} — right-click to pin to top`}
+                title={`${def.title} — right-click to ${isPinned ? 'unpin from top' : 'pin to top'}`}
                 aria-label={def.title}
                 aria-pressed={active}
                 data-testid={`sidebar-tab-${id}`}
-                className={`w-full flex items-center justify-center py-1.5 rounded transition-colors ${
+                className={`relative w-full flex items-center justify-center py-1.5 rounded transition-colors ${
                   active
                     ? 'bg-obsidianHighlight text-obsidianText'
                     : 'text-obsidianSecondaryText hover:bg-obsidianHighlight/40 hover:text-obsidianText'
-                }`}
+                } ${isPinned ? 'text-obsidianAccentPurple' : ''}`}
               >
                 <Icon className="w-4 h-4" />
+                {/* Tiny dot on pinned icons so the user can tell at a
+                    glance which panels are pinned above. */}
+                {isPinned && (
+                  <span
+                    aria-hidden
+                    className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-obsidianAccentPurple"
+                  />
+                )}
               </button>
             </div>
           )
