@@ -83,6 +83,12 @@ export interface SettingsState {
   // Empty array = default order.
   ribbonOrder: string[]
 
+  // ── Onboarding ─────────────────────────────────────────────────────────
+  // True once the first-run onboarding modal has been dismissed (either by
+  // picking a starter vault or by skipping). We only ever flip it forward;
+  // it's intentional that re-installs see the modal again.
+  onboardingShown: boolean
+
   // ── Beta features ──────────────────────────────────────────────────────
   // Master switch. When false, every named flag in `betaFlags` is treated
   // as off regardless of its stored value. UI: a single toggle in Settings
@@ -130,6 +136,7 @@ export interface SettingsState {
   setBetaEnabled: (value: boolean) => void
   setBetaFlag: (id: string, value: boolean) => void
   setRibbonOrder: (order: string[]) => void
+  setOnboardingShown: (value: boolean) => void
   reset: () => void
 }
 
@@ -156,6 +163,7 @@ const DEFAULTS = {
   betaEnabled: false,
   betaFlags: {} as Record<string, boolean>,
   ribbonOrder: [] as string[],
+  onboardingShown: false,
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -196,6 +204,7 @@ export const useSettingsStore = create<SettingsState>()(
       setBetaFlag: (id, value) =>
         set((state) => ({ betaFlags: { ...state.betaFlags, [id]: value } })),
       setRibbonOrder: (ribbonOrder) => set({ ribbonOrder }),
+      setOnboardingShown: (onboardingShown) => set({ onboardingShown }),
       reset: () => set(DEFAULTS),
     }),
     { name: STORAGE_KEYS.settings }

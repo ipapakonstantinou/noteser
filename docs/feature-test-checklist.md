@@ -11,6 +11,32 @@ ship date. Last updated 2026-05-20.
 > Convention: each item ends with the orchestrator ID in parens (e.g. `(a2d9)`)
 > so you can cross-reference git log / queue entries.
 
+## What to test FIRST (shipped this session, 2026-05-19 → 2026-05-20)
+
+Most-recently-landed batch. Walk these first — everything else has been
+in production longer.
+
+| ID | Feature | Section |
+|---|---|---|
+| `x7m1` | Recurring tasks (🔁) — VS16 emoji-picker fix | Tasks & queries |
+| `s9r4` | Settings — 2-pane category layout | Settings UI |
+| `p4n5` | Periodic Notes — Open this week / month | Periodic Notes |
+| `b3t1` | Beta features toggle + flag list | Beta features |
+| `b9g2` | Report-a-bug modal → GitHub issue | Bug reporter |
+| `z9o3` | Note embeds `![[Title]]` | Note embeds |
+| `b3e7` | Drag-to-reorder ribbon | Ribbon |
+| `a0p4` | Frontmatter Properties panel | Frontmatter UI |
+| `d6v8` | Bases / database view (` ```bases `) | Database view |
+| `e4t8` | `[[Note#Heading]]` + `[[Note#^block]]` nav | Block + heading link |
+| `bc3v` | Copy block ref command | Copy block ref |
+| `s8h3` | Share via URL (`/share#…`) | Share via URL |
+| `vsg1` | Source-control panel in GitHub view | Source control |
+| `sb7y` | Status bar — Syncing… + N-pending chip | Status bar |
+| `on4b` | First-run onboarding + starter vaults | Onboarding |
+| — | CI workflow (`.github/workflows/ci.yml`) | (no UI) |
+| — | Web-Crypto secure-context error message | GitHub sync |
+| — | Reset kill-switch + `?reset=1` URL | Recovery |
+
 ## Editor & live preview
 
 - [ ] **Alt+L** prepends `- [ ] ` to the current line; toggles off if already present (a1b2)
@@ -135,6 +161,17 @@ ship date. Last updated 2026-05-20.
 - [ ] **Copy to clipboard** fallback works when GitHub call fails or token missing
 - [ ] Diagnostics dump never contains the OAuth token, AI key, or any `*secret*` field
 - [ ] Closing the modal resets the form
+
+## Guided onboarding (on4b)
+
+- [ ] First-run modal appears when the store is empty AND `onboardingShown` is false
+- [ ] Four starter vaults shown: Zettelkasten · Daily Notes system · Project tracker · Research
+- [ ] Clicking a vault card seeds folders + notes + opens the first one (README)
+- [ ] Skip button dismisses without seeding anything
+- [ ] After picking OR skipping, the modal doesn't re-open on subsequent loads
+- [ ] After `?reset=1`, the onboarding modal returns
+- [ ] Daily-Notes-system starter includes a working `tasks` query block
+- [ ] Project-tracker starter includes a working `bases` query block
 
 ## Status bar footer (sb7y)
 

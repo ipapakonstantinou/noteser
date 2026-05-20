@@ -708,11 +708,11 @@
     {
       "id": "20260520T073007-on4b",
       "brief": "Guided onboarding — first-run vault picker with starter templates (Zettelkasten, Daily Notes system, Project tracker, Research). Top researcher recommendation for top-of-funnel.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-20T07:30:00Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-20T08:05:00Z",
+      "completed_at": "2026-05-20T08:15:00Z",
+      "result": "Shipped: 4 starter vaults (Zettelkasten / Daily Notes system / Project tracker / Research) in src/utils/starterVaults.ts + OnboardingModal triggered on first run (no notes + onboardingShown=false). Each vault seeds 3-7 example notes; first one (README) auto-opens. 11 new tests. Persists dismissal via setOnboardingShown.",
       "error": null,
       "source": "terminal"
     },
