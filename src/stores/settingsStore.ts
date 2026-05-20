@@ -157,6 +157,14 @@ export interface SettingsState {
   // re-uploading the file).
   vaultSettingsLastPushedHash: string
 
+  // ── Custom theme (th3m) ────────────────────────────────────────────────
+  // Per-token color overrides applied as CSS variables on :root at
+  // runtime. Keys come from THEME_TOKEN_KEYS; values are any valid
+  // CSS color string (#rrggbb, hsl(…), rgb(…), named). Empty record
+  // = use the built-in defaults from globals.css.
+  // VAULT-SYNCED so a user's theme follows them across devices.
+  themeOverrides: Record<string, string>
+
   // ── Share defaults (shr2) ──────────────────────────────────────────────
   // Default expiry (days) baked into newly-generated /share URLs.
   // 0 means "no expiry" — the current legacy default. Per-device.
@@ -208,6 +216,9 @@ export interface SettingsState {
   setLocalGitignoreOverlay: (text: string) => void
   setShareDefaultExpiryDays: (days: number) => void
   setShareDefaultBurn: (value: boolean) => void
+  setThemeOverrides: (overrides: Record<string, string>) => void
+  setThemeToken: (token: string, value: string) => void
+  resetThemeOverrides: () => void
   // Applies a remote vault-settings payload received via sync. Sets the
   // fields AND moves vaultSettingsUpdatedAt to the remote timestamp +
   // refreshes lastPushedHash so the next push doesn't think this is a
@@ -243,6 +254,7 @@ export const VAULT_SETTING_KEYS = [
   'confirmBulkDelete',
   'betaEnabled',
   'betaFlags',
+  'themeOverrides',
 ] as const
 
 export type VaultSettingKey = (typeof VAULT_SETTING_KEYS)[number]
@@ -284,6 +296,7 @@ const DEFAULTS = {
   localGitignoreOverlay: '',
   shareDefaultExpiryDays: 0,
   shareDefaultBurn: false,
+  themeOverrides: {} as Record<string, string>,
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -343,6 +356,15 @@ export const useSettingsStore = create<SettingsState>()(
         setLocalGitignoreOverlay: (localGitignoreOverlay) => set({ localGitignoreOverlay }),
         setShareDefaultExpiryDays: (shareDefaultExpiryDays) => set({ shareDefaultExpiryDays }),
         setShareDefaultBurn: (shareDefaultBurn) => set({ shareDefaultBurn }),
+        // Theme is part of the vault-synced slice — going through
+        // setVault keeps vaultSettingsUpdatedAt fresh so cross-device
+        // sync picks up theme changes.
+        setThemeOverrides: (themeOverrides) => setVault({ themeOverrides }),
+        setThemeToken: (token, value) => set((state) => ({
+          themeOverrides: { ...state.themeOverrides, [token]: value },
+          vaultSettingsUpdatedAt: Date.now(),
+        })),
+        resetThemeOverrides: () => setVault({ themeOverrides: {} }),
         applyRemoteVaultSettings: (fields, remoteUpdatedAt, remoteHash) => {
           set({
             ...fields,

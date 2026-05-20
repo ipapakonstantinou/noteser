@@ -854,7 +854,9 @@
     {
       "id": "20260520T190100-th3m",
       "brief": "Custom theme editor — let users override the obsidianBlack / obsidianGray / obsidianText / obsidianAccentPurple / obsidianHighlight / obsidianBorder / obsidianSecondaryText palette. Settings → Appearance gains a color-picker grid wired to CSS variables on :root. settingsStore gains themeOverrides: Record<token, hexString>. The Tailwind theme reads from CSS vars so overrides take effect live without rebuild. Reset-to-default button. Preset themes (light, sepia, solarized-dark) as starting points.",
-      "status": "pending",
+      "status": "done",
+      "completed_at": "2026-05-20T20:30:00Z",
+      "result": "Shipped. Tailwind colors now reference var(--obsidian-*) with hex fallbacks; defaults live in globals.css. settingsStore.themeOverrides is vault-synced (themes follow you across devices). New utils/theme.ts holds THEME_TOKENS + THEME_PRESETS (default/light/sepia/solarized-dark) + applyThemeOverrides. useApplyTheme hook mounted in page.tsx writes overrides to :root on settings change. Settings → new Appearance category: preset buttons + per-token color pickers + 'Reset all'. 7 new tests for registry/preset shape + applyThemeOverrides write/clear semantics.",
       "created_at": "2026-05-20T19:01:00Z",
       "started_at": null,
       "completed_at": null,
