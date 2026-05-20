@@ -11,6 +11,15 @@ test.beforeEach(async ({ page }) => {
     try {
       for (const name of ['noteser', 'keyval-store']) indexedDB.deleteDatabase(name)
     } catch {}
+    // Suppress the first-run onboarding modal — it blocks other interactions
+    // by default. Individual tests that need to exercise onboarding can clear
+    // this key explicitly.
+    try {
+      window.localStorage.setItem('noteser-settings', JSON.stringify({
+        state: { onboardingShown: true },
+        version: 0,
+      }))
+    } catch {}
   })
 })
 
@@ -119,6 +128,64 @@ test('![[Title]] embed renders as a blockquote in preview (z9o3)', async ({ page
   })
   await page.keyboard.press('Control+e')
   await expect(page.getByText(/hello from embedded note/)).toBeVisible()
+})
+
+// ── vsg1 — clicking GitHub icon with a configured repo doesn't crash ───────
+//
+// Regression test for React error #185 (Maximum update depth exceeded). A
+// non-memoised conflictTabs selector in GitHubView built a fresh array
+// per render → useSyncExternalStore thought state changed every cycle →
+// infinite loop. Only triggered when the SourceControlPanel was also
+// mounted (which it is whenever the user is in the github view).
+//
+// We seed a fake-but-shape-correct GitHub session into localStorage so the
+// ribbon's GitHub icon renders, then click it and assert nothing throws.
+
+test('clicking the GitHub ribbon icon with a configured repo does not crash (vsg1)', async ({ page }) => {
+  // Capture page errors BEFORE navigating — they'll fire during the
+  // initial render and the post-click commit otherwise.
+  const pageErrors: string[] = []
+  page.on('pageerror', e => pageErrors.push(e.message))
+
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.clear()
+      window.localStorage.setItem('noteser-reset-version', '1')
+      window.localStorage.setItem('noteser-github', JSON.stringify({
+        state: {
+          token: 'test-token',
+          user: { login: 'me', avatar_url: '', id: 1, name: '' },
+          syncRepo: { owner: 'me', name: 'vault', branch: 'main', isPrivate: false },
+          lastSyncedAt: Date.now() - 60_000,
+          lastCommitSha: 'abc1234',
+          repoSyncStates: {},
+        },
+        version: 0,
+      }))
+      window.localStorage.setItem('noteser-settings', JSON.stringify({
+        state: { onboardingShown: true },
+        version: 0,
+      }))
+    } catch {}
+  })
+
+  await page.goto('/')
+
+  // GitHub icon only renders when connected; the seeded localStorage above
+  // gives us a token + syncRepo so the icon appears.
+  const ghIcon = page.getByTestId('ribbon-item-github')
+  await expect(ghIcon).toBeVisible({ timeout: 5000 })
+
+  await ghIcon.click()
+
+  // Confirm the GitHub view actually mounted (source-control panel is
+  // the new surface that used to be what tipped this over the edge).
+  await expect(page.getByTestId('source-control-panel')).toBeVisible({ timeout: 5000 })
+
+  // Wait a beat to give any latent loop time to throw.
+  await page.waitForTimeout(1500)
+
+  expect(pageErrors).toEqual([])
 })
 
 // ── b3e7 — ribbon order persistence ──────────────────────────────────────────
