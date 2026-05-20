@@ -270,6 +270,36 @@ test('mixed batch: unchanged + remoteCreated + remoteUpdated in one pull', async
   expect(kinds).toEqual(['remoteCreated', 'remoteUpdated', 'unchanged'])
 })
 
+// ── soft-deleted note + remote file present = unchanged (not remoteCreated) ─
+//
+// Regression: deleting a note locally then syncing used to undo the delete.
+// The pull saw the remote file, no MATCHING (non-deleted) local note, and
+// classified it as remoteCreated → apply added a new note → push then
+// had nothing to delete. User saw their deletes silently re-imported.
+
+test('soft-deleted local note with matching gitPath is NOT classified as remoteCreated', async () => {
+  mockGetTreeMap.mockResolvedValue(new Map([['Goodbye.md', 'sha-remote']]))
+  mockGitBlobSha.mockResolvedValue('sha-anything')
+
+  const local: Note[] = [
+    note({
+      id: '1', title: 'Goodbye',
+      content: 'bye',
+      gitPath: 'Goodbye.md',
+      gitLastPushedSha: 'sha-remote',
+      isDeleted: true,
+    }),
+  ]
+  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+
+  // Classified as unchanged (no fetch, no apply churn). The push step's
+  // delete-handling pass is what propagates the deletion to the remote.
+  expect(classifications).toHaveLength(1)
+  expect(classifications[0]).toEqual({ kind: 'unchanged', noteId: '1' })
+  // CRITICAL: no remote-blob fetch for files we're about to delete.
+  expect(mockGetBlobContent).not.toHaveBeenCalled()
+})
+
 // ── skips non-.md paths ─────────────────────────────────────────────────────
 
 test('non-.md entries route to separate kinds (attachments, folderCreated)', async () => {
