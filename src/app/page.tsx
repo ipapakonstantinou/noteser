@@ -107,6 +107,38 @@ export default function Home() {
     setShowOnboarding(true)
   }, [hydrated, onboardingShown])
 
+  // Import-from-share: when the URL has `?import=<fragment>`, decode it
+  // (same format as /share), prompt the user, and add the note to their
+  // vault. Strips the param so a reload doesn't loop the prompt.
+  useEffect(() => {
+    if (!hydrated) return
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const importFrag = params.get('import')
+    if (!importFrag) return
+    void (async () => {
+      const { decodeShareFragment } = await import('@/utils/shareLink')
+      const decoded = decodeShareFragment(importFrag)
+      if (!decoded) {
+        alert('Couldn\'t import — the link is malformed or from an incompatible version.')
+        window.history.replaceState({}, '', window.location.pathname)
+        return
+      }
+      const ok = window.confirm(
+        `Import "${decoded.title}" into your vault? A copy will be added to the root folder.`,
+      )
+      if (ok) {
+        const created = useNoteStore.getState().addNote({
+          title: decoded.title,
+          folderId: null,
+          content: decoded.content,
+        })
+        useWorkspaceStore.getState().openNote(created.id, { preview: false })
+      }
+      window.history.replaceState({}, '', window.location.pathname)
+    })()
+  }, [hydrated])
+
   // Migrate old data on first load
   useEffect(() => {
     migrateOldData()
