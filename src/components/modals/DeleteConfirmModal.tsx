@@ -92,7 +92,7 @@ export const DeleteConfirmModal = () => {
               {!isNote && notesInFolder.length > 0 && (
                 <span className="block mt-2 text-yellow-500">
                   {notesInFolder.length} note{notesInFolder.length > 1 ? 's' : ''} in this
-                  folder will be moved to root.
+                  folder will be permanently deleted too.
                 </span>
               )}
             </>
@@ -102,7 +102,7 @@ export const DeleteConfirmModal = () => {
               {!isNote && notesInFolder.length > 0 && (
                 <span className="block mt-2 text-yellow-500">
                   {notesInFolder.length} note{notesInFolder.length > 1 ? 's' : ''} in this
-                  folder will be moved to root.
+                  folder will be moved to trash too.
                 </span>
               )}
             </>

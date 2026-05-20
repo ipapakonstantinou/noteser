@@ -3,7 +3,8 @@
  *
  * Verifies the cascade-delete-folder behaviour:
  *   - Root folder + every descendant folder gets soft-deleted.
- *   - Notes inside the deleted hierarchy move to root.
+ *   - Notes inside the deleted hierarchy are soft-deleted (or
+ *     hard-deleted when trashMode='hardDelete').
  *   - Attachments under the folder's repo path get tombstoned + dropped
  *     from IDB so the next sync removes them remotely.
  */
@@ -27,6 +28,7 @@ beforeAll(() => {
 import { cascadeDeleteFolder } from '../utils/cascadeDelete'
 import { useFolderStore } from '../stores/folderStore'
 import { useNoteStore } from '../stores/noteStore'
+import { useSettingsStore } from '../stores/settingsStore'
 import { putAttachmentAtPath, getAttachmentTombstones, listAttachmentPaths } from '../utils/attachments'
 
 beforeEach(() => {
@@ -56,7 +58,10 @@ describe('cascadeDeleteFolder', () => {
     expect(folders.find(f => f.id === subSub.id)?.isDeleted).toBe(true)
   })
 
-  test('moves notes from deleted folders to root', () => {
+  test('soft-deletes notes inside the deleted folder hierarchy (trash mode)', () => {
+    // Default trashMode is 'trash' — notes get isDeleted=true, NOT
+    // moved to root. The user expects "delete folder" to remove the
+    // contents too; recovery still works via the Trash view.
     const root = useFolderStore.getState().addFolder({ name: 'Notes', parentId: null })
     const sub = useFolderStore.getState().addFolder({ name: 'Sub', parentId: root.id })
     const noteA = useNoteStore.getState().addNote({ title: 'A', folderId: root.id, content: '' })
@@ -65,8 +70,28 @@ describe('cascadeDeleteFolder', () => {
     cascadeDeleteFolder(root.id)
 
     const notes = useNoteStore.getState().notes
-    expect(notes.find(n => n.id === noteA.id)?.folderId).toBeNull()
-    expect(notes.find(n => n.id === noteB.id)?.folderId).toBeNull()
+    expect(notes.find(n => n.id === noteA.id)?.isDeleted).toBe(true)
+    expect(notes.find(n => n.id === noteB.id)?.isDeleted).toBe(true)
+    // folderId is preserved so a restore puts them back where they were.
+    expect(notes.find(n => n.id === noteA.id)?.folderId).toBe(root.id)
+    expect(notes.find(n => n.id === noteB.id)?.folderId).toBe(sub.id)
+  })
+
+  test('hardDelete mode removes the contained notes outright', () => {
+    useSettingsStore.setState({ trashMode: 'hardDelete' })
+
+    const root = useFolderStore.getState().addFolder({ name: 'Notes', parentId: null })
+    const noteA = useNoteStore.getState().addNote({ title: 'A', folderId: root.id, content: '' })
+    const noteB = useNoteStore.getState().addNote({ title: 'B', folderId: null, content: '' }) // outside
+
+    cascadeDeleteFolder(root.id)
+
+    const notes = useNoteStore.getState().notes
+    expect(notes.find(n => n.id === noteA.id)).toBeUndefined() // pruned
+    expect(notes.find(n => n.id === noteB.id)).toBeDefined()   // unaffected
+
+    // Restore default for subsequent tests.
+    useSettingsStore.setState({ trashMode: 'trash' })
   })
 
   test('tombstones attachments inside the deleted folder', async () => {
