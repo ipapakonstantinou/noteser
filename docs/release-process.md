@@ -88,6 +88,33 @@ Triggers for moving from current → go-live mode:
 When the switch flips: this section becomes the canonical workflow,
 the "current mode" section moves to a "Historical" subheading.
 
+## LAN access from another PC
+
+The dev script binds to `0.0.0.0:3001`, so the app is reachable from any
+device on the same network via the host's LAN IP — e.g.
+`http://192.168.2.23:3001`. Useful for testing the UI from a phone or a
+second laptop without rebuilding.
+
+**Important caveat**: GitHub sync needs the Web Crypto API
+(`crypto.subtle.digest`), which browsers only expose in a *secure
+context* — HTTPS, or `http://localhost` on the same machine. Hitting the
+LAN IP over plain HTTP from another PC means `crypto.subtle` is
+undefined, and the first sync call throws. Three ways to fix:
+
+1. **Use the production HTTPS URL.** `https://noteser.thetechjon.com` is
+   the simplest path — sync works because the browser sees a secure
+   context.
+2. **SSH tunnel.** From the secondary PC:
+   `ssh -L 3001:localhost:3001 <user>@<host-lan-ip>` then visit
+   `http://localhost:3001`. The browser treats `localhost` as secure.
+3. **Dev server with HTTPS.** `next dev --experimental-https -H 0.0.0.0 -p 3001`
+   produces a self-signed cert; click through the browser warning once.
+
+`src/utils/github.ts:gitBlobShaBytes` throws a clear "Web Crypto API
+unavailable" error pointing here when the API is missing, so the
+symptom is obvious instead of the cryptic
+`Cannot read properties of undefined (reading 'digest')`.
+
 ## Vercel-specific notes
 
 - **Custom domain.** `noteser.thetechjon.com` points at the

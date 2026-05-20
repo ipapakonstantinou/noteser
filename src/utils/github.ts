@@ -351,6 +351,18 @@ export async function gitBlobSha(content: string): Promise<string> {
 // SHA-1'd — but lets the caller pass arbitrary bytes (e.g. an image file)
 // without forcing a text encode that would mangle the content.
 export async function gitBlobShaBytes(bytes: Uint8Array): Promise<string> {
+  // crypto.subtle only exists in a "secure context" — HTTPS or localhost.
+  // If a user opens the dev server over http://192.168.x.x from another PC,
+  // the browser refuses to expose it and the next line crashes with the
+  // cryptic "Cannot read properties of undefined (reading 'digest')". Detect
+  // the missing API up front and throw a message the UI can show verbatim.
+  if (typeof crypto === 'undefined' || !crypto.subtle) {
+    throw new Error(
+      'Web Crypto API unavailable — GitHub sync needs a secure context. ' +
+      'Open Noteser via https:// (use the deployed URL) or via http://localhost ' +
+      '(not the LAN IP). See docs/release-process.md → "LAN access".',
+    )
+  }
   const header = new TextEncoder().encode(`blob ${bytes.byteLength}\0`)
   const buf = new Uint8Array(header.byteLength + bytes.byteLength)
   buf.set(header, 0)
