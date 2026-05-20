@@ -8,7 +8,13 @@ interface ModalProps {
   onClose: () => void
   title?: string
   children: ReactNode
-  size?: 'sm' | 'md' | 'lg' | 'xl'
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl'
+  /**
+   * When true, the body slot does NOT add padding or scroll. Use for
+   * children that manage their own scroll containers (e.g. the
+   * 2-pane Settings layout where each pane scrolls independently).
+   */
+  bodyless?: boolean
   showCloseButton?: boolean
 }
 
@@ -18,7 +24,8 @@ export const Modal = ({
   title,
   children,
   size = 'md',
-  showCloseButton = true
+  showCloseButton = true,
+  bodyless = false,
 }: ModalProps) => {
   const handleEscape = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -43,7 +50,9 @@ export const Modal = ({
     sm: 'max-w-sm',
     md: 'max-w-md',
     lg: 'max-w-lg',
-    xl: 'max-w-xl'
+    xl: 'max-w-xl',
+    '2xl': 'max-w-3xl',
+    '3xl': 'max-w-5xl',
   }
 
   return (
@@ -80,8 +89,13 @@ export const Modal = ({
           </div>
         )}
 
-        {/* Body — scrolls when content exceeds the modal height. */}
-        <div className="p-4 overflow-y-auto flex-1 min-h-0">{children}</div>
+        {/* Body — by default scrolls when content exceeds modal height.
+            With `bodyless`, the caller takes over layout entirely (used
+            for the 2-pane Settings layout where each pane scrolls
+            independently). */}
+        {bodyless
+          ? <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
+          : <div className="p-4 overflow-y-auto flex-1 min-h-0">{children}</div>}
       </div>
     </div>
   )
