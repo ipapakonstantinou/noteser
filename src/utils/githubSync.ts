@@ -242,6 +242,23 @@ export type PullClassification =
       remoteVault: Record<string, unknown>
       remoteHash: string
     }
+  // vs8x-conflict: both sides have drifted since the last sync. Apply
+  // doesn't overwrite — instead it opens a modal where the user
+  // resolves key-by-key. The classification carries every differing
+  // key with its local + remote values so the modal can render
+  // without a second pull.
+  | {
+      kind: 'vaultSettingsConflict'
+      path: string
+      remoteSha: string
+      remoteUpdatedAt: number
+      remoteVault: Record<string, unknown>
+      remoteHash: string
+      localVault: Record<string, unknown>
+      // Just the differing keys (intersection of {present in either}
+      // where local !== remote). Saves the modal from re-diffing.
+      diffKeys: string[]
+    }
 
 export interface PullOutcome {
   classifications: PullClassification[]
@@ -478,17 +495,73 @@ export async function pullFromGitHub(input: {
     if (remoteSettingsSha) {
       try {
         const raw = await getBlobContent(token, owner, name, remoteSettingsSha)
-        const { parseVaultSettings, vaultSettingsHash } = await import('./vaultSettings')
+        const { parseVaultSettings, vaultSettingsHash, pickVaultSlice, serializeVaultSettings } = await import('./vaultSettings')
         const parsed = parseVaultSettings(raw)
         if (parsed && parsed.updatedAt > vaultSettingsLocalUpdatedAt) {
-          out.push({
-            kind: 'vaultSettingsUpdated',
-            path: vaultSettingsPath,
-            remoteSha: remoteSettingsSha,
-            remoteUpdatedAt: parsed.updatedAt,
-            remoteVault: parsed.vault as Record<string, unknown>,
-            remoteHash: vaultSettingsHash(raw),
-          })
+          const remoteHash = vaultSettingsHash(raw)
+          // vs8x-conflict: are local AND remote both dirty since the
+          // last sync? If localHash !== lastPushedHash the user has
+          // edits we never pushed — overlaying the remote silently
+          // would clobber them. Open a modal instead.
+          const { useSettingsStore } = await import('@/stores/settingsStore')
+          const settingsState = useSettingsStore.getState()
+          const localVaultSlice = pickVaultSlice(settingsState)
+          const localCanonical = serializeVaultSettings(localVaultSlice, settingsState.vaultSettingsUpdatedAt || 0)
+          const localHash = vaultSettingsHash(localCanonical)
+          const localDirty = localHash !== (settingsState.vaultSettingsLastPushedHash || '')
+
+          const remoteVaultObj = parsed.vault as Record<string, unknown>
+          const localVaultObj = localVaultSlice as Record<string, unknown>
+
+          if (localDirty) {
+            // Build the diff key list — every key whose local + remote
+            // values differ. Both sides whitelist to VAULT_SETTING_KEYS
+            // already, so the comparison stays small.
+            const keys = new Set<string>([
+              ...Object.keys(localVaultObj),
+              ...Object.keys(remoteVaultObj),
+            ])
+            const diffKeys: string[] = []
+            for (const k of keys) {
+              if (JSON.stringify(localVaultObj[k]) !== JSON.stringify(remoteVaultObj[k])) {
+                diffKeys.push(k)
+              }
+            }
+            if (diffKeys.length > 0) {
+              out.push({
+                kind: 'vaultSettingsConflict',
+                path: vaultSettingsPath,
+                remoteSha: remoteSettingsSha,
+                remoteUpdatedAt: parsed.updatedAt,
+                remoteVault: remoteVaultObj,
+                remoteHash,
+                localVault: localVaultObj,
+                diffKeys,
+              })
+            }
+            // If diffKeys is empty the values match anyway → fall
+            // through to vaultSettingsUpdated which is a cheap no-op.
+            else {
+              out.push({
+                kind: 'vaultSettingsUpdated',
+                path: vaultSettingsPath,
+                remoteSha: remoteSettingsSha,
+                remoteUpdatedAt: parsed.updatedAt,
+                remoteVault: remoteVaultObj,
+                remoteHash,
+              })
+            }
+          } else {
+            // Clean local → remote wins as before.
+            out.push({
+              kind: 'vaultSettingsUpdated',
+              path: vaultSettingsPath,
+              remoteSha: remoteSettingsSha,
+              remoteUpdatedAt: parsed.updatedAt,
+              remoteVault: remoteVaultObj,
+              remoteHash,
+            })
+          }
         }
       } catch {
         // Bad JSON / network blip — skip rather than fail the entire

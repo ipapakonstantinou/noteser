@@ -878,7 +878,9 @@
     {
       "id": "20260520T190300-vs8x-conflict",
       "brief": "vs8x conflict UI — vault settings sync today is LWW (last writer wins). Build a key-by-key merge tab (like notes have) that opens when pullFromGitHub detects the remote vault settings file has updatedAt > local AND local has uncommitted changes since the last push. The tab lists every differing key with local / remote values + 'take local' / 'take remote' / 'keep both (where multivalue, e.g. betaFlags)' radios. On apply, settings update + a fresh updatedAt is written.",
-      "status": "pending",
+      "status": "done",
+      "completed_at": "2026-05-20T21:00:00Z",
+      "result": "Shipped as a modal (lighter than a full tab; tab can come later if usage warrants). pullFromGitHub now distinguishes vaultSettingsUpdated (clean local → remote wins) vs vaultSettingsConflict (local has unpushed changes → user resolves). New PullClassification kind carries diffKeys + both sides. syncApply opens the new VaultSettingsConflictModal; the modal renders a per-key radio table + 'Take all local / remote' shortcuts. Apply writes the chosen blend via applyRemoteVaultSettings with a fresh updatedAt so the next push uploads the resolution. 'Keep both' for betaFlags not added — currently the radio is binary; can layer in if users hit the case. 6 new tests (2 sync detection + 4 modal flow). 71 suites / 1087 tests green.",
       "created_at": "2026-05-20T19:03:00Z",
       "started_at": null,
       "completed_at": null,
