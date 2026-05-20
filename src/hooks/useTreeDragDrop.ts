@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useRef, useState } from 'react'
-import { useNoteStore } from '@/stores'
+import { useNoteStore, useFolderStore } from '@/stores'
 import { moveAttachmentAndRewriteRefs } from '@/utils/attachments'
 
 // Drag-and-drop state + handlers for the folder tree. Owns the dragged-item
@@ -14,6 +14,7 @@ import { moveAttachmentAndRewriteRefs } from '@/utils/attachments'
 type DraggedItem =
   | { kind: 'note'; id: string }
   | { kind: 'attachment'; path: string }
+  | { kind: 'folder'; id: string }
 
 export interface UseTreeDragDropOptions {
   // FolderTree computes folder repo paths anyway (to group attachments by
@@ -29,6 +30,7 @@ export interface TreeDragDropApi {
 
   beginNoteDrag: (e: React.DragEvent, noteId: string) => void
   beginAttachmentDrag: (e: React.DragEvent, path: string) => void
+  beginFolderDrag: (e: React.DragEvent, folderId: string) => void
   endDrag: () => void
 
   onFolderDragOver: (e: React.DragEvent, folderId: string) => void
@@ -41,6 +43,7 @@ export interface TreeDragDropApi {
 
 export function useTreeDragDrop({ getFolderRepoPath }: UseTreeDragDropOptions): TreeDragDropApi {
   const moveNoteToFolder = useNoteStore(s => s.moveNoteToFolder)
+  const updateFolder = useFolderStore(s => s.updateFolder)
 
   // Kept in a ref so dragstart doesn't trigger a re-render; the highlight
   // target lives in state because the visual outline must re-render.
@@ -59,6 +62,50 @@ export function useTreeDragDrop({ getFolderRepoPath }: UseTreeDragDropOptions): 
     e.dataTransfer.setData('application/x-noteser-attachment', path)
     e.dataTransfer.effectAllowed = 'move'
   }, [])
+
+  const beginFolderDrag = useCallback((e: React.DragEvent, folderId: string) => {
+    draggedItemRef.current = { kind: 'folder', id: folderId }
+    e.dataTransfer.setData('application/x-noteser-folder', folderId)
+    e.dataTransfer.effectAllowed = 'move'
+  }, [])
+
+  // Walk the folder hierarchy to find every descendant of `rootId`
+  // (NOT including rootId itself). Used to prevent cycles: you can't
+  // drop a folder into its own subtree.
+  const collectDescendantFolderIds = useCallback((rootId: string): Set<string> => {
+    const out = new Set<string>()
+    const folders = useFolderStore.getState().folders
+    const queue: string[] = [rootId]
+    while (queue.length > 0) {
+      const cur = queue.shift()!
+      for (const f of folders) {
+        if (!f.isDeleted && f.parentId === cur && !out.has(f.id)) {
+          out.add(f.id)
+          queue.push(f.id)
+        }
+      }
+    }
+    return out
+  }, [])
+
+  // Apply a folder-move. Validates: dropping onto self is a no-op;
+  // dropping into own descendant is rejected (cycle); dropping into
+  // current parent is a no-op.
+  const moveFolderToFolder = useCallback(
+    (folderId: string, targetParentId: string | null) => {
+      const folders = useFolderStore.getState().folders
+      const folder = folders.find(f => f.id === folderId)
+      if (!folder) return
+      if (folder.parentId === targetParentId) return
+      if (targetParentId === folderId) return
+      if (targetParentId !== null) {
+        const descendants = collectDescendantFolderIds(folderId)
+        if (descendants.has(targetParentId)) return
+      }
+      updateFolder(folderId, { parentId: targetParentId })
+    },
+    [updateFolder, collectDescendantFolderIds],
+  )
 
   const endDrag = useCallback(() => {
     draggedItemRef.current = null
@@ -106,9 +153,10 @@ export function useTreeDragDrop({ getFolderRepoPath }: UseTreeDragDropOptions): 
       const item = draggedItemRef.current
       if (item?.kind === 'note') moveNoteToFolder(item.id, folderId)
       else if (item?.kind === 'attachment') void moveAttachmentToFolder(item.path, folderId)
+      else if (item?.kind === 'folder') moveFolderToFolder(item.id, folderId)
       endDrag()
     },
-    [moveNoteToFolder, moveAttachmentToFolder, endDrag],
+    [moveNoteToFolder, moveAttachmentToFolder, moveFolderToFolder, endDrag],
   )
 
   const onRootDragOver = useCallback((e: React.DragEvent) => {
@@ -131,15 +179,17 @@ export function useTreeDragDrop({ getFolderRepoPath }: UseTreeDragDropOptions): 
       const item = draggedItemRef.current
       if (item?.kind === 'note') moveNoteToFolder(item.id, null)
       else if (item?.kind === 'attachment') void moveAttachmentToFolder(item.path, null)
+      else if (item?.kind === 'folder') moveFolderToFolder(item.id, null)
       endDrag()
     },
-    [moveNoteToFolder, moveAttachmentToFolder, endDrag],
+    [moveNoteToFolder, moveAttachmentToFolder, moveFolderToFolder, endDrag],
   )
 
   return {
     dragOverTarget,
     beginNoteDrag,
     beginAttachmentDrag,
+    beginFolderDrag,
     endDrag,
     onFolderDragOver,
     onFolderDragLeave,

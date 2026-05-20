@@ -462,6 +462,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     dragOverTarget,
     beginNoteDrag,
     beginAttachmentDrag,
+    beginFolderDrag,
     endDrag,
     onFolderDragOver,
     onFolderDragLeave,
@@ -559,6 +560,9 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
             kbFocused ? 'ring-1 ring-inset ring-obsidianAccentPurple' : ''
           }`}
           style={{ paddingLeft: depth > 0 ? `${depth * 12 + 8}px` : undefined }}
+          draggable={currentView !== 'trash'}
+          onDragStart={e => beginFolderDrag(e, folder.id)}
+          onDragEnd={endDrag}
           onClick={() => setActiveFolder(folder.id)}
           onContextMenu={e => onRightClick(e, 'folder', folder.id)}
           onDragOver={e => onFolderDragOver(e, folder.id)}

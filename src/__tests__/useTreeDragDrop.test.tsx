@@ -26,6 +26,7 @@ import React, { useImperativeHandle, forwardRef } from 'react'
 import { render, act } from '@testing-library/react'
 import { useTreeDragDrop, type TreeDragDropApi } from '../hooks/useTreeDragDrop'
 import { useNoteStore } from '../stores/noteStore'
+import { useFolderStore } from '../stores/folderStore'
 
 // Tiny harness that exposes the hook API via a ref so tests can call
 // individual handlers directly (mirrors how FolderTree wires them onto
@@ -61,9 +62,25 @@ function makeDragEvent(): React.DragEvent {
 
 beforeEach(() => {
   moveAttachmentMock.mockClear()
-  // Reset noteStore between tests.
+  // Reset stores between tests.
   useNoteStore.setState({ notes: [], selectedNoteId: null })
+  useFolderStore.setState({ folders: [], activeFolderId: null, expandedFolders: {}, deletedFolderPaths: [] })
 })
+
+function seedFolders(input: Array<{ id: string; parentId?: string | null; name?: string }>) {
+  useFolderStore.setState({
+    folders: input.map((f, i) => ({
+      id: f.id,
+      name: f.name ?? f.id,
+      parentId: f.parentId ?? null,
+      createdAt: 0,
+      updatedAt: 0,
+      isDeleted: false,
+      deletedAt: null,
+      order: i,
+    })),
+  })
+}
 
 describe('useTreeDragDrop', () => {
   test('dragOverTarget starts null', () => {
@@ -133,5 +150,61 @@ describe('useTreeDragDrop', () => {
     act(() => { api().beginAttachmentDrag(makeDragEvent(), 'attachments/pic.png') })
     await act(async () => { api().onFolderDrop(makeDragEvent(), 'self') })
     expect(moveAttachmentMock).not.toHaveBeenCalled()
+  })
+
+  // ── Folder drag-and-drop ────────────────────────────────────────────────
+
+  test('dragging folder A onto folder B sets A.parentId = B', () => {
+    seedFolders([{ id: 'A' }, { id: 'B' }])
+    const { api } = mountHarness()
+    act(() => { api().beginFolderDrag(makeDragEvent(), 'A') })
+    act(() => { api().onFolderDrop(makeDragEvent(), 'B') })
+    const a = useFolderStore.getState().folders.find(f => f.id === 'A')
+    expect(a?.parentId).toBe('B')
+  })
+
+  test('dragging folder A onto root clears its parentId', () => {
+    seedFolders([{ id: 'parent' }, { id: 'A', parentId: 'parent' }])
+    const { api } = mountHarness()
+    act(() => { api().beginFolderDrag(makeDragEvent(), 'A') })
+    act(() => { api().onRootDrop(makeDragEvent()) })
+    const a = useFolderStore.getState().folders.find(f => f.id === 'A')
+    expect(a?.parentId).toBeNull()
+  })
+
+  test('dropping a folder onto itself is a no-op', () => {
+    seedFolders([{ id: 'A', parentId: 'P' }, { id: 'P' }])
+    const { api } = mountHarness()
+    act(() => { api().beginFolderDrag(makeDragEvent(), 'A') })
+    act(() => { api().onFolderDrop(makeDragEvent(), 'A') })
+    const a = useFolderStore.getState().folders.find(f => f.id === 'A')
+    // Unchanged — still nested under its original parent
+    expect(a?.parentId).toBe('P')
+  })
+
+  test('dropping a folder into one of its own descendants is rejected (no cycle)', () => {
+    //   A
+    //   └── B
+    //       └── C
+    seedFolders([
+      { id: 'A' },
+      { id: 'B', parentId: 'A' },
+      { id: 'C', parentId: 'B' },
+    ])
+    const { api } = mountHarness()
+    act(() => { api().beginFolderDrag(makeDragEvent(), 'A') })
+    // Attempt to drop A into C — would create A→B→C→A cycle.
+    act(() => { api().onFolderDrop(makeDragEvent(), 'C') })
+    const a = useFolderStore.getState().folders.find(f => f.id === 'A')
+    expect(a?.parentId).toBeNull() // unchanged
+  })
+
+  test('dropping a folder into its current parent is a no-op', () => {
+    seedFolders([{ id: 'P' }, { id: 'A', parentId: 'P' }])
+    const { api } = mountHarness()
+    act(() => { api().beginFolderDrag(makeDragEvent(), 'A') })
+    act(() => { api().onFolderDrop(makeDragEvent(), 'P') })
+    const a = useFolderStore.getState().folders.find(f => f.id === 'A')
+    expect(a?.parentId).toBe('P') // unchanged
   })
 })
