@@ -13,6 +13,7 @@ import { findNoteByTitleOrAlias } from '@/utils/aliases'
 import { toggleTaskLineText, removeTaskPrefixFromLine } from '@/utils/tasks'
 import { SCROLL_TO_LINE_EVENT } from '@/utils/events'
 import { CodeMirrorEditor } from './CodeMirrorEditor'
+import { FrontmatterPanel } from './FrontmatterPanel'
 import { TaskQueryBlock } from './TaskQueryBlock'
 import { AttachmentImage } from './AttachmentImage'
 import type { Note } from '@/types'
@@ -481,7 +482,11 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
   }
 
   return (
-    <div className="relative flex-1 h-full overflow-hidden">
+    <div className="relative flex-1 h-full overflow-hidden flex flex-col">
+      <FrontmatterPanel
+        content={note.content ?? ''}
+        onChange={(next) => { setPreviewContent(next); onContentChange(next) }}
+      />
       <CodeMirrorEditor
         noteId={note.id}
         initialContent={note.content}
