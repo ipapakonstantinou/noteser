@@ -1,5 +1,6 @@
 'use client'
 
+import { useCallback, useEffect } from 'react'
 import { useUIStore, useNoteStore, useFolderStore, useSettingsStore } from '@/stores'
 import { Modal, Button } from '@/components/ui'
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline'
@@ -20,6 +21,58 @@ export const DeleteConfirmModal = () => {
   type Bulk = { type: 'bulk'; ids: string[] }
   const data = modal.data as Single | Bulk | undefined
 
+  // Hooks must run unconditionally, so handleDelete + the keydown effect
+  // live above the early-return below. They guard on isOpen + data
+  // themselves.
+  const handleDelete = useCallback(() => {
+    if (!data) return
+    if (data.type === 'bulk') {
+      useNoteStore.getState().deleteNotes(data.ids)
+      closeModal()
+      return
+    }
+    const isPerm = !!(data as Single).permanent
+    if (data.type === 'note') {
+      if (isPerm) permanentlyDeleteNote(data.id)
+      else deleteNote(data.id)
+    } else {
+      // For folders, hardDelete and "soft" both cascade attachment
+      // tombstones + relocate notes to root. The only difference is
+      // whether the folder entity is left in trash (recoverable) or
+      // dropped outright. We always run cascade so the sync side stays
+      // consistent regardless of the user's trash preference.
+      if (isPerm || trashMode === 'hardDelete') {
+        cascadeDeleteFolder(data.id)
+        permanentlyDeleteFolder(data.id)
+      } else {
+        cascadeDeleteFolder(data.id)
+      }
+    }
+    closeModal()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, trashMode])
+
+  // Keyboard UX: Enter or Delete confirms; Escape cancels (Modal already
+  // handles that). Window-level listener so focus location doesn't
+  // matter — pairs with the user's "I hit Delete to open the modal,
+  // I want to hit Enter (or Delete) to confirm" request.
+  useEffect(() => {
+    if (!isOpen) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === 'Delete' || e.key === 'Backspace') {
+        // Don't hijack typing inside an input/textarea (no field
+        // exists today, but future children might add one).
+        const tgt = e.target as HTMLElement | null
+        const tag = tgt?.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tgt?.isContentEditable) return
+        e.preventDefault()
+        handleDelete()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isOpen, handleDelete])
+
   if (!isOpen || !data) return null
 
   const isBulk = data.type === 'bulk'
@@ -32,38 +85,6 @@ export const DeleteConfirmModal = () => {
   const notesInFolder = !isBulk && !isNote
     ? notes.filter(n => n.folderId === data.id && !n.isDeleted)
     : []
-
-  const handleDelete = () => {
-    if (isBulk) {
-      useNoteStore.getState().deleteNotes(data.ids)
-      closeModal()
-      return
-    }
-    if (isNote) {
-      if (isPermanent) {
-        permanentlyDeleteNote(data.id)
-      } else {
-        deleteNote(data.id)
-      }
-    } else {
-      // For folders, hardDelete and "soft" both cascade attachment
-      // tombstones + relocate notes to root. The only difference is
-      // whether the folder entity is left in trash (recoverable) or
-      // dropped outright. We always run cascade so the sync side stays
-      // consistent regardless of the user's trash preference.
-      if (isPermanent || trashMode === 'hardDelete') {
-        cascadeDeleteFolder(data.id)
-        permanentlyDeleteFolder(data.id)
-      } else {
-        // Soft delete: cascade. Tombstones attachments inside the folder
-        // so the next sync push removes them remotely (otherwise pull
-        // would re-derive the folder and resurrect it), cascade-deletes
-        // descendant folders, and moves any contained notes to root.
-        cascadeDeleteFolder(data.id)
-      }
-    }
-    closeModal()
-  }
 
   return (
     <Modal isOpen={isOpen} onClose={closeModal} size="sm">
