@@ -1,0 +1,53 @@
+name: CI
+
+# Runs on every push to main (to catch direct-to-main mistakes) and on
+# every PR (the gate we'll require once we move to branch-per-feature).
+# See docs/release-process.md for the full workflow plan.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-flight runs when a newer commit lands on the same ref. Saves
+# CI minutes on noisy push streaks.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint · Typecheck · Test · Build
+    runs-on: ubuntu-latest
+    # Matches the version pinned in package.json's engines.node.
+    env:
+      NODE_VERSION: '22'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Run each check separately so the GitHub PR summary shows which
+      # step failed. They could be parallelised across jobs, but for a
+      # codebase this size the cost-of-coordination > the wall-clock win.
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test -- --ci
+
+      - name: Build
+        run: npm run build
