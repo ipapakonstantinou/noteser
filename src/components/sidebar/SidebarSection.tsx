@@ -21,6 +21,12 @@ interface Props {
   // Optional context-menu handler for the section header — used for
   // the "right-click to unpin from top" affordance on pinned panels.
   onHeaderContextMenu?: (e: React.MouseEvent) => void
+  // Render the panel without a section header (no chevron, no
+  // uppercase label, no collapse). Used for the pinned Calendar —
+  // the user explicitly wants it to render like the file tree below
+  // (just content, no "CALENDAR" bar). The right-click-to-unpin
+  // gesture still works from the content area.
+  hideHeader?: boolean
 }
 
 // A collapsible, vertically-resizable section in the stacked sidebar.
@@ -46,12 +52,15 @@ export const SidebarSection = ({
   minHeight = 80,
   draggablePanelId,
   onHeaderContextMenu,
+  hideHeader = false,
 }: Props) => {
   const section = useUIStore(s => s.sidebarSections[id])
   const toggle = useUIStore(s => s.toggleSidebarSection)
   const setHeight = useUIStore(s => s.setSidebarSectionHeight)
 
-  const collapsed = section?.collapsed ?? true
+  // Header-less sections are always treated as expanded so the
+  // content is always visible — there's no chevron to toggle.
+  const collapsed = hideHeader ? false : (section?.collapsed ?? true)
   const height = section?.height ?? DEFAULT_SECTION_HEIGHT
 
   // Resize state. We track the in-flight height in local state so the
@@ -99,46 +108,53 @@ export const SidebarSection = ({
       style={collapsed ? undefined : { height: effectiveHeight }}
       data-section-id={id}
     >
-      {/* Header. When draggablePanelId is set, the header becomes a
-          drag source so SidebarStack can let the user move this panel
-          from the pinned area into the tab strip. */}
-      <button
-        type="button"
-        onClick={() => toggle(id)}
-        onContextMenu={onHeaderContextMenu}
-        draggable={Boolean(draggablePanelId)}
-        onDragStart={(e: React.DragEvent) => {
-          if (!draggablePanelId) return
-          e.dataTransfer.setData(SIDEBAR_PANEL_DRAG_MIME, draggablePanelId)
-          e.dataTransfer.effectAllowed = 'move'
-        }}
-        className={`flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium uppercase tracking-wide text-obsidianSecondaryText hover:bg-obsidianDarkGray transition-colors w-full text-left ${
-          draggablePanelId ? 'cursor-grab active:cursor-grabbing' : ''
-        }`}
-        aria-expanded={!collapsed}
-        aria-controls={`sidebar-section-content-${id}`}
-      >
-        <ChevronRightIcon
-          className={`w-3 h-3 transition-transform ${collapsed ? '' : 'rotate-90'}`}
-        />
-        {icon && <span className="w-3.5 h-3.5 flex items-center justify-center">{icon}</span>}
-        <span className="flex-1 truncate">{title}</span>
-        {badge}
-        {actions && (
-          <span
-            className="flex items-center gap-1"
-            onClick={e => e.stopPropagation()}
-          >
-            {actions}
-          </span>
-        )}
-      </button>
+      {/* Header. Skipped entirely when hideHeader is set — the panel
+          then looks like a normal block of content with no chevron or
+          uppercase label. The right-click-unpin gesture lives on the
+          content wrapper instead so users can still get out. */}
+      {!hideHeader && (
+        <button
+          type="button"
+          onClick={() => toggle(id)}
+          onContextMenu={onHeaderContextMenu}
+          draggable={Boolean(draggablePanelId)}
+          onDragStart={(e: React.DragEvent) => {
+            if (!draggablePanelId) return
+            e.dataTransfer.setData(SIDEBAR_PANEL_DRAG_MIME, draggablePanelId)
+            e.dataTransfer.effectAllowed = 'move'
+          }}
+          className={`flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium uppercase tracking-wide text-obsidianSecondaryText hover:bg-obsidianDarkGray transition-colors w-full text-left ${
+            draggablePanelId ? 'cursor-grab active:cursor-grabbing' : ''
+          }`}
+          aria-expanded={!collapsed}
+          aria-controls={`sidebar-section-content-${id}`}
+        >
+          <ChevronRightIcon
+            className={`w-3 h-3 transition-transform ${collapsed ? '' : 'rotate-90'}`}
+          />
+          {icon && <span className="w-3.5 h-3.5 flex items-center justify-center">{icon}</span>}
+          <span className="flex-1 truncate">{title}</span>
+          {badge}
+          {actions && (
+            <span
+              className="flex items-center gap-1"
+              onClick={e => e.stopPropagation()}
+            >
+              {actions}
+            </span>
+          )}
+        </button>
+      )}
 
       {/* Content */}
       {!collapsed && (
         <div
           id={`sidebar-section-content-${id}`}
           className="flex-1 min-h-0 overflow-y-auto"
+          // When the header is hidden, the content wrapper inherits
+          // the right-click handler so users still have a path to
+          // unpin the panel. preventDefault is the caller's job.
+          onContextMenu={hideHeader ? onHeaderContextMenu : undefined}
         >
           {children}
         </div>
