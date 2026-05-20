@@ -46,6 +46,12 @@ export class AIClientError extends Error {
 // hardcoding the URL in two places.
 export const ANTHROPIC_MESSAGES_URL = 'https://api.anthropic.com/v1/messages'
 export const OPENAI_CHAT_COMPLETIONS_URL = 'https://api.openai.com/v1/chat/completions'
+export const OPENAI_EMBEDDINGS_URL = 'https://api.openai.com/v1/embeddings'
+
+// Default OpenAI embedding model — small + cheap (1536 dim,
+// ~$0.02/1M input tokens). User can override via aiEmbeddingsModel
+// in settings if they want a different snapshot.
+export const DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small'
 
 // Pull a best-effort error string out of an API JSON body. Both providers
 // nest the user-facing message slightly differently; falling back to the
@@ -188,4 +194,74 @@ async function safeJson(res: Response): Promise<unknown> {
   } catch {
     return {}
   }
+}
+
+// ── Embeddings (a1f7) ──────────────────────────────────────────────────────
+// Single-string embedding via OpenAI. Anthropic doesn't ship a public
+// embedding endpoint, so we require an OpenAI key regardless of which
+// chat provider the user picked. The caller is expected to gate UI
+// entry points on `aiEmbeddingsEnabled` and an available OpenAI key.
+
+export interface EmbedTextArgs {
+  text: string
+  // Optional override for the embedding model name. Defaults to
+  // text-embedding-3-small (1536 dim, cheap).
+  model?: string
+  // Optional override for the API key. When omitted, falls back to
+  // aiApiKey from settings IF aiProvider === 'openai'. Letting the
+  // caller pass it lets us add a separate embeddings-specific key in
+  // settings later without touching this signature.
+  apiKey?: string
+}
+
+export async function embedText({ text, model, apiKey }: EmbedTextArgs): Promise<number[]> {
+  // Resolve the key. v1 only supports OpenAI for embeddings; we surface
+  // a typed error so the UI can route to the right "configure" hint.
+  let key = apiKey
+  if (!key) {
+    const { aiProvider, aiApiKey } = useSettingsStore.getState()
+    if (aiProvider !== 'openai') {
+      throw new AIClientError(
+        'Embeddings require an OpenAI API key. Switch the AI provider to OpenAI in Settings → AI.'
+      )
+    }
+    key = aiApiKey
+  }
+  if (!key) {
+    throw new AIClientError(
+      'No OpenAI API key configured. Paste your key in Settings → AI to enable embeddings.'
+    )
+  }
+  if (!text || !text.trim()) {
+    // OpenAI rejects empty inputs; return a zero vector for parity
+    // with how a missing note shows in cosine ranking (similarity 0).
+    return []
+  }
+
+  const res = await fetch(OPENAI_EMBEDDINGS_URL, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      model: model || DEFAULT_EMBEDDING_MODEL,
+      // The API can take an array of inputs and return parallel
+      // embeddings, but we stick to single-input here. Batching is a
+      // future optimisation if we hit rate limits during bulk index.
+      input: text,
+    }),
+  })
+  const json = await safeJson(res)
+  if (!res.ok) {
+    throw new AIClientError(
+      `OpenAI embeddings error (${res.status}): ${extractApiErrorMessage(json, res.statusText)}`
+    )
+  }
+  const data = (json as { data?: Array<{ embedding?: number[] }> })?.data
+  const embedding = Array.isArray(data) ? data[0]?.embedding : undefined
+  if (!Array.isArray(embedding) || embedding.length === 0) {
+    throw new AIClientError('OpenAI embeddings response had no vector.')
+  }
+  return embedding
 }

@@ -63,6 +63,10 @@ export interface SettingsState {
   // Which provider the aiClient targets. `'off'` (default) disables every
   // AI feature.
   aiProvider: AIProvider
+  // Embeddings opt-in (a1f7). Defaults off so users don't accidentally
+  // burn OpenAI tokens. Requires aiProvider === 'openai' to function;
+  // the toggle is visible regardless so users discover the feature.
+  aiEmbeddingsEnabled: boolean
   // SECURITY NOTE: localStorage is readable by any script on the page; any
   // XSS would expose the key. Same trust model the GitHub OAuth token uses
   // (see `githubStore.ts`). Acceptable for a personal note tool, NOT for a
@@ -167,6 +171,7 @@ export interface SettingsState {
   setAiProvider: (provider: AIProvider) => void
   setAiApiKey: (key: string) => void
   setAiModel: (model: string) => void
+  setAiEmbeddingsEnabled: (enabled: boolean) => void
   setShortcutOverride: (id: string, combo: string) => void
   clearShortcutOverride: (id: string) => void
   resetShortcutOverrides: () => void
@@ -237,6 +242,7 @@ const DEFAULTS = {
   aiProvider: 'off' as AIProvider,
   aiApiKey: '',
   aiModel: DEFAULT_AI_MODEL.anthropic,
+  aiEmbeddingsEnabled: false,
   shortcutOverrides: {} as Record<string, string>,
   trashMode: 'trash' as TrashMode,
   confirmBulkDelete: true,
@@ -278,6 +284,7 @@ export const useSettingsStore = create<SettingsState>()(
         setAiProvider: (aiProvider) => set({ aiProvider }),
         setAiApiKey: (aiApiKey) => set({ aiApiKey }),
         setAiModel: (aiModel) => set({ aiModel }),
+        setAiEmbeddingsEnabled: (aiEmbeddingsEnabled) => set({ aiEmbeddingsEnabled }),
         setShortcutOverride: (id, combo) =>
           set((state) => ({
             shortcutOverrides: { ...state.shortcutOverrides, [id]: combo },

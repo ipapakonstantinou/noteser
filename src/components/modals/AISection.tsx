@@ -1,9 +1,11 @@
 'use client'
 
-import { useSettingsStore } from '@/stores'
+import { useState } from 'react'
+import { useSettingsStore, useNoteStore } from '@/stores'
 import type { AIProvider } from '@/stores'
 import { DEFAULT_AI_MODEL } from '@/stores/settingsStore'
-import { Field, SettingsSelect, SettingsTextInput } from './settings'
+import { Field, SettingsSelect, SettingsCheckbox, SettingsTextInput } from './settings'
+import { indexAllNotes, clearAllEmbeddings, type IndexProgress } from '@/utils/embeddings'
 
 // Settings sub-section: lets the user wire up their own Anthropic or
 // OpenAI key + pick a default model. Everything is BYO key — the
@@ -12,9 +14,41 @@ export const AISection = () => {
   const aiProvider = useSettingsStore(s => s.aiProvider)
   const aiApiKey = useSettingsStore(s => s.aiApiKey)
   const aiModel = useSettingsStore(s => s.aiModel)
+  const aiEmbeddingsEnabled = useSettingsStore(s => s.aiEmbeddingsEnabled)
   const setAiProvider = useSettingsStore(s => s.setAiProvider)
   const setAiApiKey = useSettingsStore(s => s.setAiApiKey)
   const setAiModel = useSettingsStore(s => s.setAiModel)
+  const setAiEmbeddingsEnabled = useSettingsStore(s => s.setAiEmbeddingsEnabled)
+
+  // Bulk-index UI state. We don't track this in the store because it
+  // only matters for the duration of the modal session.
+  const [indexProgress, setIndexProgress] = useState<IndexProgress | null>(null)
+  const [indexResult, setIndexResult] = useState<{ indexed: number; skipped: number; errors: number } | null>(null)
+  const [indexError, setIndexError] = useState<string | null>(null)
+  const indexing = indexProgress != null && indexProgress.done < indexProgress.total
+
+  const handleIndexAll = async () => {
+    setIndexError(null)
+    setIndexResult(null)
+    setIndexProgress({ done: 0, total: 0, currentTitle: '' })
+    try {
+      const allNotes = useNoteStore.getState().notes
+      const result = await indexAllNotes(allNotes, p => setIndexProgress(p))
+      setIndexResult(result)
+    } catch (err) {
+      setIndexError(err instanceof Error ? err.message : 'Indexing failed.')
+    } finally {
+      // Mark progress complete even on error so the spinner stops.
+      setIndexProgress(p => p ? { ...p, done: p.total } : null)
+    }
+  }
+
+  const handleClearEmbeddings = async () => {
+    if (!confirm('Delete every cached embedding? You can rebuild them with "Index all notes" — this will re-call the embeddings API on the next index.')) return
+    await clearAllEmbeddings()
+    setIndexResult(null)
+    setIndexError(null)
+  }
 
   // Show the default model for the active provider as a placeholder. When
   // provider is 'off' there's nothing useful to suggest, so we fall back
@@ -72,6 +106,68 @@ export const AISection = () => {
           mono
         />
       </Field>
+
+      {/* Embeddings opt-in (a1f7). Visible regardless of provider so
+          users discover it; the "Related notes" panel and the bulk-
+          index button do the actual gating. */}
+      <div className="pt-3 mt-3 border-t border-obsidianBorder space-y-3">
+        <div className="text-xs uppercase tracking-wide text-obsidianSecondaryText">
+          Embeddings
+        </div>
+        <Field
+          label="Enable AI embeddings"
+          description="Index notes via OpenAI text-embedding-3-small to power the Related notes panel. Requires an OpenAI key. Cheap (~$0.02 per million tokens) but not free."
+        >
+          <SettingsCheckbox
+            checked={aiEmbeddingsEnabled}
+            onChange={setAiEmbeddingsEnabled}
+          />
+        </Field>
+        {aiEmbeddingsEnabled && (
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleIndexAll}
+                disabled={indexing || aiProvider !== 'openai'}
+                className="px-3 py-1.5 text-sm rounded bg-obsidianAccentPurple text-white hover:opacity-90 disabled:opacity-50"
+                data-testid="ai-index-all"
+              >
+                {indexing ? 'Indexing…' : 'Index all notes'}
+              </button>
+              <button
+                type="button"
+                onClick={handleClearEmbeddings}
+                disabled={indexing}
+                className="px-3 py-1.5 text-sm rounded border border-obsidianBorder text-obsidianText hover:bg-obsidianDarkGray disabled:opacity-50"
+              >
+                Clear embeddings
+              </button>
+            </div>
+            {aiProvider !== 'openai' && (
+              <p className="text-xs text-yellow-400">
+                Switch the provider to OpenAI above to enable indexing.
+              </p>
+            )}
+            {indexProgress && indexProgress.total > 0 && (
+              <p className="text-xs text-obsidianSecondaryText">
+                {indexProgress.done} / {indexProgress.total}
+                {indexProgress.currentTitle && (
+                  <span className="ml-2 italic">({indexProgress.currentTitle})</span>
+                )}
+              </p>
+            )}
+            {indexResult && (
+              <p className="text-xs text-obsidianSecondaryText">
+                Indexed {indexResult.indexed}, skipped {indexResult.skipped}{indexResult.errors > 0 ? `, errors ${indexResult.errors}` : ''}.
+              </p>
+            )}
+            {indexError && (
+              <p className="text-xs text-red-400">{indexError}</p>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

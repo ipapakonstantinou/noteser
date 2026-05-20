@@ -10,7 +10,7 @@
  * tests under that directory).
  */
 
-import { runPrompt, AIClientError, ANTHROPIC_MESSAGES_URL, OPENAI_CHAT_COMPLETIONS_URL } from '../utils/aiClient'
+import { runPrompt, embedText, AIClientError, ANTHROPIC_MESSAGES_URL, OPENAI_CHAT_COMPLETIONS_URL, OPENAI_EMBEDDINGS_URL, DEFAULT_EMBEDDING_MODEL } from '../utils/aiClient'
 import { useSettingsStore } from '../stores/settingsStore'
 
 // Helper: shape a `fetch` mock that returns a JSON body with a given
@@ -186,6 +186,75 @@ describe('runPrompt — error surfacing', () => {
     ).rejects.toMatchObject({
       name: 'AIClientError',
       message: expect.stringContaining('too many requests'),
+    })
+  })
+})
+
+describe('embedText — guards', () => {
+  test('throws when no apiKey override + aiProvider !== openai', async () => {
+    useSettingsStore.setState({ aiProvider: 'anthropic', aiApiKey: 'sk-ant' })
+    await expect(embedText({ text: 'hello' })).rejects.toMatchObject({
+      name: 'AIClientError',
+      message: expect.stringContaining('OpenAI'),
+    })
+  })
+
+  test('throws when key missing entirely', async () => {
+    useSettingsStore.setState({ aiProvider: 'openai', aiApiKey: '' })
+    await expect(embedText({ text: 'hello' })).rejects.toMatchObject({
+      name: 'AIClientError',
+      message: expect.stringContaining('No OpenAI API key'),
+    })
+  })
+
+  test('returns an empty vector for blank input (no API call)', async () => {
+    useSettingsStore.setState({ aiProvider: 'openai', aiApiKey: 'sk-openai' })
+    const fetchMock = mockFetchOnce(500, {}) // would be called if we slipped through
+    expect(await embedText({ text: '' })).toEqual([])
+    expect(await embedText({ text: '   ' })).toEqual([])
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('embedText — OpenAI happy path', () => {
+  test('hits the embeddings URL with the right body and returns the vector', async () => {
+    useSettingsStore.setState({ aiProvider: 'openai', aiApiKey: 'sk-openai' })
+    const fetchMock = mockFetchOnce(200, { data: [{ embedding: [0.1, 0.2, 0.3] }] })
+    const vec = await embedText({ text: 'a note' })
+    expect(vec).toEqual([0.1, 0.2, 0.3])
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe(OPENAI_EMBEDDINGS_URL)
+    const body = JSON.parse((init as RequestInit).body as string)
+    expect(body.model).toBe(DEFAULT_EMBEDDING_MODEL)
+    expect(body.input).toBe('a note')
+    const headers = (init as RequestInit).headers as Record<string, string>
+    expect(headers.authorization).toBe('Bearer sk-openai')
+  })
+
+  test('caller can override the API key', async () => {
+    useSettingsStore.setState({ aiProvider: 'anthropic', aiApiKey: 'sk-ant' })
+    const fetchMock = mockFetchOnce(200, { data: [{ embedding: [1, 2] }] })
+    await embedText({ text: 'note', apiKey: 'sk-explicit' })
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    expect((init.headers as Record<string, string>).authorization).toBe('Bearer sk-explicit')
+  })
+
+  test('surfaces 4xx with the API message', async () => {
+    useSettingsStore.setState({ aiProvider: 'openai', aiApiKey: 'sk-openai' })
+    mockFetchOnce(401, { error: { message: 'invalid api key' } })
+    await expect(embedText({ text: 'note' })).rejects.toMatchObject({
+      name: 'AIClientError',
+      message: expect.stringContaining('invalid api key'),
+    })
+  })
+
+  test('throws when response has no vector', async () => {
+    useSettingsStore.setState({ aiProvider: 'openai', aiApiKey: 'sk-openai' })
+    mockFetchOnce(200, { data: [] })
+    await expect(embedText({ text: 'note' })).rejects.toMatchObject({
+      name: 'AIClientError',
+      message: expect.stringContaining('no vector'),
     })
   })
 })
