@@ -11,6 +11,8 @@ import { useNoteStore } from '@/stores/noteStore'
 import { useFolderStore } from '@/stores/folderStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { useUIStore } from '@/stores/uiStore'
+import { useGitHubStore } from '@/stores/githubStore'
 import {
   saveAttachment,
   putAttachmentAtPath,
@@ -20,6 +22,7 @@ import {
   listAttachmentMeta,
   isAttachmentPath,
 } from './attachments'
+import { setLastPushedContent, getLastPushedContent } from './lastPushedContent'
 
 declare global {
   interface Window {
@@ -29,6 +32,8 @@ declare global {
         folderStore: typeof useFolderStore
         settingsStore: typeof useSettingsStore
         workspaceStore: typeof useWorkspaceStore
+        uiStore: typeof useUIStore
+        githubStore: typeof useGitHubStore
       }
       attachments: {
         saveAttachment: typeof saveAttachment
@@ -38,6 +43,10 @@ declare global {
         deleteAttachment: typeof deleteAttachment
         listAttachmentMeta: typeof listAttachmentMeta
         isAttachmentPath: typeof isAttachmentPath
+      }
+      lastPushedContent: {
+        set: typeof setLastPushedContent
+        get: typeof getLastPushedContent
       }
     }
   }
@@ -51,6 +60,8 @@ export function installTestHooks(): void {
       folderStore: useFolderStore,
       settingsStore: useSettingsStore,
       workspaceStore: useWorkspaceStore,
+      uiStore: useUIStore,
+      githubStore: useGitHubStore,
     },
     attachments: {
       saveAttachment,
@@ -60,6 +71,10 @@ export function installTestHooks(): void {
       deleteAttachment,
       listAttachmentMeta,
       isAttachmentPath,
+    },
+    lastPushedContent: {
+      set: setLastPushedContent,
+      get: getLastPushedContent,
     },
   }
 }
