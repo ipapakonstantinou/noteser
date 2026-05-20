@@ -774,14 +774,25 @@
     {
       "id": "20260520T104500-vscg",
       "brief": "Redesign Source Control panel to mirror VS Code: SOURCE CONTROL header, collapsible CHANGES group, multiline message input with a 'Commit' split-button (dropdown for Commit & Push / Commit & Sync), Changes list with file row + status indicator on the right (M / A / D / U / + line-count). Per-file actions on hover: stage, discard, open diff. Empty state when no changes. Click a row to open the diff/merge view. Matches the screenshot. Comes AFTER s4r3 (Source Control is one of the new stack sections).",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-20T10:45:00Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-20T12:35:00Z",
+      "completed_at": "2026-05-20T13:00:00Z",
+      "result": "Shipped in 46d4104 alongside s4r3 v2. New obsidian-git styled GitHubView: top action toolbar (Sync / Pull / Refresh / Open repo / Settings), commit-message textarea with {{date}} template + Ctrl+Enter to submit, custom message plumbed through runSync → runPush → syncToGitHub.commitMessage (falls back to auto-generated 'Sync from Noteser (N changes)'). Collapsible CHANGES group wraps existing SourceControlPanel buckets. Conflicts block + compact metadata footer. Per-file stage/discard/open-diff actions NOT added — noteser has no staging step (every push includes everything), so those obsidian-git icons don't map. Click-to-open already worked.",
       "error": null,
       "source": "telegram",
       "blocked_by": "20260520T082500-s4r3"
+    },
+    {
+      "id": "20260520T130000-s4r3v2",
+      "brief": "s4r3 v2 — refactor s4r3 to Obsidian model: pinned Calendar at top, tab-switcher (Files/Outline/Source Control/Search/Bookmarks) below. Replaces the v1 stacked-sections layout. Triggered by Telegram screenshots showing the desired layout.",
+      "status": "done",
+      "created_at": "2026-05-20T12:35:00Z",
+      "started_at": "2026-05-20T12:35:00Z",
+      "completed_at": "2026-05-20T13:00:00Z",
+      "result": "Shipped in 46d4104. SidebarStack now: Calendar (pinned, resizable) + TabSwitcher with 5 tabs. New panels: SidebarSearchPanel (in-panel Fuse search, capped 50), SidebarBookmarksPanel (surfaces isPinned notes). Ribbon clicks for outline/github route to setSidebarTab; calendar routes to expandSidebarSection. sidebarTabId state added to uiStore. 11 tests for section+tab state. Backlinks folded into outline tab pending its own home (low priority — content still rendered).",
+      "error": null,
+      "source": "telegram"
     },
     {
       "id": "20260520T103000-gi9n",
