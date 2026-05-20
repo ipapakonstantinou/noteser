@@ -124,6 +124,12 @@ export default function Home() {
       lastSyncedAt: useGitHubStore.getState().lastSyncedAt,
     })
     if (decision.action === 'noop') return
+    if (decision.action === 'markOnly') {
+      // Fresh install: just stamp the version forward — no wipe + no
+      // reload, so the user (and Playwright) don't see a flash.
+      writeStoredResetVersion(PERSISTED_RESET_VERSION)
+      return
+    }
     void (async () => {
       if (decision.action === 'confirm') {
         const ok = window.confirm(
