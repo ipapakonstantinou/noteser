@@ -1,15 +1,69 @@
 'use client'
 
-import { useMemo } from 'react'
-import { PlusIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline'
+import { useMemo, useState } from 'react'
+import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
 import { useNoteStore, useGitHubStore, useWorkspaceStore } from '@/stores'
-import { classifyPendingChanges, totalPendingCount, type ChangeKind, type SyncChange } from '@/utils/syncChanges'
+import {
+  classifyPendingChanges,
+  totalPendingCount,
+  type ChangeKind,
+  type SyncChange,
+} from '@/utils/syncChanges'
 
-// VS Code-style source-control panel. Lists pending changes (created /
-// modified / deleted) that the next push will include. Click a row to
-// open the underlying note. v1 doesn't have per-file include/exclude or
-// inline diff preview — those come in v2 once the user has used this
-// long enough to tell us what they actually need.
+// VS Code-style source-control panel. Groups pending changes by their
+// gitPath folder hierarchy: each directory is a collapsible row, each
+// leaf is a note + status badge (A / M / D). Click a leaf to open the
+// note. The previous flat created/modified/deleted bucket layout was
+// fine for small vaults but unreadable past ~20 changes — the user
+// asked for the tree (Telegram screenshot 2026-05-20).
+
+interface TreeNode {
+  // Folder segment name ('' = root) — empty for the synthetic root.
+  segment: string
+  // Children keyed by their segment.
+  children: Map<string, TreeNode>
+  // Leaf changes that live directly under this folder.
+  leaves: Array<SyncChange & { kind: ChangeKind }>
+}
+
+function makeTreeRoot(): TreeNode {
+  return { segment: '', children: new Map(), leaves: [] }
+}
+
+// Group every classified change into a nested folder tree. Pure for
+// straightforward testability; exported so a future test can lock in
+// the grouping shape.
+export function groupChangesByFolder(
+  created: SyncChange[],
+  modified: SyncChange[],
+  deleted: SyncChange[],
+): TreeNode {
+  const root = makeTreeRoot()
+  const insert = (change: SyncChange, kind: ChangeKind) => {
+    const path = change.gitPath ?? change.title
+    const segments = path.split('/').filter(Boolean)
+    if (segments.length === 0) {
+      root.leaves.push({ ...change, kind })
+      return
+    }
+    // Last segment is the filename → leaf. Everything before is dir.
+    let cur = root
+    for (let i = 0; i < segments.length - 1; i++) {
+      const seg = segments[i]
+      let next = cur.children.get(seg)
+      if (!next) {
+        next = { segment: seg, children: new Map(), leaves: [] }
+        cur.children.set(seg, next)
+      }
+      cur = next
+    }
+    cur.leaves.push({ ...change, kind })
+  }
+  for (const c of created)  insert(c, 'created')
+  for (const m of modified) insert(m, 'modified')
+  for (const d of deleted)  insert(d, 'deleted')
+  return root
+}
 
 export function SourceControlPanel() {
   const notes = useNoteStore(s => s.notes)
@@ -21,6 +75,11 @@ export function SourceControlPanel() {
     [notes, lastSyncedAt],
   )
   const total = totalPendingCount(changes)
+
+  const tree = useMemo(
+    () => groupChangesByFolder(changes.created, changes.modified, changes.deleted),
+    [changes],
+  )
 
   return (
     <div className="space-y-1" data-testid="source-control-panel">
@@ -41,91 +100,122 @@ export function SourceControlPanel() {
           No pending changes. Your vault is in sync with the remote.
         </p>
       ) : (
-        <div className="space-y-2">
-          <Bucket
-            kind="created"
-            label="Created"
-            items={changes.created}
-            onOpen={(id) => openNote(id, { preview: false })}
-          />
-          <Bucket
-            kind="modified"
-            label="Modified"
-            items={changes.modified}
-            onOpen={(id) => openNote(id, { preview: false })}
-          />
-          <Bucket
-            kind="deleted"
-            label="Deleted"
-            items={changes.deleted}
-            onOpen={(id) => openNote(id, { preview: false })}
-          />
-        </div>
+        <TreeView
+          node={tree}
+          depth={0}
+          onOpen={(id) => openNote(id, { preview: false })}
+        />
       )}
     </div>
   )
 }
 
-function Bucket({
-  kind,
-  label,
-  items,
-  onOpen,
+// Recursive tree renderer. Folders default to expanded; each remembers
+// its own collapse state in component-local state so siblings can be
+// collapsed independently. Keyed by the depth+segment path so React
+// re-uses state across the same tree shape between renders.
+const TreeView = ({
+  node, depth, onOpen,
 }: {
-  kind: ChangeKind
-  label: string
-  items: SyncChange[]
+  node: TreeNode
+  depth: number
   onOpen: (noteId: string) => void
-}) {
-  if (items.length === 0) return null
+}) => {
+  // Render the folder children sorted alphabetically, then leaves.
+  const folderEntries = useMemo(
+    () => Array.from(node.children.values()).sort((a, b) => a.segment.localeCompare(b.segment)),
+    [node],
+  )
   return (
-    <div data-testid={`source-control-bucket-${kind}`}>
-      <div className="text-[10px] uppercase tracking-wider text-obsidianSecondaryText/80 px-1 py-0.5">
-        {label} ({items.length})
-      </div>
-      <ul className="space-y-0.5">
-        {items.map(it => (
-          <li key={it.noteId}>
-            <button
-              type="button"
-              onClick={() => onOpen(it.noteId)}
-              className="w-full flex items-center gap-1.5 px-1.5 py-1 text-xs text-left rounded hover:bg-obsidianHighlight/40 group"
-              title={it.gitPath ?? it.title}
-              data-testid={`source-control-row-${it.noteId}`}
-            >
-              <KindIcon kind={kind} />
-              <span className={`truncate flex-1 ${kind === 'deleted' ? 'line-through text-obsidianSecondaryText' : 'text-obsidianText'}`}>
-                {it.title}
-              </span>
-              {it.gitPath && it.gitPath !== it.title && (
-                <span className="text-[10px] text-obsidianSecondaryText/60 truncate max-w-[60%]">
-                  {shortenPath(it.gitPath)}
-                </span>
-              )}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <ul className="space-y-0.5">
+      {folderEntries.map(child => (
+        <li key={`d:${child.segment}`}>
+          <Folder node={child} depth={depth} onOpen={onOpen} />
+        </li>
+      ))}
+      {node.leaves.map(leaf => (
+        <li key={`f:${leaf.noteId}`}>
+          <Leaf leaf={leaf} depth={depth} onOpen={onOpen} />
+        </li>
+      ))}
+    </ul>
   )
 }
 
-function KindIcon({ kind }: { kind: ChangeKind }) {
-  const cls = 'w-3 h-3 flex-none'
-  switch (kind) {
-    case 'created':
-      return <PlusIcon className={`${cls} text-green-400`} />
-    case 'modified':
-      return <PencilIcon className={`${cls} text-yellow-400`} />
-    case 'deleted':
-      return <TrashIcon className={`${cls} text-red-400`} />
-  }
+const Folder = ({
+  node, depth, onOpen,
+}: { node: TreeNode; depth: number; onOpen: (id: string) => void }) => {
+  const [open, setOpen] = useState(true)
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center gap-1 px-1 py-0.5 text-xs text-obsidianSecondaryText hover:bg-obsidianHighlight/30 rounded"
+        style={{ paddingLeft: `${depth * 10 + 4}px` }}
+      >
+        {open ? (
+          <ChevronDownIcon className="w-3 h-3" />
+        ) : (
+          <ChevronRightIcon className="w-3 h-3" />
+        )}
+        <span className="truncate">{node.segment}</span>
+      </button>
+      {open && (
+        <TreeView node={node} depth={depth + 1} onOpen={onOpen} />
+      )}
+    </>
+  )
 }
 
-// "Daily-Notes/2026-05-20.md" → "Daily-Notes/2026-05-20.md" (no-op if short),
-// or ".../2026-05-20.md" when the path is too long for the row.
-function shortenPath(p: string): string {
-  const MAX = 36
-  if (p.length <= MAX) return p
-  return `…/${p.slice(-(MAX - 2))}`
+const Leaf = ({
+  leaf, depth, onOpen,
+}: {
+  leaf: SyncChange & { kind: ChangeKind }
+  depth: number
+  onOpen: (id: string) => void
+}) => (
+  <button
+    type="button"
+    onClick={() => onOpen(leaf.noteId)}
+    className="w-full flex items-center gap-1.5 px-1 py-0.5 text-xs text-left rounded hover:bg-obsidianHighlight/40 group"
+    title={leaf.gitPath ?? leaf.title}
+    style={{ paddingLeft: `${depth * 10 + 16}px` }}
+    data-testid={`source-control-row-${leaf.noteId}`}
+  >
+    <span
+      className={`truncate flex-1 ${leaf.kind === 'deleted' ? 'line-through text-obsidianSecondaryText' : 'text-obsidianText'}`}
+    >
+      {filename(leaf)}
+    </span>
+    <KindBadge kind={leaf.kind} />
+  </button>
+)
+
+// Show a one-letter VS-Code-style badge — A added, M modified, D deleted.
+// Colour matches the badge convention so the row scans visually even
+// before the user reads the filename.
+const KindBadge = ({ kind }: { kind: ChangeKind }) => {
+  const map: Record<ChangeKind, { letter: string; cls: string }> = {
+    created:  { letter: 'A', cls: 'text-green-400' },
+    modified: { letter: 'M', cls: 'text-yellow-400' },
+    deleted:  { letter: 'D', cls: 'text-red-400' },
+  }
+  const { letter, cls } = map[kind]
+  return (
+    <span
+      className={`flex-none w-3 text-right font-mono text-[10px] ${cls}`}
+      data-testid={`source-control-badge-${kind}`}
+    >
+      {letter}
+    </span>
+  )
+}
+
+// Pull just the filename (last segment) out of a gitPath, falling back
+// to the note title when the change has no path yet (newly created).
+function filename(leaf: SyncChange & { kind: ChangeKind }): string {
+  if (!leaf.gitPath) return leaf.title || 'Untitled'
+  const idx = leaf.gitPath.lastIndexOf('/')
+  return idx === -1 ? leaf.gitPath : leaf.gitPath.slice(idx + 1)
 }
