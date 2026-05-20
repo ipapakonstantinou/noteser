@@ -104,23 +104,48 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   const isSelected = (id: string) => selectedIds.has(id)
   const clearSelection = () => setSelectedIds(new Set())
 
-  // Bulk delete with optional confirm. Setting is in Settings → General.
+  // Bulk delete via the existing DeleteConfirmModal (extended to handle
+  // a bulk payload). Setting `confirmBulkDelete` (default true) gates the
+  // modal — when false the action runs immediately. Either way, it uses
+  // the in-app modal not window.confirm so popup-blockers + tab-hidden
+  // dialogs can't trap the user.
   const confirmBulkDelete = useSettingsStore(s => s.confirmBulkDelete)
+  const openModal = useUIStore(s => s.openModal)
   const deleteSelected = () => {
     const ids = Array.from(selectedIds)
     if (ids.length === 0) return
-    const verb = useSettingsStore.getState().trashMode === 'hardDelete'
-      ? 'permanently delete'
-      : 'move to trash'
     if (confirmBulkDelete) {
-      const ok = window.confirm(
-        `${verb[0].toUpperCase() + verb.slice(1)} ${ids.length} note${ids.length === 1 ? '' : 's'}?`,
-      )
-      if (!ok) return
+      openModal({ type: 'delete', data: { type: 'bulk', ids } })
+      // The modal calls deleteNotes() itself + closes. Clear our local
+      // selection now so the bar dismisses immediately and the user
+      // doesn't see stale "47 selected" while reviewing the confirm.
+      clearSelection()
+      return
     }
     useNoteStore.getState().deleteNotes(ids)
     clearSelection()
   }
+
+  // Global Delete / Backspace handler. The per-tree onKeyDown only fires
+  // when the tree itself has focus — after clicking a note row, focus
+  // often jumps elsewhere (editor, body), so the key shortcut wouldn't
+  // fire. Listening on window means the shortcut works regardless. We
+  // gate on selectedIds.size > 0 + skip when typing in inputs so we
+  // don't hijack normal keystrokes.
+  useEffect(() => {
+    if (selectedIds.size === 0) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      e.preventDefault()
+      deleteSelected()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+    // deleteSelected closes over selectedIds; rebind whenever it changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIds])
 
   // ── Single vs double click on a note ────────────────────────────────────
   // Single click = open as preview (italic, replaceable). Double click =

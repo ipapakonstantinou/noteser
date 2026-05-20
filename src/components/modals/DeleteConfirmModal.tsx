@@ -13,21 +13,32 @@ export const DeleteConfirmModal = () => {
   const trashMode = useSettingsStore(s => s.trashMode)
 
   const isOpen = modal.type === 'delete'
-  const data = modal.data as { type: 'note' | 'folder'; id: string; permanent?: boolean } | undefined
+  // Two payload shapes:
+  //   - single: { type: 'note'|'folder', id, permanent? }
+  //   - bulk:   { type: 'bulk', ids: string[] }
+  type Single = { type: 'note' | 'folder'; id: string; permanent?: boolean }
+  type Bulk = { type: 'bulk'; ids: string[] }
+  const data = modal.data as Single | Bulk | undefined
 
   if (!isOpen || !data) return null
 
-  const isNote = data.type === 'note'
-  const isPermanent = data.permanent
-  const note = isNote ? getNoteById(data.id) : null
-  const folder = !isNote ? getFolderById(data.id) : null
+  const isBulk = data.type === 'bulk'
+  const isNote = !isBulk && data.type === 'note'
+  const isPermanent = !isBulk ? data.permanent : false
+  const note = !isBulk && isNote ? getNoteById(data.id) : null
+  const folder = !isBulk && !isNote ? getFolderById(data.id) : null
   const itemName = isNote ? note?.title : folder?.name
 
-  const notesInFolder = !isNote
+  const notesInFolder = !isBulk && !isNote
     ? notes.filter(n => n.folderId === data.id && !n.isDeleted)
     : []
 
   const handleDelete = () => {
+    if (isBulk) {
+      useNoteStore.getState().deleteNotes(data.ids)
+      closeModal()
+      return
+    }
     if (isNote) {
       if (isPermanent) {
         permanentlyDeleteNote(data.id)
@@ -62,11 +73,19 @@ export const DeleteConfirmModal = () => {
         </div>
 
         <h3 className="text-lg font-medium text-obsidianText mb-2">
-          {isPermanent || trashMode === 'hardDelete' ? 'Permanently Delete' : 'Delete'} {isNote ? 'Note' : 'Folder'}?
+          {isBulk
+            ? (trashMode === 'hardDelete'
+                ? `Permanently delete ${data.ids.length} notes?`
+                : `Move ${data.ids.length} notes to trash?`)
+            : `${isPermanent || trashMode === 'hardDelete' ? 'Permanently Delete' : 'Delete'} ${isNote ? 'Note' : 'Folder'}?`}
         </h3>
 
         <p className="text-sm text-obsidianSecondaryText mb-4">
-          {isPermanent || trashMode === 'hardDelete' ? (
+          {isBulk ? (
+            trashMode === 'hardDelete'
+              ? `${data.ids.length} note${data.ids.length === 1 ? '' : 's'} will be permanently deleted. This cannot be undone.`
+              : `${data.ids.length} note${data.ids.length === 1 ? '' : 's'} will be moved to trash. Recover them from the Trash view if needed.`
+          ) : isPermanent || trashMode === 'hardDelete' ? (
             <>
               This action cannot be undone. &quot;{itemName}&quot; will be
               permanently deleted.
@@ -94,8 +113,10 @@ export const DeleteConfirmModal = () => {
           <Button variant="secondary" onClick={closeModal}>
             Cancel
           </Button>
-          <Button variant="danger" onClick={handleDelete}>
-            {isPermanent || trashMode === 'hardDelete' ? 'Delete Forever' : 'Move to Trash'}
+          <Button variant="danger" onClick={handleDelete} data-testid="delete-confirm">
+            {isBulk
+              ? (trashMode === 'hardDelete' ? `Delete ${data.ids.length} forever` : `Move ${data.ids.length} to trash`)
+              : (isPermanent || trashMode === 'hardDelete' ? 'Delete Forever' : 'Move to Trash')}
           </Button>
         </div>
       </div>
