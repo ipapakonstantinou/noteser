@@ -17,7 +17,9 @@ export type SyncState =
 
 interface UseGitHubSyncResult {
   syncState: SyncState
-  runSync: () => Promise<void>
+  // Optional commitMessage overrides the default "Sync from Noteser (N
+  // changes)" — used by the obsidian-git-style message box (vscg).
+  runSync: (commitMessage?: string) => Promise<void>
   runPullOnly: () => Promise<void>
   isConnected: boolean
 }
@@ -66,10 +68,11 @@ async function runApply(
 async function runPush(
   token: string,
   repo: SyncRepo,
+  commitMessage?: string,
 ): Promise<{ result: SyncResult; pathUpdates: GitPathUpdate[] }> {
   const { notes } = useNoteStore.getState()
   const { folders } = useFolderStore.getState()
-  return syncToGitHub({ token, repo, notes, folders })
+  return syncToGitHub({ token, repo, notes, folders, commitMessage })
 }
 
 // Compose the human-readable status line shown in the sidebar's sync button.
@@ -146,7 +149,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
     }
   }, [])
 
-  const runSync = useCallback(async () => {
+  const runSync = useCallback(async (commitMessage?: string) => {
     // Read token + syncRepo from the store at call time rather than relying
     // on the captured values — auto-sync triggered immediately after
     // `setSyncRepo` (e.g. from `GitHubRepoModal`) would otherwise still see
@@ -185,7 +188,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
       }
 
       const { notes: pullCounts, attachments: attachCounts } = await runApply(classifications)
-      const { result, pathUpdates } = await runPush(activeToken, activeRepo)
+      const { result, pathUpdates } = await runPush(activeToken, activeRepo, commitMessage)
 
       // Write the per-note gitPath / gitLastPushedSha back so the next pull
       // classifies us as `unchanged` instead of detecting a phantom remote

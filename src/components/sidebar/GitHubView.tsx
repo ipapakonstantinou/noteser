@@ -2,23 +2,36 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import {
-  CloudArrowUpIcon,
-  CloudArrowDownIcon,
+  ArrowUpTrayIcon,
+  ArrowDownTrayIcon,
+  ArrowPathIcon,
+  ArrowTopRightOnSquareIcon,
+  ArrowRightOnRectangleIcon,
+  Cog6ToothIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,
   ExclamationTriangleIcon,
-  ArrowPathIcon,
-  ArrowRightOnRectangleIcon,
+  CloudArrowUpIcon,
   CodeBracketIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
 } from '@heroicons/react/24/outline'
 import { useGitHubStore, useUIStore, useWorkspaceStore } from '@/stores'
 import { useGitHubSync, useHydration } from '@/hooks'
 import { SourceControlPanel } from './SourceControlPanel'
 
-// Sidebar's GitHub panel: status, repo info, last commit, conflicts,
-// and the sync action all in one place. Reuses useGitHubSync.runSync —
-// no separate code path from the footer button so behaviour stays
-// consistent.
+// Obsidian-git styled Source Control panel (vscg).
+// Layout:
+//   - Action toolbar (Sync / Pull / Refresh / Open repo / Settings)
+//   - Optional commit-message input ({{date}} template substituted)
+//   - CHANGES collapsible group → SourceControlPanel
+//   - Conflicts block (when non-empty)
+//   - Repo metadata footer
+//
+// Note: noteser's sync model is single-action ("Commit & Sync") — there
+// is no staging step. The toolbar mirrors obsidian-git's icons but
+// "Stage all" / "Discard" aren't surfaced because every pending change
+// is included in every push.
 
 function relativeTime(ts: number): string {
   const seconds = Math.floor((Date.now() - ts) / 1000)
@@ -28,14 +41,20 @@ function relativeTime(ts: number): string {
   return `${Math.floor(seconds / 86400)}d ago`
 }
 
-// Re-render the relative-time labels every 60s without a full app
-// refresh; keeps "5m ago" honest as the minute ticks over.
 function useTick(ms = 60_000) {
   const [, force] = useState(0)
   useEffect(() => {
     const id = setInterval(() => force(n => n + 1), ms)
     return () => clearInterval(id)
   }, [ms])
+}
+
+// Substitute {{date}} → today (YYYY-MM-DD) so users can save a stable
+// commit-message template and have it interpolated at commit time.
+// Other tokens left as-is; future-extensible if we want {{count}} etc.
+function expandCommitMessage(raw: string): string {
+  const today = new Date().toISOString().slice(0, 10)
+  return raw.replace(/\{\{date\}\}/g, today)
 }
 
 export const GitHubView = () => {
@@ -48,11 +67,7 @@ export const GitHubView = () => {
   const lastCommitSha = useGitHubStore(s => s.lastCommitSha)
   const disconnect = useGitHubStore(s => s.disconnect)
   const openModal = useUIStore(s => s.openModal)
-  // Subscribe to panes (stable reference) and derive conflictTabs via
-  // useMemo. The previous selector returned a NEW array on every store
-  // tick, which makes useSyncExternalStore think state changed every
-  // render → infinite re-render loop (React error #185). React DevTools
-  // warns: "The result of getSnapshot should be cached…".
+
   const panes = useWorkspaceStore(s => s.panes)
   const conflictTabs = useMemo(() => {
     const out: { paneId: string; tabId: string; title: string }[] = []
@@ -69,9 +84,13 @@ export const GitHubView = () => {
 
   const { runSync, runPullOnly, syncState } = useGitHubSync()
 
+  const [commitMsg, setCommitMsg] = useState('')
+  const [changesExpanded, setChangesExpanded] = useState(true)
+
+  // Not connected → minimal CTA.
   if (!hydrated || !user) {
     return (
-      <div className="text-center py-8 text-obsidianSecondaryText">
+      <div className="text-center px-3 py-8 text-obsidianSecondaryText">
         <p className="text-sm">Not connected to GitHub.</p>
         <button
           onClick={() => openModal({ type: 'github-auth' })}
@@ -84,176 +103,227 @@ export const GitHubView = () => {
     )
   }
 
+  const isSyncing = syncState.kind === 'running'
+
+  const onSyncClick = () => {
+    const msg = expandCommitMessage(commitMsg.trim())
+    runSync(msg || undefined)
+    setCommitMsg('')
+  }
+
   return (
-    <div className="px-1 space-y-4">
-      <h3 className="text-xs font-medium text-obsidianSecondaryText uppercase tracking-wide">
-        GitHub sync
-      </h3>
-
-      {/* Account */}
-      <div className="flex items-center gap-2 text-sm">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={user.avatar_url} alt={user.login} className="w-6 h-6 rounded-full flex-shrink-0" />
-        <div className="min-w-0 flex-1">
-          <div className="text-obsidianText truncate">@{user.login}</div>
-          {user.name && <div className="text-[11px] text-obsidianSecondaryText truncate">{user.name}</div>}
-        </div>
-      </div>
-
-      {/* Vault repo */}
-      <div className="space-y-1">
-        <div className="text-[11px] uppercase tracking-wide text-obsidianSecondaryText">Vault</div>
-        {repo ? (
+    <div className="flex flex-col h-full">
+      {/* Action toolbar */}
+      {repo ? (
+        <div className="flex items-center gap-1 px-2 py-1.5 border-b border-obsidianBorder">
+          <ToolbarButton
+            onClick={onSyncClick}
+            disabled={isSyncing}
+            title="Commit & sync (push local changes, pull remote)"
+            testId="scm-sync"
+          >
+            {isSyncing ? (
+              <ArrowPathIcon className="w-4 h-4 animate-spin text-obsidianAccentPurple" />
+            ) : syncState.kind === 'ok' ? (
+              <CheckCircleIcon className="w-4 h-4 text-green-500" />
+            ) : syncState.kind === 'err' ? (
+              <ExclamationCircleIcon className="w-4 h-4 text-red-400" />
+            ) : (
+              <CloudArrowUpIcon className="w-4 h-4" />
+            )}
+          </ToolbarButton>
+          <ToolbarButton
+            onClick={runPullOnly}
+            disabled={isSyncing}
+            title="Pull only (fetch and apply remote changes)"
+            testId="scm-pull"
+          >
+            <ArrowDownTrayIcon className="w-4 h-4" />
+          </ToolbarButton>
+          <ToolbarButton
+            onClick={() => runSync()}
+            disabled={isSyncing}
+            title="Refresh"
+            testId="scm-refresh"
+          >
+            <ArrowPathIcon className="w-4 h-4" />
+          </ToolbarButton>
           <a
             href={`https://github.com/${repo.owner}/${repo.name}/tree/${repo.branch}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="block text-sm text-obsidianAccentPurple hover:underline truncate"
-            title="Open the repo on GitHub"
+            title="Open repo on GitHub"
+            className="p-1.5 rounded text-obsidianSecondaryText hover:bg-obsidianHighlight/40 hover:text-obsidianText transition-colors"
+            data-testid="scm-open-repo"
           >
-            {repo.owner}/{repo.name}
-            <span className="text-obsidianSecondaryText"> · {repo.branch}</span>
+            <ArrowTopRightOnSquareIcon className="w-4 h-4" />
           </a>
-        ) : (
+          <ToolbarButton
+            onClick={() => openModal({ type: 'github-repo' })}
+            title="Change vault repo"
+            testId="scm-settings"
+          >
+            <Cog6ToothIcon className="w-4 h-4" />
+          </ToolbarButton>
+        </div>
+      ) : null}
+
+      {/* Commit message + sync button */}
+      {repo && (
+        <div className="px-2 py-2 border-b border-obsidianBorder space-y-1.5">
+          <textarea
+            value={commitMsg}
+            onChange={e => setCommitMsg(e.target.value)}
+            placeholder="Message (Ctrl+Enter to commit)"
+            rows={2}
+            data-testid="scm-message"
+            onKeyDown={e => {
+              if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault()
+                onSyncClick()
+              }
+            }}
+            className="w-full px-2 py-1 text-sm bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple resize-none"
+          />
+          <button
+            onClick={onSyncClick}
+            disabled={isSyncing}
+            data-testid="scm-commit-button"
+            className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded bg-obsidianAccentPurple text-white text-sm hover:opacity-90 disabled:opacity-60"
+          >
+            <ArrowUpTrayIcon className="w-4 h-4" />
+            <span>
+              {isSyncing
+                ? 'Syncing…'
+                : (syncState.kind === 'err' ? syncState.message : 'Commit & Sync')}
+            </span>
+          </button>
+        </div>
+      )}
+
+      {/* CHANGES group + conflicts + footer */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-2 py-2 space-y-3">
+        {repo && (
+          <div>
+            <button
+              type="button"
+              onClick={() => setChangesExpanded(v => !v)}
+              className="w-full flex items-center gap-1 text-[11px] uppercase tracking-wide text-obsidianSecondaryText hover:text-obsidianText"
+              aria-expanded={changesExpanded}
+            >
+              {changesExpanded ? (
+                <ChevronDownIcon className="w-3 h-3" />
+              ) : (
+                <ChevronRightIcon className="w-3 h-3" />
+              )}
+              <span>Changes</span>
+            </button>
+            {changesExpanded && (
+              <div className="mt-1.5">
+                <SourceControlPanel />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Conflicts */}
+        {conflictTabs.length > 0 && (
+          <div className="space-y-2 rounded border border-yellow-700/40 bg-yellow-900/10 px-2 py-2">
+            <div className="flex items-center gap-2 text-sm text-yellow-300">
+              <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
+              {conflictTabs.length} conflict{conflictTabs.length === 1 ? '' : 's'} need review
+            </div>
+            <ul className="space-y-0.5">
+              {conflictTabs.map(c => (
+                <li key={c.tabId}>
+                  <button
+                    onClick={() => focusTab(c.tabId)}
+                    className="w-full text-left text-xs text-obsidianText hover:text-obsidianAccentPurple truncate px-1 py-0.5 rounded hover:bg-obsidianDarkGray"
+                    title={c.title}
+                  >
+                    {c.title}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Repo metadata footer */}
+        {repo && (
+          <div className="pt-2 mt-2 border-t border-obsidianBorder space-y-1 text-[11px] text-obsidianSecondaryText">
+            <div className="flex items-center gap-1.5">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={user.avatar_url} alt={user.login} className="w-3.5 h-3.5 rounded-full flex-shrink-0" />
+              <span className="truncate">@{user.login}</span>
+            </div>
+            <div className="truncate">
+              {repo.owner}/{repo.name}
+              <span> · </span>
+              {repo.branch}
+            </div>
+            {lastSyncedAt && (
+              <div>
+                Last sync: {relativeTime(lastSyncedAt)}
+                {lastCommitSha && (
+                  <a
+                    href={`https://github.com/${repo.owner}/${repo.name}/commit/${lastCommitSha}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-1 hover:text-obsidianAccentPurple"
+                    title="Open the commit on GitHub"
+                  >
+                    ({lastCommitSha.slice(0, 7)})
+                  </a>
+                )}
+              </div>
+            )}
+            <button
+              onClick={() => {
+                if (confirm('Disconnect from GitHub? Your local notes stay in this browser; the connection token is removed.')) {
+                  disconnect()
+                }
+              }}
+              className="flex items-center gap-1 hover:text-red-400"
+            >
+              <ArrowRightOnRectangleIcon className="w-3 h-3" />
+              Disconnect
+            </button>
+          </div>
+        )}
+
+        {!repo && (
           <button
             onClick={() => openModal({ type: 'github-repo' })}
-            className="text-sm text-obsidianAccentPurple hover:underline"
+            className="w-full text-center text-sm text-obsidianAccentPurple hover:underline py-2"
           >
-            Pick a vault repo
+            Pick a vault repo to start syncing
           </button>
         )}
-      </div>
-
-      {/* Last sync */}
-      {repo && (
-        <div className="space-y-1">
-          <div className="text-[11px] uppercase tracking-wide text-obsidianSecondaryText">Last sync</div>
-          {lastSyncedAt ? (
-            <div className="text-sm text-obsidianText">
-              {relativeTime(lastSyncedAt)}
-              {lastCommitSha && (
-                <a
-                  href={`https://github.com/${repo.owner}/${repo.name}/commit/${lastCommitSha}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="ml-2 text-[11px] text-obsidianSecondaryText hover:text-obsidianAccentPurple"
-                  title="Open the commit on GitHub"
-                >
-                  {lastCommitSha.slice(0, 7)}
-                </a>
-              )}
-            </div>
-          ) : (
-            <div className="text-sm text-obsidianSecondaryText italic">never</div>
-          )}
-        </div>
-      )}
-
-      {/* Source-control panel (vsg1) — VS Code-style pending-changes list.
-          Sits between "Last sync" and the conflicts box so the user sees
-          what's about to go up BEFORE they hit Sync. */}
-      {repo && <SourceControlPanel />}
-
-      {/* Conflicts */}
-      {conflictTabs.length > 0 && (
-        <div className="space-y-2 rounded border border-yellow-700/40 bg-yellow-900/10 px-2 py-2">
-          <div className="flex items-center gap-2 text-sm text-yellow-300">
-            <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
-            {conflictTabs.length} conflict{conflictTabs.length === 1 ? '' : 's'} need review
-          </div>
-          <ul className="space-y-0.5">
-            {conflictTabs.map(c => (
-              <li key={c.tabId}>
-                <button
-                  onClick={() => focusTab(c.tabId)}
-                  className="w-full text-left text-xs text-obsidianText hover:text-obsidianAccentPurple truncate px-1 py-0.5 rounded hover:bg-obsidianDarkGray"
-                  title={c.title}
-                >
-                  {c.title}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Sync action */}
-      {repo && (
-        <div className="space-y-1.5">
-          <button
-            onClick={runSync}
-            disabled={syncState.kind === 'running'}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded bg-obsidianAccentPurple text-white text-sm hover:opacity-90 disabled:opacity-60"
-          >
-            {syncState.kind === 'running' ? (
-              <ArrowPathIcon className="w-4 h-4 animate-spin" />
-            ) : syncState.kind === 'ok' ? (
-              <CheckCircleIcon className="w-4 h-4" />
-            ) : syncState.kind === 'err' ? (
-              <ExclamationCircleIcon className="w-4 h-4" />
-            ) : (
-              <CloudArrowUpIcon className="w-4 h-4" />
-            )}
-            <span className="flex-1 text-left truncate">
-              {syncState.kind === 'running' && 'Syncing…'}
-              {syncState.kind === 'ok' && syncState.message}
-              {syncState.kind === 'err' && syncState.message}
-              {syncState.kind === 'idle' && 'Sync now'}
-            </span>
-            {syncState.kind === 'ok' && syncState.url && (
-              <a
-                href={syncState.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="text-[11px] underline opacity-80 hover:opacity-100"
-              >
-                view
-              </a>
-            )}
-          </button>
-          {/* Secondary: one-way pull. Same disabled rule as primary —
-              the shared isSyncing guard means either action blocks the
-              other anyway, but disabling the button here gives clearer
-              visual feedback. */}
-          <button
-            onClick={runPullOnly}
-            disabled={syncState.kind === 'running'}
-            className="w-full flex items-center gap-2 px-3 py-1.5 rounded border border-obsidianBorder bg-transparent text-obsidianText text-xs hover:bg-obsidianDarkGray disabled:opacity-60"
-            title="Fetch and apply remote changes without uploading local edits"
-          >
-            <CloudArrowDownIcon className="w-4 h-4" />
-            <span className="flex-1 text-left">Pull only</span>
-          </button>
-        </div>
-      )}
-
-      {/* Pick / switch repo */}
-      {repo && (
-        <button
-          onClick={() => openModal({ type: 'github-repo' })}
-          className="w-full text-xs text-obsidianSecondaryText hover:text-obsidianText"
-        >
-          Change vault repo
-        </button>
-      )}
-
-      {/* Disconnect */}
-      <div className="pt-3 border-t border-obsidianBorder">
-        <button
-          onClick={() => {
-            if (confirm('Disconnect from GitHub? Your local notes stay in this browser; the connection token is removed.')) {
-              disconnect()
-            }
-          }}
-          className="w-full flex items-center justify-center gap-2 text-xs text-obsidianSecondaryText hover:text-red-400"
-        >
-          <ArrowRightOnRectangleIcon className="w-4 h-4" />
-          Disconnect from GitHub
-        </button>
       </div>
     </div>
   )
 }
+
+// Compact icon-only button used in the SCM action toolbar.
+const ToolbarButton = ({
+  onClick, disabled, title, testId, children,
+}: {
+  onClick: () => void
+  disabled?: boolean
+  title: string
+  testId?: string
+  children: React.ReactNode
+}) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    title={title}
+    data-testid={testId}
+    className="p-1.5 rounded text-obsidianSecondaryText hover:bg-obsidianHighlight/40 hover:text-obsidianText transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+  >
+    {children}
+  </button>
+)
 
 export default GitHubView
