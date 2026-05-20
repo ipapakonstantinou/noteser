@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { checkRateLimit, getClientIp } from '@/utils/rateLimit'
+import { isOriginAllowed } from '@/utils/originAllowlist'
 
 // Browser polls this while the user authorizes in github.com.
 // On success the upstream responds with { access_token, token_type, scope };
@@ -9,6 +10,17 @@ import { checkRateLimit, getClientIp } from '@/utils/rateLimit'
 // route gets POLLED — every ~5s by spec — during a normal device-flow login.
 // Allow ~10 hits per 5-second window.
 export async function POST(request: Request) {
+  // Same-origin guard — far more important here than on device-code
+  // because this route returns the actual OAuth token in the response
+  // body. A malicious site that polled with someone else's device_code
+  // would otherwise pocket their token.
+  const origin = isOriginAllowed(request)
+  if (!origin.ok) {
+    return NextResponse.json(
+      { error: 'forbidden', error_description: origin.reason },
+      { status: 403 },
+    )
+  }
   const limit = checkRateLimit(`token:${getClientIp(request)}`, { max: 10, windowMs: 5_000 })
   if (!limit.ok) {
     return NextResponse.json(
