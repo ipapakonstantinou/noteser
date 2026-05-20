@@ -240,8 +240,14 @@ export async function pullFromGitHub(input: {
   repo: SyncRepo
   notes: Note[]
   folders: Folder[]
+  // Repo paths the user explicitly deleted (folderStore.
+  // deletedFolderPaths). Step 1b skips dir-walk for any path
+  // matching one of these, OR nested inside one of these, so
+  // hidden/system folders the user removed don't auto-re-derive.
+  excludedFolderPaths?: string[]
 }): Promise<PullOutcome> {
   const { token, repo, notes } = input
+  const excluded = input.excludedFolderPaths ?? []
   const { owner, name, branch } = repo
 
   const headSha = await getBranchRefSha(token, owner, name, branch)
@@ -371,6 +377,16 @@ export async function pullFromGitHub(input: {
     const desiredPath = notePath(localMatch, input.folders)
     if (desiredPath !== path) pendingRemovedPaths.add(path)
   }
+  // Helper: is `dir` either tombstoned itself or nested inside a
+  // tombstoned ancestor? Linear scan over `excluded` — list is tiny
+  // (one entry per explicit user-delete) so a Set+walk isn't worth it.
+  const isExcluded = (dir: string): boolean => {
+    for (const ex of excluded) {
+      if (dir === ex) return true
+      if (dir.startsWith(`${ex}/`)) return true
+    }
+    return false
+  }
   const seenDirPaths = new Set<string>()
   for (const [path] of remoteTree) {
     if (pendingRemovedPaths.has(path)) continue
@@ -383,6 +399,7 @@ export async function pullFromGitHub(input: {
       if (seenDirPaths.has(cur)) break
       seenDirPaths.add(cur)
       if (localFolderPaths.has(cur)) continue
+      if (isExcluded(cur)) continue
       out.push({ kind: 'folderCreated', path: cur })
     }
   }

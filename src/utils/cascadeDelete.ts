@@ -57,6 +57,19 @@ export function cascadeDeleteFolder(folderId: string): void {
   const ids = descendantFolderIds(folderId, folders)
   const idSet = new Set(ids)
 
+  // Tombstone the repo paths of every deleted folder. The pull layer
+  // checks this list before emitting folderCreated so a hidden folder
+  // whose remote contents aren't noteser-managed (e.g. `.obsidian/`
+  // with config.json + plugins/) doesn't reappear on the next sync.
+  // Without this the dir-walk in pullFromGitHub step 1b would see the
+  // non-md files and re-derive the folder. See bug "delete hidden
+  // folder and sync again it doesn't work."
+  const tombstone = useFolderStore.getState().addDeletedFolderPath
+  for (const id of ids) {
+    const p = folderRepoPath(id, folders)
+    if (p) tombstone(p)
+  }
+
   // Soft-delete the folder + its descendants in a SINGLE setState. Before
   // batching, deleting a folder with ~600 notes/descendants ran
   // folderStore.deleteFolder N times, each mapping the full folders

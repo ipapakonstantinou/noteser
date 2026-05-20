@@ -38,12 +38,13 @@ let isSyncingResetThisSession = false
 async function runPull(token: string, repo: SyncRepo): Promise<PullClassification[]> {
   const localNotes = useNoteStore.getState().notes
   const localFolders = useFolderStore.getState().folders
+  const excludedFolderPaths = useFolderStore.getState().deletedFolderPaths
   const isFirstClone = !localNotes.some(n => !n.isDeleted)
     && !localFolders.some(f => !f.isDeleted)
 
   const { classifications } = isFirstClone
     ? await pullFromZipball({ token, repo })
-    : await pullFromGitHub({ token, repo, notes: localNotes, folders: localFolders })
+    : await pullFromGitHub({ token, repo, notes: localNotes, folders: localFolders, excludedFolderPaths })
 
   return classifications
 }
