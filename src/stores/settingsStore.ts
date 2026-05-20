@@ -250,7 +250,11 @@ const DEFAULTS = {
   betaFlags: {} as Record<string, boolean>,
   ribbonOrder: [] as string[],
   sidebarTabOrder: [] as string[],
-  pinnedPanels: ['calendar'] as string[],
+  // Empty by default — every panel lives as an icon in the tab strip
+  // and can be drag-pinned to the top zone by the user. The earlier
+  // default ['calendar'] is migrated away below so existing installs
+  // pick up the new behaviour automatically.
+  pinnedPanels: [] as string[],
   onboardingShown: false,
   settingsFolderPath: '.noteser',
   vaultSettingsUpdatedAt: 0,
@@ -321,6 +325,25 @@ export const useSettingsStore = create<SettingsState>()(
         reset: () => set(DEFAULTS),
       }
     },
-    { name: STORAGE_KEYS.settings }
+    {
+      name: STORAGE_KEYS.settings,
+      version: 1,
+      // v0→v1 migration (2026-05-20): pinnedPanels used to default to
+      // ['calendar'] so Calendar showed as a header-less panel pinned
+      // at the top. The user-feedback fix moves Calendar to the tab
+      // strip as a draggable icon — installs that still carry the
+      // historical default get reset to []. Users who explicitly
+      // changed the list (added more panels) keep their preference.
+      migrate: (persistedState: unknown, version: number) => {
+        const state = (persistedState ?? {}) as Partial<SettingsState>
+        if (version < 1) {
+          const pp = state.pinnedPanels
+          if (Array.isArray(pp) && pp.length === 1 && pp[0] === 'calendar') {
+            return { ...state, pinnedPanels: [] }
+          }
+        }
+        return state as SettingsState
+      },
+    }
   )
 )
