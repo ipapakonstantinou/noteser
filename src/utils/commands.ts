@@ -135,6 +135,23 @@ export function getAllCommands(): Command[] {
     })
   }
 
+  // bc3v — Copy block ref for the current line in the focused editor.
+  // Idempotent: appends a `^id` to the line only if one isn't there.
+  if (activeNoteId) {
+    out.push({
+      id: 'app.copyBlockRef',
+      label: 'Copy block ref for current line',
+      description: 'Copy a [[Note#^block-id]] link to clipboard. Mints a fresh id if the line doesn\'t already end with one.',
+      keywords: ['block', 'ref', 'anchor', '^', 'link', 'paragraph'],
+      group: 'Commands',
+      run: () => {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('noteser:copy-block-ref'))
+        }
+      },
+    })
+  }
+
   out.push({
     id: 'app.reportBug',
     label: 'Report a bug',

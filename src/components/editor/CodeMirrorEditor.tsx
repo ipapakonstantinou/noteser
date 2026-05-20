@@ -15,6 +15,13 @@ import { getActiveWikilinkQuery } from '@/utils/wikilinks'
 import { findNoteByTitleOrAlias } from '@/utils/aliases'
 import { toggleTaskLineText, UI_TASK_LINE_REGEX } from '@/utils/tasks'
 import { findFragmentLine } from '@/utils/wikilinkTarget'
+import {
+  appendBlockId,
+  buildBlockRefLink,
+  extractTrailingBlockId,
+  generateBlockId,
+} from '@/utils/blockRef'
+import { useNoteStore } from '@/stores/noteStore'
 import { saveAttachment } from '@/utils/attachments'
 import { WikilinkAutocomplete } from './WikilinkAutocomplete'
 import type { Note } from '@/types'
@@ -118,6 +125,44 @@ export function CodeMirrorEditor({
     }
     window.addEventListener('noteser:scroll-to-fragment', handler)
     return () => window.removeEventListener('noteser:scroll-to-fragment', handler)
+  }, [])
+
+  // Listen for the "Copy block ref" command. Only the FOCUSED editor
+  // responds, so when there are two panes open the right one wins.
+  useEffect(() => {
+    const handler = () => {
+      const view = cmRef.current?.view
+      if (!view || !view.hasFocus) return
+      const { head } = view.state.selection.main
+      const line = view.state.doc.lineAt(head)
+      // Skip empty lines — there's no anchor target to link to.
+      if (line.text.trim() === '') return
+
+      let id = extractTrailingBlockId(line.text)
+      if (!id) {
+        id = generateBlockId()
+        const newLine = appendBlockId(line.text, id)
+        view.dispatch({
+          changes: { from: line.from, to: line.to, insert: newLine },
+        })
+      }
+
+      const note = useNoteStore.getState().notes.find(n => n.id === noteIdRef.current)
+      const title = note?.title || 'Untitled'
+      const link = buildBlockRefLink(title, id)
+      // Best-effort clipboard write. Browsers without clipboard API fall
+      // back to a prompt — same pattern the bug-reporter uses.
+      const writeClip = async () => {
+        try {
+          await navigator.clipboard.writeText(link)
+        } catch {
+          window.prompt('Copy this block link:', link)
+        }
+      }
+      void writeClip()
+    }
+    window.addEventListener('noteser:copy-block-ref', handler)
+    return () => window.removeEventListener('noteser:copy-block-ref', handler)
   }, [])
 
   const debouncedSave = useDebouncedCallback(onSave, 300)

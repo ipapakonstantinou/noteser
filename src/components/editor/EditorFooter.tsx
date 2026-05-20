@@ -1,7 +1,10 @@
 'use client'
 
+import { useMemo } from 'react'
+import { ArrowPathIcon } from '@heroicons/react/24/outline'
 import { extractTags } from '@/utils/tags'
-import { useGitHubStore } from '@/stores'
+import { useGitHubStore, useNoteStore, useUIStore } from '@/stores'
+import { classifyPendingChanges, totalPendingCount } from '@/utils/syncChanges'
 import type { Note } from '@/types'
 
 interface EditorFooterProps {
@@ -11,11 +14,23 @@ interface EditorFooterProps {
 // Slim status bar at the bottom of a pane. Matches Obsidian's status-bar
 // placement: sync/branch context on the left, counts on the right.
 export const EditorFooter = ({ note }: EditorFooterProps) => {
-  const { syncRepo, lastSyncedAt } = useGitHubStore()
+  const syncRepo = useGitHubStore(s => s.syncRepo)
+  const lastSyncedAt = useGitHubStore(s => s.lastSyncedAt)
+  const isSyncing = useGitHubStore(s => s.isSyncing)
+  const notes = useNoteStore(s => s.notes)
+  const setCurrentView = useUIStore(s => s.setCurrentView)
 
   const tagCount = extractTags(note.content).length
   const wordCount = note.content.trim().split(/\s+/).filter(Boolean).length
   const charCount = note.content.length
+
+  // Pending-changes count drives the badge next to "synced X ago".
+  // Reuses the same classifier the Source Control panel uses so the
+  // numbers always agree.
+  const pendingCount = useMemo(
+    () => syncRepo ? totalPendingCount(classifyPendingChanges(notes, lastSyncedAt)) : 0,
+    [syncRepo, notes, lastSyncedAt],
+  )
 
   const formatDate = (timestamp: number) =>
     new Date(timestamp).toLocaleDateString('en-US', {
@@ -41,7 +56,10 @@ export const EditorFooter = ({ note }: EditorFooterProps) => {
     : null
 
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-1 text-[11px] text-obsidianSecondaryText border-t border-obsidianBorder">
+    <div
+      className="flex items-center justify-between gap-4 px-4 py-1 text-[11px] text-obsidianSecondaryText border-t border-obsidianBorder"
+      data-testid="status-bar-footer"
+    >
       <div className="flex items-center gap-3 truncate">
         {syncRepo && (
           <>
@@ -51,7 +69,31 @@ export const EditorFooter = ({ note }: EditorFooterProps) => {
             <span className="text-obsidianBorder">·</span>
             <span>{syncRepo.branch}</span>
             <span className="text-obsidianBorder">·</span>
-            <span>{syncLabel}</span>
+            {isSyncing ? (
+              <span
+                className="flex items-center gap-1 text-obsidianAccentPurple"
+                data-testid="status-bar-syncing"
+              >
+                <ArrowPathIcon className="w-3 h-3 animate-spin" />
+                <span>Syncing…</span>
+              </span>
+            ) : (
+              <span>{syncLabel}</span>
+            )}
+            {!isSyncing && pendingCount > 0 && (
+              <>
+                <span className="text-obsidianBorder">·</span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentView('github')}
+                  className="px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 transition-colors"
+                  title="Open Source Control panel"
+                  data-testid="status-bar-pending"
+                >
+                  {pendingCount} pending
+                </button>
+              </>
+            )}
           </>
         )}
       </div>
