@@ -5,8 +5,10 @@ import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { EditorView, keymap } from '@codemirror/view'
 import { Prec } from '@codemirror/state'
+import { diffGutterExtension, setDiffBaseline } from './diffGutter'
+import { getLastPushedContent } from '@/utils/lastPushedContent'
 import { useDebouncedCallback } from '@/hooks/useDebounce'
-import { useUIStore } from '@/stores'
+import { useUIStore, useGitHubStore } from '@/stores'
 import { markdownLivePreview } from './markdownLivePreview'
 import { tasksLivePreview } from './tasksLivePreview'
 import { basesLivePreview } from './basesLivePreview'
@@ -103,6 +105,24 @@ export function CodeMirrorEditor({
   useEffect(() => { navigateRef.current = onWikilinkNavigate }, [onWikilinkNavigate])
   useEffect(() => { noteIdRef.current = noteId }, [noteId])
 
+  // Diff-gutter baseline (109): when the note changes — or after a
+  // successful sync writes a fresh snapshot — fetch the last-pushed
+  // content from IDB and dispatch it into the editor so the gutter
+  // knows what to diff against. No snapshot yet (note never pushed)
+  // → empty string, which computeDiffMarkers treats as "clean".
+  const lastSyncedAt = useGitHubStore(s => s.lastSyncedAt)
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const baseline = (await getLastPushedContent(noteId)) ?? ''
+      if (cancelled) return
+      const view = cmRef.current?.view
+      if (!view) return
+      view.dispatch({ effects: setDiffBaseline.of(baseline) })
+    })()
+    return () => { cancelled = true }
+  }, [noteId, lastSyncedAt])
+
   // Listen for "scroll to fragment" requests fired by the wikilink click
   // handler. The fragment is either a heading text or a `^block-id`; we
   // resolve to a line number via findFragmentLine and dispatch a CodeMirror
@@ -174,6 +194,7 @@ export function CodeMirrorEditor({
     tasksLivePreview,
     basesLivePreview,
     imagesLivePreview,
+    diffGutterExtension,
     obsidianTheme,
     EditorView.lineWrapping,
     // Prec.highest ensures our bindings win over any conflicting default keymap.
