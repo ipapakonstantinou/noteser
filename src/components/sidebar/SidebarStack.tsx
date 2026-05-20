@@ -46,24 +46,24 @@ const PANELS: readonly PanelDef[] = [
 
 const KNOWN_IDS = new Set<SidebarTabId>(PANELS.map(p => p.id))
 
-// Pure: merge the saved tab order with the source order. The
-// `pinned` argument is unused for filtering — pinned panels stay in
-// the strip so their icons remain discoverable even while their
-// content is rendered at the top. Kept as a parameter for API
-// stability + future opt-in filtering.
+// Pure: merge the saved tab order with the source order, filtering
+// out anything in `pinned` so the main bottom strip doesn't
+// duplicate the per-pinned mini-strips above. Each pinned panel
+// gets its OWN tab strip at the top of the sidebar (Obsidian pane
+// model), so seeing the same icon down here too would be noise.
 // Exported for the unit test.
-export function resolveTabOrder(saved: string[], _pinned: string[] = []): SidebarTabId[] {
-  // Suppress unused param lint without changing the public signature.
-  void _pinned
+export function resolveTabOrder(saved: string[], pinned: string[] = []): SidebarTabId[] {
+  const pinnedSet = new Set(pinned)
   const seen = new Set<string>()
   const out: SidebarTabId[] = []
   for (const id of saved) {
-    if (KNOWN_IDS.has(id as SidebarTabId) && !seen.has(id)) {
+    if (KNOWN_IDS.has(id as SidebarTabId) && !seen.has(id) && !pinnedSet.has(id)) {
       seen.add(id)
       out.push(id as SidebarTabId)
     }
   }
   for (const p of PANELS) {
+    if (pinnedSet.has(p.id)) continue
     if (!seen.has(p.id)) out.push(p.id)
   }
   return out
@@ -133,31 +133,40 @@ export const SidebarStack = ({ onRightClick }: Props) => {
         if (!def) return null
         const Icon = def.Icon
         return (
-          <SidebarSection
-            key={id}
-            id={id}
-            title={def.title}
-            icon={<Icon className="w-3.5 h-3.5" />}
-            draggablePanelId={id}
-            // Every pinned panel renders header-less. The user's
-            // model: pinning = "make this always visible like the
-            // file tree", so the chevron + uppercase title bar is
-            // pure chrome that gets in the way. The panel's own
-            // internal labels (e.g. SCM's "Source control" caption,
-            // its action toolbar) stay — those are the panel's
-            // identity, not the wrapper's.
-            hideHeader={true}
-            onHeaderContextMenu={e => {
-              // Right-click on a pinned section header (or content
-              // body, when the header is hidden) unpins it back into
-              // the tab strip. Pairs with the right-click-to-pin
-              // gesture on the tab icons below.
-              e.preventDefault()
-              unpinPanel(id)
-            }}
-          >
-            <PanelBody id={id} onRightClick={onRightClick} />
-          </SidebarSection>
+          <div key={id} className="flex-shrink-0 flex flex-col border-t border-obsidianBorder">
+            {/* Mini tab strip — one per pinned panel. Matches the
+                main strip's look but contains only that panel's
+                icon. The strip is the drag handle (drag down to
+                unpin) and a drop target (drop a tab here = pin
+                into this zone). Right-click toggles pin/unpin. */}
+            <PinnedMiniStrip
+              panelId={id}
+              Icon={Icon}
+              title={def.title}
+              onUnpin={() => unpinPanel(id)}
+              onPin={(otherId) => {
+                if (otherId === id) return
+                if (pinnedIds.includes(otherId)) return
+                setPinnedPanels([...pinnedIds, otherId])
+              }}
+              onMoveToTabStrip={() => unpinPanel(id)}
+            />
+            <SidebarSection
+              id={id}
+              title={def.title}
+              icon={<Icon className="w-3.5 h-3.5" />}
+              // Hide BOTH the chevron header AND the drag-handle
+              // attribute — the new mini-strip above the content is
+              // now the drag source.
+              hideHeader={true}
+              onHeaderContextMenu={e => {
+                e.preventDefault()
+                unpinPanel(id)
+              }}
+            >
+              <PanelBody id={id} onRightClick={onRightClick} />
+            </SidebarSection>
+          </div>
         )
       })}
       <TabSwitcher
@@ -303,27 +312,10 @@ const TabSwitcher = ({
         {orderedIds.map(id => {
           const def = panelsById.get(id)
           if (!def) return null
-          const isPinned = pinnedIds.includes(id)
-          // For a pinned panel the icon is purely a "jump to"
-          // affordance — its content is already rendered above. The
-          // strip's active-highlight stays on the actual lower-pane
-          // tab so the user can tell what's in the lower pane.
-          const active = !isPinned && effectiveTabId === id
+          const active = effectiveTabId === id
           const dragging = draggingId === id
           const isDropTarget = dropTargetId === id
           const Icon = def.Icon
-          const handleIconClick = () => {
-            if (isPinned) {
-              // Scroll the pinned section into view rather than
-              // re-rendering the same content in the lower pane.
-              const el = document.querySelector(`[data-section-id="${id}"]`)
-              if (el && typeof (el as HTMLElement).scrollIntoView === 'function') {
-                (el as HTMLElement).scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-              }
-              return
-            }
-            setTab(id)
-          }
           return (
             <div
               key={id}
@@ -342,35 +334,25 @@ const TabSwitcher = ({
             >
               <button
                 type="button"
-                onClick={handleIconClick}
+                onClick={() => setTab(id)}
                 onContextMenu={e => {
-                  // Right-click toggles pin/unpin. Pinned → unpin;
-                  // unpinned → pin to top. Mirrors the drag-to-pin /
-                  // drag-out-of-pin gestures with a discoverable
-                  // alternative.
+                  // Right-click pins the tab to the top zone (creating
+                  // a new pinned mini-strip group). Pairs with the
+                  // drag-up gesture.
                   e.preventDefault()
-                  if (isPinned) onUnpinPanel(id)
-                  else onPinPanel(id)
+                  onPinPanel(id)
                 }}
-                title={`${def.title} — right-click to ${isPinned ? 'unpin from top' : 'pin to top'}`}
+                title={`${def.title} — right-click to pin to top`}
                 aria-label={def.title}
                 aria-pressed={active}
                 data-testid={`sidebar-tab-${id}`}
-                className={`relative w-full flex items-center justify-center py-1.5 rounded transition-colors ${
+                className={`w-full flex items-center justify-center py-1.5 rounded transition-colors ${
                   active
                     ? 'bg-obsidianHighlight text-obsidianText'
                     : 'text-obsidianSecondaryText hover:bg-obsidianHighlight/40 hover:text-obsidianText'
-                } ${isPinned ? 'text-obsidianAccentPurple' : ''}`}
+                }`}
               >
                 <Icon className="w-4 h-4" />
-                {/* Tiny dot on pinned icons so the user can tell at a
-                    glance which panels are pinned above. */}
-                {isPinned && (
-                  <span
-                    aria-hidden
-                    className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-obsidianAccentPurple"
-                  />
-                )}
               </button>
             </div>
           )
@@ -380,6 +362,77 @@ const TabSwitcher = ({
       <div className="flex-1 min-h-0 overflow-y-auto">
         {effectiveTabId && <PanelBody id={effectiveTabId} onRightClick={onRightClick} />}
       </div>
+    </div>
+  )
+}
+
+// Mini tab strip rendered ABOVE each pinned panel's content. Single
+// icon for v1 (one panel per group). The strip is both a drag source
+// (the icon is draggable — drop on the main bottom strip or anywhere
+// outside the pinned zone to unpin) AND a drop target (drop a tab
+// from the main strip here = pin into this zone). Right-click on the
+// icon toggles pin/unpin, mirroring the main strip's gesture.
+interface PinnedMiniStripProps {
+  panelId: SidebarTabId
+  Icon: typeof DocumentDuplicateIcon
+  title: string
+  onUnpin: () => void
+  // Called when an icon dragged from another zone is dropped here.
+  onPin: (otherId: SidebarTabId) => void
+  // Called when the icon is dragged OUT — currently the same as
+  // onUnpin; kept separate so a future "drag to a different pinned
+  // zone" feature can hook in without re-wiring this prop.
+  onMoveToTabStrip: () => void
+}
+
+const PinnedMiniStrip = ({
+  panelId, Icon, title, onUnpin, onPin,
+}: PinnedMiniStripProps) => {
+  const [dropActive, setDropActive] = useState(false)
+
+  const handleDragStart = (e: React.DragEvent) => {
+    // Use the SIDEBAR_PANEL_DRAG_MIME so the main strip's drop
+    // handler recognises this as a "moving a pinned panel" payload.
+    e.dataTransfer.setData(SIDEBAR_PANEL_DRAG_MIME, panelId)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDropActive(true)
+  }
+  const handleDragLeave = () => setDropActive(false)
+  const handleDrop = (e: React.DragEvent) => {
+    setDropActive(false)
+    const droppedId = e.dataTransfer.getData(TAB_DRAG_MIME) as SidebarTabId
+    if (!droppedId) return
+    e.preventDefault()
+    onPin(droppedId)
+  }
+
+  return (
+    <div
+      className={`flex items-center gap-0.5 px-1 py-1 border-b border-obsidianBorder bg-obsidianDarkGray/40 ${
+        dropActive ? 'outline outline-2 outline-obsidianAccentPurple/60' : ''
+      }`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      data-pinned-strip={panelId}
+    >
+      <button
+        type="button"
+        draggable
+        onDragStart={handleDragStart}
+        onContextMenu={e => { e.preventDefault(); onUnpin() }}
+        title={`${title} — right-click to unpin`}
+        aria-label={title}
+        data-testid={`sidebar-pinned-tab-${panelId}`}
+        className="flex items-center justify-center py-1.5 px-3 rounded text-obsidianText bg-obsidianHighlight cursor-grab active:cursor-grabbing"
+      >
+        <Icon className="w-4 h-4" />
+      </button>
     </div>
   )
 }

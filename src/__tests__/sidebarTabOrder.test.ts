@@ -2,17 +2,10 @@
  * sidebarTabOrder.test.ts
  *
  * Pure-function tests for the sidebar tab-strip order resolver — the
- * merger that combines the user's saved order (settingsStore.
- * sidebarTabOrder) with the source order from SidebarStack.tsx.
- *
- * Properties:
- *   - Unknown ids in the saved list are dropped.
- *   - Items not yet in the saved list are appended at the end.
- *   - Duplicates in the saved list are de-duped.
- *   - Empty saved list returns the full source order.
- *   - The `pinned` arg is NOT used for filtering — pinned panels
- *     still show their icons in the strip so they stay discoverable
- *     while the panel content is rendered above.
+ * merger that combines the user's saved order with the source order
+ * from SidebarStack.tsx. Pinned panels are filtered out of the main
+ * bottom strip because each one gets its OWN mini-strip above its
+ * content (Obsidian pane model).
  */
 
 jest.mock('idb-keyval', () => ({
@@ -23,26 +16,35 @@ jest.mock('idb-keyval', () => ({
 
 import { resolveTabOrder } from '../components/sidebar/SidebarStack'
 
-// Default strip is every panel in the PANELS registry, source order.
-// pinned no longer filters; specifying it should yield the same shape.
+// Full source order when nothing is pinned.
 const SOURCE_ORDER = [
   'calendar', 'files', 'outline', 'source-control', 'search', 'bookmarks', 'related',
 ] as const
 
-test('empty saved list returns the full source order', () => {
+test('empty saved + empty pinned returns the full source order', () => {
   expect(resolveTabOrder([])).toEqual(SOURCE_ORDER)
 })
 
-test('pinned arg is purely advisory — panels still appear in the strip', () => {
-  // Earlier behaviour filtered out pinned ids; new behaviour keeps
-  // them so the user sees the icon as a "jump to" affordance.
-  expect(resolveTabOrder([], ['calendar'])).toEqual(SOURCE_ORDER)
-  expect(resolveTabOrder([], ['calendar', 'outline'])).toEqual(SOURCE_ORDER)
+test('pinned ids are filtered out of the main strip', () => {
+  expect(resolveTabOrder([], ['calendar'])).toEqual([
+    'files', 'outline', 'source-control', 'search', 'bookmarks', 'related',
+  ])
+  expect(resolveTabOrder([], ['calendar', 'outline'])).toEqual([
+    'files', 'source-control', 'search', 'bookmarks', 'related',
+  ])
 })
 
-test('respects the user-saved order verbatim when complete', () => {
+test('respects the user-saved order verbatim when complete + unpinned', () => {
   const saved = ['related', 'bookmarks', 'search', 'source-control', 'outline', 'files', 'calendar']
   expect(resolveTabOrder(saved)).toEqual(saved)
+})
+
+test('saved order with pinned ids drops the pinned entries', () => {
+  // User saved [calendar, files, outline]; calendar is now pinned →
+  // strip only shows files + outline + (anything missing).
+  expect(resolveTabOrder(['calendar', 'files', 'outline'], ['calendar'])).toEqual([
+    'files', 'outline', 'source-control', 'search', 'bookmarks', 'related',
+  ])
 })
 
 test('appends missing ids in source-order at the tail', () => {
@@ -63,8 +65,6 @@ test('de-duplicates repeated ids', () => {
   ])
 })
 
-test('upgrade path: missing newly-added id (related) lands at the tail', () => {
-  expect(resolveTabOrder(['search', 'files', 'outline', 'source-control'])).toEqual([
-    'search', 'files', 'outline', 'source-control', 'calendar', 'bookmarks', 'related',
-  ])
+test('all panels pinned → strip is empty', () => {
+  expect(resolveTabOrder([], [...SOURCE_ORDER])).toEqual([])
 })
