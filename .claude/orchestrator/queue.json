@@ -686,11 +686,11 @@
     {
       "id": "20260520T073005-mb6r",
       "brief": "Mobile / small-screen responsive layout — collapsible sidebar by default below a width threshold, single-pane mode, touch-friendly tab bar.",
-      "status": "in_progress",
+      "status": "done",
       "created_at": "2026-05-20T07:30:00Z",
       "started_at": "2026-05-20T09:35:00Z",
-      "completed_at": null,
-      "result": null,
+      "completed_at": "2026-05-20T08:35:00Z",
+      "result": "Shipped v1 mobile responsiveness: useViewport hook (SSR-safe), Sidebar auto-collapses on first mobile mount (768px breakpoint), Pane split-pane drop zone hides on mobile, slightly wider ribbon (52px) on small screens. Further mobile polish (touch-friendly tabs, single-pane workspace enforcement) is queued in roadmap.",
       "error": null,
       "source": "terminal"
     },
@@ -748,6 +748,17 @@
       "result": "Shipped: /share page gets an Import to my vault button that redirects to /?import=<fragment>. Main app on mount decodes + prompts confirm + addNote + openNote, then strips the URL param. Same fragment format as s8h3 so the import IS the share payload.",
       "error": null,
       "source": "terminal"
+    },
+    {
+      "id": "20260520T082500-s4r3",
+      "brief": "Sidebar redesign — split panel layout. Files tree on top, secondary nav (Calendar, Backlinks, Outline, Bookmarks, Source Control) as collapsible mini-panels BELOW the tree (Obsidian-style). Replaces the current one-view-at-a-time ribbon model.",
+      "status": "pending",
+      "created_at": "2026-05-20T08:25:00Z",
+      "started_at": null,
+      "completed_at": null,
+      "result": null,
+      "error": null,
+      "source": "telegram"
     }
   ]
 }

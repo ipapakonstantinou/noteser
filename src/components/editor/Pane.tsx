@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { DocumentTextIcon } from '@heroicons/react/24/outline'
 import { useNoteStore, useUIStore, useWorkspaceStore } from '@/stores'
-import { useTabDragActive, TAB_DRAG_MIME } from '@/hooks'
+import { useTabDragActive, TAB_DRAG_MIME, useViewport } from '@/hooks'
 import { EditorHeader } from './EditorHeader'
 import { EditorFooter } from './EditorFooter'
 import { EditorContent } from './EditorContent'
@@ -35,6 +35,11 @@ export const Pane = ({ pane, allowSplitDropZone }: Props) => {
   const tabDragActive = useTabDragActive()
   const activeTab = pane.tabs.find(t => t.id === pane.activeTabId) ?? null
   const isActive = pane.id === activePaneId
+
+  // Mobile viewports skip the split-pane affordance entirely — there
+  // isn't room for two columns of editor. The drop-zone handlers don't
+  // even mount in that case (see render below).
+  const { isMobile } = useViewport()
 
   const handleRightEdgeDragOver = (e: React.DragEvent) => {
     if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
@@ -107,7 +112,7 @@ export const Pane = ({ pane, allowSplitDropZone }: Props) => {
       {/* Right-edge split drop target — only rendered (and only intercepts
           events) while a tab is actively being dragged. Otherwise clicks in
           the right portion of the editor would get eaten. */}
-      {allowSplitDropZone && tabDragActive && (
+      {allowSplitDropZone && tabDragActive && !isMobile && (
         <div
           onDragOver={handleRightEdgeDragOver}
           onDragLeave={() => setSplitDropActive(false)}

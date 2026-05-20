@@ -169,6 +169,10 @@ export default function Home() {
   //      hidden behind tabs (user lost ~30 seconds clicking nothing).
   const [showResetModal, setShowResetModal] = useState(false)
   const [resetHasUnsynced, setResetHasUnsynced] = useState(false)
+  // Selector subscription — re-renders when the repo changes (connect /
+  // disconnect) so the modal copy stays in sync without a getState() call
+  // during JSX.
+  const githubRepo = useGitHubStore(s => s.syncRepo)
   useEffect(() => {
     if (!hydrated) return
     const stored = readStoredResetVersion()
@@ -259,7 +263,7 @@ export default function Home() {
       <ResetConfirmModal
         isOpen={showResetModal}
         hasUnsynced={resetHasUnsynced}
-        hasRepo={Boolean(useGitHubStore.getState().syncRepo)}
+        hasRepo={!!githubRepo}
         onPartialWipe={handlePartialWipe}
         onFullWipe={handleFullWipe}
         onCancel={() => setShowResetModal(false)}
