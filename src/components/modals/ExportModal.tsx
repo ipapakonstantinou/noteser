@@ -3,12 +3,19 @@
 import { useState } from 'react'
 import { useUIStore, useNoteStore, useFolderStore, useTagStore } from '@/stores'
 import { Modal, Button } from '@/components/ui'
-import { exportAllNotes, exportNoteAsMarkdown, exportNoteAsJSON } from '@/utils/export'
+import {
+  exportAllNotes,
+  exportAllNotesAsPdf,
+  exportNoteAsHTML,
+  exportNoteAsJSON,
+  exportNoteAsMarkdown,
+  exportNoteAsPdf,
+} from '@/utils/export'
 import type { ExportOptions } from '@/types'
 
 export const ExportModal = () => {
   const { modal, closeModal } = useUIStore()
-  const { notes, selectedNoteId, getNoteById, getActiveNotes } = useNoteStore()
+  const { selectedNoteId, getNoteById, getActiveNotes } = useNoteStore()
   const { folders, getActiveFolders } = useFolderStore()
   const { tags } = useTagStore()
 
@@ -27,11 +34,22 @@ export const ExportModal = () => {
     setIsExporting(true)
     try {
       if (exportType === 'current' && currentNote) {
+        // Single-note path routes by format. The HTML and PDF cases
+        // were previously silently downgrading to markdown — now each
+        // has its own helper.
         if (options.format === 'json') {
           exportNoteAsJSON(currentNote)
+        } else if (options.format === 'html') {
+          exportNoteAsHTML(currentNote, options.includeTags)
+        } else if (options.format === 'pdf') {
+          exportNoteAsPdf(currentNote)
         } else {
           exportNoteAsMarkdown(currentNote, tags)
         }
+      } else if (options.format === 'pdf') {
+        // PDF all-notes path opens a print window rather than producing
+        // a zip; bypass exportAllNotes.
+        exportAllNotesAsPdf(getActiveNotes(), options)
       } else {
         await exportAllNotes(
           getActiveNotes(),
@@ -87,7 +105,7 @@ export const ExportModal = () => {
             Format
           </label>
           <div className="flex gap-2">
-            {(['markdown', 'json', 'html'] as const).map(format => (
+            {(['markdown', 'json', 'html', 'pdf'] as const).map(format => (
               <button
                 key={format}
                 onClick={() => setOptions(prev => ({ ...prev, format }))}
@@ -101,6 +119,11 @@ export const ExportModal = () => {
               </button>
             ))}
           </div>
+          {options.format === 'pdf' && (
+            <p className="mt-2 text-xs text-obsidianSecondaryText">
+              Opens the system print dialog — choose &ldquo;Save as PDF&rdquo; as the destination.
+            </p>
+          )}
         </div>
 
         {/* Options */}
