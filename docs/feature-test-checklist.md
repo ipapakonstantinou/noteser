@@ -136,6 +136,23 @@ ship date. Last updated 2026-05-20.
 - [ ] Diagnostics dump never contains the OAuth token, AI key, or any `*secret*` field
 - [ ] Closing the modal resets the form
 
+## Status bar footer (sb7y)
+
+- [ ] Bottom strip shows repo owner/name + branch + last-sync time
+- [ ] "Syncing…" spinner appears while a sync is in flight (purple, animated)
+- [ ] "N pending" yellow chip appears when there are pending changes (clickable → opens GitHub view)
+- [ ] Word count, character count, tag count visible on the right
+- [ ] Modified-at date visible on the right
+- [ ] Strip is per-pane (right pane shows its own active note's stats)
+
+## Copy block ref (bc3v)
+
+- [ ] Command palette: "Copy block ref for current line" (only shows when a note is open)
+- [ ] On a line WITHOUT `^id` at end → mints a 6-char id + appends `^id` + copies `[[Title#^id]]`
+- [ ] On a line WITH `^id` already → keeps the existing id + just copies the link
+- [ ] On an empty line → no-op (nothing to anchor)
+- [ ] Works in the focused pane when split-view is active
+
 ## Source control panel (vsg1)
 
 - [ ] Sidebar → GitHub view shows "Source control" section below "Last sync"
