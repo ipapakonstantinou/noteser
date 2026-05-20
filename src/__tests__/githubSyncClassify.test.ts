@@ -31,6 +31,11 @@ const mockGetCommitTreeSha = jest.fn()
 const mockGetTreeMap = jest.fn()
 const mockGetBlobContent = jest.fn()
 const mockGitBlobSha = jest.fn()
+// Push-side helpers — captured so the bulk-delete test can inspect args.
+const mockCreateTree = jest.fn()
+const mockCreateCommit = jest.fn()
+const mockUpdateBranchRef = jest.fn()
+const mockCreateBlob = jest.fn()
 
 jest.mock('../utils/github', () => ({
   getBranchRefSha:    (...a: unknown[]) => mockGetBranchRefSha(...a),
@@ -39,10 +44,10 @@ jest.mock('../utils/github', () => ({
   getBlobContent:     (...a: unknown[]) => mockGetBlobContent(...a),
   gitBlobSha:         (...a: unknown[]) => mockGitBlobSha(...a),
   gitBlobShaBytes:    jest.fn(),
-  createTree:         jest.fn(),
-  createCommit:       jest.fn(),
-  updateBranchRef:    jest.fn(),
-  createBlob:         jest.fn(),
+  createTree:         (...a: unknown[]) => mockCreateTree(...a),
+  createCommit:       (...a: unknown[]) => mockCreateCommit(...a),
+  updateBranchRef:    (...a: unknown[]) => mockUpdateBranchRef(...a),
+  createBlob:         (...a: unknown[]) => mockCreateBlob(...a),
   createBlobBinary:   jest.fn(),
   fetchZipball:       jest.fn(),
   blobToBase64:       jest.fn(),
@@ -270,7 +275,54 @@ test('mixed batch: unchanged + remoteCreated + remoteUpdated in one pull', async
   expect(kinds).toEqual(['remoteCreated', 'remoteUpdated', 'unchanged'])
 })
 
-// ── soft-deleted note + remote file present = unchanged (not remoteCreated) ─
+// ── End-to-end: bulk-delete then sync emits sha:null deletes for them ──────
+//
+// User flow we're locking in:
+//   1. User soft-deletes ~hundreds of notes locally (Del key in tree).
+//   2. User hits Sync.
+//   3. pullFromGitHub sees each remote file still has a matching local
+//      note (the soft-deleted one) — emits `unchanged`, no resurrection.
+//   4. syncToGitHub then sees those notes have isDeleted=true and
+//      gitPath set + matching remote tree entries — emits sha:null tree
+//      entries to actually delete the files remotely.
+// We verify #3+#4 here. The pull side is already covered by the
+// "soft-deleted local note with matching gitPath" test above; this one
+// drives the push payload.
+
+import { syncToGitHub } from '../utils/githubSync'
+
+test('bulk-delete + sync emits sha:null tree entries for every deleted note', async () => {
+  // Two notes locally — both soft-deleted, both have a matching remote
+  // tree entry.
+  mockGetTreeMap.mockResolvedValue(new Map([
+    ['Note A.md', 'sha-a'],
+    ['Note B.md', 'sha-b'],
+  ]))
+  mockGitBlobSha.mockResolvedValue('any')
+  // Capture the tree entries that get sent to createTree.
+  mockCreateTree.mockResolvedValue('new-tree-sha')
+  mockCreateCommit.mockResolvedValue({ sha: 'new-commit-sha', html_url: 'https://github.com/me/vault/commit/new-commit-sha' })
+  mockUpdateBranchRef.mockResolvedValue(undefined)
+
+  const local: Note[] = [
+    note({ id: '1', title: 'Note A', content: 'a body', gitPath: 'Note A.md', gitLastPushedSha: 'sha-a', isDeleted: true }),
+    note({ id: '2', title: 'Note B', content: 'b body', gitPath: 'Note B.md', gitLastPushedSha: 'sha-b', isDeleted: true }),
+  ]
+
+  const result = await syncToGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+
+  // The push step emitted a tree with TWO sha:null deletions, no blob uploads.
+  expect(mockCreateBlob).not.toHaveBeenCalled()
+  expect(mockCreateTree).toHaveBeenCalledTimes(1)
+  const entriesArg = mockCreateTree.mock.calls[0][4] as Array<{ path: string; sha: string | null }>
+  const deletes = entriesArg.filter(e => e.sha === null)
+  expect(deletes).toHaveLength(2)
+  const deletedPaths = deletes.map(e => e.path).sort()
+  expect(deletedPaths).toEqual(['Note A.md', 'Note B.md'])
+  expect(result.result.deleted).toBe(2)
+})
+
+// ── skips non-.md paths ─────────────────────────────────────────────────────
 //
 // Regression: deleting a note locally then syncing used to undo the delete.
 // The pull saw the remote file, no MATCHING (non-deleted) local note, and
