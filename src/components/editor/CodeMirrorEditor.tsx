@@ -14,6 +14,7 @@ import { imagesLivePreview } from './imagesLivePreview'
 import { getActiveWikilinkQuery } from '@/utils/wikilinks'
 import { findNoteByTitleOrAlias } from '@/utils/aliases'
 import { toggleTaskLineText, UI_TASK_LINE_REGEX } from '@/utils/tasks'
+import { findFragmentLine } from '@/utils/wikilinkTarget'
 import { saveAttachment } from '@/utils/attachments'
 import { WikilinkAutocomplete } from './WikilinkAutocomplete'
 import type { Note } from '@/types'
@@ -94,6 +95,30 @@ export function CodeMirrorEditor({
   useEffect(() => { activeNotesRef.current = activeNotes }, [activeNotes])
   useEffect(() => { navigateRef.current = onWikilinkNavigate }, [onWikilinkNavigate])
   useEffect(() => { noteIdRef.current = noteId }, [noteId])
+
+  // Listen for "scroll to fragment" requests fired by the wikilink click
+  // handler. The fragment is either a heading text or a `^block-id`; we
+  // resolve to a line number via findFragmentLine and dispatch a CodeMirror
+  // selection change so the editor scrolls + highlights the row.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ noteId: string; fragment: string }>).detail
+      if (!detail || detail.noteId !== noteIdRef.current) return
+      const view = cmRef.current?.view
+      if (!view) return
+      const content = view.state.doc.toString()
+      const lineIdx = findFragmentLine(content, detail.fragment)
+      if (lineIdx == null) return
+      const line = view.state.doc.line(lineIdx + 1)
+      view.dispatch({
+        selection: { anchor: line.from, head: line.from },
+        scrollIntoView: true,
+      })
+      view.focus()
+    }
+    window.addEventListener('noteser:scroll-to-fragment', handler)
+    return () => window.removeEventListener('noteser:scroll-to-fragment', handler)
+  }, [])
 
   const debouncedSave = useDebouncedCallback(onSave, 300)
 
@@ -247,11 +272,23 @@ export function CodeMirrorEditor({
           if (openIdx !== -1 && closeIdx !== -1) {
             const rawTitle = content.slice(openIdx + 2, pos + closeIdx)
             if (!rawTitle.includes('\n') && !rawTitle.includes('[[')) {
-              const title = rawTitle.split('|')[0].trim()
+              // Strip display-text portion + extract optional #fragment.
+              const target = rawTitle.split('|')[0].trim()
+              const hash = target.indexOf('#')
+              const title = hash === -1 ? target : target.slice(0, hash).trim()
+              const fragment = hash === -1 ? null : target.slice(hash + 1).trim() || null
               const note = findNoteByTitleOrAlias(activeNotesRef.current, title)
               if (note) {
                 event.preventDefault()
                 navigateRef.current(note)
+                if (fragment) {
+                  // Defer until the new note's editor mounts.
+                  setTimeout(() => {
+                    window.dispatchEvent(new CustomEvent('noteser:scroll-to-fragment', {
+                      detail: { noteId: note.id, fragment },
+                    }))
+                  }, 0)
+                }
                 return true
               }
             }

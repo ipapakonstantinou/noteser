@@ -136,6 +136,16 @@ ship date. Last updated 2026-05-20.
 - [ ] Diagnostics dump never contains the OAuth token, AI key, or any `*secret*` field
 - [ ] Closing the modal resets the form
 
+## Block + heading link navigation (e4t8)
+
+- [ ] `[[Note#Heading]]` link Ctrl+Click in editor → opens Note + scrolls to that heading
+- [ ] Same link clicked in rendered preview → opens Note + scrolls
+- [ ] `[[Note#^block-id]]` link → scrolls to the line ending with `^block-id`
+- [ ] Heading match is case-insensitive
+- [ ] Block id match is case-insensitive
+- [ ] Missing fragment opens the note but doesn't scroll (no error)
+- [ ] Display-text form `[[Note#Heading|see section]]` still works
+
 ## Database / table view (d6v8)
 
 - [ ] `` ```bases `` fence renders inline as a table (live preview)

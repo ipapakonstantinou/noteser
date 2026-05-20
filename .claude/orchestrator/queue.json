@@ -488,11 +488,11 @@
     {
       "id": "20260519T173509-e4t8",
       "brief": "Block-level linking [[Note#^block-id]] — link to a specific paragraph / list item with an auto-generated block ID anchor. Touches sync (block IDs modify note content on link creation).",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T17:35:09Z",
       "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "completed_at": "2026-05-20T07:00:00Z",
+      "result": "Shipped v1 navigation only: [[Note#Heading]] and [[Note#^block-id]] resolve to the target line. Ctrl+Click in editor + click in rendered preview both work. v2: auto-generate block ids on demand (not yet). 19 new tests in wikilinkTarget.test.ts.",
       "error": null,
       "source": "researcher"
     },

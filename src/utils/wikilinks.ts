@@ -14,11 +14,21 @@ export function getActiveWikilinkQuery(
   return { query: after, start: openIdx }
 }
 
-// Replace [[title]] and [[title|display]] with markdown links for ReactMarkdown
+// Replace [[title]], [[title|display]], [[title#heading]], [[title#^block]]
+// with markdown links for ReactMarkdown. Fragments after `#` are kept on
+// the wikilink:// href as a `?frag=` query param so the consumer can scroll
+// to a heading or block ref after navigating.
 export function renderWikilinks(content: string): string {
-  return content.replace(/\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g, (_, title, display) => {
-    const text = (display?.trim() || title.trim()).replace(/[[\]]/g, '')
-    return `[${text}](wikilink://${encodeURIComponent(title.trim())})`
+  return content.replace(/\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g, (_, rawTitle, display) => {
+    const target = rawTitle.trim()
+    const hash = target.indexOf('#')
+    const title = hash === -1 ? target : target.slice(0, hash).trim()
+    const fragment = hash === -1 ? null : target.slice(hash + 1).trim() || null
+    const text = (display?.trim() || target).replace(/[[\]]/g, '')
+    const href = fragment
+      ? `wikilink://${encodeURIComponent(title)}?frag=${encodeURIComponent(fragment)}`
+      : `wikilink://${encodeURIComponent(title)}`
+    return `[${text}](${href})`
   })
 }
 
