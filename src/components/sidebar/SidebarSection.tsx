@@ -18,6 +18,9 @@ interface Props {
   // panel id on dragstart. SidebarStack listens for the matching MIME
   // and lets users drop pinned-top sections into the tab strip below.
   draggablePanelId?: string
+  // Optional context-menu handler for the section header — used for
+  // the "right-click to unpin from top" affordance on pinned panels.
+  onHeaderContextMenu?: (e: React.MouseEvent) => void
 }
 
 // A collapsible, vertically-resizable section in the stacked sidebar.
@@ -42,6 +45,7 @@ export const SidebarSection = ({
   children,
   minHeight = 80,
   draggablePanelId,
+  onHeaderContextMenu,
 }: Props) => {
   const section = useUIStore(s => s.sidebarSections[id])
   const toggle = useUIStore(s => s.toggleSidebarSection)
@@ -101,6 +105,7 @@ export const SidebarSection = ({
       <button
         type="button"
         onClick={() => toggle(id)}
+        onContextMenu={onHeaderContextMenu}
         draggable={Boolean(draggablePanelId)}
         onDragStart={(e: React.DragEvent) => {
           if (!draggablePanelId) return
