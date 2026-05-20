@@ -14,7 +14,9 @@ import {
   ArrowDownTrayIcon,
   InformationCircleIcon,
   BeakerIcon,
+  SwatchIcon,
 } from '@heroicons/react/24/outline'
+import { THEME_TOKENS, THEME_PRESETS } from '@/utils/theme'
 import { useUIStore, useSettingsStore } from '@/stores'
 import type { FolderSortMode, TaskListDensity } from '@/stores'
 import type { TrashMode } from '@/stores/settingsStore'
@@ -37,6 +39,7 @@ import {
 // rendering order of the list AND the keyboard up/down nav (later).
 type CategoryId =
   | 'general'
+  | 'appearance'
   | 'editor'
   | 'attachments'
   | 'daily-notes'
@@ -57,6 +60,7 @@ interface CategoryDef {
 
 const CATEGORIES: readonly CategoryDef[] = [
   { id: 'general',     label: 'General',     Icon: CogIcon },
+  { id: 'appearance',  label: 'Appearance',  Icon: SwatchIcon },
   { id: 'editor',      label: 'Editor',      Icon: PencilSquareIcon },
   { id: 'attachments', label: 'Attachments', Icon: PaperClipIcon },
   { id: 'daily-notes', label: 'Daily notes', Icon: CalendarDaysIcon },
@@ -137,6 +141,7 @@ export const SettingsModal = () => {
 function CategoryPanel({ id }: { id: CategoryId }): ReactNode {
   switch (id) {
     case 'general':     return <GeneralPanel />
+    case 'appearance':  return <AppearancePanel />
     case 'editor':      return <EditorPanel />
     case 'attachments': return <AttachmentsSection />
     case 'daily-notes': return <DailyNotesSection />
@@ -258,6 +263,104 @@ function GeneralPanel() {
       </div>
     </div>
   )
+}
+
+function AppearancePanel() {
+  const overrides = useSettingsStore(s => s.themeOverrides)
+  const setThemeToken = useSettingsStore(s => s.setThemeToken)
+  const setThemeOverrides = useSettingsStore(s => s.setThemeOverrides)
+  const resetThemeOverrides = useSettingsStore(s => s.resetThemeOverrides)
+
+  // Read the live computed value off :root when no override is set
+  // so the color picker shows the actual rendered color, not just
+  // the hard-coded default. Falls back to the token's
+  // defaultColor when SSR / no DOM.
+  const getEffective = (cssVar: string, fallback: string): string => {
+    const ov = overrides?.[cssVar]
+    if (ov) return ov
+    if (typeof document === 'undefined') return fallback
+    const computed = getComputedStyle(document.documentElement).getPropertyValue(`--${cssVar}`).trim()
+    return computed || fallback
+  }
+
+  return (
+    <div className="space-y-4" data-testid="settings-panel-appearance">
+      <PanelHeading>Appearance</PanelHeading>
+      <p className="text-xs text-obsidianSecondaryText -mt-2">
+        Pick a preset or tweak individual colors. Changes apply
+        instantly and sync across devices via your vault settings file.
+      </p>
+
+      <div className="space-y-2">
+        <div className="text-xs uppercase tracking-wide text-obsidianSecondaryText">
+          Presets
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {THEME_PRESETS.map(preset => (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => setThemeOverrides(preset.overrides)}
+              title={preset.description}
+              data-testid={`theme-preset-${preset.id}`}
+              className="px-3 py-1.5 text-sm rounded border border-obsidianBorder bg-obsidianDarkGray hover:bg-obsidianHighlight text-obsidianText"
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-2 pt-3 mt-3 border-t border-obsidianBorder">
+        <div className="flex items-center justify-between">
+          <div className="text-xs uppercase tracking-wide text-obsidianSecondaryText">
+            Individual tokens
+          </div>
+          <button
+            type="button"
+            onClick={resetThemeOverrides}
+            className="text-xs text-obsidianAccentPurple hover:underline"
+            data-testid="theme-reset"
+          >
+            Reset all
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {THEME_TOKENS.map(token => {
+            const value = getEffective(token.cssVar, token.defaultColor)
+            return (
+              <label
+                key={token.cssVar}
+                className="flex items-center gap-2 text-sm text-obsidianText"
+              >
+                <input
+                  type="color"
+                  // <input type=color> requires a 7-char #rrggbb. If
+                  // the effective color is an hsl()/named/8-char hex
+                  // we coerce to a safe default for the picker; the
+                  // actual stored override stays in the original
+                  // format until the user picks a new value.
+                  value={normalizeForPicker(value, token.defaultColor)}
+                  onChange={e => setThemeToken(token.cssVar, e.target.value)}
+                  className="w-8 h-8 rounded border border-obsidianBorder bg-transparent cursor-pointer"
+                  data-testid={`theme-input-${token.cssVar}`}
+                />
+                <span className="flex-1 truncate">{token.label}</span>
+              </label>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// <input type=color> needs a 7-char #rrggbb. Anything else (hsl(),
+// named, 8-char alpha hex) falls back to the token's defaultColor
+// so the picker stays sensible.
+function normalizeForPicker(value: string, fallback: string): string {
+  if (/^#[0-9a-f]{6}$/i.test(value)) return value
+  return /^#[0-9a-f]{6}$/i.test(fallback) ? fallback : '#000000'
 }
 
 function EditorPanel() {

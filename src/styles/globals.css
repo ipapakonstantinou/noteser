@@ -2,6 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Theme tokens (th3m). Tailwind colors reference these via var()
+ * so user overrides in settingsStore.themeOverrides flow through to
+ * every Tailwind utility (`bg-obsidianBlack`, `text-obsidianText`,
+ * etc.) without a rebuild. The fallback hex keeps the app rendered
+ * before the override-applying hook mounts. */
+:root {
+  --obsidian-black: #1b1b1b;
+  --obsidian-gray: #242424;
+  --obsidian-dark-gray: #333333;
+  --obsidian-accent: #3a3a3a;
+  --obsidian-highlight: #4d4d4d;
+  --obsidian-border: #444444;
+  --obsidian-text: #dadada;
+  --obsidian-secondary-text: #bababa;
+  --obsidian-accent-purple: hsl(254, 80%, 68%);
+}
+
 /* Base styles */
 @layer base {
   * {

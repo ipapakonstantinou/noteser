@@ -19,7 +19,7 @@ import {
 } from '@/components/modals'
 import { OnboardingModal } from '@/components/modals/OnboardingModal'
 import { useSettingsStore } from '@/stores/settingsStore'
-import { useKeyboardShortcuts, useHydration, useAutoSync, useAutoEmbedNotes } from '@/hooks'
+import { useKeyboardShortcuts, useHydration, useAutoSync, useAutoEmbedNotes, useApplyTheme } from '@/hooks'
 import { useUIStore, useWorkspaceStore, useGitHubStore } from '@/stores'
 import { switchVault } from '@/utils/switchVault'
 import { notesKey } from '@/utils/repoStorage'
@@ -100,6 +100,11 @@ export default function Home() {
   // Auto re-embed notes on save when AI embeddings are enabled (a1f7
   // phase B). No-ops when the feature is off; per-note 5s debounce.
   useAutoEmbedNotes()
+
+  // Apply the user's theme overrides (th3m) — writes any non-default
+  // colors to :root CSS variables so Tailwind utilities pick them up
+  // live. No-op when themeOverrides is empty.
+  useApplyTheme()
 
   // First-run onboarding: show the starter-vault picker only for genuine
   // first-run users — no notes, no GitHub configured, and the user hasn't
