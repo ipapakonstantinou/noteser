@@ -99,7 +99,12 @@ export const Ribbon = () => {
   })
   const githubConnected = useGitHubStore(s => hydrated && !!s.token)
 
-  const ctx: BadgeCtx = { recentCount, trashCount, conflictCount, githubConnected }
+  // Memoise ctx so it doesn't tear the orderedItems memo on every render.
+  // Each scalar dep is referentially stable, so this is cheap.
+  const ctx: BadgeCtx = useMemo(
+    () => ({ recentCount, trashCount, conflictCount, githubConnected }),
+    [recentCount, trashCount, conflictCount, githubConnected],
+  )
 
   const orderedIds = useMemo(() => resolveRibbonOrder(ribbonOrder), [ribbonOrder])
   const orderedItems = useMemo(() => {

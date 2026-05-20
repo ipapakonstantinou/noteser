@@ -58,7 +58,11 @@ export const TemplatesSection = () => {
   const setDailyTemplateId = useSettingsStore(s => s.setDailyNoteTemplateId)
 
   // Re-run when notes change so the dropdown reflects fresh template
-  // files. listTemplateNotes reads the live settings + stores.
+  // files. listTemplateNotes reads from useNoteStore.getState() +
+  // useSettingsStore.getState() internally, so the values aren't used
+  // directly — they're triggers for recomputation. ESLint can't see
+  // through that, hence the disable.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const templateNotes = useMemo(() => listTemplateNotes(), [notes, templatesFolder])
 
   const NONE = '' // sentinel for "no template selected"
