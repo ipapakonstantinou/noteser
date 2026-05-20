@@ -55,12 +55,24 @@ export function cascadeDeleteFolder(folderId: string): void {
 
   const rootPath = folderRepoPath(folderId, folders)
   const ids = descendantFolderIds(folderId, folders)
+  const idSet = new Set(ids)
 
-  // Soft-delete the folder + its descendants. folderStore.deleteFolder
-  // already handles activeFolderId nullification when the active one is
-  // among them.
-  const { deleteFolder } = useFolderStore.getState()
-  for (const id of ids) deleteFolder(id)
+  // Soft-delete the folder + its descendants in a SINGLE setState. Before
+  // batching, deleting a folder with ~600 notes/descendants ran
+  // folderStore.deleteFolder N times, each mapping the full folders
+  // array — O(N²) work + N renders that froze the UI.
+  const now = Date.now()
+  useFolderStore.setState(state => ({
+    folders: state.folders.map(f =>
+      idSet.has(f.id) && !f.isDeleted
+        ? { ...f, isDeleted: true, deletedAt: now, updatedAt: now }
+        : f
+    ),
+    activeFolderId:
+      state.activeFolderId != null && idSet.has(state.activeFolderId)
+        ? null
+        : state.activeFolderId,
+  }))
 
   // Tombstone the attachments asynchronously. listAttachmentMeta hits
   // IDB; we can't await inside this synchronous action without bleeding
@@ -82,15 +94,13 @@ export function cascadeDeleteFolder(folderId: string): void {
   })()
 
   // Notes inside the deleted folder hierarchy keep their content but
-  // move to root (Trash-only flow doesn't make sense for "move to
-  // trash"). Matches the existing single-folder delete behaviour, just
-  // extended to the whole subtree.
-  const { notes, updateNote } = useNoteStore.getState()
-  const idSet = new Set(ids)
-  for (const note of notes) {
-    if (note.isDeleted) continue
-    if (note.folderId && idSet.has(note.folderId)) {
-      updateNote(note.id, { folderId: null })
-    }
-  }
+  // move to root. Same batching reason as the folder write above —
+  // running updateNote N times froze the UI for large folders.
+  useNoteStore.setState(state => ({
+    notes: state.notes.map(n =>
+      !n.isDeleted && n.folderId && idSet.has(n.folderId)
+        ? { ...n, folderId: null, updatedAt: now }
+        : n
+    ),
+  }))
 }
