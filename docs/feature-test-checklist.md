@@ -136,6 +136,18 @@ ship date. Last updated 2026-05-20.
 - [ ] Diagnostics dump never contains the OAuth token, AI key, or any `*secret*` field
 - [ ] Closing the modal resets the form
 
+## Share via URL (s8h3)
+
+- [ ] Command palette → "Copy share link for current note" with a note open
+- [ ] Pasted URL opens `/share#…` and renders the note read-only
+- [ ] Document title becomes "{note title} — Shared via Noteser"
+- [ ] Header shows "Open Noteser →" link back to `/`
+- [ ] Markdown features render (headings, lists, code blocks, bold/italic)
+- [ ] Tampered fragment shows the "Couldn't open this note" error page
+- [ ] Empty fragment (`/share`) shows the same error
+- [ ] Large notes (>8KB encoded) show a confirm dialog before copying
+- [ ] Hash fragment never reaches the server (verify in network tab)
+
 ## Block + heading link navigation (e4t8)
 
 - [ ] `[[Note#Heading]]` link Ctrl+Click in editor → opens Note + scrolls to that heading
