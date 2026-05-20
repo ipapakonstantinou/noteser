@@ -15,9 +15,24 @@ test.beforeEach(async ({ page }) => {
 })
 
 async function openSettings(page: import('@playwright/test').Page) {
-  // The Settings gear is pinned to the bottom of the Ribbon. Click it.
   await page.getByTitle('Settings').click()
   await expect(page.getByTestId('settings-categories')).toBeVisible()
+}
+
+// Boots a note and opens it via the real Zustand stores exposed by testHooks.
+async function seedAndOpen(page: import('@playwright/test').Page, title: string, content: string) {
+  await page.evaluate(({ title, content }) => {
+    const hooks = (window as unknown as {
+      __noteser_test: {
+        stores: {
+          noteStore: { getState(): { addNote: (i: { title: string; content: string }) => { id: string } } }
+          workspaceStore: { getState(): { openNote: (id: string, opt: { preview: boolean }) => void } }
+        }
+      }
+    }).__noteser_test
+    const note = hooks.stores.noteStore.getState().addNote({ title, content })
+    hooks.stores.workspaceStore.getState().openNote(note.id, { preview: false })
+  }, { title, content })
 }
 
 // ── s9r4 — Settings 2-pane layout ────────────────────────────────────────────
@@ -26,7 +41,6 @@ test('settings modal mounts with 2-pane layout (s9r4)', async ({ page }) => {
   await page.goto('/')
   await openSettings(page)
   await expect(page.getByTestId('settings-panel-general')).toBeVisible()
-  // Every documented category is reachable.
   for (const id of ['general', 'editor', 'attachments', 'daily-notes', 'templates', 'github', 'ai', 'shortcuts', 'export', 'beta', 'about']) {
     await expect(page.getByTestId(`settings-cat-${id}`)).toBeVisible()
   }
@@ -56,9 +70,7 @@ test('beta panel renders + master toggle reveals flag list (b3t1)', async ({ pag
   await openSettings(page)
   await page.getByTestId('settings-cat-beta').click()
   await expect(page.getByTestId('settings-beta-panel')).toBeVisible()
-  // Flag list should NOT be visible until the master toggle is on.
   await expect(page.getByText('Database / table view')).toHaveCount(0)
-  // Flip the master toggle.
   const masterToggle = page.locator('[data-testid="settings-beta-panel"] input[type="checkbox"]').first()
   await masterToggle.click()
   await expect(page.getByText('Database / table view')).toBeVisible()
@@ -69,7 +81,6 @@ test('beta panel renders + master toggle reveals flag list (b3t1)', async ({ pag
 test('command palette has "Open this week" entry (p4n5)', async ({ page }) => {
   await page.goto('/')
   await page.keyboard.press('Control+Shift+P')
-  // Type to filter the palette.
   await page.keyboard.type('this week')
   await expect(page.getByText('Open this week')).toBeVisible()
 })
@@ -78,27 +89,13 @@ test('command palette has "Open this week" entry (p4n5)', async ({ page }) => {
 
 test('frontmatter panel renders when a note has --- block (a0p4)', async ({ page }) => {
   await page.goto('/')
-  // Bootstrap a note with frontmatter via the test-hooks window API.
-  await page.evaluate(() => {
-    const w = window as unknown as {
-      __noteser?: { addNote: (input: { title: string; content: string }) => { id: string }; openNote: (id: string) => void }
-    }
-    const note = w.__noteser?.addNote({ title: 'WithFM', content: '---\ntitle: Hello\ntags: [a, b]\n---\nbody' })
-    if (note && w.__noteser?.openNote) w.__noteser.openNote(note.id)
-  })
-  // Header is visible — the panel mounted.
+  await seedAndOpen(page, 'WithFM', '---\ntitle: Hello\ntags: [a, b]\n---\nbody')
   await expect(page.getByText(/^Properties \(\d+\)$/)).toBeVisible()
 })
 
-test('frontmatter panel shows "Add properties" affordance for a plain note (a0p4)', async ({ page }) => {
+test('frontmatter "Add properties" affordance for plain notes (a0p4)', async ({ page }) => {
   await page.goto('/')
-  await page.evaluate(() => {
-    const w = window as unknown as {
-      __noteser?: { addNote: (input: { title: string; content: string }) => { id: string }; openNote: (id: string) => void }
-    }
-    const note = w.__noteser?.addNote({ title: 'NoFM', content: 'just body' })
-    if (note && w.__noteser?.openNote) w.__noteser.openNote(note.id)
-  })
+  await seedAndOpen(page, 'NoFM', 'just body')
   await expect(page.getByTestId('frontmatter-add')).toBeVisible()
 })
 
@@ -106,41 +103,47 @@ test('frontmatter panel shows "Add properties" affordance for a plain note (a0p4
 
 test('![[Title]] embed renders as a blockquote in preview (z9o3)', async ({ page }) => {
   await page.goto('/')
+  // Seed Source first so Host can resolve it.
   await page.evaluate(() => {
-    const w = window as unknown as {
-      __noteser?: { addNote: (input: { title: string; content: string }) => { id: string }; openNote: (id: string) => void }
-    }
-    w.__noteser?.addNote({ title: 'Source', content: 'hello from embedded note' })
-    const host = w.__noteser?.addNote({ title: 'Host', content: 'Before\n![[Source]]\nAfter' })
-    if (host && w.__noteser?.openNote) w.__noteser.openNote(host.id)
+    const hooks = (window as unknown as {
+      __noteser_test: {
+        stores: {
+          noteStore: { getState(): { addNote: (i: { title: string; content: string }) => { id: string } } }
+          workspaceStore: { getState(): { openNote: (id: string, opt: { preview: boolean }) => void } }
+        }
+      }
+    }).__noteser_test
+    hooks.stores.noteStore.getState().addNote({ title: 'Source', content: 'hello from embedded note' })
+    const host = hooks.stores.noteStore.getState().addNote({ title: 'Host', content: 'Before\n![[Source]]\nAfter' })
+    hooks.stores.workspaceStore.getState().openNote(host.id, { preview: false })
   })
-  // Switch to rendered preview (Ctrl+E).
-  await page.keyboard.press('Control+E')
-  // The embed renders the source title as a header inside a blockquote.
+  await page.keyboard.press('Control+e')
   await expect(page.getByText(/hello from embedded note/)).toBeVisible()
 })
 
 // ── b3e7 — ribbon order persistence ──────────────────────────────────────────
-// Drag-and-drop in Playwright is finicky for our wrapper-based handlers.
-// Verify the data layer instead: setRibbonOrder via the store and confirm
-// the DOM order updates.
 
 test('ribbon items follow the saved order (b3e7)', async ({ page }) => {
   await page.goto('/')
-  // First confirm default order has recent before tags.
+  // Wait for the ribbon to be mounted (the trash item is always present).
+  await expect(page.getByTestId('ribbon-item-trash')).toBeVisible()
   const beforeIds = await page.locator('[data-testid^="ribbon-item-"]').evaluateAll(
-    els => els.map(e => e.getAttribute('data-testid'))
+    els => els.map(e => e.getAttribute('data-testid')),
   )
   expect(beforeIds).toContain('ribbon-item-recent')
   expect(beforeIds).toContain('ribbon-item-tags')
 
-  // Reorder: put trash first.
+  // Reorder via the store action exposed by testHooks: put trash first.
   await page.evaluate(() => {
-    const w = window as unknown as { __noteser?: { setRibbonOrder?: (order: string[]) => void } }
-    w.__noteser?.setRibbonOrder?.(['trash', 'notes', 'recent', 'tags', 'backlinks', 'calendar', 'outline'])
+    const hooks = (window as unknown as {
+      __noteser_test: { stores: { settingsStore: { getState(): { setRibbonOrder: (order: string[]) => void } } } }
+    }).__noteser_test
+    hooks.stores.settingsStore.getState().setRibbonOrder([
+      'trash', 'notes', 'recent', 'tags', 'backlinks', 'calendar', 'outline',
+    ])
   })
-  const afterIds = await page.locator('[data-testid^="ribbon-item-"]').evaluateAll(
-    els => els.map(e => e.getAttribute('data-testid'))
+
+  await expect(page.locator('[data-testid^="ribbon-item-"]').first()).toHaveAttribute(
+    'data-testid', 'ribbon-item-trash',
   )
-  expect(afterIds[0]).toBe('ribbon-item-trash')
 })
