@@ -96,6 +96,32 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     }
   }, [hydrated])
 
+  // ── Multi-select (Ctrl/Cmd+Click toggle, Shift+Click range) ──────────────
+  // Local state — bulk operations are a per-session intent, no reason to
+  // persist. The last clicked id anchors the next Shift+Click's range.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const lastClickedIdRef = useRef<string | null>(null)
+  const isSelected = (id: string) => selectedIds.has(id)
+  const clearSelection = () => setSelectedIds(new Set())
+
+  // Bulk delete with optional confirm. Setting is in Settings → General.
+  const confirmBulkDelete = useSettingsStore(s => s.confirmBulkDelete)
+  const deleteSelected = () => {
+    const ids = Array.from(selectedIds)
+    if (ids.length === 0) return
+    const verb = useSettingsStore.getState().trashMode === 'hardDelete'
+      ? 'permanently delete'
+      : 'move to trash'
+    if (confirmBulkDelete) {
+      const ok = window.confirm(
+        `${verb[0].toUpperCase() + verb.slice(1)} ${ids.length} note${ids.length === 1 ? '' : 's'}?`,
+      )
+      if (!ok) return
+    }
+    useNoteStore.getState().deleteNotes(ids)
+    clearSelection()
+  }
+
   // ── Single vs double click on a note ────────────────────────────────────
   // Single click = open as preview (italic, replaceable). Double click =
   // open as pinned. We delay the single-click handler so a quick second
@@ -105,8 +131,40 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   // also call revealNote so the user sees where the note lives. Reveal
   // switches the current view to 'notes' as a side-effect.
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const handleNoteClick = (id: string) => {
+  const handleNoteClick = (id: string, e?: React.MouseEvent) => {
     const fromNonTreeView = currentView !== 'notes' && currentView !== 'trash'
+
+    // ── Multi-select branches ─────────────────────────────────────────────
+    // Ctrl/Cmd+Click toggles the row in the selection set.
+    if (e && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+      setSelectedIds(prev => {
+        const next = new Set(prev)
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+        return next
+      })
+      lastClickedIdRef.current = id
+      return
+    }
+    // Shift+Click selects a contiguous range from the last-clicked row
+    // through this row, in flattenedRows order. Includes both ends.
+    if (e && e.shiftKey && lastClickedIdRef.current) {
+      const anchor = lastClickedIdRef.current
+      const order = flattenedRows.filter(r => r.kind === 'note').map(r => r.id)
+      const i1 = order.indexOf(anchor)
+      const i2 = order.indexOf(id)
+      if (i1 !== -1 && i2 !== -1) {
+        const [lo, hi] = i1 <= i2 ? [i1, i2] : [i2, i1]
+        const range = new Set(order.slice(lo, hi + 1))
+        setSelectedIds(range)
+      }
+      return
+    }
+
+    // Plain click: clear the selection (so the user knows multi-mode ended)
+    // + open the note as preview after the double-click guard.
+    if (selectedIds.size > 0) clearSelection()
+    lastClickedIdRef.current = id
     if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
     clickTimerRef.current = setTimeout(() => {
       openNote(id, { preview: true })
@@ -320,6 +378,23 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
         toggleFolderExpanded(currentRow.id)
         return
       }
+      case 'Delete':
+      case 'Backspace': {
+        // Bulk-delete trigger when there's a multi-select active.
+        if (selectedIds.size === 0) return
+        e.preventDefault()
+        deleteSelected()
+        return
+      }
+      case 'Escape': {
+        // Clear multi-select on Escape. Doesn't preventDefault when there
+        // was nothing selected — Escape might still need to close a modal
+        // via the global keyboard hook.
+        if (selectedIds.size === 0) return
+        e.preventDefault()
+        clearSelection()
+        return
+      }
       default: {
         // Find-as-you-type: single printable letter, no modifiers.
         if (
@@ -335,6 +410,10 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
         }
       }
     }
+    // selectedIds + deleteSelected are read directly; including them in
+    // deps would re-bind the handler on every selection change which is
+    // wasted work — both close over fresh refs via state/ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flattenedRows, focusedRow, expandedFolders, toggleFolderExpanded, openNote, moveFocusToIndex])
 
   // Initialise the focused row when the tree first gains focus and nothing
@@ -388,15 +467,17 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   // Render note item
   const NoteItem = ({ note, className = '' }: { note: typeof notes[0]; className?: string }) => {
     const kbFocused = isRowFocused('note', note.id)
+    const multiSelected = isSelected(note.id)
     return (
       <div
         className={`obsidian-file-item ${
-          selectedNoteId === note.id ? 'bg-obsidianHighlight' : ''
+          multiSelected ? 'bg-obsidianAccentPurple/25 border-l-2 border-obsidianAccentPurple -ml-[2px] pl-[10px]' :
+            selectedNoteId === note.id ? 'bg-obsidianHighlight' : ''
         } ${kbFocused ? 'ring-1 ring-inset ring-obsidianAccentPurple' : ''} ${className}`}
-        draggable={currentView !== 'trash'}
+        draggable={currentView !== 'trash' && !multiSelected}
         onDragStart={e => beginNoteDrag(e, note.id)}
         onDragEnd={endDrag}
-        onClick={() => handleNoteClick(note.id)}
+        onClick={(e) => handleNoteClick(note.id, e)}
         onDoubleClick={() => handleNoteDoubleClick(note.id)}
         onContextMenu={e => onRightClick(e, 'note', note.id)}
         tabIndex={-1}
@@ -679,6 +760,32 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
       onKeyDown={handleTreeKeyDown}
       onFocus={handleTreeFocus}
     >
+      {selectedIds.size > 0 && (
+        <div
+          className="sticky top-0 z-10 mb-1 flex items-center gap-2 px-2 py-1.5 bg-obsidianAccentPurple/15 border border-obsidianAccentPurple/40 rounded text-xs"
+          data-testid="multiselect-bar"
+        >
+          <span className="text-obsidianAccentPurple font-medium">
+            {selectedIds.size} selected
+          </span>
+          <button
+            type="button"
+            onClick={() => deleteSelected()}
+            className="ml-auto px-2 py-0.5 rounded bg-red-500/15 text-red-400 hover:bg-red-500/25"
+            data-testid="multiselect-delete"
+            title="Delete selected (Del / Backspace)"
+          >
+            Delete
+          </button>
+          <button
+            type="button"
+            onClick={clearSelection}
+            className="px-2 py-0.5 rounded text-obsidianSecondaryText hover:text-obsidianText"
+          >
+            Clear
+          </button>
+        </div>
+      )}
       {visibleRootFolders.map(folder => (
         <FolderItem key={folder.id} folder={folder} />
       ))}

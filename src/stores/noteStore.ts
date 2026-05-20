@@ -20,6 +20,9 @@ interface NoteState {
   addNote: (note?: Partial<Note>) => Note
   updateNote: (id: string, updates: Partial<Note>) => void
   deleteNote: (id: string) => void
+  /** Bulk delete — single setState write. Same trash-mode rules as
+   *  deleteNote (soft by default, hard when settings say so). */
+  deleteNotes: (ids: string[]) => void
   permanentlyDeleteNote: (id: string) => void
   restoreNote: (id: string) => void
   selectNote: (id: string | null) => void
@@ -95,6 +98,30 @@ export const useNoteStore = create<NoteState>()(
           notes: softDelete(state.notes, id),
           selectedNoteId: state.selectedNoteId === id ? null : state.selectedNoteId,
         }))
+      },
+
+      // Bulk delete — single set() so we don't hit the same O(N²) IDB
+      // write storm that bit applyNonConflicts before its batched fix.
+      // Same trash-mode rules as deleteNote.
+      deleteNotes: (ids) => {
+        if (ids.length === 0) return
+        const idSet = new Set(ids)
+        const trashMode = useSettingsStore.getState().trashMode
+        const now = Date.now()
+        set(state => {
+          let notes = state.notes
+          if (trashMode === 'hardDelete') {
+            notes = notes.filter(n => !idSet.has(n.id))
+          } else {
+            notes = notes.map(n => idSet.has(n.id)
+              ? { ...n, isDeleted: true, deletedAt: now }
+              : n)
+          }
+          const selectedNoteId = state.selectedNoteId != null && idSet.has(state.selectedNoteId)
+            ? null
+            : state.selectedNoteId
+          return { notes, selectedNoteId }
+        })
       },
 
       permanentlyDeleteNote: (id) => {
