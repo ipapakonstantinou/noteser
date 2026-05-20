@@ -75,6 +75,14 @@ export interface SettingsState {
   // common case.
   aiModel: string
 
+  // ── Ribbon ─────────────────────────────────────────────────────────────
+  // User-defined order of sidebar ribbon items by id (`notes`, `recent`,
+  // `calendar`, …). Items missing from this list fall back to the source
+  // order in Ribbon.tsx — new items appended in a release auto-show up at
+  // the end of the user's customised list without overwriting their order.
+  // Empty array = default order.
+  ribbonOrder: string[]
+
   // ── Beta features ──────────────────────────────────────────────────────
   // Master switch. When false, every named flag in `betaFlags` is treated
   // as off regardless of its stored value. UI: a single toggle in Settings
@@ -121,6 +129,7 @@ export interface SettingsState {
   setTrashMode: (mode: TrashMode) => void
   setBetaEnabled: (value: boolean) => void
   setBetaFlag: (id: string, value: boolean) => void
+  setRibbonOrder: (order: string[]) => void
   reset: () => void
 }
 
@@ -146,6 +155,7 @@ const DEFAULTS = {
   trashMode: 'trash' as TrashMode,
   betaEnabled: false,
   betaFlags: {} as Record<string, boolean>,
+  ribbonOrder: [] as string[],
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -185,6 +195,7 @@ export const useSettingsStore = create<SettingsState>()(
       setBetaEnabled: (betaEnabled) => set({ betaEnabled }),
       setBetaFlag: (id, value) =>
         set((state) => ({ betaFlags: { ...state.betaFlags, [id]: value } })),
+      setRibbonOrder: (ribbonOrder) => set({ ribbonOrder }),
       reset: () => set(DEFAULTS),
     }),
     { name: STORAGE_KEYS.settings }

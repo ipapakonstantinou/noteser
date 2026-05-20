@@ -114,11 +114,11 @@
     {
       "id": "20260519T095122-b3e7",
       "brief": "Relocatable sidebar views — user should be able to reorder the ribbon items (Notes, Calendar, Tags, Bookmarks, Trash, etc.) so e.g. Calendar can be moved up/down. Likely drag-to-reorder on the Ribbon, persisted in useSettingsStore or useUIStore.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T09:51:22Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-20T05:50:00Z",
+      "completed_at": "2026-05-20T06:00:00Z",
+      "result": "Shipped: data-driven Ribbon (ITEMS array), drag-to-reorder with before/after drop zones, ribbonOrder persisted in settingsStore. resolveRibbonOrder() merges saved order with source order (drops unknowns, appends new). 5 new tests for the merger. UI dragging shows the dragged row at 40% opacity + purple drop indicator on the target.",
       "error": null,
       "source": "telegram"
     },
@@ -367,11 +367,11 @@
     {
       "id": "20260519T155859-o7i2",
       "brief": "Tasks improvements (Obsidian Tasks plugin parity). Current TaskQueryBlock supports: not done / done / path / tag / group by (filename, folder, status, tag). Want to extend: scheduled/due/done date filters, recurring tasks, more group-by options (priority, scheduled), priority markers (⏫🔺), per-task ✅ date stamping (done), per-task scheduled/due dates inline (📅, ⏳), maybe a sortBy. Reference: user screenshot 2026-05-19 showing Obsidian's tasks output. Pair with the existing TaskQueryBlock rather than replace.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-19T15:58:59Z",
       "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "completed_at": "2026-05-20T05:50:00Z",
+      "result": "Subsumed by v5h7 (task metadata) + d3s7 (extended query) + x7m1 (recurring tasks). All queried capabilities shipped.",
       "error": null,
       "source": "telegram"
     },
