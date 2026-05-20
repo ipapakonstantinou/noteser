@@ -139,10 +139,17 @@ export const SidebarStack = ({ onRightClick }: Props) => {
             title={def.title}
             icon={<Icon className="w-3.5 h-3.5" />}
             draggablePanelId={id}
+            // The Calendar panel renders without a section header —
+            // the user explicitly asked for it to look like the file
+            // tree below (no chevron + "CALENDAR" bar). Other panels
+            // keep the standard header so they're still discoverable
+            // when stacked.
+            hideHeader={id === 'calendar'}
             onHeaderContextMenu={e => {
-              // Right-click on a pinned section header unpins it
-              // back into the tab strip. Pairs with the right-click-
-              // to-pin gesture on the tab icons below.
+              // Right-click on a pinned section header (or content
+              // body, when the header is hidden) unpins it back into
+              // the tab strip. Pairs with the right-click-to-pin
+              // gesture on the tab icons below.
               e.preventDefault()
               unpinPanel(id)
             }}
