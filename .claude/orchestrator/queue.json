@@ -841,7 +841,9 @@
     {
       "id": "20260520T190000-shr2",
       "brief": "Share without account v2 — burn-after-read / expiry / view count on the existing /share URL flow. Today's /share embeds the entire note in the URL fragment so anyone with the link can read; need: (1) optional expiry timestamp in the encoded payload that the share page enforces, (2) optional 'destroy after first view' flag that flips a local key in the recipient browser, (3) a recipient-side view counter so the sender can see (in the originating browser, since there's no backend) that the link was opened. Plus: a Settings → Share group exposing default expiry / burn settings.",
-      "status": "pending",
+      "status": "done",
+      "completed_at": "2026-05-20T20:00:00Z",
+      "result": "Shipped (1) + (2). Payload bumped to v2 with optional expiresAt + burn fields; v1 stays decodable for backward compat. /share page enforces expiry (refuses to render past expiresAt) and burn (localStorage tombstone keyed on FNV-1a of the fragment so re-visits refuse). Settings → General → Sharing group: default-expiry-days + default-burn. (3) view counter skipped — without a backend the sender can't see the recipient's view; documented as a TODO if a hosted shortener ever ships. 8 new tests + 1 updated for the v: 2 default.",
       "created_at": "2026-05-20T19:00:00Z",
       "started_at": null,
       "completed_at": null,
@@ -863,11 +865,11 @@
     {
       "id": "20260520T190200-gi9n-ui",
       "brief": "gi9n Settings UI — Settings → Sync gets a section that shows the resolved .gitignore (read from remote on demand) and lets the user edit it via a textarea. Save uploads a new blob + tree on the next sync. Locally there's an OPTIONAL '.noteser/ignore.local' overlay (combined with the remote .gitignore at match time) for per-device extras. Default lines (.DS_Store, Thumbs.db, *.tmp, *.swp) shown as placeholder when no file exists.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-20T19:02:00Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-20T19:02:00Z",
+      "completed_at": "2026-05-20T19:30:00Z",
+      "result": "Shipped in 22e1f2f. Per-device 'Local ignore patterns' textarea (settingsStore.localGitignoreOverlay). Pull + push combine it with the remote .gitignore + the OS-junk defaults at compile time. Remote-file in-app editor deferred to a follow-up — users still round-trip through GitHub for the shared file.",
       "error": null,
       "source": "terminal"
     },

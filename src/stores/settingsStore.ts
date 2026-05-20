@@ -157,6 +157,15 @@ export interface SettingsState {
   // re-uploading the file).
   vaultSettingsLastPushedHash: string
 
+  // ── Share defaults (shr2) ──────────────────────────────────────────────
+  // Default expiry (days) baked into newly-generated /share URLs.
+  // 0 means "no expiry" — the current legacy default. Per-device.
+  shareDefaultExpiryDays: number
+  // Default for the burn-after-read flag on newly-generated /share
+  // URLs. When true, the recipient browser flips a localStorage key
+  // on first successful decode and refuses to re-render on a revisit.
+  shareDefaultBurn: boolean
+
   // ── Vault .gitignore overlay (gi9n) ────────────────────────────────────
   // Per-DEVICE extra gitignore patterns combined with the vault's remote
   // `.gitignore` at sync time. Lets users add a few personal ignores
@@ -197,6 +206,8 @@ export interface SettingsState {
   setSettingsFolderPath: (path: string) => void
   setVaultSettingsLastPushedHash: (hash: string) => void
   setLocalGitignoreOverlay: (text: string) => void
+  setShareDefaultExpiryDays: (days: number) => void
+  setShareDefaultBurn: (value: boolean) => void
   // Applies a remote vault-settings payload received via sync. Sets the
   // fields AND moves vaultSettingsUpdatedAt to the remote timestamp +
   // refreshes lastPushedHash so the next push doesn't think this is a
@@ -271,6 +282,8 @@ const DEFAULTS = {
   vaultSettingsUpdatedAt: 0,
   vaultSettingsLastPushedHash: '',
   localGitignoreOverlay: '',
+  shareDefaultExpiryDays: 0,
+  shareDefaultBurn: false,
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -328,6 +341,8 @@ export const useSettingsStore = create<SettingsState>()(
         setSettingsFolderPath: (path) => set({ settingsFolderPath: path }),
         setVaultSettingsLastPushedHash: (hash) => set({ vaultSettingsLastPushedHash: hash }),
         setLocalGitignoreOverlay: (localGitignoreOverlay) => set({ localGitignoreOverlay }),
+        setShareDefaultExpiryDays: (shareDefaultExpiryDays) => set({ shareDefaultExpiryDays }),
+        setShareDefaultBurn: (shareDefaultBurn) => set({ shareDefaultBurn }),
         applyRemoteVaultSettings: (fields, remoteUpdatedAt, remoteHash) => {
           set({
             ...fields,

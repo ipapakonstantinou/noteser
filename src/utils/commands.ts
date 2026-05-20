@@ -120,14 +120,27 @@ export function getAllCommands(): Command[] {
         const note = useNoteStore.getState().notes.find(n => n.id === activeNoteId)
         if (!note) return
         const { encodeShareLink, estimateShareLinkSize } = await import('@/utils/shareLink')
-        const url = encodeShareLink(note.title || 'Untitled', note.content ?? '')
+        // Use Settings → Share defaults (shr2). expiryDays=0 + burn=false
+        // matches the legacy "infinite, no honor-system check" behaviour.
+        const s = useSettingsStore.getState()
+        const url = encodeShareLink(note.title || 'Untitled', note.content ?? '', {
+          expiryDays: s.shareDefaultExpiryDays || 0,
+          burn: s.shareDefaultBurn || false,
+        })
         const sz = estimateShareLinkSize(note.title || '', note.content ?? '')
         if (sz > 8000 && !window.confirm(
           `This share URL will be roughly ${(sz / 1024).toFixed(1)} KB — some email clients and chat apps truncate long URLs. Copy anyway?`,
         )) return
+        // Surface the active options so the sender knows what they
+        // generated. Only mention them when the user has actually
+        // enabled one — vanilla shares stay quiet.
+        const bits: string[] = []
+        if (s.shareDefaultExpiryDays > 0) bits.push(`expires in ${s.shareDefaultExpiryDays}d`)
+        if (s.shareDefaultBurn) bits.push('burns after first view')
+        const tail = bits.length ? `\n\nOptions: ${bits.join(', ')}.` : ''
         try {
           await navigator.clipboard.writeText(url)
-          alert('Share link copied to clipboard. The URL itself contains the note — anyone with the link can read it.')
+          alert(`Share link copied to clipboard. The URL itself contains the note — anyone with the link can read it.${tail}`)
         } catch {
           window.prompt('Copy this share link:', url)
         }
