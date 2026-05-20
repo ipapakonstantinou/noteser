@@ -1,5 +1,6 @@
 'use client'
 
+import { useMemo, useRef, useState } from 'react'
 import {
   MagnifyingGlassIcon,
   DocumentDuplicateIcon,
@@ -12,25 +13,84 @@ import {
   ListBulletIcon,
   LinkIcon,
 } from '@heroicons/react/24/outline'
-import { useUIStore, useNoteStore, useGitHubStore, useWorkspaceStore } from '@/stores'
+import { useUIStore, useNoteStore, useGitHubStore, useWorkspaceStore, useSettingsStore } from '@/stores'
 import { useHydration } from '@/hooks'
 
 // Obsidian-style far-left ribbon. Always visible. Holds Search + nav icons
 // (All Notes, Recent, Tags, Trash, Calendar) plus a Settings gear pinned
 // to the bottom. Clicking a nav icon switches the sidebar's content area
 // to that view.
+//
+// The nav items are user-reorderable via drag-and-drop. Order persists in
+// `useSettingsStore.ribbonOrder`. Items not yet in the saved order (e.g.
+// when a future release adds a new nav target) are appended at the end so
+// new features don't get hidden by an old saved order.
+
+type ItemView =
+  | 'notes' | 'recent' | 'tags' | 'backlinks' | 'calendar' | 'outline' | 'trash' | 'github'
+
+interface ItemDef {
+  id: ItemView
+  Icon: typeof DocumentDuplicateIcon
+  title: (ctx: BadgeCtx) => string
+  badgeRed?: (ctx: BadgeCtx) => boolean
+  /** If false, the item is hidden entirely (e.g. GitHub before connect). */
+  visible?: (ctx: BadgeCtx) => boolean
+}
+
+interface BadgeCtx {
+  recentCount: number
+  trashCount: number
+  conflictCount: number
+  githubConnected: boolean
+}
+
+const ITEMS: readonly ItemDef[] = [
+  { id: 'notes',     Icon: DocumentDuplicateIcon, title: () => 'All notes' },
+  { id: 'recent',    Icon: ClockIcon, title: c => `Recent${c.recentCount ? ` (${c.recentCount})` : ''}` },
+  { id: 'tags',      Icon: TagIcon, title: () => 'Tags' },
+  { id: 'backlinks', Icon: LinkIcon, title: () => 'Backlinks' },
+  { id: 'calendar',  Icon: CalendarDaysIcon, title: () => 'Calendar' },
+  { id: 'outline',   Icon: ListBulletIcon, title: () => 'Outline' },
+  { id: 'trash',     Icon: TrashIcon, title: c => `Trash${c.trashCount ? ` (${c.trashCount})` : ''}` },
+  {
+    id: 'github',
+    Icon: CloudArrowUpIcon,
+    title: c => `GitHub${c.conflictCount ? ` — ${c.conflictCount} conflict${c.conflictCount === 1 ? '' : 's'}` : ''}`,
+    badgeRed: c => c.conflictCount > 0,
+    visible: c => c.githubConnected,
+  },
+]
+
+// Merge the user's saved order with the source order, dropping ids that
+// no longer exist and appending any new ids. Pure function — easy to test.
+export function resolveRibbonOrder(saved: string[]): ItemView[] {
+  const known = new Set(ITEMS.map(i => i.id))
+  const seen = new Set<string>()
+  const out: ItemView[] = []
+  for (const id of saved) {
+    if (known.has(id as ItemView) && !seen.has(id)) {
+      seen.add(id)
+      out.push(id as ItemView)
+    }
+  }
+  for (const item of ITEMS) {
+    if (!seen.has(item.id)) out.push(item.id)
+  }
+  return out
+}
+
+const RIBBON_DRAG_MIME = 'application/x-noteser-ribbon-item'
+
 export const Ribbon = () => {
   const { openSearch, currentView, setCurrentView, openModal } = useUIStore()
   const { getDeletedNotes, getRecentNotes } = useNoteStore()
+  const ribbonOrder = useSettingsStore(s => s.ribbonOrder)
+  const setRibbonOrder = useSettingsStore(s => s.setRibbonOrder)
   const hydrated = useHydration()
 
-  // Counts come from the persisted noteStore which is only populated on the
-  // client. Suppress them on the server pass so the SSR'd title attribute
-  // matches the first client render — once hydrated, the badge shows.
   const trashCount = hydrated ? getDeletedNotes().length : 0
   const recentCount = hydrated ? getRecentNotes(99).length : 0
-  // GitHub conflict count drives the badge on the GitHub nav icon. Same
-  // hydration dance: the workspace store is persisted, so SSR sees zero.
   const conflictCount = useWorkspaceStore(s => {
     if (!hydrated) return 0
     let n = 0
@@ -39,78 +99,110 @@ export const Ribbon = () => {
   })
   const githubConnected = useGitHubStore(s => hydrated && !!s.token)
 
+  const ctx: BadgeCtx = { recentCount, trashCount, conflictCount, githubConnected }
+
+  const orderedIds = useMemo(() => resolveRibbonOrder(ribbonOrder), [ribbonOrder])
+  const orderedItems = useMemo(() => {
+    const byId = new Map(ITEMS.map(i => [i.id, i]))
+    return orderedIds
+      .map(id => byId.get(id))
+      .filter((i): i is ItemDef => Boolean(i))
+      .filter(item => item.visible == null || item.visible(ctx))
+  }, [orderedIds, ctx])
+
+  const [draggingId, setDraggingId] = useState<ItemView | null>(null)
+  const [dropTargetId, setDropTargetId] = useState<ItemView | null>(null)
+  const dropPos = useRef<'before' | 'after'>('before')
+
+  const handleDragStart = (id: ItemView) => (e: React.DragEvent) => {
+    e.dataTransfer.setData(RIBBON_DRAG_MIME, id)
+    e.dataTransfer.effectAllowed = 'move'
+    setDraggingId(id)
+  }
+
+  const handleDragOver = (id: ItemView) => (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes(RIBBON_DRAG_MIME)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    // Halfway-point detection: top half = drop ABOVE this item; bottom = below.
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    dropPos.current = (e.clientY - rect.top) < rect.height / 2 ? 'before' : 'after'
+    setDropTargetId(id)
+  }
+
+  const handleDragLeave = () => {
+    setDropTargetId(null)
+  }
+
+  const handleDrop = (targetId: ItemView) => (e: React.DragEvent) => {
+    const droppedId = e.dataTransfer.getData(RIBBON_DRAG_MIME) as ItemView
+    if (!droppedId || droppedId === targetId) {
+      setDraggingId(null); setDropTargetId(null); return
+    }
+    e.preventDefault()
+    // Recompute the next order: pull `droppedId` out, insert relative to target.
+    const next = orderedIds.filter(id => id !== droppedId)
+    const idx = next.indexOf(targetId)
+    if (idx === -1) {
+      next.push(droppedId)
+    } else {
+      next.splice(dropPos.current === 'before' ? idx : idx + 1, 0, droppedId)
+    }
+    setRibbonOrder(next)
+    setDraggingId(null); setDropTargetId(null)
+  }
+
+  const handleDragEnd = () => {
+    setDraggingId(null); setDropTargetId(null)
+  }
+
   return (
     <div className="h-full w-[44px] flex flex-col items-center gap-1 py-2 bg-obsidianBlack border-r border-obsidianBorder">
       <RibbonButton onClick={openSearch} title="Search (Ctrl+K)">
         <MagnifyingGlassIcon className="w-5 h-5" />
       </RibbonButton>
-      <RibbonNavButton
-        active={currentView === 'notes'}
-        onClick={() => setCurrentView('notes')}
-        title="All notes"
-      >
-        <DocumentDuplicateIcon className="w-5 h-5" />
-      </RibbonNavButton>
-      <RibbonNavButton
-        active={currentView === 'recent'}
-        onClick={() => setCurrentView('recent')}
-        title={`Recent${recentCount ? ` (${recentCount})` : ''}`}
-      >
-        <ClockIcon className="w-5 h-5" />
-      </RibbonNavButton>
-      <RibbonNavButton
-        active={currentView === 'tags'}
-        onClick={() => setCurrentView('tags')}
-        title="Tags"
-      >
-        <TagIcon className="w-5 h-5" />
-      </RibbonNavButton>
-      <RibbonNavButton
-        active={currentView === 'backlinks'}
-        onClick={() => setCurrentView('backlinks')}
-        title="Backlinks"
-      >
-        <LinkIcon className="w-5 h-5" />
-      </RibbonNavButton>
-      <RibbonNavButton
-        active={currentView === 'calendar'}
-        onClick={() => setCurrentView('calendar')}
-        title="Calendar"
-      >
-        <CalendarDaysIcon className="w-5 h-5" />
-      </RibbonNavButton>
-      <RibbonNavButton
-        active={currentView === 'outline'}
-        onClick={() => setCurrentView('outline')}
-        title="Outline"
-      >
-        <ListBulletIcon className="w-5 h-5" />
-      </RibbonNavButton>
-      <RibbonNavButton
-        active={currentView === 'trash'}
-        onClick={() => setCurrentView('trash')}
-        title={`Trash${trashCount ? ` (${trashCount})` : ''}`}
-      >
-        <TrashIcon className="w-5 h-5" />
-      </RibbonNavButton>
-      {/* GitHub — shown only after the user has connected. The badge
-          mirrors any pending merge-conflict tabs. */}
-      {githubConnected && (
-        <RibbonNavButton
-          active={currentView === 'github'}
-          onClick={() => setCurrentView('github')}
-          title={`GitHub${conflictCount ? ` — ${conflictCount} conflict${conflictCount === 1 ? '' : 's'}` : ''}`}
-        >
-          <div className="relative">
-            <CloudArrowUpIcon className="w-5 h-5" />
-            {conflictCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500" />
-            )}
-          </div>
-        </RibbonNavButton>
-      )}
 
-      {/* Settings — pinned to the bottom of the ribbon. */}
+      {orderedItems.map(item => {
+        const active = currentView === item.id
+        const dragging = draggingId === item.id
+        const isDropTarget = dropTargetId === item.id
+        const Icon = item.Icon
+        const badgeRed = item.badgeRed?.(ctx) ?? false
+        return (
+          <div
+            key={item.id}
+            data-testid={`ribbon-item-${item.id}`}
+            draggable
+            onDragStart={handleDragStart(item.id)}
+            onDragOver={handleDragOver(item.id)}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop(item.id)}
+            onDragEnd={handleDragEnd}
+            className={[
+              'relative',
+              dragging ? 'opacity-40' : '',
+              isDropTarget && dropPos.current === 'before' ? 'border-t-2 border-obsidianAccentPurple -mt-[2px]' : '',
+              isDropTarget && dropPos.current === 'after'  ? 'border-b-2 border-obsidianAccentPurple -mb-[2px]' : '',
+            ].join(' ')}
+          >
+            <RibbonNavButton
+              active={active}
+              onClick={() => setCurrentView(item.id)}
+              title={item.title(ctx)}
+            >
+              {badgeRed ? (
+                <div className="relative">
+                  <Icon className="w-5 h-5" />
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500" />
+                </div>
+              ) : (
+                <Icon className="w-5 h-5" />
+              )}
+            </RibbonNavButton>
+          </div>
+        )
+      })}
+
       <div className="mt-auto">
         <RibbonButton onClick={() => openModal({ type: 'settings' })} title="Settings">
           <Cog6ToothIcon className="w-5 h-5" />

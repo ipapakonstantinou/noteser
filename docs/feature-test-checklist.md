@@ -136,6 +136,14 @@ ship date. Last updated 2026-05-20.
 - [ ] Diagnostics dump never contains the OAuth token, AI key, or any `*secret*` field
 - [ ] Closing the modal resets the form
 
+## Ribbon (b3e7)
+
+- [ ] **Drag a ribbon icon up or down** to reorder
+- [ ] Drop indicator (purple line) shows above/below the target
+- [ ] Order survives reload (persisted in `settingsStore.ribbonOrder`)
+- [ ] Adding a new ribbon item in a release auto-appears at the end of the user's customised list (doesn't reset their order)
+- [ ] GitHub icon still hides when not connected (visibility check)
+
 ## Note embeds (z9o3)
 
 - [ ] `![[Title]]` in rendered preview shows the referenced note's content as a blockquote
