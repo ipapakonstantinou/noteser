@@ -244,6 +244,8 @@ function GitHubPanel() {
   const autoSyncIntervalMinutes = useSettingsStore(s => s.autoSyncIntervalMinutes)
   const setAutoSyncOnStart = useSettingsStore(s => s.setAutoSyncOnStart)
   const setAutoSyncIntervalMinutes = useSettingsStore(s => s.setAutoSyncIntervalMinutes)
+  const settingsFolderPath = useSettingsStore(s => s.settingsFolderPath)
+  const setSettingsFolderPath = useSettingsStore(s => s.setSettingsFolderPath)
 
   return (
     <div className="space-y-4">
@@ -279,6 +281,18 @@ function GitHubPanel() {
           />
           <span className="text-sm text-obsidianMuted">min</span>
         </div>
+      </Field>
+      <Field
+        label="Settings folder"
+        description="Repo path that holds settings.json. Different paths on different devices keep their settings independent. Empty disables settings sync."
+      >
+        <SettingsTextInput
+          value={settingsFolderPath}
+          onCommit={setSettingsFolderPath}
+          normalize={(raw) => raw.trim().replace(/^\/+|\/+$/g, '')}
+          placeholder=".noteser"
+          mono
+        />
       </Field>
     </div>
   )
