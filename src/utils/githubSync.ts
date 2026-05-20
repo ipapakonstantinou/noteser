@@ -229,6 +229,19 @@ export type PullClassification =
   // have locally. Materialise it as an empty Folder so the sidebar reflects
   // the repo's structure — surfaces `.obsidian/` and similar dotfile dirs.
   | { kind: 'folderCreated'; path: string }
+  // Vault settings file (vs8x) at `${settingsFolderPath}/settings.json`.
+  // The apply step compares remoteUpdatedAt to the local store's
+  // vaultSettingsUpdatedAt; if remote is newer it overwrites the local
+  // vault-tagged keys. Includes the raw hash so apply can update
+  // lastPushedHash atomically.
+  | {
+      kind: 'vaultSettingsUpdated'
+      path: string
+      remoteSha: string
+      remoteUpdatedAt: number
+      remoteVault: Record<string, unknown>
+      remoteHash: string
+    }
 
 export interface PullOutcome {
   classifications: PullClassification[]
@@ -245,9 +258,17 @@ export async function pullFromGitHub(input: {
   // matching one of these, OR nested inside one of these, so
   // hidden/system folders the user removed don't auto-re-derive.
   excludedFolderPaths?: string[]
+  // Vault settings file path (vs8x). When set, the pull looks for this
+  // path in the remote tree and emits a `vaultSettingsUpdated`
+  // classification if the remote's embedded updatedAt is newer than
+  // localVaultUpdatedAt. Pass null / undefined to skip settings pull.
+  vaultSettingsPath?: string | null
+  vaultSettingsLocalUpdatedAt?: number
 }): Promise<PullOutcome> {
   const { token, repo, notes } = input
   const excluded = input.excludedFolderPaths ?? []
+  const vaultSettingsPath = input.vaultSettingsPath ?? null
+  const vaultSettingsLocalUpdatedAt = input.vaultSettingsLocalUpdatedAt ?? 0
   const { owner, name, branch } = repo
 
   const headSha = await getBranchRefSha(token, owner, name, branch)
@@ -401,6 +422,36 @@ export async function pullFromGitHub(input: {
       if (localFolderPaths.has(cur)) continue
       if (isExcluded(cur)) continue
       out.push({ kind: 'folderCreated', path: cur })
+    }
+  }
+
+  // 1d. Vault settings file (vs8x). If the caller is opting in
+  // (vaultSettingsPath set) and the remote has the file, fetch it,
+  // parse, and emit a classification iff its embedded updatedAt is
+  // strictly newer than ours. Equal or older → skip (LWW with us as
+  // the tiebreaker so a clean re-push doesn't clobber a slightly
+  // newer local edit).
+  if (vaultSettingsPath) {
+    const remoteSettingsSha = remoteTree.get(vaultSettingsPath)
+    if (remoteSettingsSha) {
+      try {
+        const raw = await getBlobContent(token, owner, name, remoteSettingsSha)
+        const { parseVaultSettings, vaultSettingsHash } = await import('./vaultSettings')
+        const parsed = parseVaultSettings(raw)
+        if (parsed && parsed.updatedAt > vaultSettingsLocalUpdatedAt) {
+          out.push({
+            kind: 'vaultSettingsUpdated',
+            path: vaultSettingsPath,
+            remoteSha: remoteSettingsSha,
+            remoteUpdatedAt: parsed.updatedAt,
+            remoteVault: parsed.vault as Record<string, unknown>,
+            remoteHash: vaultSettingsHash(raw),
+          })
+        }
+      } catch {
+        // Bad JSON / network blip — skip rather than fail the entire
+        // pull. The settings file is a soft signal; notes still sync.
+      }
     }
   }
 
@@ -560,6 +611,17 @@ export interface SyncInput {
   // auto-generate "Sync from Noteser (N changes)". Used by the
   // obsidian-git-style commit-message box (vscg).
   commitMessage?: string
+  // Vault settings bundle (vs8x). Caller serializes the vault slice +
+  // hash + last-pushed-hash; we include the file in the push tree when
+  // either the hash changed locally or the file is missing remotely.
+  // Pass undefined to skip settings sync entirely (e.g. user cleared
+  // settingsFolderPath).
+  vaultSettings?: {
+    path: string
+    content: string
+    contentHash: string
+    lastPushedHash: string
+  }
 }
 
 export type GitPathUpdate = {
@@ -575,10 +637,14 @@ export interface SyncOutcome {
   // The caller applies these updates to the note store so each note remembers
   // where it lives in the repo (and which ones are no longer there).
   pathUpdates: GitPathUpdate[]
+  // Set when the vault settings file was included in the push (or was
+  // already up to date with `lastPushedHash`). Caller should persist
+  // this so subsequent pushes skip when content-equal.
+  vaultSettingsHashPushed?: string
 }
 
 export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
-  const { token, repo, notes, folders, commitMessage } = input
+  const { token, repo, notes, folders, commitMessage, vaultSettings } = input
   const { owner, name, branch } = repo
 
   // 1. Compute desired files for every active note.
@@ -653,6 +719,28 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     consumedTombstones.push(path)
   }
 
+  // 3d. Vault settings file (vs8x). Include it in the push tree when
+  // either (a) the local hash differs from the last pushed hash (the
+  // user changed something), or (b) the file is missing remotely (first
+  // push for this vault). Skip altogether if the caller didn't pass a
+  // vaultSettings bundle (settings sync disabled).
+  let vaultSettingsHashPushed: string | undefined
+  if (vaultSettings) {
+    const { path, content, contentHash, lastPushedHash } = vaultSettings
+    const remoteHasFile = remoteTree.has(path)
+    const localChanged = contentHash !== lastPushedHash
+    if (localChanged || !remoteHasFile) {
+      const blobSha = await createBlob(token, owner, name, content)
+      entries.push({ path, mode: '100644', type: 'blob', sha: blobSha })
+      if (remoteHasFile) updated++; else created++
+      vaultSettingsHashPushed = contentHash
+    } else {
+      // Already up to date on remote — surface the hash so the caller
+      // doesn't need to re-derive it.
+      vaultSettingsHashPushed = contentHash
+    }
+  }
+
   // 4. Handle deletions: notes that USED to have a gitPath but no longer
   // resolve there (rename or moved folder) and notes that are now in trash.
   const desiredPaths = new Set(desired.keys())
@@ -682,6 +770,7 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     return {
       result: { unchanged: true, created: 0, updated: 0, deleted: 0, commitSha: parentCommitSha, commitUrl: null },
       pathUpdates,
+      vaultSettingsHashPushed,
     }
   }
 
@@ -699,5 +788,6 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   return {
     result: { unchanged: false, created, updated, deleted, commitSha, commitUrl: html_url },
     pathUpdates,
+    vaultSettingsHashPushed,
   }
 }

@@ -1,5 +1,5 @@
 import { v4 as uuid } from 'uuid'
-import { useNoteStore, useFolderStore, useGitHubStore } from '@/stores'
+import { useNoteStore, useFolderStore, useGitHubStore, useSettingsStore } from '@/stores'
 import type { PullClassification } from './githubSync'
 import { parseNote, takeZipballAttachmentBytes } from './githubSync'
 import { putAttachmentAtPath } from './attachments'
@@ -72,6 +72,20 @@ export function applyNonConflicts(classifications: PullClassification[]): ApplyC
       // re-implement that here — folder creation is rare relative to
       // notes, and the folderStore set() already coalesces in practice.
       ensureFolderPath(c.path.split('/'))
+      continue
+    }
+
+    if (c.kind === 'vaultSettingsUpdated') {
+      // The store's applyRemoteVaultSettings handles whitelisting (only
+      // VAULT_SETTING_KEYS are accepted) so we can pass the parsed
+      // payload through directly. Hash + remoteUpdatedAt go in too so
+      // the next push knows we already have this version.
+      useSettingsStore.getState().applyRemoteVaultSettings(
+        c.remoteVault as Partial<ReturnType<typeof useSettingsStore.getState>>,
+        c.remoteUpdatedAt,
+        c.remoteHash,
+      )
+      counts.updated++
       continue
     }
 

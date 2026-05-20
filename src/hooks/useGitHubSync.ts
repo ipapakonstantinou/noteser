@@ -1,13 +1,19 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { useGitHubStore, useNoteStore, useFolderStore, useWorkspaceStore } from '@/stores'
+import { useGitHubStore, useNoteStore, useFolderStore, useSettingsStore, useWorkspaceStore } from '@/stores'
 import { syncToGitHub, pullFromGitHub, pullFromZipball } from '@/utils/githubSync'
 import type { PullClassification, SyncResult, GitPathUpdate } from '@/utils/githubSync'
 import { applyNonConflicts, applyAttachmentClassifications } from '@/utils/syncApply'
 import type { ApplyCounts, AttachmentApplyCounts } from '@/utils/syncApply'
 import type { ConflictTabData } from '@/stores/workspaceStore'
 import type { SyncRepo } from '@/types'
+import {
+  pickVaultSlice,
+  serializeVaultSettings,
+  vaultSettingsHash,
+  vaultSettingsRepoPath,
+} from '@/utils/vaultSettings'
 
 export type SyncState =
   | { kind: 'idle' }
@@ -39,12 +45,20 @@ async function runPull(token: string, repo: SyncRepo): Promise<PullClassificatio
   const localNotes = useNoteStore.getState().notes
   const localFolders = useFolderStore.getState().folders
   const excludedFolderPaths = useFolderStore.getState().deletedFolderPaths
+  const settings = useSettingsStore.getState()
+  const vaultSettingsPath = vaultSettingsRepoPath(settings.settingsFolderPath)
   const isFirstClone = !localNotes.some(n => !n.isDeleted)
     && !localFolders.some(f => !f.isDeleted)
 
   const { classifications } = isFirstClone
     ? await pullFromZipball({ token, repo })
-    : await pullFromGitHub({ token, repo, notes: localNotes, folders: localFolders, excludedFolderPaths })
+    : await pullFromGitHub({
+        token, repo,
+        notes: localNotes, folders: localFolders,
+        excludedFolderPaths,
+        vaultSettingsPath,
+        vaultSettingsLocalUpdatedAt: settings.vaultSettingsUpdatedAt,
+      })
 
   return classifications
 }
@@ -70,10 +84,33 @@ async function runPush(
   token: string,
   repo: SyncRepo,
   commitMessage?: string,
-): Promise<{ result: SyncResult; pathUpdates: GitPathUpdate[] }> {
+): Promise<{ result: SyncResult; pathUpdates: GitPathUpdate[]; vaultSettingsHashPushed?: string }> {
   const { notes } = useNoteStore.getState()
   const { folders } = useFolderStore.getState()
-  return syncToGitHub({ token, repo, notes, folders, commitMessage })
+  const settings = useSettingsStore.getState()
+  const vaultPath = vaultSettingsRepoPath(settings.settingsFolderPath)
+
+  // Build the vault settings bundle for the push. Skip when path is
+  // unset (settings sync disabled) — syncToGitHub then doesn't touch
+  // the file.
+  let vaultSettingsInput: Parameters<typeof syncToGitHub>[0]['vaultSettings']
+  if (vaultPath) {
+    const slice = pickVaultSlice(settings)
+    const content = serializeVaultSettings(slice, settings.vaultSettingsUpdatedAt || 0)
+    const contentHash = vaultSettingsHash(content)
+    vaultSettingsInput = {
+      path: vaultPath,
+      content,
+      contentHash,
+      lastPushedHash: settings.vaultSettingsLastPushedHash,
+    }
+  }
+
+  const outcome = await syncToGitHub({
+    token, repo, notes, folders, commitMessage,
+    vaultSettings: vaultSettingsInput,
+  })
+  return outcome
 }
 
 // Compose the human-readable status line shown in the sidebar's sync button.
@@ -189,7 +226,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
       }
 
       const { notes: pullCounts, attachments: attachCounts } = await runApply(classifications)
-      const { result, pathUpdates } = await runPush(activeToken, activeRepo, commitMessage)
+      const { result, pathUpdates, vaultSettingsHashPushed } = await runPush(activeToken, activeRepo, commitMessage)
 
       // Write the per-note gitPath / gitLastPushedSha back so the next pull
       // classifies us as `unchanged` instead of detecting a phantom remote
@@ -197,6 +234,11 @@ export function useGitHubSync(): UseGitHubSyncResult {
       const { updateNote } = useNoteStore.getState()
       for (const u of pathUpdates) {
         updateNote(u.noteId, { gitPath: u.gitPath, gitLastPushedSha: u.gitLastPushedSha })
+      }
+      // Remember the vault settings hash so the next push knows to skip
+      // when nothing has changed locally since.
+      if (vaultSettingsHashPushed) {
+        useSettingsStore.getState().setVaultSettingsLastPushedHash(vaultSettingsHashPushed)
       }
       recordSync(result.commitSha)
 

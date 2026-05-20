@@ -134,6 +134,22 @@ export interface SettingsState {
   // Empty object = pristine defaults.
   shortcutOverrides: Record<string, string>
 
+  // ── Vault settings sync (vs8x) ─────────────────────────────────────────
+  // Repo-relative path of the folder that holds the vault settings file.
+  // Default `.noteser` (analogous to Obsidian's `.obsidian/`). Per-DEVICE
+  // — letting different devices use different paths is the escape hatch
+  // from cross-device settings merge problems. Set to '' to disable
+  // settings sync entirely. Settings → Sync surfaces this field.
+  settingsFolderPath: string
+  // Wall-clock timestamp of the last local change to ANY vault-tagged
+  // setting. Used for LWW on pull. Bumped automatically by setVaultField
+  // — callers don't need to touch it.
+  vaultSettingsUpdatedAt: number
+  // Hash of the vault slice we last successfully pushed. Used to skip
+  // empty pushes (no settings changed since last sync = don't bother
+  // re-uploading the file).
+  vaultSettingsLastPushedHash: string
+
   setFolderSortMode: (mode: FolderSortMode) => void
   setTaskListDensity: (density: TaskListDensity) => void
   setShowHiddenFolders: (value: boolean) => void
@@ -162,8 +178,46 @@ export interface SettingsState {
   setSidebarTabOrder: (order: string[]) => void
   setPinnedPanels: (panels: string[]) => void
   setOnboardingShown: (value: boolean) => void
+  setSettingsFolderPath: (path: string) => void
+  setVaultSettingsLastPushedHash: (hash: string) => void
+  // Applies a remote vault-settings payload received via sync. Sets the
+  // fields AND moves vaultSettingsUpdatedAt to the remote timestamp +
+  // refreshes lastPushedHash so the next push doesn't think this is a
+  // local change.
+  applyRemoteVaultSettings: (
+    fields: Partial<SettingsState>,
+    remoteUpdatedAt: number,
+    remoteHash: string,
+  ) => void
   reset: () => void
 }
+
+// Single source of truth for which keys are synced via the vault
+// settings file. Keep small and concrete — security-sensitive keys
+// (AI API key) and device-shape keys (UI prefs, shortcuts, sync
+// cadence, onboarding) STAY OUT. Adding a key here means it'll start
+// round-tripping across every device that shares the same
+// settingsFolderPath, so think before adding.
+export const VAULT_SETTING_KEYS = [
+  'folderSortMode',
+  'taskListDensity',
+  'showHiddenFolders',
+  'attachmentsFolder',
+  'dailyNotesFolder',
+  'dailyNoteDateFormat',
+  'weeklyNotesFolder',
+  'weeklyNoteDateFormat',
+  'monthlyNotesFolder',
+  'monthlyNoteDateFormat',
+  'templatesFolder',
+  'dailyNoteTemplateId',
+  'trashMode',
+  'confirmBulkDelete',
+  'betaEnabled',
+  'betaFlags',
+] as const
+
+export type VaultSettingKey = (typeof VAULT_SETTING_KEYS)[number]
 
 const DEFAULTS = {
   folderSortMode: 'alphabetical' as FolderSortMode,
@@ -192,52 +246,74 @@ const DEFAULTS = {
   sidebarTabOrder: [] as string[],
   pinnedPanels: ['calendar'] as string[],
   onboardingShown: false,
+  settingsFolderPath: '.noteser',
+  vaultSettingsUpdatedAt: 0,
+  vaultSettingsLastPushedHash: '',
 }
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
-    (set) => ({
-      ...DEFAULTS,
-      setFolderSortMode: (folderSortMode) => set({ folderSortMode }),
-      setTaskListDensity: (taskListDensity) => set({ taskListDensity }),
-      setShowHiddenFolders: (showHiddenFolders) => set({ showHiddenFolders }),
-      setAttachmentsFolder: (attachmentsFolder) => set({ attachmentsFolder }),
-      setAutoSyncOnStart: (autoSyncOnStart) => set({ autoSyncOnStart }),
-      setAutoSyncIntervalMinutes: (autoSyncIntervalMinutes) => set({ autoSyncIntervalMinutes }),
-      setDailyNotesFolder: (dailyNotesFolder) => set({ dailyNotesFolder }),
-      setDailyNoteDateFormat: (dailyNoteDateFormat) => set({ dailyNoteDateFormat }),
-      setWeeklyNotesFolder: (weeklyNotesFolder) => set({ weeklyNotesFolder }),
-      setWeeklyNoteDateFormat: (weeklyNoteDateFormat) => set({ weeklyNoteDateFormat }),
-      setMonthlyNotesFolder: (monthlyNotesFolder) => set({ monthlyNotesFolder }),
-      setMonthlyNoteDateFormat: (monthlyNoteDateFormat) => set({ monthlyNoteDateFormat }),
-      setTemplatesFolder: (templatesFolder) => set({ templatesFolder }),
-      setDailyNoteTemplateId: (dailyNoteTemplateId) => set({ dailyNoteTemplateId }),
-      setAiProvider: (aiProvider) => set({ aiProvider }),
-      setAiApiKey: (aiApiKey) => set({ aiApiKey }),
-      setAiModel: (aiModel) => set({ aiModel }),
-      setShortcutOverride: (id, combo) =>
-        set((state) => ({
-          shortcutOverrides: { ...state.shortcutOverrides, [id]: combo },
-        })),
-      clearShortcutOverride: (id) =>
-        set((state) => {
-          if (!(id in state.shortcutOverrides)) return state
-          const next = { ...state.shortcutOverrides }
-          delete next[id]
-          return { shortcutOverrides: next }
-        }),
-      resetShortcutOverrides: () => set({ shortcutOverrides: {} }),
-      setTrashMode: (trashMode) => set({ trashMode }),
-      setConfirmBulkDelete: (confirmBulkDelete) => set({ confirmBulkDelete }),
-      setBetaEnabled: (betaEnabled) => set({ betaEnabled }),
-      setBetaFlag: (id, value) =>
-        set((state) => ({ betaFlags: { ...state.betaFlags, [id]: value } })),
-      setRibbonOrder: (ribbonOrder) => set({ ribbonOrder }),
-      setSidebarTabOrder: (sidebarTabOrder) => set({ sidebarTabOrder }),
-      setPinnedPanels: (pinnedPanels) => set({ pinnedPanels }),
-      setOnboardingShown: (onboardingShown) => set({ onboardingShown }),
-      reset: () => set(DEFAULTS),
-    }),
+    (set) => {
+      // Bump vaultSettingsUpdatedAt alongside any vault-tagged change so
+      // LWW comparisons against the remote payload work. Device-only
+      // setters call `set` directly to skip the bump.
+      const setVault = (changes: Partial<SettingsState>) =>
+        set({ ...changes, vaultSettingsUpdatedAt: Date.now() } as Partial<SettingsState>)
+      return {
+        ...DEFAULTS,
+        setFolderSortMode: (folderSortMode) => setVault({ folderSortMode }),
+        setTaskListDensity: (taskListDensity) => setVault({ taskListDensity }),
+        setShowHiddenFolders: (showHiddenFolders) => setVault({ showHiddenFolders }),
+        setAttachmentsFolder: (attachmentsFolder) => setVault({ attachmentsFolder }),
+        setAutoSyncOnStart: (autoSyncOnStart) => set({ autoSyncOnStart }),
+        setAutoSyncIntervalMinutes: (autoSyncIntervalMinutes) => set({ autoSyncIntervalMinutes }),
+        setDailyNotesFolder: (dailyNotesFolder) => setVault({ dailyNotesFolder }),
+        setDailyNoteDateFormat: (dailyNoteDateFormat) => setVault({ dailyNoteDateFormat }),
+        setWeeklyNotesFolder: (weeklyNotesFolder) => setVault({ weeklyNotesFolder }),
+        setWeeklyNoteDateFormat: (weeklyNoteDateFormat) => setVault({ weeklyNoteDateFormat }),
+        setMonthlyNotesFolder: (monthlyNotesFolder) => setVault({ monthlyNotesFolder }),
+        setMonthlyNoteDateFormat: (monthlyNoteDateFormat) => setVault({ monthlyNoteDateFormat }),
+        setTemplatesFolder: (templatesFolder) => setVault({ templatesFolder }),
+        setDailyNoteTemplateId: (dailyNoteTemplateId) => setVault({ dailyNoteTemplateId }),
+        setAiProvider: (aiProvider) => set({ aiProvider }),
+        setAiApiKey: (aiApiKey) => set({ aiApiKey }),
+        setAiModel: (aiModel) => set({ aiModel }),
+        setShortcutOverride: (id, combo) =>
+          set((state) => ({
+            shortcutOverrides: { ...state.shortcutOverrides, [id]: combo },
+          })),
+        clearShortcutOverride: (id) =>
+          set((state) => {
+            if (!(id in state.shortcutOverrides)) return state
+            const next = { ...state.shortcutOverrides }
+            delete next[id]
+            return { shortcutOverrides: next }
+          }),
+        resetShortcutOverrides: () => set({ shortcutOverrides: {} }),
+        setTrashMode: (trashMode) => setVault({ trashMode }),
+        setConfirmBulkDelete: (confirmBulkDelete) => setVault({ confirmBulkDelete }),
+        setBetaEnabled: (betaEnabled) => setVault({ betaEnabled }),
+        setBetaFlag: (id, value) =>
+          set((state) => ({
+            betaFlags: { ...state.betaFlags, [id]: value },
+            vaultSettingsUpdatedAt: Date.now(),
+          })),
+        setRibbonOrder: (ribbonOrder) => set({ ribbonOrder }),
+        setSidebarTabOrder: (sidebarTabOrder) => set({ sidebarTabOrder }),
+        setPinnedPanels: (pinnedPanels) => set({ pinnedPanels }),
+        setOnboardingShown: (onboardingShown) => set({ onboardingShown }),
+        setSettingsFolderPath: (path) => set({ settingsFolderPath: path }),
+        setVaultSettingsLastPushedHash: (hash) => set({ vaultSettingsLastPushedHash: hash }),
+        applyRemoteVaultSettings: (fields, remoteUpdatedAt, remoteHash) => {
+          set({
+            ...fields,
+            vaultSettingsUpdatedAt: remoteUpdatedAt,
+            vaultSettingsLastPushedHash: remoteHash,
+          } as Partial<SettingsState>)
+        },
+        reset: () => set(DEFAULTS),
+      }
+    },
     { name: STORAGE_KEYS.settings }
   )
 )
