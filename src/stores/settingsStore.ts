@@ -99,6 +99,12 @@ export interface SettingsState {
   // for the lifecycle / when-to-remove discipline.
   betaFlags: Record<string, boolean>
 
+  // ── Bulk-delete warning ───────────────────────────────────────────────
+  // Show a confirm dialog before a multi-select delete. Defaults on for
+  // safety — users can turn it off via Settings → General once they've
+  // built muscle memory.
+  confirmBulkDelete: boolean
+
   // ── Trash ──────────────────────────────────────────────────────────────
   // Controls what `deleteNote` / `cascadeDeleteFolder` do. 'trash' = the
   // existing soft-delete (recoverable via the Trash view). 'hardDelete' =
@@ -133,6 +139,7 @@ export interface SettingsState {
   clearShortcutOverride: (id: string) => void
   resetShortcutOverrides: () => void
   setTrashMode: (mode: TrashMode) => void
+  setConfirmBulkDelete: (value: boolean) => void
   setBetaEnabled: (value: boolean) => void
   setBetaFlag: (id: string, value: boolean) => void
   setRibbonOrder: (order: string[]) => void
@@ -160,6 +167,7 @@ const DEFAULTS = {
   aiModel: DEFAULT_AI_MODEL.anthropic,
   shortcutOverrides: {} as Record<string, string>,
   trashMode: 'trash' as TrashMode,
+  confirmBulkDelete: true,
   betaEnabled: false,
   betaFlags: {} as Record<string, boolean>,
   ribbonOrder: [] as string[],
@@ -200,6 +208,7 @@ export const useSettingsStore = create<SettingsState>()(
         }),
       resetShortcutOverrides: () => set({ shortcutOverrides: {} }),
       setTrashMode: (trashMode) => set({ trashMode }),
+      setConfirmBulkDelete: (confirmBulkDelete) => set({ confirmBulkDelete }),
       setBetaEnabled: (betaEnabled) => set({ betaEnabled }),
       setBetaFlag: (id, value) =>
         set((state) => ({ betaFlags: { ...state.betaFlags, [id]: value } })),

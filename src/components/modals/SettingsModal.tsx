@@ -156,9 +156,11 @@ function GeneralPanel() {
   const folderSortMode = useSettingsStore(s => s.folderSortMode)
   const showHiddenFolders = useSettingsStore(s => s.showHiddenFolders)
   const trashMode = useSettingsStore(s => s.trashMode)
+  const confirmBulkDelete = useSettingsStore(s => s.confirmBulkDelete)
   const setFolderSortMode = useSettingsStore(s => s.setFolderSortMode)
   const setShowHiddenFolders = useSettingsStore(s => s.setShowHiddenFolders)
   const setTrashMode = useSettingsStore(s => s.setTrashMode)
+  const setConfirmBulkDelete = useSettingsStore(s => s.setConfirmBulkDelete)
 
   return (
     <div className="space-y-4">
@@ -198,6 +200,15 @@ function GeneralPanel() {
             { value: 'trash', label: 'Move to trash (recoverable)' },
             { value: 'hardDelete', label: 'Delete immediately (no trash)' },
           ]}
+        />
+      </Field>
+      <Field
+        label="Confirm before bulk delete"
+        description="Show a confirm dialog when deleting multiple notes via the sidebar's multi-select (Ctrl/Cmd+Click). Turn off if you trust your aim."
+      >
+        <SettingsCheckbox
+          checked={confirmBulkDelete}
+          onChange={setConfirmBulkDelete}
         />
       </Field>
     </div>
