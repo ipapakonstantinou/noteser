@@ -45,7 +45,9 @@ function mountHarness(getFolderRepoPath: (id: string) => string | undefined = ()
   return { api: () => ref.current!, ...utils }
 }
 
-// Fake React.DragEvent. setData/setDropEffect just record; preventDefault is a no-op.
+// Fake React.DragEvent. setData/setDropEffect just record; preventDefault
+// and stopPropagation are no-ops (the hook calls both — the latter was
+// added to fix the "drop to root doesn't work" bubbling bug).
 function makeDragEvent(): React.DragEvent {
   const calls: Array<[string, string]> = []
   return {
@@ -55,6 +57,7 @@ function makeDragEvent(): React.DragEvent {
       dropEffect: '' as DataTransfer['dropEffect'],
     } as unknown as DataTransfer,
     preventDefault: jest.fn(),
+    stopPropagation: jest.fn(),
     currentTarget: {} as EventTarget,
     target: {} as EventTarget,
   } as unknown as React.DragEvent
