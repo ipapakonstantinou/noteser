@@ -1,10 +1,11 @@
 'use client'
 
 import { useMemo } from 'react'
-import { ArrowPathIcon } from '@heroicons/react/24/outline'
+import { ArrowPathIcon, FireIcon } from '@heroicons/react/24/outline'
 import { extractTags } from '@/utils/tags'
-import { useGitHubStore, useNoteStore, useUIStore } from '@/stores'
+import { useGitHubStore, useNoteStore, useUIStore, useSettingsStore } from '@/stores'
 import { classifyPendingChanges, totalPendingCount } from '@/utils/syncChanges'
+import { computeStreakFromDateStrings, dailyDateSet } from '@/utils/dailyStreak'
 import type { Note } from '@/types'
 
 interface EditorFooterProps {
@@ -23,6 +24,17 @@ export const EditorFooter = ({ note }: EditorFooterProps) => {
   const tagCount = extractTags(note.content).length
   const wordCount = note.content.trim().split(/\s+/).filter(Boolean).length
   const charCount = note.content.length
+
+  // Daily-note streak — derived from active note titles + the user's
+  // dailyNoteDateFormat. Memoised so we don't recompute on every
+  // keystroke (notes is the deps trigger). Re-runs roughly once per
+  // note save.
+  const dailyNoteDateFormat = useSettingsStore(s => s.dailyNoteDateFormat) || 'YYYY-MM-DD'
+  const streak = useMemo(() => {
+    const titles = notes.filter(n => !n.isDeleted).map(n => n.title)
+    const dateSet = dailyDateSet(titles, dailyNoteDateFormat)
+    return computeStreakFromDateStrings(dateSet, dailyNoteDateFormat)
+  }, [notes, dailyNoteDateFormat])
 
   // Pending-changes count drives the badge next to "synced X ago".
   // Reuses the same classifier the Source Control panel uses so the
@@ -98,6 +110,18 @@ export const EditorFooter = ({ note }: EditorFooterProps) => {
         )}
       </div>
       <div className="flex items-center gap-4 shrink-0">
+        {streak.length >= 2 && (
+          <span
+            className="flex items-center gap-1 text-orange-400"
+            title={streak.includesToday
+              ? `${streak.length}-day daily-note streak — keep it going!`
+              : `${streak.length}-day streak — write today's note to keep it alive.`}
+            data-testid="status-bar-streak"
+          >
+            <FireIcon className="w-3 h-3" />
+            <span>{streak.length}d</span>
+          </span>
+        )}
         {tagCount > 0 && <span>{tagCount} tag{tagCount === 1 ? '' : 's'}</span>}
         <span>{wordCount} word{wordCount === 1 ? '' : 's'}</span>
         <span>{charCount} char{charCount === 1 ? '' : 's'}</span>
