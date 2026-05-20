@@ -675,11 +675,11 @@
     {
       "id": "20260520T073004-tc8h",
       "brief": "Test coverage for githubSync.ts orchestration — pull/push classification, conflict + autoMerged branches, gitLastPushedSha bookkeeping.",
-      "status": "pending",
+      "status": "done",
       "created_at": "2026-05-20T07:30:00Z",
-      "started_at": null,
-      "completed_at": null,
-      "result": null,
+      "started_at": "2026-05-20T08:42:00Z",
+      "completed_at": "2026-05-20T08:55:00Z",
+      "result": "Shipped: 10 new pullFromGitHub classifier tests covering unchanged / remoteCreated / remoteUpdated / autoMerged / conflict (with + without ancestor) / remoteDeleted / conflictDeleted / mixed batches / non-.md routing. Mocks the github.ts API surface so the orchestration becomes pure-testable. Real threeWayMerge runs inside the mock.",
       "error": null,
       "source": "terminal"
     },
