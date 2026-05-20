@@ -104,6 +104,15 @@ export function getAllCommands(): Command[] {
   })
 
   out.push({
+    id: 'app.reportBug',
+    label: 'Report a bug',
+    description: 'File a GitHub issue from inside Noteser.',
+    keywords: ['issue', 'feedback', 'github', 'support'],
+    group: 'Commands',
+    run: () => ui.openModal({ type: 'bug-report' }),
+  })
+
+  out.push({
     id: 'app.openTemplates',
     label: 'Open templates',
     description: 'Browse templates and create a note from one.',
@@ -119,6 +128,24 @@ export function getAllCommands(): Command[] {
     keywords: ['render', 'view'],
     group: 'Commands',
     run: () => ui.togglePreview(),
+  })
+
+  // Periodic notes (week / month). Daily lives in SHORTCUTS as `openToday`.
+  out.push({
+    id: 'app.openThisWeek',
+    label: 'Open this week (Weekly note)',
+    description: 'Open or create this week\'s note.',
+    keywords: ['weekly', 'periodic', 'review', 'week'],
+    group: 'Commands',
+    run: () => import('@/utils/periodicNotes').then(({ openThisWeekNote }) => { openThisWeekNote() }),
+  })
+  out.push({
+    id: 'app.openThisMonth',
+    label: 'Open this month (Monthly note)',
+    description: 'Open or create this month\'s note.',
+    keywords: ['monthly', 'periodic', 'review', 'month'],
+    group: 'Commands',
+    run: () => import('@/utils/periodicNotes').then(({ openThisMonthNote }) => { openThisMonthNote() }),
   })
 
   if (isConnected) {
