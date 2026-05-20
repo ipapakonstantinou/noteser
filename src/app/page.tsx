@@ -31,8 +31,11 @@ import {
   readStoredResetVersion,
   writeStoredResetVersion,
   decideResetAction,
+  hasUnsyncedChanges,
   PERSISTED_RESET_VERSION,
+  PRESERVE_ON_KILLSWITCH,
 } from '@/utils/reset'
+import { ResetConfirmModal } from '@/components/modals/ResetConfirmModal'
 
 export default function Home() {
   const hydrated = useHydration()
@@ -157,11 +160,15 @@ export default function Home() {
     })()
   }, [])
 
-  // Kill-switch: bump PERSISTED_RESET_VERSION in code to force every browser
-  // to wipe once on next visit. Runs after hydration so we can safely check
-  // unsynced-changes state. Confirms with the user when there's local-only
-  // work; wipes silently otherwise. Writes the new version after wipe so
-  // subsequent reloads don't repeat the prompt.
+  // Kill-switch: bump PERSISTED_RESET_VERSION in code to force every
+  // browser to wipe once on next visit. Two paths:
+  //   1. No unsynced changes → silent PARTIAL wipe (drops notes/folders/
+  //      workspace; preserves GitHub creds + settings + UI) + reload.
+  //   2. Unsynced changes → in-app modal lets the user pick partial
+  //      cleanup, full reset, or cancel. NOT window.confirm — that gets
+  //      hidden behind tabs (user lost ~30 seconds clicking nothing).
+  const [showResetModal, setShowResetModal] = useState(false)
+  const [resetHasUnsynced, setResetHasUnsynced] = useState(false)
   useEffect(() => {
     if (!hydrated) return
     const stored = readStoredResetVersion()
@@ -173,29 +180,36 @@ export default function Home() {
     })
     if (decision.action === 'noop') return
     if (decision.action === 'markOnly') {
-      // Fresh install: just stamp the version forward — no wipe + no
-      // reload, so the user (and Playwright) don't see a flash.
       writeStoredResetVersion(PERSISTED_RESET_VERSION)
       return
     }
-    void (async () => {
-      if (decision.action === 'confirm') {
-        const ok = window.confirm(
-          'Noteser needs to reset local cache to fix a sync bug. You have ' +
-          'unsynced local changes that will be lost. Export first or sync now? ' +
-          'Click Cancel to keep your local state and skip this update.',
-        )
-        if (!ok) {
-          // User declined — DON'T write the new version, so we ask again
-          // next reload. They can /export, sync, and reload to clear.
-          return
-        }
-      }
-      await wipeNoteserState()
-      writeStoredResetVersion(PERSISTED_RESET_VERSION)
-      window.location.reload()
-    })()
+    if (decision.action === 'wipe') {
+      // No unsynced work — partial wipe + reload silently.
+      void (async () => {
+        await wipeNoteserState({ preserve: PRESERVE_ON_KILLSWITCH })
+        writeStoredResetVersion(PERSISTED_RESET_VERSION)
+        window.location.reload()
+      })()
+      return
+    }
+    // 'confirm' path: show the in-app modal.
+    setResetHasUnsynced(hasUnsyncedChanges(
+      useNoteStore.getState().notes,
+      useGitHubStore.getState().lastSyncedAt,
+    ))
+    setShowResetModal(true)
   }, [hydrated])
+
+  const handlePartialWipe = async () => {
+    await wipeNoteserState({ preserve: PRESERVE_ON_KILLSWITCH })
+    writeStoredResetVersion(PERSISTED_RESET_VERSION)
+    window.location.reload()
+  }
+  const handleFullWipe = async () => {
+    await wipeNoteserState()
+    writeStoredResetVersion(PERSISTED_RESET_VERSION)
+    window.location.reload()
+  }
 
   // Expose stores + attachment helpers on window for Playwright tests.
   // Side-effect-only, no UI impact.
@@ -242,6 +256,14 @@ export default function Home() {
       <CommandPalette />
       <BugReportModal />
       <OnboardingModal isOpen={showOnboarding} onDismiss={() => setShowOnboarding(false)} />
+      <ResetConfirmModal
+        isOpen={showResetModal}
+        hasUnsynced={resetHasUnsynced}
+        hasRepo={Boolean(useGitHubStore.getState().syncRepo)}
+        onPartialWipe={handlePartialWipe}
+        onFullWipe={handleFullWipe}
+        onCancel={() => setShowResetModal(false)}
+      />
     </div>
   )
 }
