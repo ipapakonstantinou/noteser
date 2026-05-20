@@ -7,6 +7,7 @@
 
 import { get, set, del, keys } from 'idb-keyval'
 import { embedText } from './aiClient'
+import { EMBEDDING_CHANGED_EVENT } from './events'
 import type { Note } from '@/types'
 
 const EMBED_KEY_PREFIX = 'noteser-embed-'
@@ -61,10 +62,19 @@ export async function getEmbedding(noteId: string): Promise<NoteEmbedding | null
 
 export async function saveEmbedding(record: NoteEmbedding): Promise<void> {
   await set(keyFor(record.noteId), record)
+  emitEmbeddingChanged(record.noteId)
 }
 
 export async function deleteEmbedding(noteId: string): Promise<void> {
   await del(keyFor(noteId))
+  emitEmbeddingChanged(noteId)
+}
+
+// Fire the event consumers listen for (Related panel refresh). Wrapped
+// so non-browser callers (tests in node) don't crash on `window`.
+function emitEmbeddingChanged(noteId: string): void {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(EMBEDDING_CHANGED_EVENT, { detail: { noteId } }))
 }
 
 export async function listAllEmbeddings(): Promise<NoteEmbedding[]> {
