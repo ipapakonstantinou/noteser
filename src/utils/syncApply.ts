@@ -1,3 +1,4 @@
+import { v4 as uuid } from 'uuid'
 import { useNoteStore, useFolderStore, useGitHubStore } from '@/stores'
 import type { PullClassification } from './githubSync'
 import { parseNote, takeZipballAttachmentBytes } from './githubSync'
@@ -44,8 +45,20 @@ export interface ApplyCounts {
 }
 
 export function applyNonConflicts(classifications: PullClassification[]): ApplyCounts {
-  const noteStore = useNoteStore.getState()
   const counts: ApplyCounts = { created: 0, updated: 0, deleted: 0, autoMerged: 0 }
+
+  // Build the FINAL notes array in memory in a single pass, then write
+  // it via one setState call at the end. The previous implementation
+  // called addNote/updateNote/deleteNote N times — each set() triggered
+  // a full IDB write of the notes array, so pulling a 200-note vault
+  // for the first time was O(N²) memory + caused Chrome to pause with
+  // "potential out-of-memory crash" at idbStorage.setItem. Batching
+  // makes it O(N) — one IDB write per sync.
+  const noteState = useNoteStore.getState()
+  const now = Date.now()
+  // Index existing notes by id for O(1) updates.
+  const byId = new Map(noteState.notes.map(n => [n.id, n]))
+  let lastCreatedId: string | null = null
 
   for (const c of classifications) {
     if (c.kind === 'unchanged' || c.kind === 'conflict' || c.kind === 'conflictDeleted') continue
@@ -55,8 +68,9 @@ export function applyNonConflicts(classifications: PullClassification[]): ApplyC
     if (c.kind === 'attachmentCreated' || c.kind === 'attachmentUpdated') continue
 
     if (c.kind === 'folderCreated') {
-      // Materialise the directory hierarchy. ensureFolderPath is idempotent —
-      // it'll find existing folders by sanitized name + parent.
+      // ensureFolderPath has its own batching concern but we don't
+      // re-implement that here — folder creation is rare relative to
+      // notes, and the folderStore set() already coalesces in practice.
       ensureFolderPath(c.path.split('/'))
       continue
     }
@@ -64,33 +78,47 @@ export function applyNonConflicts(classifications: PullClassification[]): ApplyC
     if (c.kind === 'remoteCreated') {
       const { segments, title } = splitRepoPath(c.path)
       const folderId = ensureFolderPath(segments)
-      noteStore.addNote({
+      const newNote = {
+        id: uuid(),
         title,
         content: bodyWithInlineTags(c.body, c.tags),
         folderId,
         gitPath: c.path,
         gitLastPushedSha: c.remoteSha,
-      })
+        createdAt: now,
+        updatedAt: now,
+        isDeleted: false,
+        deletedAt: null,
+        isPinned: false,
+        templateId: null,
+      }
+      byId.set(newNote.id, newNote as ReturnType<typeof useNoteStore.getState>['notes'][number])
+      lastCreatedId = newNote.id
       counts.created++
       continue
     }
 
     if (c.kind === 'remoteUpdated') {
-      noteStore.updateNote(c.noteId, {
+      const existing = byId.get(c.noteId)
+      if (!existing) continue
+      byId.set(c.noteId, {
+        ...existing,
         content: bodyWithInlineTags(c.body, c.tags),
         gitLastPushedSha: c.remoteSha,
+        updatedAt: now,
       })
       counts.updated++
       continue
     }
 
     if (c.kind === 'autoMerged') {
-      // Auto-merged content is already the union of local + remote line edits;
-      // write it back and pin gitLastPushedSha to remoteSha so the next push
-      // uploads the merged version exactly once.
-      noteStore.updateNote(c.noteId, {
+      const existing = byId.get(c.noteId)
+      if (!existing) continue
+      byId.set(c.noteId, {
+        ...existing,
         content: c.mergedContent,
         gitLastPushedSha: c.remoteSha,
+        updatedAt: now,
       })
       counts.updated++
       counts.autoMerged++
@@ -98,11 +126,29 @@ export function applyNonConflicts(classifications: PullClassification[]): ApplyC
     }
 
     if (c.kind === 'remoteDeleted') {
-      noteStore.deleteNote(c.noteId)
+      // Soft-delete (matches the standalone deleteNote path for 'trash'
+      // mode). hardDelete mode users want immediate removal — but pulling
+      // SHOULD route through the trash for safety regardless of the
+      // setting; the data only came from the remote.
+      const existing = byId.get(c.noteId)
+      if (!existing) continue
+      byId.set(c.noteId, {
+        ...existing,
+        isDeleted: true,
+        deletedAt: now,
+      })
       counts.deleted++
       continue
     }
   }
+
+  // Single set() — one IDB write for the whole pull.
+  useNoteStore.setState({
+    notes: Array.from(byId.values()),
+    // Preserve selectedNoteId; only update if the user had nothing
+    // selected and we just imported their first note.
+    selectedNoteId: noteState.selectedNoteId ?? lastCreatedId,
+  })
 
   return counts
 }
