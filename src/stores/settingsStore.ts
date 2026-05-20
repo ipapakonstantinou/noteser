@@ -46,6 +46,13 @@ export interface SettingsState {
   // Date format used as both the title of a daily note and the calendar
   // lookup key. Supports YYYY YY MM M DD D dddd ddd MMMM MMM.
   dailyNoteDateFormat: string
+  // Periodic notes (weekly / monthly). Same shape as daily — folder + format.
+  // Default formats use the new ISO-week / quarter tokens added to
+  // dateFormat.ts. Empty falls back to the defaults.
+  weeklyNotesFolder: string
+  weeklyNoteDateFormat: string
+  monthlyNotesFolder: string
+  monthlyNoteDateFormat: string
   // Repo-relative folder for template notes (one .md per template).
   templatesFolder: string
   // ID of the note (in `templatesFolder`) whose content seeds new daily
@@ -68,6 +75,16 @@ export interface SettingsState {
   // common case.
   aiModel: string
 
+  // ── Beta features ──────────────────────────────────────────────────────
+  // Master switch. When false, every named flag in `betaFlags` is treated
+  // as off regardless of its stored value. UI: a single toggle in Settings
+  // → General; the per-flag list appears only when this is true.
+  betaEnabled: boolean
+  // Per-flag opt-ins. Keys come from `src/utils/featureFlags.ts`; values
+  // are booleans. Missing key = off. See docs/beta-and-bug-reporting.md
+  // for the lifecycle / when-to-remove discipline.
+  betaFlags: Record<string, boolean>
+
   // ── Trash ──────────────────────────────────────────────────────────────
   // Controls what `deleteNote` / `cascadeDeleteFolder` do. 'trash' = the
   // existing soft-delete (recoverable via the Trash view). 'hardDelete' =
@@ -89,6 +106,10 @@ export interface SettingsState {
   setAutoSyncIntervalMinutes: (minutes: number) => void
   setDailyNotesFolder: (folder: string) => void
   setDailyNoteDateFormat: (format: string) => void
+  setWeeklyNotesFolder: (folder: string) => void
+  setWeeklyNoteDateFormat: (format: string) => void
+  setMonthlyNotesFolder: (folder: string) => void
+  setMonthlyNoteDateFormat: (format: string) => void
   setTemplatesFolder: (folder: string) => void
   setDailyNoteTemplateId: (id: string | null) => void
   setAiProvider: (provider: AIProvider) => void
@@ -98,6 +119,8 @@ export interface SettingsState {
   clearShortcutOverride: (id: string) => void
   resetShortcutOverrides: () => void
   setTrashMode: (mode: TrashMode) => void
+  setBetaEnabled: (value: boolean) => void
+  setBetaFlag: (id: string, value: boolean) => void
   reset: () => void
 }
 
@@ -110,6 +133,10 @@ const DEFAULTS = {
   autoSyncIntervalMinutes: 0,
   dailyNotesFolder: 'Notes/Daily',
   dailyNoteDateFormat: 'YYYY-MM-DD',
+  weeklyNotesFolder: 'Notes/Weekly',
+  weeklyNoteDateFormat: 'YYYY-WW',
+  monthlyNotesFolder: 'Notes/Monthly',
+  monthlyNoteDateFormat: 'YYYY-MM',
   templatesFolder: 'Templates',
   dailyNoteTemplateId: null as string | null,
   aiProvider: 'off' as AIProvider,
@@ -117,6 +144,8 @@ const DEFAULTS = {
   aiModel: DEFAULT_AI_MODEL.anthropic,
   shortcutOverrides: {} as Record<string, string>,
   trashMode: 'trash' as TrashMode,
+  betaEnabled: false,
+  betaFlags: {} as Record<string, boolean>,
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -131,6 +160,10 @@ export const useSettingsStore = create<SettingsState>()(
       setAutoSyncIntervalMinutes: (autoSyncIntervalMinutes) => set({ autoSyncIntervalMinutes }),
       setDailyNotesFolder: (dailyNotesFolder) => set({ dailyNotesFolder }),
       setDailyNoteDateFormat: (dailyNoteDateFormat) => set({ dailyNoteDateFormat }),
+      setWeeklyNotesFolder: (weeklyNotesFolder) => set({ weeklyNotesFolder }),
+      setWeeklyNoteDateFormat: (weeklyNoteDateFormat) => set({ weeklyNoteDateFormat }),
+      setMonthlyNotesFolder: (monthlyNotesFolder) => set({ monthlyNotesFolder }),
+      setMonthlyNoteDateFormat: (monthlyNoteDateFormat) => set({ monthlyNoteDateFormat }),
       setTemplatesFolder: (templatesFolder) => set({ templatesFolder }),
       setDailyNoteTemplateId: (dailyNoteTemplateId) => set({ dailyNoteTemplateId }),
       setAiProvider: (aiProvider) => set({ aiProvider }),
@@ -149,6 +182,9 @@ export const useSettingsStore = create<SettingsState>()(
         }),
       resetShortcutOverrides: () => set({ shortcutOverrides: {} }),
       setTrashMode: (trashMode) => set({ trashMode }),
+      setBetaEnabled: (betaEnabled) => set({ betaEnabled }),
+      setBetaFlag: (id, value) =>
+        set((state) => ({ betaFlags: { ...state.betaFlags, [id]: value } })),
       reset: () => set(DEFAULTS),
     }),
     { name: STORAGE_KEYS.settings }

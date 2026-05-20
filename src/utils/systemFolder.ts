@@ -112,3 +112,15 @@ export const templatesFolder = new SystemFolder({
   settingKey: 'templatesFolder',
   defaultValue: 'Templates',
 })
+
+// Periodic notes — weekly + monthly. Daily lives in `dailyNotesFolder`
+// above; the periodic-notes utility (src/utils/periodicNotes.ts) consults
+// these for new weekly / monthly entries.
+export const weeklyNotesFolder = new SystemFolder({
+  settingKey: 'weeklyNotesFolder',
+  defaultValue: 'Notes/Weekly',
+})
+export const monthlyNotesFolder = new SystemFolder({
+  settingKey: 'monthlyNotesFolder',
+  defaultValue: 'Notes/Monthly',
+})

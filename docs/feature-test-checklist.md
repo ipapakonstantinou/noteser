@@ -108,6 +108,41 @@ ship date. Last updated 2026-05-20.
 - [ ] Attachments folder is configurable (b9e4)
 - [ ] System-folder abstraction unifies the three (g7a2)
 
+## Settings UI
+
+- [ ] **Two-pane layout (s9r4)** — category nav on the left, panel on the right
+- [ ] Clicking a category swaps the right pane, marks the active row
+- [ ] About panel shows version + GitHub link + production URL + "Report a bug" button
+- [ ] Beta panel shows the master toggle; flag list appears only when enabled
+- [ ] **`?reset=1`** URL works to recover a wedged Firefox profile
+
+## Periodic Notes (p4n5)
+
+- [ ] **Command palette: "Open this week"** — creates `2026-WW` in `Notes/Weekly/`
+- [ ] **Command palette: "Open this month"** — creates `2026-MM` in `Notes/Monthly/`
+- [ ] Re-running either command in the same week/month opens the existing note (no duplicates)
+- [ ] Weekly folder is configurable via Settings (key `weeklyNotesFolder`)
+- [ ] Monthly folder is configurable via Settings (key `monthlyNotesFolder`)
+- [ ] Date-format tokens `WW`, `W`, `Q` work in any periodic format string
+
+## Bug reporter (b9g2)
+
+- [ ] Settings → About → **"Report a bug"** opens the modal
+- [ ] Command palette → **"Report a bug"** opens the modal
+- [ ] Form requires title + description before Submit enables
+- [ ] **Preview report body** toggle shows the rendered markdown
+- [ ] Submit creates an issue on `ipapakonstantinou/noteser` (needs GitHub connected)
+- [ ] **Copy to clipboard** fallback works when GitHub call fails or token missing
+- [ ] Diagnostics dump never contains the OAuth token, AI key, or any `*secret*` field
+- [ ] Closing the modal resets the form
+
+## Beta features (b3t1)
+
+- [ ] Settings → Beta → master toggle gates the flag list
+- [ ] Toggling an individual flag persists across reload
+- [ ] `useFlag(id)` returns false when master is off (verified via Beta panel hidden flag rows)
+- [ ] Flag definitions live in `src/utils/featureFlags.ts` (FLAGS array)
+
 ## Workspace
 
 - [ ] Single-click on a note opens as PREVIEW tab (italic) — typing promotes it (cp1 era)

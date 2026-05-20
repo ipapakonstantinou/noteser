@@ -13,6 +13,7 @@ import {
   CommandLineIcon,
   ArrowDownTrayIcon,
   InformationCircleIcon,
+  BeakerIcon,
 } from '@heroicons/react/24/outline'
 import { useUIStore, useSettingsStore } from '@/stores'
 import type { FolderSortMode, TaskListDensity } from '@/stores'
@@ -43,6 +44,7 @@ type CategoryId =
   | 'ai'
   | 'shortcuts'
   | 'export'
+  | 'beta'
   | 'about'
 
 interface CategoryDef {
@@ -62,6 +64,7 @@ const CATEGORIES: readonly CategoryDef[] = [
   { id: 'ai',          label: 'AI',          Icon: SparklesIcon },
   { id: 'shortcuts',   label: 'Shortcuts',   Icon: CommandLineIcon },
   { id: 'export',      label: 'Export',      Icon: ArrowDownTrayIcon },
+  { id: 'beta',        label: 'Beta',        Icon: BeakerIcon },
   { id: 'about',       label: 'About',       Icon: InformationCircleIcon },
 ]
 
@@ -141,6 +144,7 @@ function CategoryPanel({ id }: { id: CategoryId }): ReactNode {
     case 'ai':          return <AISection />
     case 'shortcuts':   return <ShortcutsSection />
     case 'export':      return <ExportSection />
+    case 'beta':        return <BetaPanel />
     case 'about':       return <AboutPanel />
   }
 }
@@ -268,11 +272,60 @@ function GitHubPanel() {
   )
 }
 
+function BetaPanel() {
+  const betaEnabled = useSettingsStore(s => s.betaEnabled)
+  const betaFlags = useSettingsStore(s => s.betaFlags)
+  const setBetaEnabled = useSettingsStore(s => s.setBetaEnabled)
+  const setBetaFlag = useSettingsStore(s => s.setBetaFlag)
+  // Lazy-required so Settings doesn't pull featureFlags at module-load.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { FLAGS } = require('@/utils/featureFlags') as typeof import('@/utils/featureFlags')
+
+  return (
+    <div className="space-y-4" data-testid="settings-beta-panel">
+      <PanelHeading>Beta features</PanelHeading>
+      <p className="text-xs text-obsidianSecondaryText -mt-2">
+        Opt into work-in-progress features. They may be buggy or removed.
+        Bug reports for beta features are welcome via the About → Report a bug
+        button.
+      </p>
+      <Field
+        label="Enable beta features"
+        description="Master switch. Individual flags below have no effect when this is off."
+      >
+        <SettingsCheckbox checked={betaEnabled} onChange={setBetaEnabled} />
+      </Field>
+      {betaEnabled && (
+        <div className="space-y-3 pt-2 border-t border-obsidianBorder">
+          {FLAGS.map(flag => (
+            <Field
+              key={flag.id}
+              label={flag.label}
+              description={flag.description}
+            >
+              <SettingsCheckbox
+                checked={Boolean(betaFlags[flag.id])}
+                onChange={(v) => setBetaFlag(flag.id, v)}
+              />
+            </Field>
+          ))}
+          {FLAGS.length === 0 && (
+            <p className="text-sm text-obsidianSecondaryText italic">
+              No experimental features available right now.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AboutPanel() {
   // Version is best-effort: at dev time we don't have a real SHA, so this
   // is intentionally a placeholder. Build-time injection via
   // process.env.NEXT_PUBLIC_BUILD_SHA can replace it later.
   const version = process.env.NEXT_PUBLIC_BUILD_SHA ?? 'dev'
+  const openModal = useUIStore(s => s.openModal)
   return (
     <div className="space-y-4">
       <PanelHeading>About</PanelHeading>
@@ -305,6 +358,16 @@ function AboutPanel() {
         <p className="text-xs text-obsidianSecondaryText pt-2">
           MIT licence.
         </p>
+      </div>
+      <div className="pt-2">
+        <button
+          type="button"
+          onClick={() => openModal({ type: 'bug-report' })}
+          data-testid="settings-report-bug"
+          className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors"
+        >
+          Report a bug
+        </button>
       </div>
     </div>
   )
