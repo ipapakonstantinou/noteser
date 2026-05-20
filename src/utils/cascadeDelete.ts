@@ -7,13 +7,16 @@
 // the remote, pull re-derives "attachments" as a needed folder, and the
 // folder reappears on the next round-trip. See bug u4e5.
 //
-// Notes inside any of the deleted folders keep the existing
-// "move-to-root" behaviour the DeleteConfirmModal already implements —
-// this util doesn't touch them.
+// Notes inside the deleted folder hierarchy are themselves soft-deleted
+// (or hard-deleted in trashMode='hardDelete'). Earlier behaviour moved
+// them to root, which surprised users — they expected "delete folder"
+// to remove the folder AND its contents, the same way most file
+// managers do. See bug report 2026-05-20.
 
 import type { Folder } from '@/types'
 import { useFolderStore } from '@/stores/folderStore'
 import { useNoteStore } from '@/stores/noteStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 import { listAttachmentMeta, deleteAttachment } from './attachments'
 
 // Build the repo path for a folder (e.g. "Notes/Daily"). Walks up to the
@@ -106,14 +109,24 @@ export function cascadeDeleteFolder(folderId: string): void {
     }
   })()
 
-  // Notes inside the deleted folder hierarchy keep their content but
-  // move to root. Same batching reason as the folder write above —
-  // running updateNote N times froze the UI for large folders.
-  useNoteStore.setState(state => ({
-    notes: state.notes.map(n =>
-      !n.isDeleted && n.folderId && idSet.has(n.folderId)
-        ? { ...n, folderId: null, updatedAt: now }
-        : n
-    ),
-  }))
+  // Notes inside the deleted folder hierarchy are removed too — same
+  // batched setState pattern as the folder write above so large folders
+  // don't freeze the UI. Hard-delete mode prunes them outright; trash
+  // mode soft-deletes (sets isDeleted=true, deletedAt=now) so the user
+  // can still recover individual notes from the trash if needed.
+  const trashMode = useSettingsStore.getState().trashMode
+  useNoteStore.setState(state => {
+    if (trashMode === 'hardDelete') {
+      return {
+        notes: state.notes.filter(n => !(n.folderId && idSet.has(n.folderId) && !n.isDeleted)),
+      }
+    }
+    return {
+      notes: state.notes.map(n =>
+        !n.isDeleted && n.folderId && idSet.has(n.folderId)
+          ? { ...n, isDeleted: true, deletedAt: now, updatedAt: now }
+          : n
+      ),
+    }
+  })
 }

@@ -6,14 +6,9 @@ import {
   DocumentDuplicateIcon,
   ClockIcon,
   TagIcon,
-  TrashIcon,
-  CalendarDaysIcon,
-  CloudArrowUpIcon,
   Cog6ToothIcon,
-  ListBulletIcon,
-  LinkIcon,
 } from '@heroicons/react/24/outline'
-import { useUIStore, useNoteStore, useGitHubStore, useWorkspaceStore, useSettingsStore } from '@/stores'
+import { useUIStore, useNoteStore, useSettingsStore } from '@/stores'
 import { useHydration } from '@/hooks'
 
 // Obsidian-style far-left ribbon. Always visible. Holds Search + nav icons
@@ -26,8 +21,14 @@ import { useHydration } from '@/hooks'
 // when a future release adds a new nav target) are appended at the end so
 // new features don't get hidden by an old saved order.
 
+// Filter-mode views still surfaced from the ribbon. Used as the
+// `currentView` value when an ItemDef is clicked — FolderTree reads
+// currentView to decide what slice of notes to render. Older saved
+// ribbonOrder entries referencing the removed items (calendar,
+// outline, github, backlinks, trash) are silently dropped by
+// resolveRibbonOrder, so no migration is needed.
 type ItemView =
-  | 'notes' | 'recent' | 'tags' | 'backlinks' | 'calendar' | 'outline' | 'trash' | 'github'
+  | 'notes' | 'recent' | 'tags'
 
 interface ItemDef {
   id: ItemView
@@ -40,26 +41,21 @@ interface ItemDef {
 
 interface BadgeCtx {
   recentCount: number
-  trashCount: number
-  conflictCount: number
-  githubConnected: boolean
 }
 
+// Ribbon items kept after the great de-dup of 2026-05-20. We removed
+// `calendar` (pinned section above the strip), `outline`, `backlinks`
+// (folded into outline tab pending its own home), and `github` —
+// every one of those has a dedicated SidebarStack tab now, so a
+// second click target on the ribbon was pure duplication. `trash` is
+// also gone: the upcoming `.trash` folder model (task 103) will
+// surface deleted notes in the regular folder tree.
+// Remaining items are filter modes for the Files tab (notes / recent
+// / tags), since those don't have tabs of their own.
 const ITEMS: readonly ItemDef[] = [
-  { id: 'notes',     Icon: DocumentDuplicateIcon, title: () => 'All notes' },
-  { id: 'recent',    Icon: ClockIcon, title: c => `Recent${c.recentCount ? ` (${c.recentCount})` : ''}` },
-  { id: 'tags',      Icon: TagIcon, title: () => 'Tags' },
-  { id: 'backlinks', Icon: LinkIcon, title: () => 'Backlinks' },
-  { id: 'calendar',  Icon: CalendarDaysIcon, title: () => 'Calendar' },
-  { id: 'outline',   Icon: ListBulletIcon, title: () => 'Outline' },
-  { id: 'trash',     Icon: TrashIcon, title: c => `Trash${c.trashCount ? ` (${c.trashCount})` : ''}` },
-  {
-    id: 'github',
-    Icon: CloudArrowUpIcon,
-    title: c => `GitHub${c.conflictCount ? ` — ${c.conflictCount} conflict${c.conflictCount === 1 ? '' : 's'}` : ''}`,
-    badgeRed: c => c.conflictCount > 0,
-    visible: c => c.githubConnected,
-  },
+  { id: 'notes',  Icon: DocumentDuplicateIcon, title: () => 'All notes' },
+  { id: 'recent', Icon: ClockIcon, title: c => `Recent${c.recentCount ? ` (${c.recentCount})` : ''}` },
+  { id: 'tags',   Icon: TagIcon, title: () => 'Tags' },
 ]
 
 // Merge the user's saved order with the source order, dropping ids that
@@ -82,41 +78,26 @@ export function resolveRibbonOrder(saved: string[]): ItemView[] {
 
 const RIBBON_DRAG_MIME = 'application/x-noteser-ribbon-item'
 
-// Ribbon nav items that target a SidebarStack tab (s4r3 v2). Clicking
-// these switches the lower tab-switcher to the matching tab instead of
-// swapping the entire sidebar view. Calendar lives ABOVE the switcher
-// (always pinned) so its ribbon click just expands the pinned section.
-// Filter-mode items (notes/recent/tags/trash/templates) remain
-// currentView-driven — FolderTree internally filters by it.
+// Ribbon de-dup (2026-05-20) means every ribbon item is a
+// filter-mode view now. The tab-routing map is empty but kept as a
+// hook for future ribbon-only entries that target a stack tab.
 import type { SidebarTabId } from '@/stores'
-const VIEW_TO_TAB_ID: Partial<Record<ItemView, SidebarTabId>> = {
-  outline: 'outline',
-  github: 'source-control',
-  backlinks: 'outline', // backlinks folded into outline tab pending its own home
-}
+const VIEW_TO_TAB_ID: Partial<Record<ItemView, SidebarTabId>> = {}
 
 export const Ribbon = () => {
-  const { openSearch, currentView, setCurrentView, openModal, expandSidebarSection, setSidebarTab } = useUIStore()
-  const { getDeletedNotes, getRecentNotes } = useNoteStore()
+  const { openSearch, currentView, setCurrentView, openModal, setSidebarTab } = useUIStore()
+  const { getRecentNotes } = useNoteStore()
   const ribbonOrder = useSettingsStore(s => s.ribbonOrder)
   const setRibbonOrder = useSettingsStore(s => s.setRibbonOrder)
   const hydrated = useHydration()
 
-  const trashCount = hydrated ? getDeletedNotes().length : 0
   const recentCount = hydrated ? getRecentNotes(99).length : 0
-  const conflictCount = useWorkspaceStore(s => {
-    if (!hydrated) return 0
-    let n = 0
-    for (const pane of s.panes) for (const t of pane.tabs) if (t.kind === 'merge-conflict') n++
-    return n
-  })
-  const githubConnected = useGitHubStore(s => hydrated && !!s.token)
 
   // Memoise ctx so it doesn't tear the orderedItems memo on every render.
   // Each scalar dep is referentially stable, so this is cheap.
   const ctx: BadgeCtx = useMemo(
-    () => ({ recentCount, trashCount, conflictCount, githubConnected }),
-    [recentCount, trashCount, conflictCount, githubConnected],
+    () => ({ recentCount }),
+    [recentCount],
   )
 
   const orderedIds = useMemo(() => resolveRibbonOrder(ribbonOrder), [ribbonOrder])
@@ -183,18 +164,15 @@ export const Ribbon = () => {
       {orderedItems.map(item => {
         const tabId = VIEW_TO_TAB_ID[item.id]
         // Items that target a SidebarStack tab don't carry the
-        // filter-mode "active" highlight — the tab strip surfaces
-        // which tab is open. Calendar expands its pinned section.
-        const active = !tabId && item.id !== 'calendar' && currentView === item.id
+        // After the ribbon de-dup, every remaining item is a
+        // filter-mode view (notes/recent/tags). The active highlight
+        // mirrors currentView; clicks route through setCurrentView.
+        const active = !tabId && currentView === item.id
         const dragging = draggingId === item.id
         const isDropTarget = dropTargetId === item.id
         const Icon = item.Icon
         const badgeRed = item.badgeRed?.(ctx) ?? false
         const handleClick = () => {
-          if (item.id === 'calendar') {
-            expandSidebarSection('calendar')
-            return
-          }
           if (tabId) {
             setSidebarTab(tabId)
             return

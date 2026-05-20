@@ -7,6 +7,11 @@
  *   - Items not yet in the saved list are appended at the end.
  *   - Duplicates in the saved list are de-duped.
  *   - Empty saved list returns the full source order.
+ *
+ * Source order after the 2026-05-20 de-dup: notes, recent, tags.
+ * All the previous duplicate-with-the-tab-strip items (backlinks,
+ * calendar, outline, trash, github) were removed — old saved orders
+ * referencing them get silently filtered out by the unknown-id branch.
  */
 
 jest.mock('idb-keyval', () => ({
@@ -17,9 +22,7 @@ jest.mock('idb-keyval', () => ({
 
 import { resolveRibbonOrder } from '../components/sidebar/Ribbon'
 
-const DEFAULT_ORDER = [
-  'notes', 'recent', 'tags', 'backlinks', 'calendar', 'outline', 'trash', 'github',
-] as const
+const DEFAULT_ORDER = ['notes', 'recent', 'tags'] as const
 
 describe('resolveRibbonOrder', () => {
   test('empty saved list returns default order', () => {
@@ -27,31 +30,27 @@ describe('resolveRibbonOrder', () => {
   })
 
   test('passes through a fully-specified valid order verbatim', () => {
-    const saved = ['github', 'notes', 'recent', 'tags', 'backlinks', 'calendar', 'outline', 'trash']
+    const saved = ['recent', 'tags', 'notes']
     expect(resolveRibbonOrder(saved)).toEqual(saved)
   })
 
-  test('drops unknown ids', () => {
-    expect(resolveRibbonOrder(['notes', 'banana', 'recent'])).toEqual([
-      'notes', 'recent',
-      // The remaining items not in the saved list, in source order:
-      'tags', 'backlinks', 'calendar', 'outline', 'trash', 'github',
+  test('drops unknown ids (incl. removed legacy ids)', () => {
+    // 'backlinks' / 'calendar' / 'outline' / 'trash' / 'github' were
+    // valid ribbon ids before the de-dup; they MUST be silently
+    // dropped so a returning user's saved order doesn't render
+    // phantom items.
+    expect(resolveRibbonOrder(['notes', 'banana', 'recent', 'calendar', 'github'])).toEqual([
+      'notes', 'recent', 'tags',
     ])
   })
 
   test('appends new items (not in saved list) at the end', () => {
-    // A user upgraded from a version that only had notes/recent. New items
-    // appear after the saved order without overwriting their tweaks.
-    expect(resolveRibbonOrder(['recent', 'notes'])).toEqual([
-      'recent', 'notes',
-      'tags', 'backlinks', 'calendar', 'outline', 'trash', 'github',
-    ])
+    expect(resolveRibbonOrder(['recent', 'notes'])).toEqual(['recent', 'notes', 'tags'])
   })
 
   test('de-duplicates a saved list', () => {
     expect(resolveRibbonOrder(['notes', 'notes', 'recent'])).toEqual([
-      'notes', 'recent',
-      'tags', 'backlinks', 'calendar', 'outline', 'trash', 'github',
+      'notes', 'recent', 'tags',
     ])
   })
 })
