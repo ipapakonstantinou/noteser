@@ -95,13 +95,16 @@ export interface SettingsState {
   // doesn't break old persisted state.
   sidebarTabOrder: string[]
 
-  // Panels currently pinned at the TOP of the sidebar (rendered above
-  // the tab strip as their own collapsible sections). The default
-  // pins Calendar; users drag the section header into the tab strip
-  // to convert it to a tab, or drag a tab onto the pinned drop-zone
-  // to pin it. Order within the array determines top-to-bottom order
-  // of pinned sections.
-  pinnedPanels: string[]
+  // Panels pinned at the TOP of the sidebar, grouped into one mini
+  // tab strip per group (Obsidian pane model). The outer array is
+  // the top-to-bottom order of groups; each inner array is the tabs
+  // inside that group. A single-element group renders a strip with
+  // one icon; a multi-element group lets the user switch between
+  // tabs in that group via icon clicks.
+  // Default: [] (no pinned groups; every panel lives in the main
+  // bottom strip). Users drag tabs UP to pin into a new group or
+  // ONTO an existing mini-strip to join that group.
+  pinnedPanels: string[][]
 
   // ── Onboarding ─────────────────────────────────────────────────────────
   // True once the first-run onboarding modal has been dismissed (either by
@@ -181,7 +184,7 @@ export interface SettingsState {
   setBetaFlag: (id: string, value: boolean) => void
   setRibbonOrder: (order: string[]) => void
   setSidebarTabOrder: (order: string[]) => void
-  setPinnedPanels: (panels: string[]) => void
+  setPinnedPanels: (panels: string[][]) => void
   setOnboardingShown: (value: boolean) => void
   setSettingsFolderPath: (path: string) => void
   setVaultSettingsLastPushedHash: (hash: string) => void
@@ -250,11 +253,10 @@ const DEFAULTS = {
   betaFlags: {} as Record<string, boolean>,
   ribbonOrder: [] as string[],
   sidebarTabOrder: [] as string[],
-  // Empty by default — every panel lives as an icon in the tab strip
-  // and can be drag-pinned to the top zone by the user. The earlier
-  // default ['calendar'] is migrated away below so existing installs
-  // pick up the new behaviour automatically.
-  pinnedPanels: [] as string[],
+  // Empty by default — every panel lives as an icon in the main
+  // tab strip. Users drag tabs UP to pin into a new group, or onto
+  // an existing mini-strip to join that group (Obsidian pane model).
+  pinnedPanels: [] as string[][],
   onboardingShown: false,
   settingsFolderPath: '.noteser',
   vaultSettingsUpdatedAt: 0,
@@ -327,19 +329,36 @@ export const useSettingsStore = create<SettingsState>()(
     },
     {
       name: STORAGE_KEYS.settings,
-      version: 1,
-      // v0→v1 migration (2026-05-20): pinnedPanels used to default to
-      // ['calendar'] so Calendar showed as a header-less panel pinned
-      // at the top. The user-feedback fix moves Calendar to the tab
-      // strip as a draggable icon — installs that still carry the
-      // historical default get reset to []. Users who explicitly
-      // changed the list (added more panels) keep their preference.
+      version: 2,
+      // Migration ladder:
+      //   v0→v1 (2026-05-20): pinnedPanels used to default to
+      //     ['calendar'] so Calendar showed as a header-less pinned
+      //     panel. The user-feedback fix moves Calendar to the main
+      //     tab strip — installs carrying the historical default get
+      //     reset to []. Custom lists kept.
+      //   v1→v2 (2026-05-20): pinnedPanels widened from string[] to
+      //     string[][] so each pinned panel can hold multiple tabs
+      //     (drag onto a mini-strip joins it as a group). Old flat
+      //     entries get wrapped as their own single-panel groups so
+      //     existing pins survive.
       migrate: (persistedState: unknown, version: number) => {
-        const state = (persistedState ?? {}) as Partial<SettingsState>
+        const state = (persistedState ?? {}) as Partial<SettingsState> & {
+          pinnedPanels?: unknown
+        }
         if (version < 1) {
-          const pp = state.pinnedPanels
+          // v0 had pp: string[]; we cast to unknown here so TS lets us
+          // inspect the legacy shape.
+          const pp = state.pinnedPanels as unknown
           if (Array.isArray(pp) && pp.length === 1 && pp[0] === 'calendar') {
-            return { ...state, pinnedPanels: [] }
+            state.pinnedPanels = []
+          }
+        }
+        if (version < 2) {
+          const pp = state.pinnedPanels
+          // Wrap a flat string[] into string[][] (one group per panel).
+          // An already-nested array passes through untouched.
+          if (Array.isArray(pp) && pp.every(item => typeof item === 'string')) {
+            state.pinnedPanels = (pp as string[]).map(id => [id])
           }
         }
         return state as SettingsState

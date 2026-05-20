@@ -1,14 +1,10 @@
 /**
  * settingsMigration.test.ts
  *
- * Verifies the persist `migrate` function on useSettingsStore that
- * strips the historical pinnedPanels=['calendar'] default when an
- * old install rehydrates. Without it, returning users would still
- * see Calendar pinned at the top even though the user explicitly
- * asked for it to live in the tab strip.
- *
- * Pulls the migrate function out via the same shape Zustand passes
- * it (raw persisted JSON + version number).
+ * Verifies the persist `migrate` function on useSettingsStore.
+ * Two ladders cover today:
+ *   v0→v1 — strip pinnedPanels=['calendar'] default
+ *   v1→v2 — wrap flat string[] into string[][] groups
  */
 
 jest.mock('idb-keyval', () => ({
@@ -17,51 +13,65 @@ jest.mock('idb-keyval', () => ({
   del: jest.fn().mockResolvedValue(undefined),
 }))
 
-// We re-require the module to grab the persist options. Easier than
-// exporting `migrate` separately.
 import { useSettingsStore } from '../stores/settingsStore'
 
-// Pull the migrate fn off the store's persist API. The cast keeps TS
-// quiet — the Zustand persist API exposes this on the store at
-// `useSettingsStore.persist.getOptions()`.
 type PersistStore = typeof useSettingsStore & {
   persist: { getOptions: () => { migrate?: (s: unknown, v: number) => unknown } }
 }
 const migrate = (useSettingsStore as PersistStore).persist.getOptions().migrate!
 
-test('v0 default ["calendar"] is reset to [] so Calendar lands in the tab strip', () => {
-  const out = migrate({ pinnedPanels: ['calendar'] }, 0) as { pinnedPanels: string[] }
+// Tiny helper so each call site doesn't repeat the same cast chain.
+function run(state: unknown, version: number): { pinnedPanels?: unknown } {
+  return migrate(state, version) as unknown as { pinnedPanels?: unknown }
+}
+
+// ── v0 reset (historical Calendar default) ─────────────────────────────────
+
+test('v0 default ["calendar"] is reset to [] AND then wrapped into [][] by v1→v2', () => {
+  // v0 input goes through BOTH ladders — first reset then wrap.
+  // Result after v1→v2 wrapping of [] is still [].
+  const out = run({ pinnedPanels: ['calendar'] }, 0)
   expect(out.pinnedPanels).toEqual([])
 })
 
-test('v0 with empty pinnedPanels stays empty (no-op)', () => {
-  const out = migrate({ pinnedPanels: [] }, 0) as { pinnedPanels: string[] }
+test('v0 with empty pinnedPanels stays empty', () => {
+  const out = run({ pinnedPanels: [] }, 0)
   expect(out.pinnedPanels).toEqual([])
 })
 
-test('v0 with a user-customised list keeps every entry', () => {
-  // If the user explicitly pinned multiple panels (or pinned
-  // something else), respect their choice — only reset the EXACT
-  // historical default.
-  const out = migrate({ pinnedPanels: ['calendar', 'outline'] }, 0) as { pinnedPanels: string[] }
-  expect(out.pinnedPanels).toEqual(['calendar', 'outline'])
+test('v0 with a user-customised list keeps every entry (then wraps into groups)', () => {
+  // Custom flat ['calendar', 'outline'] survives v0→v1 (not the EXACT
+  // default), then v1→v2 wraps into singleton groups.
+  const out = run({ pinnedPanels: ['calendar', 'outline'] }, 0)
+  expect(out.pinnedPanels).toEqual([['calendar'], ['outline']])
 })
 
-test('v0 with a single non-calendar pin keeps the entry', () => {
-  const out = migrate({ pinnedPanels: ['outline'] }, 0) as { pinnedPanels: string[] }
-  expect(out.pinnedPanels).toEqual(['outline'])
+test('v0 with a single non-calendar pin keeps + wraps the entry', () => {
+  const out = run({ pinnedPanels: ['outline'] }, 0)
+  expect(out.pinnedPanels).toEqual([['outline']])
 })
 
-test('v1+ states are passed through untouched', () => {
-  // The migrate function should be a no-op for already-migrated
-  // installs so a future v2 migration can layer on cleanly.
-  const out = migrate({ pinnedPanels: ['calendar'] }, 1) as { pinnedPanels: string[] }
-  expect(out.pinnedPanels).toEqual(['calendar'])
+// ── v1→v2 (flat → grouped) ────────────────────────────────────────────────
+
+test('v1 flat array gets wrapped into per-id singleton groups', () => {
+  const out = run({ pinnedPanels: ['calendar', 'source-control'] }, 1)
+  expect(out.pinnedPanels).toEqual([['calendar'], ['source-control']])
 })
 
-test('handles missing pinnedPanels gracefully', () => {
-  // Old installs that pre-date the field shouldn't crash the
-  // migrate fn — they get passed through and defaults fill in.
-  const out = migrate({}, 0) as { pinnedPanels?: string[] }
-  expect(out.pinnedPanels).toBeUndefined()
+test('v1 empty array stays empty when wrapped', () => {
+  const out = run({ pinnedPanels: [] }, 1)
+  expect(out.pinnedPanels).toEqual([])
+})
+
+// ── v2+ pass-through ─────────────────────────────────────────────────────
+
+test('v2 nested arrays pass through untouched (no double-wrap)', () => {
+  const out = run({ pinnedPanels: [['calendar', 'outline'], ['source-control']] }, 2)
+  expect(out.pinnedPanels).toEqual([['calendar', 'outline'], ['source-control']])
+})
+
+test('handles missing pinnedPanels gracefully across all versions', () => {
+  expect(run({}, 0).pinnedPanels).toBeUndefined()
+  expect(run({}, 1).pinnedPanels).toBeUndefined()
+  expect(run({}, 2).pinnedPanels).toBeUndefined()
 })

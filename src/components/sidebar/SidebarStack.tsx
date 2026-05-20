@@ -98,82 +98,92 @@ export const SidebarStack = ({ onRightClick }: Props) => {
   const setPinnedPanels = useSettingsStore(s => s.setPinnedPanels)
   const tabOrderSaved = useSettingsStore(s => s.sidebarTabOrder)
 
-  // Sanitise pinnedPanels: drop unknowns, de-dupe. Without this an old
-  // persisted entry would render a phantom section.
-  const pinnedIds = useMemo(() => {
+  // Sanitise pinnedPanels: outer array = groups, each inner array =
+  // tabs in that group. Drop unknown ids, drop empty groups, de-dupe
+  // across groups (a panel can only live in one place). Returns
+  // SidebarTabId[][].
+  const pinnedGroups = useMemo<SidebarTabId[][]>(() => {
     const seen = new Set<string>()
-    const out: SidebarTabId[] = []
-    for (const id of pinnedSaved) {
-      if (KNOWN_IDS.has(id as SidebarTabId) && !seen.has(id)) {
-        seen.add(id)
-        out.push(id as SidebarTabId)
+    const out: SidebarTabId[][] = []
+    for (const group of pinnedSaved) {
+      if (!Array.isArray(group)) continue
+      const cleaned: SidebarTabId[] = []
+      for (const id of group) {
+        if (KNOWN_IDS.has(id as SidebarTabId) && !seen.has(id)) {
+          seen.add(id)
+          cleaned.push(id as SidebarTabId)
+        }
       }
+      if (cleaned.length > 0) out.push(cleaned)
     }
     return out
   }, [pinnedSaved])
 
-  // ── Pin/unpin operations ─────────────────────────────────────────────
-  // Move a panel from the tab strip up into the pinned zone, or move a
-  // pinned panel down into the tab strip. Both writes go through
-  // setPinnedPanels (sidebarTabOrder is left alone — resolveTabOrder
-  // filters out pinned ids at render).
-  const pinPanel = (id: SidebarTabId) => {
-    if (pinnedIds.includes(id)) return
-    setPinnedPanels([...pinnedIds, id])
+  // Flat list of every pinned id — handy for resolveTabOrder + lookup.
+  const pinnedFlat = useMemo<SidebarTabId[]>(
+    () => pinnedGroups.flat(),
+    [pinnedGroups],
+  )
+
+  // ── Pin/unpin / group ops ────────────────────────────────────────────
+  // pinAsNewGroup creates a NEW group at the bottom of the pinned
+  // stack containing just `id`. Used by right-click-on-main-strip and
+  // drag-to-pin-drop-zone.
+  const pinAsNewGroup = (id: SidebarTabId) => {
+    if (pinnedFlat.includes(id)) return
+    setPinnedPanels([...pinnedGroups, [id]])
   }
+  // pinIntoGroup adds `id` to an existing group at `groupIndex`. Used
+  // when the user drops a tab onto an existing pinned mini-strip.
+  // If `id` is already pinned elsewhere, it's moved (removed from
+  // its previous group first).
+  const pinIntoGroup = (id: SidebarTabId, groupIndex: number) => {
+    const next: SidebarTabId[][] = pinnedGroups
+      .map(g => g.filter(p => p !== id))
+      .filter(g => g.length > 0)
+    // groupIndex may have shifted if we just removed an empty group
+    // before it. Re-find the target by panel set (use any remaining
+    // id from the original target group as an anchor).
+    const targetAnchor = pinnedGroups[groupIndex]?.find(p => p !== id) ?? null
+    const realIndex = targetAnchor == null
+      ? Math.min(groupIndex, next.length - 1)
+      : next.findIndex(g => g.includes(targetAnchor))
+    if (realIndex < 0 || realIndex >= next.length) {
+      // Target group disappeared (it only contained the dragged id);
+      // re-pin as a new solo group at the original spot.
+      const insertAt = Math.min(groupIndex, next.length)
+      next.splice(insertAt, 0, [id])
+    } else {
+      next[realIndex] = [...next[realIndex], id]
+    }
+    setPinnedPanels(next)
+  }
+  // unpinPanel removes `id` from whatever group it lives in. Empty
+  // groups are dropped so we don't leave phantom strips.
   const unpinPanel = (id: SidebarTabId) => {
-    if (!pinnedIds.includes(id)) return
-    setPinnedPanels(pinnedIds.filter(p => p !== id))
+    if (!pinnedFlat.includes(id)) return
+    const next = pinnedGroups
+      .map(g => g.filter(p => p !== id))
+      .filter(g => g.length > 0)
+    setPinnedPanels(next)
   }
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      {pinnedIds.map(id => {
-        const def = PANELS.find(p => p.id === id)
-        if (!def) return null
-        const Icon = def.Icon
-        return (
-          <div key={id} className="flex-shrink-0 flex flex-col border-t border-obsidianBorder">
-            {/* Mini tab strip — one per pinned panel. Matches the
-                main strip's look but contains only that panel's
-                icon. The strip is the drag handle (drag down to
-                unpin) and a drop target (drop a tab here = pin
-                into this zone). Right-click toggles pin/unpin. */}
-            <PinnedMiniStrip
-              panelId={id}
-              Icon={Icon}
-              title={def.title}
-              onUnpin={() => unpinPanel(id)}
-              onPin={(otherId) => {
-                if (otherId === id) return
-                if (pinnedIds.includes(otherId)) return
-                setPinnedPanels([...pinnedIds, otherId])
-              }}
-              onMoveToTabStrip={() => unpinPanel(id)}
-            />
-            <SidebarSection
-              id={id}
-              title={def.title}
-              icon={<Icon className="w-3.5 h-3.5" />}
-              // Hide BOTH the chevron header AND the drag-handle
-              // attribute — the new mini-strip above the content is
-              // now the drag source.
-              hideHeader={true}
-              onHeaderContextMenu={e => {
-                e.preventDefault()
-                unpinPanel(id)
-              }}
-            >
-              <PanelBody id={id} onRightClick={onRightClick} />
-            </SidebarSection>
-          </div>
-        )
-      })}
+      {pinnedGroups.map((group, groupIndex) => (
+        <PinnedGroup
+          key={group.join(',')}
+          group={group}
+          onUnpin={unpinPanel}
+          onAddToThisGroup={(otherId) => pinIntoGroup(otherId, groupIndex)}
+          onRightClick={onRightClick}
+        />
+      ))}
       <TabSwitcher
-        pinnedIds={pinnedIds}
+        pinnedIds={pinnedFlat}
         tabOrderSaved={tabOrderSaved}
         onRightClick={onRightClick}
-        onPinPanel={pinPanel}
+        onPinPanel={pinAsNewGroup}
         onUnpinPanel={unpinPanel}
       />
     </div>
@@ -366,38 +376,76 @@ const TabSwitcher = ({
   )
 }
 
-// Mini tab strip rendered ABOVE each pinned panel's content. Single
-// icon for v1 (one panel per group). The strip is both a drag source
-// (the icon is draggable — drop on the main bottom strip or anywhere
-// outside the pinned zone to unpin) AND a drop target (drop a tab
-// from the main strip here = pin into this zone). Right-click on the
-// icon toggles pin/unpin, mirroring the main strip's gesture.
+// A pinned GROUP: a mini tab strip (one or more icons) + the active
+// tab's content below. Single-icon strips look like a labelled
+// pinned panel; multi-icon strips behave like a tiny tab switcher.
+//
+// State that's local to the group: which tab is active (defaults to
+// the first id). We hold it inside the component because group
+// composition is keyed on `group.join(',')` from the parent, so
+// adding/removing members remounts and naturally resets to a sane
+// default.
+interface PinnedGroupProps {
+  group: SidebarTabId[]
+  onUnpin: (id: SidebarTabId) => void
+  // The parent uses this to ADD a tab into this group. Called from
+  // the mini-strip's drop handler when a tab is dragged from
+  // elsewhere onto this group's strip.
+  onAddToThisGroup: (id: SidebarTabId) => void
+  onRightClick: Props['onRightClick']
+}
+
+const PinnedGroup = ({
+  group, onUnpin, onAddToThisGroup, onRightClick,
+}: PinnedGroupProps) => {
+  const [activeTab, setActiveTab] = useState<SidebarTabId>(group[0])
+  // If the group composition changed and the previous active tab is
+  // gone, snap to the first available.
+  const safeActive = group.includes(activeTab) ? activeTab : group[0]
+  return (
+    <div className="flex-shrink-0 flex flex-col border-t border-obsidianBorder">
+      <PinnedMiniStrip
+        ids={group}
+        activeId={safeActive}
+        onActivate={setActiveTab}
+        onUnpin={onUnpin}
+        onAddToThisGroup={onAddToThisGroup}
+      />
+      <SidebarSection
+        id={safeActive}
+        title={PANELS.find(p => p.id === safeActive)?.title ?? safeActive}
+        hideHeader={true}
+        onHeaderContextMenu={e => { e.preventDefault(); onUnpin(safeActive) }}
+      >
+        <PanelBody id={safeActive} onRightClick={onRightClick} />
+      </SidebarSection>
+    </div>
+  )
+}
+
+// Mini tab strip rendered ABOVE each pinned group's content. One
+// icon per panel in the group; the active icon is highlighted.
+// Click an icon to switch the group's active tab. The strip is
+// a drag source (each icon draggable — drop elsewhere = move/unpin)
+// AND a drop target (drop a tab from the main strip or another
+// group here = add to this group). Right-click toggles pin/unpin.
 interface PinnedMiniStripProps {
-  panelId: SidebarTabId
-  Icon: typeof DocumentDuplicateIcon
-  title: string
-  onUnpin: () => void
-  // Called when an icon dragged from another zone is dropped here.
-  onPin: (otherId: SidebarTabId) => void
-  // Called when the icon is dragged OUT — currently the same as
-  // onUnpin; kept separate so a future "drag to a different pinned
-  // zone" feature can hook in without re-wiring this prop.
-  onMoveToTabStrip: () => void
+  ids: SidebarTabId[]
+  activeId: SidebarTabId
+  onActivate: (id: SidebarTabId) => void
+  onUnpin: (id: SidebarTabId) => void
+  onAddToThisGroup: (id: SidebarTabId) => void
 }
 
 const PinnedMiniStrip = ({
-  panelId, Icon, title, onUnpin, onPin,
+  ids, activeId, onActivate, onUnpin, onAddToThisGroup,
 }: PinnedMiniStripProps) => {
   const [dropActive, setDropActive] = useState(false)
 
-  const handleDragStart = (e: React.DragEvent) => {
-    // Use the SIDEBAR_PANEL_DRAG_MIME so the main strip's drop
-    // handler recognises this as a "moving a pinned panel" payload.
-    e.dataTransfer.setData(SIDEBAR_PANEL_DRAG_MIME, panelId)
-    e.dataTransfer.effectAllowed = 'move'
-  }
   const handleDragOver = (e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
+    const has = e.dataTransfer.types.includes(TAB_DRAG_MIME)
+      || e.dataTransfer.types.includes(SIDEBAR_PANEL_DRAG_MIME)
+    if (!has) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     setDropActive(true)
@@ -405,10 +453,13 @@ const PinnedMiniStrip = ({
   const handleDragLeave = () => setDropActive(false)
   const handleDrop = (e: React.DragEvent) => {
     setDropActive(false)
-    const droppedId = e.dataTransfer.getData(TAB_DRAG_MIME) as SidebarTabId
+    const tabDrag = e.dataTransfer.getData(TAB_DRAG_MIME) as SidebarTabId
+    const panelDrag = e.dataTransfer.getData(SIDEBAR_PANEL_DRAG_MIME) as SidebarTabId
+    const droppedId = (tabDrag || panelDrag) as SidebarTabId
     if (!droppedId) return
+    if (ids.includes(droppedId)) return
     e.preventDefault()
-    onPin(droppedId)
+    onAddToThisGroup(droppedId)
   }
 
   return (
@@ -419,20 +470,37 @@ const PinnedMiniStrip = ({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      data-pinned-strip={panelId}
     >
-      <button
-        type="button"
-        draggable
-        onDragStart={handleDragStart}
-        onContextMenu={e => { e.preventDefault(); onUnpin() }}
-        title={`${title} — right-click to unpin`}
-        aria-label={title}
-        data-testid={`sidebar-pinned-tab-${panelId}`}
-        className="flex items-center justify-center py-1.5 px-3 rounded text-obsidianText bg-obsidianHighlight cursor-grab active:cursor-grabbing"
-      >
-        <Icon className="w-4 h-4" />
-      </button>
+      {ids.map(id => {
+        const def = PANELS.find(p => p.id === id)
+        if (!def) return null
+        const Icon = def.Icon
+        const active = id === activeId
+        return (
+          <button
+            key={id}
+            type="button"
+            draggable
+            onDragStart={e => {
+              e.dataTransfer.setData(SIDEBAR_PANEL_DRAG_MIME, id)
+              e.dataTransfer.effectAllowed = 'move'
+            }}
+            onClick={() => onActivate(id)}
+            onContextMenu={e => { e.preventDefault(); onUnpin(id) }}
+            title={`${def.title} — right-click to unpin`}
+            aria-label={def.title}
+            aria-pressed={active}
+            data-testid={`sidebar-pinned-tab-${id}`}
+            className={`flex items-center justify-center py-1.5 px-3 rounded cursor-grab active:cursor-grabbing transition-colors ${
+              active
+                ? 'bg-obsidianHighlight text-obsidianText'
+                : 'text-obsidianSecondaryText hover:bg-obsidianHighlight/40 hover:text-obsidianText'
+            }`}
+          >
+            <Icon className="w-4 h-4" />
+          </button>
+        )
+      })}
     </div>
   )
 }
