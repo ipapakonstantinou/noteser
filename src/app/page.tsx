@@ -96,19 +96,32 @@ export default function Home() {
   // Auto-sync on startup + on the configured interval (Settings → GitHub).
   useAutoSync()
 
-  // First-run onboarding: show the starter-vault picker when the user
-  // has nothing in the store AND hasn't dismissed the modal before.
-  // Local state holds the open flag so picking/skipping doesn't depend on
-  // a store round-trip.
+  // First-run onboarding: show the starter-vault picker only for genuine
+  // first-run users — no notes, no GitHub configured, and the user hasn't
+  // dismissed it before. The GitHub check is what makes the "?reset=1
+  // mid-debug" case sane: a returning user who reset is mid-pull, not a
+  // first-timer, so the modal would otherwise sit over their sync and
+  // block clicks until they noticed it.
+  //
+  // Re-checks when notes arrive (e.g. async sync pull) so the modal
+  // auto-dismisses the moment the user clearly isn't first-run.
   const [showOnboarding, setShowOnboarding] = useState(false)
   const onboardingShown = useSettingsStore(s => s.onboardingShown)
+  const githubToken = useGitHubStore(s => s.token)
+  const noteCount = useNoteStore(s => s.notes.filter(n => !n.isDeleted).length)
   useEffect(() => {
     if (!hydrated) return
     if (onboardingShown) return
-    const noteCount = useNoteStore.getState().notes.filter(n => !n.isDeleted).length
-    if (noteCount > 0) return
+    // Has GitHub creds OR notes already? Not a first-run user.
+    if (githubToken || noteCount > 0) {
+      // Mark dismissed permanently so this branch is fast on subsequent
+      // loads (avoids the "0 notes between reset and sync" flicker again).
+      useSettingsStore.getState().setOnboardingShown(true)
+      setShowOnboarding(false)
+      return
+    }
     setShowOnboarding(true)
-  }, [hydrated, onboardingShown])
+  }, [hydrated, onboardingShown, githubToken, noteCount])
 
   // Import-from-share: when the URL has `?import=<fragment>`, decode it
   // (same format as /share), prompt the user, and add the note to their
