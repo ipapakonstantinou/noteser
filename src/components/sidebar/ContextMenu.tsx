@@ -11,9 +11,12 @@ import {
   StarIcon,
   ChevronRightIcon,
   ChevronLeftIcon,
+  SparklesIcon,
 } from '@heroicons/react/24/outline'
-import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore } from '@/stores'
+import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore, useSettingsStore } from '@/stores'
 import type { ContextMenuState, Folder } from '@/types'
+import { AI_ACTIONS } from '@/utils/aiActions'
+import { runNoteAIAction } from '@/utils/runNoteAIAction'
 
 // Build a flat list of folders annotated with their full path
 // ("Parent / Child / Leaf"), in tree order.
@@ -69,6 +72,12 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   // Submenu state for "Move to folder" — click-toggle, not CSS hover.
   const [movePanelOpen, setMovePanelOpen] = useState(false)
   const [moveSearch, setMoveSearch] = useState('')
+  // AI submenu — same click-toggle pattern.
+  const [aiPanelOpen, setAiPanelOpen] = useState(false)
+  // AI is gated on having a provider configured; we hide the entry
+  // entirely when off so users don't see a non-functional option.
+  const aiProvider = useSettingsStore(s => s.aiProvider)
+  const aiAvailable = aiProvider !== 'off'
   const filteredFolderPaths = useMemo(() => {
     const q = moveSearch.trim().toLowerCase()
     if (!q) return folderPaths
@@ -79,6 +88,7 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   useEffect(() => {
     setMovePanelOpen(false)
     setMoveSearch('')
+    setAiPanelOpen(false)
   }, [contextMenu])
 
   // Position menu to stay within viewport
@@ -302,6 +312,58 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
                 )}
               </div>
             </div>
+          )}
+
+          {aiAvailable && (
+            <>
+              <div className="my-1 border-t border-obsidianBorder" />
+              {!aiPanelOpen ? (
+                <button
+                  onClick={() => setAiPanelOpen(true)}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-obsidianText hover:bg-obsidianHighlight"
+                  data-testid="context-menu-ai"
+                >
+                  <span className="flex items-center gap-2">
+                    <SparklesIcon className="w-4 h-4 text-obsidianAccentPurple" />
+                    AI actions
+                  </span>
+                  <ChevronRightIcon className="w-4 h-4 text-obsidianSecondaryText" />
+                </button>
+              ) : (
+                <div className="w-full">
+                  <button
+                    onClick={() => setAiPanelOpen(false)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-obsidianSecondaryText hover:bg-obsidianHighlight"
+                  >
+                    <ChevronLeftIcon className="w-3.5 h-3.5" />
+                    Back
+                  </button>
+                  {AI_ACTIONS.map(action => (
+                    <button
+                      key={action.id}
+                      onClick={() => {
+                        let extra: string | undefined
+                        if (action.needsExtraInput) {
+                          // v1 uses native prompt() — keeps the modal
+                          // story simple and works in jsdom for tests.
+                          const answer = window.prompt(action.extraInputLabel ?? 'Input', action.extraInputPlaceholder ?? '')
+                          if (answer == null) return
+                          extra = answer
+                        }
+                        void runNoteAIAction({ actionId: action.id, noteId: contextMenu.id, extraInput: extra })
+                        onClose()
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-obsidianText hover:bg-obsidianHighlight text-left"
+                      title={action.description}
+                      data-testid={`ai-action-${action.id}`}
+                    >
+                      <SparklesIcon className="w-3.5 h-3.5 text-obsidianAccentPurple/70 flex-none" />
+                      <span className="truncate">{action.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
           <div className="my-1 border-t border-obsidianBorder" />
