@@ -139,6 +139,13 @@ export const SidebarStack = ({ onRightClick }: Props) => {
             title={def.title}
             icon={<Icon className="w-3.5 h-3.5" />}
             draggablePanelId={id}
+            onHeaderContextMenu={e => {
+              // Right-click on a pinned section header unpins it
+              // back into the tab strip. Pairs with the right-click-
+              // to-pin gesture on the tab icons below.
+              e.preventDefault()
+              unpinPanel(id)
+            }}
           >
             <PanelBody id={id} onRightClick={onRightClick} />
           </SidebarSection>
@@ -310,7 +317,15 @@ const TabSwitcher = ({
               <button
                 type="button"
                 onClick={() => setTab(id)}
-                title={def.title}
+                onContextMenu={e => {
+                  // Right-click pins the tab to the top section. The
+                  // drag-up-to-pin gesture also works but is invisible
+                  // until drag starts — this is the discoverable
+                  // alternative.
+                  e.preventDefault()
+                  onPinPanel(id)
+                }}
+                title={`${def.title} — right-click to pin to top`}
                 aria-label={def.title}
                 aria-pressed={active}
                 data-testid={`sidebar-tab-${id}`}
