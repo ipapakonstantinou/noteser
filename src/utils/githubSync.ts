@@ -270,10 +270,31 @@ export async function pullFromGitHub(input: {
   const vaultSettingsPath = input.vaultSettingsPath ?? null
   const vaultSettingsLocalUpdatedAt = input.vaultSettingsLocalUpdatedAt ?? 0
   const { owner, name, branch } = repo
+  // .gitignore matcher (gi9n). Compile from the remote `.gitignore`
+  // blob if present; otherwise use the default OS-junk preset. The
+  // matcher decides whether each remote entry is materialised locally;
+  // ignored entries are skipped silently.
+  const { parseGitignore, DEFAULT_MATCHER, GITIGNORE_PATH } = await import('./gitignore')
 
   const headSha = await getBranchRefSha(token, owner, name, branch)
   const treeSha = await getCommitTreeSha(token, owner, name, headSha)
   const remoteTree = await getTreeMap(token, owner, name, treeSha)
+
+  // Build the gitignore matcher BEFORE walking the tree so step 1's
+  // .md loop can short-circuit on ignored paths. The matcher is also
+  // reused for step 1b (folder derivation), 1c (attachments), and
+  // step 2 (orphan detection).
+  let gitignoreMatcher = DEFAULT_MATCHER
+  const gitignoreSha = remoteTree.get(GITIGNORE_PATH)
+  if (gitignoreSha) {
+    try {
+      const raw = await getBlobContent(token, owner, name, gitignoreSha)
+      gitignoreMatcher = parseGitignore(raw)
+    } catch {
+      // Fall back to the default matcher on parse / network failure —
+      // don't fail the entire pull because of a malformed .gitignore.
+    }
+  }
 
   const out: PullClassification[] = []
   const seenLocalIds = new Set<string>()
@@ -281,6 +302,7 @@ export async function pullFromGitHub(input: {
   // 1. Walk every remote .md file.
   for (const [path, remoteSha] of remoteTree) {
     if (!path.endsWith('.md')) continue
+    if (gitignoreMatcher.isIgnored(path)) continue
     // Look up by gitPath in ALL notes (incl. soft-deleted). A
     // soft-deleted note at the same path means the user explicitly
     // wants this gone — we MUST NOT treat the remote file as a new
@@ -411,6 +433,10 @@ export async function pullFromGitHub(input: {
   const seenDirPaths = new Set<string>()
   for (const [path] of remoteTree) {
     if (pendingRemovedPaths.has(path)) continue
+    // Skip dir-walk for ignored files — they shouldn't surface their
+    // parent directories either. Otherwise an ignored `.DS_Store` in
+    // a subfolder would still cause the subfolder to be derived.
+    if (gitignoreMatcher.isIgnored(path)) continue
     let cur = path
     while (true) {
       const lastSlash = cur.lastIndexOf('/')
@@ -421,6 +447,7 @@ export async function pullFromGitHub(input: {
       seenDirPaths.add(cur)
       if (localFolderPaths.has(cur)) continue
       if (isExcluded(cur)) continue
+      if (gitignoreMatcher.isIgnored(cur, true)) continue
       out.push({ kind: 'folderCreated', path: cur })
     }
   }
@@ -462,6 +489,7 @@ export async function pullFromGitHub(input: {
   const localAttachmentPaths = new Set(await listAttachmentPaths())
   for (const [path, remoteSha] of remoteTree) {
     if (!isAttachmentPath(path)) continue
+    if (gitignoreMatcher.isIgnored(path)) continue
     // Best-effort MIME guess from extension — the apply step uses this to
     // build the Blob. Falls back to octet-stream.
     const mime = guessMimeFromPath(path)
@@ -663,6 +691,20 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   const baseTreeSha = await getCommitTreeSha(token, owner, name, parentCommitSha)
   const remoteTree = await getTreeMap(token, owner, name, baseTreeSha)
 
+  // Build the gitignore matcher (gi9n) from the remote `.gitignore`
+  // (if any). Used downstream to skip uploading ignored paths.
+  const { parseGitignore, DEFAULT_MATCHER, GITIGNORE_PATH } = await import('./gitignore')
+  let pushMatcher = DEFAULT_MATCHER
+  const remoteGitignoreSha = remoteTree.get(GITIGNORE_PATH)
+  if (remoteGitignoreSha) {
+    try {
+      const raw = await getBlobContent(token, owner, name, remoteGitignoreSha)
+      pushMatcher = parseGitignore(raw)
+    } catch {
+      // Bad / missing — fall back to defaults so we still ignore OS junk.
+    }
+  }
+
   // 3. Build tree entries for changes only.
   const entries: GitTreeEntry[] = []
   const pathUpdates: GitPathUpdate[] = []
@@ -671,6 +713,10 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   let deleted = 0
 
   for (const [path, { content, note }] of desired) {
+    // Skip ignored paths entirely (gi9n). The user's .gitignore — or
+    // the default OS-junk preset when no file exists — should never
+    // see ignored notes uploaded.
+    if (pushMatcher.isIgnored(path)) continue
     const localSha = await gitBlobSha(content)
     const remoteSha = remoteTree.get(path)
     let finalSha = remoteSha ?? null
@@ -693,6 +739,7 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   // their content drifts.
   const localAttachmentPaths = await listAttachmentPaths()
   for (const path of localAttachmentPaths) {
+    if (pushMatcher.isIgnored(path)) continue
     const localSha = await getAttachmentGitSha(path)
     if (!localSha) continue
     const remoteSha = remoteTree.get(path)
