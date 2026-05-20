@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   CloudArrowUpIcon,
   CloudArrowDownIcon,
@@ -48,9 +48,15 @@ export const GitHubView = () => {
   const lastCommitSha = useGitHubStore(s => s.lastCommitSha)
   const disconnect = useGitHubStore(s => s.disconnect)
   const openModal = useUIStore(s => s.openModal)
-  const conflictTabs = useWorkspaceStore(s => {
+  // Subscribe to panes (stable reference) and derive conflictTabs via
+  // useMemo. The previous selector returned a NEW array on every store
+  // tick, which makes useSyncExternalStore think state changed every
+  // render → infinite re-render loop (React error #185). React DevTools
+  // warns: "The result of getSnapshot should be cached…".
+  const panes = useWorkspaceStore(s => s.panes)
+  const conflictTabs = useMemo(() => {
     const out: { paneId: string; tabId: string; title: string }[] = []
-    for (const pane of s.panes) {
+    for (const pane of panes) {
       for (const t of pane.tabs) {
         if (t.kind === 'merge-conflict') {
           out.push({ paneId: pane.id, tabId: t.id, title: t.conflict.path })
@@ -58,7 +64,7 @@ export const GitHubView = () => {
       }
     }
     return out
-  })
+  }, [panes])
   const focusTab = useWorkspaceStore(s => s.focusTab)
 
   const { runSync, runPullOnly, syncState } = useGitHubSync()
