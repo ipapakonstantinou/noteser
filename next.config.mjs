@@ -2,8 +2,8 @@
 
 // Security headers applied to every response. CSP is permissive enough to
 // keep the app working (CodeMirror + react-syntax-highlighter use inline
-// styles, Tailwind injects style tags, GitHub avatars come from a few
-// different githubusercontent CDNs) while still cutting common XSS vectors.
+// styles, Tailwind injects style tags, BYO AI APIs hit Anthropic / OpenAI
+// directly from the browser) while still cutting common XSS vectors.
 const securityHeaders = [
   {
     key: 'Content-Security-Policy',
@@ -14,15 +14,19 @@ const securityHeaders = [
       // some bootstrap scripts inline.
       "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
       "style-src 'self' 'unsafe-inline'",
-      // GitHub avatars + GitHub-served images
-      "img-src 'self' data: blob: https://avatars.githubusercontent.com https://*.githubusercontent.com",
+      // User notes can ![]() any HTTPS image. data:/blob: for attachments.
+      // We leave img-src open to https: rather than maintain an allowlist of
+      // hosts the user might paste in.
+      "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
-      // /api/github/* proxies + direct api.github.com calls from the browser.
-      // Plus optional self-hosted Yjs server (wss/ws).
-      "connect-src 'self' https://api.github.com https://github.com wss: ws:",
+      // Browser-direct API surfaces: github.com for OAuth fallbacks, the
+      // GitHub Git Data API, Anthropic + OpenAI for BYO-key AI features.
+      // wss/ws for the optional self-hosted Yjs server.
+      "connect-src 'self' https://api.github.com https://github.com https://api.anthropic.com https://api.openai.com wss: ws:",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
+      "object-src 'none'",
     ].join('; '),
   },
   { key: 'X-Content-Type-Options', value: 'nosniff' },

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { checkRateLimit, getClientIp } from '@/utils/rateLimit'
+import { isOriginAllowed } from '@/utils/originAllowlist'
 
 // Browser → this route → github.com (CORS proxy for OAuth device-code endpoint).
 // Stateless: we never touch tokens; this just forwards the request.
@@ -8,6 +9,16 @@ import { checkRateLimit, getClientIp } from '@/utils/rateLimit'
 // against our GitHub OAuth App (it shares a quota with the user's normal
 // device-flow usage).
 export async function POST(request: Request) {
+  // Same-origin guard: refuse calls that didn't originate from the
+  // noteser app itself. Prevents a malicious page from laundering an
+  // OAuth device flow through our proxy.
+  const origin = isOriginAllowed(request)
+  if (!origin.ok) {
+    return NextResponse.json(
+      { error: 'forbidden', error_description: origin.reason },
+      { status: 403 },
+    )
+  }
   const limit = checkRateLimit(`device:${getClientIp(request)}`, { max: 10, windowMs: 60_000 })
   if (!limit.ok) {
     return NextResponse.json(
