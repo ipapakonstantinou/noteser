@@ -103,6 +103,38 @@ export function getAllCommands(): Command[] {
     run: () => ui.openModal({ type: 'export' }),
   })
 
+  // Share — generate a self-contained URL for the currently-open note.
+  // Available whenever the workspace has an active note.
+  const ws = useWorkspaceStore.getState()
+  const activePane = ws.panes.find(p => p.id === ws.activePaneId) ?? ws.panes[0]
+  const activeTab = activePane?.tabs.find(t => t.id === activePane?.activeTabId)
+  const activeNoteId = activeTab?.kind === 'note' ? activeTab.noteId : null
+  if (activeNoteId) {
+    out.push({
+      id: 'app.shareNote',
+      label: 'Copy share link for current note',
+      description: 'Generate a self-contained read-only URL — no backend needed.',
+      keywords: ['publish', 'public', 'share', 'link', 'url'],
+      group: 'Commands',
+      run: async () => {
+        const note = useNoteStore.getState().notes.find(n => n.id === activeNoteId)
+        if (!note) return
+        const { encodeShareLink, estimateShareLinkSize } = await import('@/utils/shareLink')
+        const url = encodeShareLink(note.title || 'Untitled', note.content ?? '')
+        const sz = estimateShareLinkSize(note.title || '', note.content ?? '')
+        if (sz > 8000 && !window.confirm(
+          `This share URL will be roughly ${(sz / 1024).toFixed(1)} KB — some email clients and chat apps truncate long URLs. Copy anyway?`,
+        )) return
+        try {
+          await navigator.clipboard.writeText(url)
+          alert('Share link copied to clipboard. The URL itself contains the note — anyone with the link can read it.')
+        } catch {
+          window.prompt('Copy this share link:', url)
+        }
+      },
+    })
+  }
+
   out.push({
     id: 'app.reportBug',
     label: 'Report a bug',
