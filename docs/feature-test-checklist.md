@@ -136,6 +136,17 @@ ship date. Last updated 2026-05-20.
 - [ ] Diagnostics dump never contains the OAuth token, AI key, or any `*secret*` field
 - [ ] Closing the modal resets the form
 
+## Frontmatter UI (a0p4)
+
+- [ ] Note WITH `---\n...\n---` block shows a "Properties (N)" header above the editor
+- [ ] Click the header to expand the table
+- [ ] Each row is editable: key + value with appropriate input type (text / number / checkbox / comma-separated array)
+- [ ] Edits save back into the note's frontmatter via writeFrontmatter
+- [ ] Note WITHOUT frontmatter shows a discreet "+ Add properties" link
+- [ ] Click "Add properties" seeds an empty `tags: []` block + expands the panel
+- [ ] Unparseable lines (no `key:`) render verbatim with an "(unparsed — edit in source)" hint
+- [ ] CRLF line endings parse correctly
+
 ## Ribbon (b3e7)
 
 - [ ] **Drag a ribbon icon up or down** to reorder

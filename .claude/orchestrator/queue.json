@@ -358,9 +358,9 @@
       "brief": "Drop-between-rows reorder: dragging an item to a position BELOW a folder (rather than ON it) should reorder siblings in that position. Today we only support drop-onto-folder (move into). Need a between-rows hit zone, a different highlight (horizontal line), and persistence of the new order. Applies to notes, folders, and attachments.",
       "status": "pending",
       "created_at": "2026-05-19T16:08:42Z",
-      "started_at": null,
+      "started_at": "2026-05-20T06:05:00Z",
       "completed_at": null,
-      "result": null,
+      "result": "Deferred — needs manual sort mode + per-note order index to be meaningful (alphabetical/modified/created sorts would ignore the drop position). Bigger lift than a UI tweak.",
       "error": null,
       "source": "telegram"
     },
@@ -444,9 +444,9 @@
     {
       "id": "20260519T173505-a0p4",
       "brief": "YAML frontmatter properties UI — render --- … --- as a structured key-value table above the note body (date / number / checkbox / list). Must not corrupt the tags: field GitHub sync already round-trips.",
-      "status": "pending",
+      "status": "in_progress",
       "created_at": "2026-05-19T17:35:05Z",
-      "started_at": null,
+      "started_at": "2026-05-20T06:10:00Z",
       "completed_at": null,
       "result": null,
       "error": null,

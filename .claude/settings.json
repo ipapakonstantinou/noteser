@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run typecheck)",
+      "Bash(npm test)",
+      "Bash(npx jest *)",
+      "Bash(npm run lint)",
+      "Bash(npx playwright *)",
+      "Bash(npm ls *)",
+      "Bash(npm audit *)"
+    ]
+  }
+}
