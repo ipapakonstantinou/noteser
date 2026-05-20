@@ -565,8 +565,7 @@ test('vault settings conflict — local + remote both dirty since last sync', as
 })
 
 test('vault settings updates (not conflict) when local is clean', async () => {
-  const { useSettingsStore, pickVaultSlice } = await import('../stores/settingsStore')
-  void pickVaultSlice
+  const { useSettingsStore } = await import('../stores/settingsStore')
   // Simulate "local matches last pushed": current slice hashes to
   // exactly vaultSettingsLastPushedHash so there's no unsynced change.
   // We pin both by serializing once + storing the hash + state.
