@@ -817,18 +817,17 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
           </button>
         </div>
       )}
-      {/* Synthetic ".trash" folder at the top of the root list.
-          Renders only when there are deleted notes — keeps the tree
-          clean when the user has nothing in trash. */}
+      {/* Synthetic ".trash" folder at the top of the root list when
+          there are deleted notes. Renders as a normal-looking folder
+          row + normal NoteItem children — no special inline buttons.
+          Right-click → standard context menu (restore/delete-forever
+          come from there, not from the row). */}
       {deletedNotes.length > 0 && (
         <TrashSyntheticFolder
           deletedNotes={deletedNotes}
           expanded={!!expandedFolders['__trash__']}
           onToggle={() => toggleFolderExpanded('__trash__')}
-          onOpenNote={handleNoteClick}
-          onRestore={restoreNote}
-          onDeleteForever={permanentlyDeleteNote}
-          onEmptyTrash={emptyTrash}
+          renderNote={(note) => <NoteItem key={note.id} note={note} />}
         />
       )}
       {visibleRootFolders.map(folder => (
@@ -845,23 +844,23 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
 }
 
 // Pseudo-folder rendered at the top of the file tree when there are
-// soft-deleted notes. Replaces the standalone Trash view — users now
-// see and act on deleted notes inline. The expand-state piggy-backs
-// on folderStore.expandedFolders under the reserved id "__trash__"
-// so the tree's existing collapse keyboard nav works for free.
+// soft-deleted notes. By design it LOOKS and behaves like any other
+// folder: chevron + folder icon + name + count, expandable, and its
+// children are normal NoteItem rows. Restore / delete-forever live
+// in the right-click context menu like any other note — the user
+// explicitly asked for no special inline UI. The expand-state piggy-
+// backs on folderStore.expandedFolders under the reserved id
+// "__trash__" so the existing keyboard nav (arrows / Home / End)
+// treats it like a regular folder.
 interface TrashSyntheticFolderProps {
   deletedNotes: Note[]
   expanded: boolean
   onToggle: () => void
-  onOpenNote: (id: string, e?: React.MouseEvent) => void
-  onRestore: (id: string) => void
-  onDeleteForever: (id: string) => void
-  onEmptyTrash: () => void
+  renderNote: (note: Note) => React.ReactNode
 }
 
 const TrashSyntheticFolder = ({
-  deletedNotes, expanded, onToggle, onOpenNote,
-  onRestore, onDeleteForever, onEmptyTrash,
+  deletedNotes, expanded, onToggle, renderNote,
 }: TrashSyntheticFolderProps) => {
   return (
     <div className="mb-0.5" data-testid="trash-synthetic-folder">
@@ -875,71 +874,22 @@ const TrashSyntheticFolder = ({
           type="button"
           className="mr-1 focus:outline-none"
           onClick={e => { e.stopPropagation(); onToggle() }}
-          aria-label={expanded ? 'Collapse trash' : 'Expand trash'}
+          aria-label={expanded ? 'Collapse .trash' : 'Expand .trash'}
         >
           {expanded ? (
-            <ChevronDownIcon className="w-3 h-3 text-obsidianSecondaryText" />
+            <ChevronDownIcon className="w-3.5 h-3.5" />
           ) : (
-            <ChevronRightIcon className="w-3 h-3 text-obsidianSecondaryText" />
+            <ChevronRightIcon className="w-3.5 h-3.5" />
           )}
         </button>
-        <TrashIcon className="w-4 h-4 mr-1.5 text-obsidianSecondaryText flex-shrink-0" />
-        <span className="flex-1 truncate text-obsidianSecondaryText">.trash</span>
-        <span className="text-[10px] text-obsidianSecondaryText/70 mr-1">
+        <FolderIcon className="w-4 h-4 mr-1.5 flex-shrink-0" />
+        <span className="flex-1 truncate">.trash</span>
+        <span className="text-[10px] text-obsidianSecondaryText ml-1">
           {deletedNotes.length}
         </span>
-        <button
-          type="button"
-          onClick={e => {
-            e.stopPropagation()
-            if (confirm(`Permanently delete ${deletedNotes.length} note${deletedNotes.length === 1 ? '' : 's'}? This cannot be undone.`)) {
-              onEmptyTrash()
-            }
-          }}
-          title="Empty trash"
-          className="text-[10px] text-red-400/70 hover:text-red-400 px-1"
-        >
-          empty
-        </button>
       </div>
       {expanded && (
-        <div>
-          {deletedNotes.map(note => (
-            <div
-              key={note.id}
-              className="obsidian-file-item"
-              style={{ paddingLeft: '24px' }}
-              onClick={() => onOpenNote(note.id)}
-              data-testid={`trash-note-${note.id}`}
-            >
-              <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0 text-obsidianSecondaryText/60" />
-              <span className="flex-1 truncate text-obsidianSecondaryText line-through">
-                {note.title || 'Untitled'}
-              </span>
-              <button
-                type="button"
-                onClick={e => { e.stopPropagation(); onRestore(note.id) }}
-                title="Restore"
-                className="text-[10px] text-obsidianAccentPurple hover:text-obsidianText px-1"
-              >
-                restore
-              </button>
-              <button
-                type="button"
-                onClick={e => {
-                  e.stopPropagation()
-                  if (confirm(`Permanently delete "${note.title || 'Untitled'}"? This cannot be undone.`)) {
-                    onDeleteForever(note.id)
-                  }
-                }}
-                title="Delete forever"
-                className="text-[10px] text-red-400/70 hover:text-red-400 px-1"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-        </div>
+        <div>{deletedNotes.map(note => renderNote(note))}</div>
       )}
     </div>
   )
