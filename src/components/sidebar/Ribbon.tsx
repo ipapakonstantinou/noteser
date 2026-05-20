@@ -162,7 +162,7 @@ export const Ribbon = () => {
   }
 
   return (
-    <div className="h-full w-[44px] flex flex-col items-center gap-1 py-2 bg-obsidianBlack border-r border-obsidianBorder">
+    <div className="h-full w-[44px] md:w-[44px] sm:w-[52px] flex flex-col items-center gap-1 py-2 bg-obsidianBlack border-r border-obsidianBorder">
       <RibbonButton onClick={openSearch} title="Search (Ctrl+K)">
         <MagnifyingGlassIcon className="w-5 h-5" />
       </RibbonButton>

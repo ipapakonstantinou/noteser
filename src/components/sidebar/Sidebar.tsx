@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ChevronDoubleLeftIcon,
   ChevronDoubleRightIcon,
@@ -20,7 +20,7 @@ function relativeTime(ts: number): string {
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
   return `${Math.floor(seconds / 86400)}d ago`
 }
-import { useHydration } from '@/hooks'
+import { useHydration, useViewport } from '@/hooks'
 import { FolderTree } from './FolderTree'
 import { FolderTreeToolbar } from './FolderTreeToolbar'
 import { CalendarView } from './CalendarView'
@@ -43,6 +43,18 @@ export const Sidebar = () => {
   const githubSyncRepo = useGitHubStore((s) => s.syncRepo)
   const githubLastSyncedAt = useGitHubStore((s) => s.lastSyncedAt)
   const { syncState, runSync } = useGitHubSync()
+  const { isMobile } = useViewport()
+
+  // On the first mount in a mobile viewport, collapse the sidebar by
+  // default — phones lose half the screen otherwise. We only auto-collapse
+  // ONCE per session so the user's manual toggle isn't fought.
+  const autoCollapsedOnceRef = useRef(false)
+  useEffect(() => {
+    if (!isMobile || autoCollapsedOnceRef.current) return
+    autoCollapsedOnceRef.current = true
+    if (!sidebarCollapsed) toggleSidebar()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobile])
 
   // Auto-rerun sync after the conflict modal applies resolutions, so the
   // user doesn't have to click Sync a second time.
