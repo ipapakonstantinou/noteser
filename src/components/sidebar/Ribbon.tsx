@@ -82,20 +82,21 @@ export function resolveRibbonOrder(saved: string[]): ItemView[] {
 
 const RIBBON_DRAG_MIME = 'application/x-noteser-ribbon-item'
 
-// Ribbon nav items that target a stack section (s4r3). Clicking these
-// expands + scrolls to the matching panel inside the new SidebarStack
-// instead of swapping the entire sidebar view. The other items
-// (notes/recent/tags/trash/templates) remain filter modes on the
-// FolderTree section.
-const VIEW_TO_SECTION_ID: Partial<Record<ItemView, 'calendar' | 'outline' | 'backlinks' | 'source-control'>> = {
-  calendar: 'calendar',
+// Ribbon nav items that target a SidebarStack tab (s4r3 v2). Clicking
+// these switches the lower tab-switcher to the matching tab instead of
+// swapping the entire sidebar view. Calendar lives ABOVE the switcher
+// (always pinned) so its ribbon click just expands the pinned section.
+// Filter-mode items (notes/recent/tags/trash/templates) remain
+// currentView-driven — FolderTree internally filters by it.
+import type { SidebarTabId } from '@/stores'
+const VIEW_TO_TAB_ID: Partial<Record<ItemView, SidebarTabId>> = {
   outline: 'outline',
-  backlinks: 'backlinks',
   github: 'source-control',
+  backlinks: 'outline', // backlinks folded into outline tab pending its own home
 }
 
 export const Ribbon = () => {
-  const { openSearch, currentView, setCurrentView, openModal, expandSidebarSection } = useUIStore()
+  const { openSearch, currentView, setCurrentView, openModal, expandSidebarSection, setSidebarTab } = useUIStore()
   const { getDeletedNotes, getRecentNotes } = useNoteStore()
   const ribbonOrder = useSettingsStore(s => s.ribbonOrder)
   const setRibbonOrder = useSettingsStore(s => s.setRibbonOrder)
@@ -180,30 +181,25 @@ export const Ribbon = () => {
       </RibbonButton>
 
       {orderedItems.map(item => {
-        const sectionId = VIEW_TO_SECTION_ID[item.id]
-        // Items that target a stack section don't have a persistent
-        // "active" highlight — they expand a panel, then return focus.
-        // Filter-mode items keep the active highlight (matches existing
-        // FolderTree filter behaviour).
-        const active = !sectionId && currentView === item.id
+        const tabId = VIEW_TO_TAB_ID[item.id]
+        // Items that target a SidebarStack tab don't carry the
+        // filter-mode "active" highlight — the tab strip surfaces
+        // which tab is open. Calendar expands its pinned section.
+        const active = !tabId && item.id !== 'calendar' && currentView === item.id
         const dragging = draggingId === item.id
         const isDropTarget = dropTargetId === item.id
         const Icon = item.Icon
         const badgeRed = item.badgeRed?.(ctx) ?? false
         const handleClick = () => {
-          if (sectionId) {
-            expandSidebarSection(sectionId)
-            // Bring the section into view after Zustand commits + the
-            // SidebarSection's content mounts.
-            requestAnimationFrame(() => {
-              const el = document.querySelector(`[data-section-id="${sectionId}"]`)
-              if (el && typeof (el as HTMLElement).scrollIntoView === 'function') {
-                (el as HTMLElement).scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-              }
-            })
-          } else {
-            setCurrentView(item.id)
+          if (item.id === 'calendar') {
+            expandSidebarSection('calendar')
+            return
           }
+          if (tabId) {
+            setSidebarTab(tabId)
+            return
+          }
+          setCurrentView(item.id)
         }
         return (
           <div

@@ -539,6 +539,10 @@ export interface SyncInput {
   repo: SyncRepo
   notes: Note[]
   folders: Folder[]
+  // Optional override for the GitHub commit message. When omitted we
+  // auto-generate "Sync from Noteser (N changes)". Used by the
+  // obsidian-git-style commit-message box (vscg).
+  commitMessage?: string
 }
 
 export type GitPathUpdate = {
@@ -557,7 +561,7 @@ export interface SyncOutcome {
 }
 
 export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
-  const { token, repo, notes, folders } = input
+  const { token, repo, notes, folders, commitMessage } = input
   const { owner, name, branch } = repo
 
   // 1. Compute desired files for every active note.
@@ -667,7 +671,8 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   // 5. Create new tree → commit → fast-forward branch.
   const newTreeSha = await createTree(token, owner, name, baseTreeSha, entries)
   const total = created + updated + deleted
-  const message = `Sync from Noteser (${total} change${total === 1 ? '' : 's'})`
+  const autoMessage = `Sync from Noteser (${total} change${total === 1 ? '' : 's'})`
+  const message = commitMessage && commitMessage.length > 0 ? commitMessage : autoMessage
   const { sha: commitSha, html_url } = await createCommit(token, owner, name, message, newTreeSha, parentCommitSha)
   await updateBranchRef(token, owner, name, branch, commitSha)
 

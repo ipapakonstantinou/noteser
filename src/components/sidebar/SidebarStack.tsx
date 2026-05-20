@@ -3,47 +3,36 @@
 import {
   CalendarDaysIcon,
   ListBulletIcon,
-  LinkIcon,
-  CloudArrowUpIcon,
+  DocumentDuplicateIcon,
+  MagnifyingGlassIcon,
+  BookmarkIcon,
+  CodeBracketIcon,
 } from '@heroicons/react/24/outline'
+import { useUIStore, type SidebarTabId } from '@/stores'
 import { FolderTree } from './FolderTree'
 import { FolderTreeToolbar } from './FolderTreeToolbar'
 import { CalendarView } from './CalendarView'
 import { OutlineView } from './OutlineView'
-import { BacklinksView } from './BacklinksView'
 import { GitHubView } from './GitHubView'
 import { SidebarSection } from './SidebarSection'
+import { SidebarSearchPanel } from './SidebarSearchPanel'
+import { SidebarBookmarksPanel } from './SidebarBookmarksPanel'
 
 interface Props {
   onRightClick: (e: React.MouseEvent, type: 'note' | 'folder', id: string) => void
 }
 
-// Obsidian-style stacked sidebar (s4r3). The Files tree gets the top
-// slot with flex: 1 — it always absorbs whatever vertical space the
-// collapsible mini-panels below leave behind. The mini-panels
-// (Calendar / Outline / Backlinks / Source Control) are user-collapsible
-// and individually resizable, with state persisted in useUIStore.
+// Stacked sidebar (s4r3 v2 — Obsidian model). Top: pinned Calendar
+// (collapsible + resizable). Middle: tab strip with five tabs. Bottom:
+// the active tab's panel content (flex-fills remaining space).
 //
-// FilesTree continues to read currentView from useUIStore for filter
-// modes (Recent / Tags / Trash / Templates) — ribbon clicks on those
-// icons still call setCurrentView. Ribbon clicks on Calendar / Outline /
-// Backlinks / Source Control now expand the matching SECTION instead of
-// swapping the entire sidebar view (see Ribbon.tsx).
-//
-// Bookmarks is deliberately omitted from this v1 — no underlying view
-// exists yet; tracked as a future follow-up.
+// The Calendar section uses the same SidebarSection shell as v1, but
+// it's the ONLY section now — the other former sections moved into the
+// tab switcher below.
 export const SidebarStack = ({ onRightClick }: Props) => {
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      {/* Files tree — flex-fill, no collapse */}
-      <div className="flex-1 min-h-0 flex flex-col">
-        <FolderTreeToolbar />
-        <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
-          <FolderTree onRightClick={onRightClick} />
-        </div>
-      </div>
-
-      {/* Mini-panels — fixed-but-resizable, collapsible */}
+      {/* Pinned Calendar */}
       <SidebarSection
         id="calendar"
         title="Calendar"
@@ -52,31 +41,81 @@ export const SidebarStack = ({ onRightClick }: Props) => {
         <CalendarView />
       </SidebarSection>
 
-      <SidebarSection
-        id="outline"
-        title="Outline"
-        icon={<ListBulletIcon className="w-3.5 h-3.5" />}
-      >
-        <OutlineView />
-      </SidebarSection>
-
-      <SidebarSection
-        id="backlinks"
-        title="Backlinks"
-        icon={<LinkIcon className="w-3.5 h-3.5" />}
-      >
-        <BacklinksView />
-      </SidebarSection>
-
-      <SidebarSection
-        id="source-control"
-        title="Source Control"
-        icon={<CloudArrowUpIcon className="w-3.5 h-3.5" />}
-      >
-        <GitHubView />
-      </SidebarSection>
+      {/* Tab strip + active panel */}
+      <TabSwitcher onRightClick={onRightClick} />
     </div>
   )
 }
+
+// Compact icon strip + active panel below. Active tab's background
+// matches the obsidian-git/Obsidian look: subtle highlight + slightly
+// stronger text. Inactive tabs use the same hover style as the ribbon.
+const TabSwitcher = ({ onRightClick }: { onRightClick: Props['onRightClick'] }) => {
+  const tabId = useUIStore(s => s.sidebarTabId)
+  const setTab = useUIStore(s => s.setSidebarTab)
+
+  return (
+    <div className="flex-1 min-h-0 flex flex-col border-t border-obsidianBorder">
+      <div className="flex items-center gap-0.5 px-1 py-1 border-b border-obsidianBorder bg-obsidianDarkGray/40">
+        <TabButton id="files"          active={tabId === 'files'}          onClick={() => setTab('files')}          title="Files">
+          <DocumentDuplicateIcon className="w-4 h-4" />
+        </TabButton>
+        <TabButton id="outline"        active={tabId === 'outline'}        onClick={() => setTab('outline')}        title="Outline">
+          <ListBulletIcon className="w-4 h-4" />
+        </TabButton>
+        <TabButton id="source-control" active={tabId === 'source-control'} onClick={() => setTab('source-control')} title="Source control">
+          <CodeBracketIcon className="w-4 h-4" />
+        </TabButton>
+        <TabButton id="search"         active={tabId === 'search'}         onClick={() => setTab('search')}         title="Search">
+          <MagnifyingGlassIcon className="w-4 h-4" />
+        </TabButton>
+        <TabButton id="bookmarks"      active={tabId === 'bookmarks'}      onClick={() => setTab('bookmarks')}      title="Bookmarks">
+          <BookmarkIcon className="w-4 h-4" />
+        </TabButton>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {tabId === 'files' && (
+          <div className="flex flex-col h-full">
+            <FolderTreeToolbar />
+            <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
+              <FolderTree onRightClick={onRightClick} />
+            </div>
+          </div>
+        )}
+        {tabId === 'outline'        && <OutlineView />}
+        {tabId === 'source-control' && <GitHubView />}
+        {tabId === 'search'         && <SidebarSearchPanel />}
+        {tabId === 'bookmarks'      && <SidebarBookmarksPanel />}
+      </div>
+    </div>
+  )
+}
+
+const TabButton = ({
+  id, active, onClick, title, children,
+}: {
+  id: SidebarTabId
+  active: boolean
+  onClick: () => void
+  title: string
+  children: React.ReactNode
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    title={title}
+    aria-label={title}
+    aria-pressed={active}
+    data-testid={`sidebar-tab-${id}`}
+    className={`flex-1 flex items-center justify-center py-1.5 rounded transition-colors ${
+      active
+        ? 'bg-obsidianHighlight text-obsidianText'
+        : 'text-obsidianSecondaryText hover:bg-obsidianHighlight/40 hover:text-obsidianText'
+    }`}
+  >
+    {children}
+  </button>
+)
 
 export default SidebarStack

@@ -3,15 +3,36 @@ import { persist } from 'zustand/middleware'
 import type { ContextMenuState, ModalState } from '@/types'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
 
-// Section IDs for the stacked-sidebar layout (s4r3).
-//   - `files` is the top section and always flex-fills the remaining
-//     vertical space (no resize handle, no height entry).
-//   - The others are collapsible mini-panels with persisted heights.
+// Sidebar layout (s4r3 v2 — Obsidian model):
+//
+//   ┌──────────────────┐
+//   │ Calendar (pinned)│ ← resizable, can collapse
+//   ├──────────────────┤
+//   │ [F][O][G][S][B]  │ ← tab strip
+//   ├──────────────────┤
+//   │ Active tab body  │ ← flex-fill
+//   └──────────────────┘
+//
+// `sidebarSections` is now used ONLY for the Calendar pinned panel. The
+// other former sections (outline / backlinks / source-control) are tabs
+// in the lower switcher and don't have height/collapse state of their
+// own. We keep the type union so old persisted entries don't lose their
+// height — they're just ignored.
 export type SidebarSectionId =
   | 'calendar'
   | 'outline'
   | 'backlinks'
   | 'source-control'
+
+// IDs of the tabs in the lower switcher. `setSidebarTab` flips between
+// them; ribbon clicks for outline/source-control/bookmarks now route
+// here instead of expanding a section. `files` is the default.
+export type SidebarTabId =
+  | 'files'
+  | 'outline'
+  | 'source-control'
+  | 'search'
+  | 'bookmarks'
 
 export interface SidebarSectionState {
   collapsed: boolean
@@ -24,11 +45,12 @@ interface UIState {
   // Sidebar
   sidebarCollapsed: boolean
   sidebarWidth: number
-  // Per-section collapse + height state for the stacked layout. Keys are
-  // SidebarSectionId; missing keys fall back to { collapsed: true,
-  // height: DEFAULT_SECTION_HEIGHT } so a freshly-installed app shows
-  // everything collapsed by default (files tree gets full height).
+  // Per-section collapse + height state. In v2 only Calendar uses this;
+  // old entries for outline/backlinks/source-control are kept for
+  // backwards compat but ignored.
   sidebarSections: Partial<Record<SidebarSectionId, SidebarSectionState>>
+  // Which lower-switcher tab is active. Default 'files'.
+  sidebarTabId: SidebarTabId
 
   // Search
   isSearchOpen: boolean
@@ -57,6 +79,7 @@ interface UIState {
   setSidebarSectionCollapsed: (id: SidebarSectionId, collapsed: boolean) => void
   setSidebarSectionHeight: (id: SidebarSectionId, height: number) => void
   expandSidebarSection: (id: SidebarSectionId) => void
+  setSidebarTab: (id: SidebarTabId) => void
   openSearch: () => void
   closeSearch: () => void
   setSearchQuery: (query: string) => void
@@ -78,6 +101,7 @@ export const useUIStore = create<UIState>()(
       sidebarCollapsed: false,
       sidebarWidth: 256,
       sidebarSections: {},
+      sidebarTabId: 'files',
       isSearchOpen: false,
       searchQuery: '',
       isPreviewMode: false,
@@ -136,6 +160,10 @@ export const useUIStore = create<UIState>()(
             },
           }
         })
+      },
+
+      setSidebarTab: (id) => {
+        set(state => state.sidebarTabId === id ? state : { sidebarTabId: id })
       },
 
       // Convenience: ribbon icons call this to open the matching panel
@@ -202,6 +230,7 @@ export const useUIStore = create<UIState>()(
         sidebarCollapsed: state.sidebarCollapsed,
         sidebarWidth: state.sidebarWidth,
         sidebarSections: state.sidebarSections,
+        sidebarTabId: state.sidebarTabId,
         isPreviewMode: state.isPreviewMode,
       })
     }
