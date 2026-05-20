@@ -8,10 +8,15 @@
 // classification is purely UX. False positives are fine — the user just
 // sees an entry that turns out to be a no-op.
 //
-//   created  — gitPath is null AND the note has any content
+//   created  — gitPath is null (note has never been pushed)
 //   modified — gitPath is set AND updatedAt > lastSyncedAt
 //   deleted  — gitPath is set AND isDeleted is true
 //   unchanged — everything else
+//
+// We INCLUDE empty new notes (no content yet) in `created`. The user's
+// mental model: "I made a file, I should see it in Source Control."
+// The actual push will skip a truly-empty file via the blob de-dup,
+// so this is purely a display nicety.
 //
 // The `unchanged` set isn't returned (the panel only cares about pending
 // work). The order of priority above also handles the "deleted note that
@@ -60,10 +65,10 @@ function classifyOne(n: Note, lastSyncedAt: number | null): SyncChange | null {
   if (n.isDeleted) {
     return hasPath ? mk(n, 'deleted') : null
   }
-  // Created = no remote path, has content. Empty notes the user just made
-  // aren't worth surfacing yet.
+  // Created = no remote path. We surface even empty notes so the user
+  // sees their freshly-created file in Source Control immediately.
   if (!hasPath) {
-    return (n.content?.trim().length ?? 0) > 0 ? mk(n, 'created') : null
+    return mk(n, 'created')
   }
   // Modified = updatedAt > lastSyncedAt. Cheap heuristic — see file header.
   if (lastSyncedAt == null) {

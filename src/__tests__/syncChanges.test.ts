@@ -39,9 +39,13 @@ describe('classifyPendingChanges', () => {
     expect(c.deleted).toEqual([])
   })
 
-  test('empty notes are NOT surfaced as created', () => {
+  test('empty new notes ARE surfaced as created', () => {
+    // Earlier behaviour suppressed content-less notes; user
+    // expectation is that a freshly-created file shows up in
+    // Source Control immediately. The actual push still de-dups
+    // truly-empty blobs.
     const c = classifyPendingChanges([n({ id: 'a', title: 'Blank' })], null)
-    expect(c.created).toEqual([])
+    expect(c.created.map(x => x.title)).toEqual(['Blank'])
   })
 
   test('deleted: isDeleted + gitPath set', () => {

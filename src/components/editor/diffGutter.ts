@@ -54,6 +54,15 @@ class DiffGutterMarker extends GutterMarker {
   toDOM() {
     const el = document.createElement('div')
     el.className = `cm-diff-marker cm-diff-${this.kind}`
+    // Inline styles guarantee the marker is visibly painted even if the
+    // baseTheme selectors don't match CodeMirror's gutter DOM exactly
+    // (saw a "0-height" visibility miss in Playwright with theme-only
+    // styles). Inline beats the theme cascade reliably.
+    el.style.width = '3px'
+    el.style.height = '100%'
+    el.style.minHeight = '1em'
+    el.style.display = 'block'
+    el.style.backgroundColor = this.kind === 'added' ? '#22c55e' : '#facc15'
     return el
   }
   eq(other: GutterMarker) {
@@ -95,10 +104,21 @@ export const diffGutterExtension: Extension = [
     '.cm-diff-gutter': {
       width: '3px',
       background: 'transparent',
+      // Keep the cells in normal flow so each marker stretches the
+      // line height implicitly.
+    },
+    '.cm-diff-gutter .cm-gutterElement': {
+      // Each cell is a positioning context so the marker can absolute-
+      // fill it without depending on a percent height that resolves to
+      // 0 when the parent has no explicit height.
+      position: 'relative',
+      width: '3px',
+      minHeight: '1em',
     },
     '.cm-diff-marker': {
+      position: 'absolute',
+      inset: '0',
       width: '3px',
-      height: '100%',
     },
     '.cm-diff-added': {
       backgroundColor: '#22c55e', // tailwind green-500
