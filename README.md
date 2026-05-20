@@ -110,7 +110,3 @@ Right-click any note or folder for rename / move / delete / new-subfolder.
 ## Roadmap
 
 See [`docs/roadmap.md`](./docs/roadmap.md) for the full backlog (Now / Next / Later).
-
-## License
-
-MIT.
