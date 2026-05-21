@@ -7,6 +7,12 @@
 //      OnboardingModal (which mounts on a truly empty vault and traps
 //      pointer events under a full-screen backdrop) doesn't block the
 //      subsequent test interactions.
+//
+// `waitForTestHooks` waits until `window.__noteser_test` is defined,
+// which happens during React hydration (client-side mount). The folder-tree
+// element can be visible earlier (via SSR HTML) before hydration completes,
+// so callers that need the store API should call this instead of (or in
+// addition to) asserting `folder-tree` visible.
 
 import type { Page } from '@playwright/test'
 
@@ -27,4 +33,13 @@ export async function setupCleanVault(page: Page): Promise<void> {
       )
     } catch { /* ignore */ }
   })
+}
+
+/** Wait for React hydration to complete by polling for `window.__noteser_test`. */
+export async function waitForTestHooks(page: Page, timeout = 10_000): Promise<void> {
+  await page.waitForFunction(
+    () => typeof window.__noteser_test !== 'undefined',
+    undefined,
+    { timeout },
+  )
 }
