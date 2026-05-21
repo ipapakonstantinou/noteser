@@ -13,6 +13,23 @@ const MAX_DELAY_MS = 30_000
 
 const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504])
 
+// GitHub's *primary* rate limit returns 403 (not 429!) with
+// `x-ratelimit-remaining: 0` plus an `x-ratelimit-reset` epoch. The
+// *secondary* (abuse-detection) limit also returns 403 but with a
+// `retry-after` header instead. Either way it's transient — wait and
+// retry. See https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
+function isRateLimited403(res: Response): boolean {
+  if (res.status !== 403) return false
+  const remaining = res.headers.get('x-ratelimit-remaining')
+  if (remaining === '0') return true
+  // Secondary rate limit: 403 with a Retry-After hint.
+  return res.headers.has('retry-after')
+}
+
+function isTransient(res: Response): boolean {
+  return TRANSIENT_STATUSES.has(res.status) || isRateLimited403(res)
+}
+
 interface GithubFetchOpts {
   /** Per-call retry cap. Defaults to MAX_RETRIES. */
   maxRetries?: number
@@ -43,7 +60,11 @@ export async function githubFetch(
       continue
     }
 
-    if (!TRANSIENT_STATUSES.has(res.status)) {
+    // Capture rate-limit headers for telemetry on every response that
+    // carries them — both successes and transient errors.
+    recordRateLimitFromResponse(res)
+
+    if (!isTransient(res)) {
       return res
     }
     if (attempt >= maxRetries) return res
@@ -52,6 +73,66 @@ export async function githubFetch(
     await delay(wait)
     attempt += 1
   }
+}
+
+// ── Rate-limit telemetry ────────────────────────────────────────────────────
+// GitHub returns x-ratelimit-{limit,remaining,reset,used,resource} on most
+// API responses. We snapshot the most recent values so the UI can show
+// "You have N requests left this hour" without an extra round-trip.
+
+export interface RateLimitSnapshot {
+  /** Total quota for the resource this window. */
+  limit: number
+  /** Requests left until reset. */
+  remaining: number
+  /** Epoch seconds when the window resets. */
+  reset: number
+  /** Resource bucket — `core`, `search`, `graphql`, etc. */
+  resource: string
+  /** When we captured this (client clock, epoch ms). */
+  capturedAt: number
+}
+
+let lastRateLimit: RateLimitSnapshot | null = null
+const listeners = new Set<(snap: RateLimitSnapshot) => void>()
+
+function recordRateLimitFromResponse(res: Response): void {
+  const limit = res.headers.get('x-ratelimit-limit')
+  const remaining = res.headers.get('x-ratelimit-remaining')
+  const reset = res.headers.get('x-ratelimit-reset')
+  if (limit == null || remaining == null || reset == null) return
+  const limitN = parseInt(limit, 10)
+  const remainingN = parseInt(remaining, 10)
+  const resetN = parseInt(reset, 10)
+  if (!Number.isFinite(limitN) || !Number.isFinite(remainingN) || !Number.isFinite(resetN)) return
+  const snap: RateLimitSnapshot = {
+    limit: limitN,
+    remaining: remainingN,
+    reset: resetN,
+    resource: res.headers.get('x-ratelimit-resource') ?? 'core',
+    capturedAt: Date.now(),
+  }
+  lastRateLimit = snap
+  for (const l of listeners) {
+    try { l(snap) } catch { /* listener errors must not break fetches */ }
+  }
+}
+
+/** Most recent rate-limit snapshot, or null if we haven't seen one yet. */
+export function getLastRateLimit(): RateLimitSnapshot | null {
+  return lastRateLimit
+}
+
+/** Subscribe to rate-limit updates. Returns the unsubscribe function. */
+export function onRateLimit(listener: (snap: RateLimitSnapshot) => void): () => void {
+  listeners.add(listener)
+  return () => { listeners.delete(listener) }
+}
+
+/** Reset state — for tests only. */
+export function _resetRateLimitTelemetry(): void {
+  lastRateLimit = null
+  listeners.clear()
 }
 
 // Reads `Retry-After` (seconds) when present, otherwise falls back to
