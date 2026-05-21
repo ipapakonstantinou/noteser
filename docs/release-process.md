@@ -1,92 +1,103 @@
 # Release process
 
-How we ship code to production. Two modes — current (development) and
-post-go-live (when we want to protect production users from broken
-deploys).
+How we ship code to production. **Active mode: branch-per-feature with
+preview URLs.** (Flipped on 2026-05-21 — see "Historical" at the
+bottom for the prior direct-to-main mode.)
 
-## Current mode — direct-to-main (development phase)
+## Branch model
 
-While the only user is the project owner, this is fine:
+  main      ── production. Auto-deploys to noteser.thetechjon.com.
+              Treat as immutable: only landed via PR merge from dev
+              or feature branches once the preview has been verified.
 
-1. Land changes directly on `main`.
-2. Run `npm run typecheck && npm test && npm run build` before pushing.
-3. Push. Vercel auto-deploys `main` → noteser.thetechjon.com.
-4. If the deploy fails, fix-forward — push another commit.
+  dev       ── integration / staging. Auto-deploys to a Vercel preview
+              URL (visible in the Vercel Deployments tab).
+              Merge feature branches here first when you want a
+              stable preview to share or QA against.
 
-Why this works in dev: blast radius is one person, and that person
-chose to take the risk. Cost of a broken deploy is "refresh the tab in
-5 minutes."
+  feat/<x>  ── one branch per feature. Push → Vercel auto-creates a
+              per-branch preview URL. Open a PR back to dev (or main
+              for hotfixes).
 
-## Go-live mode — branch-per-feature with preview URLs
+  fix/<x>   ── same as feat/, but for bug fixes.
 
-Switch to this **before** we publicly announce or onboard anyone other
-than the owner.
+  hotfix/<x> ── production emergencies only. Branch off main, PR back
+              to main, see "Hot-fix path" below.
 
-### Workflow
+## Standard workflow
 
-1. **One branch per feature.** Convention: `feat/<orchestrator-id>` or
-   `fix/<short-name>`. Examples: `feat/d6v8-database-view`,
-   `fix/sync-storm`.
-2. **Push the branch.** Vercel auto-generates a unique preview URL
-   (`noteser-<branch>-<user>.vercel.app`). Visible under the project's
-   Deployments tab in the Vercel dashboard.
-3. **Open a PR.** Vercel auto-comments the preview URL on the PR
-   description.
-4. **Owner reviews the preview URL.** Manual smoke through the
-   feature-test-checklist for the affected area.
-5. **Merge** when the preview looks right. Vercel deploys `main` →
-   production. If something breaks, revert the merge commit — preview
-   stays alive for diagnostics.
+1. **Branch.** `git checkout -b feat/<short-name>` from `dev`.
+2. **Build.** Land your work; commit small. CI runs on every push
+   (typecheck + lint + test + build).
+3. **Push.** Vercel auto-generates a preview URL within ~1-2 minutes
+   (`noteser-git-feat-<branch>-<user>.vercel.app` or similar). It's
+   shown in the Vercel Deployments tab and as a comment on the PR.
+4. **Open a PR.** Target `dev`. The PR description should include
+   the manual-test scope and which areas of the app it touches.
+5. **Owner reviews the preview URL.** Smoke through the affected
+   surface. For Settings or sync changes, also try the recovery flow
+   (`?reset=1`).
+6. **Merge into `dev`.** Vercel updates the staging preview at
+   `dev`'s URL.
+7. **Promote to prod.** When `dev` looks right after batching one or
+   more features, open a `dev → main` PR. Merge → Vercel deploys to
+   `noteser.thetechjon.com`.
+8. **If prod breaks**, revert the merge commit on main (creates a
+   new "Revert" commit). Preview branches stay alive for diagnostics.
 
-### Guardrails
+## Guardrails
 
-- **CI required before merge.** Add a GitHub Actions workflow that
-  runs `npm run typecheck`, `npm test`, `npm run lint`, `npm run build`
-  on every PR. Block merge on red. (See `docs/release-process.md`
-  follow-up: `ci-checks` task.)
+- **CI runs on every push and PR.** `.github/workflows/ci.yml` runs
+  `npm run lint`, `npm run typecheck`, `npm test`, `npm run build` on
+  `main`, `dev`, and any PR targeting either. Watch the badge before
+  you merge.
+- **Branch protection NOT enforced.** GitHub Pro is required for
+  protected branches on private repos and we don't pay for it. The
+  rules above are convention-only — direct pushes to main are
+  technically possible but rude. Use PRs.
 - **Skew Protection on.** Vercel project setting → Functions. Prevents
   the "old client JS calling new server" failure mode that can happen
   mid-deploy.
-- **Manual smoke checklist.** Walk through `docs/feature-test-checklist.md`
-  for any touched area before merging a PR. For Settings or sync
-  changes, also try the recovery flow (`?reset=1`).
+- **Manual smoke before promoting to main.** Walk through
+  `docs/feature-test-checklist.md` for any touched area. For Settings
+  or sync changes, also try the recovery flow (`?reset=1`).
 - **Database / persisted-state migrations require a version bump.** Any
   change that breaks the shape of localStorage / IDB needs a
   `PERSISTED_RESET_VERSION` bump (see `src/utils/reset.ts`). Document
   the bump in the PR description.
 
-### Hot-fix path
+## Hot-fix path
 
 For production-down emergencies:
 
 1. Branch off `main`: `git checkout -b hotfix/<thing>`.
 2. Fix forward (minimal change). Add a regression test.
-3. Push + open PR. **Don't wait for the standard checklist**, but DO
-   wait for CI green.
+3. Push + open PR **targeting main directly** (not dev). Don't wait
+   for the standard checklist, but DO wait for CI green.
 4. Merge. Verify production resolved.
-5. Backport the fix to any in-flight feature branches that diverged.
+5. Backport the fix to `dev` and any in-flight feature branches that
+   diverged: `git checkout dev && git cherry-pick <hotfix-sha>`.
 
-### Anti-patterns to avoid
+## Anti-patterns to avoid
 
 - **Long-lived feature branches.** Anything past ~1 week starts to drift.
   Merge incrementally behind a beta flag instead.
-- **Force-pushing to main.** Don't. Even revert via a new commit.
+- **Force-pushing to main or dev.** Don't. Revert via a new commit.
 - **Skipping CI with `--no-verify`.** If a hook is wrong, fix the hook.
   Bypassing it loses the safety guarantee.
 - **"Just one tiny fix on main."** Every one-off shortcut becomes the
-  habit. Use the branch flow once we're live.
+  habit. Use the branch flow.
 
-### When to flip the switch
+## Historical — direct-to-main (pre 2026-05-21)
 
-Triggers for moving from current → go-live mode:
+Until 2026-05-21 noteser was in single-owner development mode, with
+changes landing directly on `main`. That mode is preserved below for
+archaeology only:
 
-- Public announcement (Twitter / Reddit / HN).
-- The first non-owner user starts depending on the production URL.
-- We start charging or collecting any kind of data.
-- Whichever comes first.
-
-When the switch flips: this section becomes the canonical workflow,
-the "current mode" section moves to a "Historical" subheading.
+> 1. Land changes directly on `main`.
+> 2. Run `npm run typecheck && npm test && npm run build` before pushing.
+> 3. Push. Vercel auto-deploys `main` → noteser.thetechjon.com.
+> 4. If the deploy fails, fix-forward — push another commit.
 
 ## LAN access from another PC
 
