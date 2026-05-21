@@ -1,5 +1,31 @@
 /** @type {import('next').NextConfig} */
 
+// Derive a single WS origin from NEXT_PUBLIC_YJS_WS_URL so CSP only allows
+// the collaboration server the operator opted into. Anything malformed (or
+// unset) collapses to "no WS connections at all" — the old `wss: ws:` bare
+// wildcards would let an XSS payload exfiltrate localStorage to any host.
+function deriveCollabWsOrigin(raw) {
+  if (!raw) return null
+  try {
+    const url = new URL(raw)
+    if (url.protocol !== 'ws:' && url.protocol !== 'wss:') return null
+    return `${url.protocol}//${url.host}`
+  } catch {
+    return null
+  }
+}
+
+const collabWsOrigin = deriveCollabWsOrigin(process.env.NEXT_PUBLIC_YJS_WS_URL)
+
+const connectSrc = [
+  "'self'",
+  'https://api.github.com',
+  'https://github.com',
+  'https://api.anthropic.com',
+  'https://api.openai.com',
+  ...(collabWsOrigin ? [collabWsOrigin] : []),
+].join(' ')
+
 // Security headers applied to every response. CSP is permissive enough to
 // keep the app working (CodeMirror + react-syntax-highlighter use inline
 // styles, Tailwind injects style tags, BYO AI APIs hit Anthropic / OpenAI
@@ -21,8 +47,9 @@ const securityHeaders = [
       "font-src 'self' data:",
       // Browser-direct API surfaces: github.com for OAuth fallbacks, the
       // GitHub Git Data API, Anthropic + OpenAI for BYO-key AI features.
-      // wss/ws for the optional self-hosted Yjs server.
-      "connect-src 'self' https://api.github.com https://github.com https://api.anthropic.com https://api.openai.com wss: ws:",
+      // The optional Yjs collab server is added only when
+      // NEXT_PUBLIC_YJS_WS_URL is a valid ws:// or wss:// URL.
+      `connect-src ${connectSrc}`,
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -49,4 +76,7 @@ const nextConfig = {
   },
 }
 
+// Exported for tests so the CSP string can be exercised without spinning up
+// a Next server. Not part of the Next runtime contract.
+export { deriveCollabWsOrigin, securityHeaders }
 export default nextConfig
