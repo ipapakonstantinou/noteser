@@ -62,6 +62,12 @@ export const Sidebar = () => {
 
   const handleRightClick = (e: React.MouseEvent, type: 'note' | 'folder', id: string) => {
     e.preventDefault()
+    // Stop the event from bubbling to any ancestor onContextMenu (e.g.
+    // SidebarSection's content wrapper when a panel is rendered
+    // headerless inside a pinned group). Without this, right-clicking
+    // a note/folder inside a pinned Files panel could trigger the
+    // panel's unpin handler.
+    e.stopPropagation()
     setContextMenu({ x: e.clientX, y: e.clientY, type, id })
   }
 
