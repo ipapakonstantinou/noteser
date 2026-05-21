@@ -338,11 +338,13 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         }
 
         const newPane: PaneState = { id: uuidv4(), tabs: [tab], activeTabId: tab.id }
-        const compactedLeft = compactPanes(draft)
-        // If the left pane vanished, just keep the new pane.
-        const panes = compactedLeft[0].tabs.length === 0
-          ? [newPane]
-          : [...compactedLeft, newPane]
+        // Obsidian behaviour: splitting the ONLY tab leaves the
+        // original pane in place but empty. Previously we dropped
+        // the empty left pane and ended up with just one pane (the
+        // new right one), which is functionally a no-op split — the
+        // tab "moved" rather than "split". Keep both panes always;
+        // an empty pane renders an EmptyState in Pane.tsx.
+        const panes: PaneState[] = [...draft, newPane]
         set({ panes, activePaneId: newPane.id })
         selectNoteFromActive(panes, newPane.id)
       },

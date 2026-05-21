@@ -20,58 +20,52 @@ test.beforeEach(async ({ page }) => {
   await setupCleanVault(page)
 })
 
-test('PARITY GAP: splitting the only tab collapses the empty left pane (Obsidian keeps it)', async ({ page }) => {
-  // In Obsidian, dragging the only tab to a split zone creates two panes:
-  // the left pane shows "No file is open" and the right pane shows the note.
-  //
-  // In noteser, splitTabRight removes the now-empty left pane via compactPanes.
-  // The result is a single pane containing the tab — not two panes.
-  // This is a parity gap: the split gesture "works" but the empty pane is lost.
-
+test('splitting the only tab keeps the empty left pane visible (Obsidian behaviour)', async ({ page }) => {
+  // splitTabRight no longer compacts the now-empty source pane; it
+  // stays visible as an empty pane showing the EmptyState. (Fixed
+  // 2026-05-21 — was a parity gap.)
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
   await waitForTestHooks(page)
 
-  // Seed a note and open it.
   const noteId = await page.evaluate(() => {
-    const store = window.__noteser_test!.stores.noteStore.getState()
-    const note = store.addNote({ folderId: null })
-    store.updateNote(note.id, { title: 'Split Me' })
+    const ns = window.__noteser_test!.stores.noteStore.getState()
+    const note = ns.addNote({ folderId: null })
+    ns.updateNote(note.id, { title: 'Split Me' })
+    window.__noteser_test!.stores.workspaceStore.getState().openNote(note.id, { preview: false })
     return note.id
   })
-  await expect(page.getByTestId('note-row')).toBeVisible()
-
-  // Open the note via double-click to get a pinned tab.
-  await page.getByTestId('note-row').first().dblclick()
   await expect(page.locator('.cm-editor').first()).toBeVisible({ timeout: 10_000 })
 
-  // Get the tab id from the store.
   const tabId = await page.evaluate(() => {
     const ws = window.__noteser_test!.stores.workspaceStore.getState()
     return ws.panes[0]?.activeTabId ?? null
   })
   expect(tabId).toBeTruthy()
 
-  // Call splitTabRight via the store.
   await page.evaluate((tId) => {
     window.__noteser_test!.stores.workspaceStore.getState().splitTabRight(tId)
   }, tabId!)
 
-  // Parity gap: noteser collapses the empty left pane → still 1 pane.
-  // Obsidian would show 2 panes. Document the actual behavior.
-  const paneCount = await page.evaluate(() => {
-    return window.__noteser_test!.stores.workspaceStore.getState().panes.length
+  const panes = await page.evaluate(() => {
+    return window.__noteser_test!.stores.workspaceStore.getState().panes.map(p => ({
+      tabs: p.tabs.length,
+      activeTabId: p.activeTabId,
+    }))
   })
-  // compactPanes removes the empty left pane, leaving only 1 pane.
-  expect(paneCount).toBe(1)
+  // Two panes now — left empty, right contains the note.
+  expect(panes.length).toBe(2)
+  expect(panes[0].tabs).toBe(0)
+  expect(panes[0].activeTabId).toBeNull()
+  expect(panes[1].tabs).toBe(1)
 
-  // The surviving pane should contain the note tab.
-  const survivingTabs = await page.evaluate(() => {
+  // Right pane has the note.
+  const rightNoteId = await page.evaluate(() => {
     const ws = window.__noteser_test!.stores.workspaceStore.getState()
-    return ws.panes[0]?.tabs ?? []
+    const tab = ws.panes[1]?.tabs[0]
+    return (tab as { noteId?: string })?.noteId ?? null
   })
-  expect(survivingTabs.length).toBe(1)
-  expect((survivingTabs[0] as { noteId?: string }).noteId).toBe(noteId)
+  expect(rightNoteId).toBe(noteId)
 })
 
 test('drag-event path: synthetic dragstart+drop on right-edge activates split', async ({ page }) => {
@@ -79,13 +73,13 @@ test('drag-event path: synthetic dragstart+drop on right-edge activates split', 
   await expect(page.getByTestId('folder-tree')).toBeVisible()
   await waitForTestHooks(page)
 
-  // Seed and open a note.
+  // Seed and open a note (store API — dblclick triggers rename now).
   await page.evaluate(() => {
-    const store = window.__noteser_test!.stores.noteStore.getState()
-    const note = store.addNote({ folderId: null })
-    store.updateNote(note.id, { title: 'Drag Split Note' })
+    const ns = window.__noteser_test!.stores.noteStore.getState()
+    const note = ns.addNote({ folderId: null })
+    ns.updateNote(note.id, { title: 'Drag Split Note' })
+    window.__noteser_test!.stores.workspaceStore.getState().openNote(note.id, { preview: false })
   })
-  await page.getByTestId('note-row').first().dblclick()
   await expect(page.locator('.cm-editor').first()).toBeVisible({ timeout: 10_000 })
 
   const tabId = await page.evaluate(() => {

@@ -105,6 +105,21 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers = {}) => {
           event.preventDefault()
           openModal({ type: 'command-palette' })
           return
+        case 'closeTab': {
+          event.preventDefault()
+          // Find the active tab across all panes and close it. No-op
+          // when nothing is open. We close the global "active" tab —
+          // whichever pane has activePaneId.
+          const ws = useWorkspaceStore.getState()
+          const pane = ws.panes.find(p => p.id === ws.activePaneId) ?? ws.panes[0]
+          if (!pane || !pane.activeTabId) return
+          ws.closeTab(pane.activeTabId)
+          return
+        }
+        case 'openSettings':
+          event.preventDefault()
+          openModal({ type: 'settings' })
+          return
       }
     }
 

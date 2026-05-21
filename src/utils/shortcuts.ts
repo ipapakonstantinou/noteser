@@ -26,6 +26,8 @@ export type ShortcutAction =
   | 'openToday'
   | 'focusSidebar'
   | 'openCommandPalette'
+  | 'closeTab'
+  | 'openSettings'
 
 export interface ShortcutDef {
   id: string
@@ -100,6 +102,20 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
     description: 'Show all commands with fuzzy search.',
     defaultCombo: 'Ctrl+Shift+P',
     action: 'openCommandPalette',
+  },
+  {
+    id: 'closeTab',
+    label: 'Close active tab',
+    description: 'Close the currently focused tab. Matches Obsidian / VS Code.',
+    defaultCombo: 'Ctrl+W',
+    action: 'closeTab',
+  },
+  {
+    id: 'openSettings',
+    label: 'Open settings',
+    description: 'Open the Settings modal. Matches Obsidian.',
+    defaultCombo: 'Ctrl+,',
+    action: 'openSettings',
   },
 ]
 

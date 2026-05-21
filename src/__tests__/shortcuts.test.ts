@@ -254,7 +254,7 @@ describe('SHORTCUTS registry', () => {
   test('has the documented actions', () => {
     const ids = SHORTCUTS.map(s => s.id).sort()
     expect(ids).toEqual([
-      'deleteNote', 'focusSidebar', 'newFolder', 'newNote', 'openCommandPalette', 'openSearch', 'openToday', 'togglePreview', 'toggleSidebar',
+      'closeTab', 'deleteNote', 'focusSidebar', 'newFolder', 'newNote', 'openCommandPalette', 'openSearch', 'openSettings', 'openToday', 'togglePreview', 'toggleSidebar',
     ])
   })
 

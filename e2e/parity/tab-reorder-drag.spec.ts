@@ -23,18 +23,17 @@ test('moveTab store action correctly reorders tabs within a pane', async ({ page
   await expect(page.getByTestId('folder-tree')).toBeVisible()
   await waitForTestHooks(page)
 
-  // Seed and open 3 notes as pinned tabs.
+  // Seed + open 3 notes as pinned tabs (store API — dblclick triggers
+  // rename now).
   await page.evaluate(() => {
-    const store = window.__noteser_test!.stores.noteStore.getState()
-    store.addNote({ folderId: null })
-    store.addNote({ folderId: null })
-    store.addNote({ folderId: null })
+    const ns = window.__noteser_test!.stores.noteStore.getState()
+    const ws = window.__noteser_test!.stores.workspaceStore.getState()
+    for (let i = 0; i < 3; i++) {
+      const n = ns.addNote({ folderId: null })
+      ws.openNote(n.id, { preview: false })
+    }
   })
-
-  await page.getByTestId('note-row').nth(0).dblclick()
   await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 10_000 })
-  await page.getByTestId('note-row').nth(1).dblclick()
-  await page.getByTestId('note-row').nth(2).dblclick()
 
   const tabsBefore = await page.evaluate(() => {
     return window.__noteser_test!.stores.workspaceStore.getState().panes[0]?.tabs.map(
@@ -69,16 +68,16 @@ test('tab drag events: dragstart on tab + drop on gap reorders tabs', async ({ p
   await expect(page.getByTestId('folder-tree')).toBeVisible()
   await waitForTestHooks(page)
 
-  // Seed and open 2 notes.
+  // Seed + open 2 notes.
   await page.evaluate(() => {
     const ns = window.__noteser_test!.stores.noteStore.getState()
-    ns.addNote({ folderId: null })
-    ns.addNote({ folderId: null })
+    const ws = window.__noteser_test!.stores.workspaceStore.getState()
+    for (let i = 0; i < 2; i++) {
+      const n = ns.addNote({ folderId: null })
+      ws.openNote(n.id, { preview: false })
+    }
   })
-
-  await page.getByTestId('note-row').nth(0).dblclick()
   await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 10_000 })
-  await page.getByTestId('note-row').nth(1).dblclick()
 
   const initialTabs = await page.evaluate(() => {
     return window.__noteser_test!.stores.workspaceStore.getState().panes[0]?.tabs.map(

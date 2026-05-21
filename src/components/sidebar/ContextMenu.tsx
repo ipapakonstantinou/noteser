@@ -12,6 +12,7 @@ import {
   ChevronRightIcon,
   ChevronLeftIcon,
   SparklesIcon,
+  ArrowUturnLeftIcon,
 } from '@heroicons/react/24/outline'
 import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore, useSettingsStore } from '@/stores'
 import type { ContextMenuState, Folder } from '@/types'
@@ -56,7 +57,8 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
     addNote,
     duplicateNote,
     togglePinNote,
-    deleteNote
+    deleteNote,
+    restoreNote
   } = useNoteStore()
   const { getFolderById, addFolder, deleteFolder, getActiveFolders, toggleFolderExpanded, expandedFolders } = useFolderStore()
   const openNote = useWorkspaceStore(s => s.openNote)
@@ -141,6 +143,17 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
     })
     onClose()
   }
+
+  const handleRestore = () => {
+    if (isNote) restoreNote(contextMenu.id)
+    onClose()
+  }
+
+  // Note-only: is the right-clicked note in the trash? Drives the
+  // Restore option visibility — and we hide the rest of the note
+  // actions for trashed items since most don't make sense (you
+  // can't pin or duplicate a trashed row from here).
+  const isTrashedNote = isNote && item && 'isDeleted' in item && item.isDeleted
 
   const handleDuplicate = () => {
     if (isNote) {
@@ -243,6 +256,18 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
 
       {isNote && (
         <>
+          {/* Restore is the only useful action on a trashed note —
+              shown above the rest so it's the obvious target. The
+              other note actions remain available for symmetry but
+              none of them have great semantics on a trashed row;
+              tightening that is a follow-up. */}
+          {isTrashedNote && (
+            <MenuButton
+              icon={ArrowUturnLeftIcon}
+              label="Restore"
+              onClick={handleRestore}
+            />
+          )}
           <MenuButton
             icon={(item as { isPinned?: boolean }).isPinned ? StarIcon : StarIcon}
             label={(item as { isPinned?: boolean }).isPinned ? 'Unpin' : 'Pin to top'}

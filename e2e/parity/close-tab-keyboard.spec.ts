@@ -3,17 +3,12 @@ import { setupCleanVault, waitForTestHooks } from './_helpers'
 
 // Obsidian-parity scenario: close-tab-keyboard
 //
-// Obsidian behavior: Ctrl+W closes the active tab. Closing the last tab
-// in a pane closes the pane (unless it's the only pane).
+// Obsidian behavior: Ctrl+W closes the active tab. Closing the last
+// tab in the only pane leaves the pane empty (doesn't unmount).
 //
-// Noteser today: Ctrl+W is NOT implemented as a keyboard shortcut in
-// useKeyboardShortcuts.ts. The close button (×) on the tab and middle-click
-// both work via closeTab(tabId). This spec:
-//   1. Verifies the × button closes the tab (this IS implemented).
-//   2. Verifies Ctrl+W does NOT close the tab (flags parity gap).
-//
-// PARITY GAP: Ctrl+W does not close tabs. Obsidian users who rely on this
-// muscle memory will find it doesn't work in noteser.
+// Noteser today: matches. The gap that previously documented "Ctrl+W
+// does NOT close tabs" was closed 2026-05-21 — `closeTab` shortcut
+// added to the data-driven registry. These tests now guard the fix.
 
 test.beforeEach(async ({ page }) => {
   await setupCleanVault(page)
@@ -21,11 +16,14 @@ test.beforeEach(async ({ page }) => {
 
 async function openOneNote(page: import('@playwright/test').Page) {
   await waitForTestHooks(page)
+  // Drive via the store — dblclick now triggers inline rename (the
+  // Obsidian-parity behaviour landed 2026-05-21), so we can't use it
+  // to open notes anymore.
   await page.evaluate(() => {
-    const store = window.__noteser_test!.stores.noteStore.getState()
-    store.addNote({ folderId: null })
+    const ns = window.__noteser_test!.stores.noteStore.getState()
+    const n = ns.addNote({ folderId: null })
+    window.__noteser_test!.stores.workspaceStore.getState().openNote(n.id, { preview: false })
   })
-  await page.getByTestId('note-row').first().dblclick()
   await expect(page.locator('.cm-editor').first()).toBeVisible({ timeout: 10_000 })
 }
 
@@ -71,7 +69,7 @@ test('closing the last tab in the only pane leaves the pane empty (not removed)'
   expect(tabCount).toBe(0)
 })
 
-test('PARITY GAP: Ctrl+W does not close the active tab', async ({ page }) => {
+test('Ctrl+W closes the active tab', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
 
@@ -82,18 +80,13 @@ test('PARITY GAP: Ctrl+W does not close the active tab', async ({ page }) => {
   })
   expect(tabsBefore).toBe(1)
 
-  // Press Ctrl+W. In Obsidian this would close the tab.
-  // Noteser does not implement this shortcut.
   await page.keyboard.press('Control+w')
-  await page.waitForTimeout(100)
+  await page.waitForTimeout(150)
 
   const tabsAfter = await page.evaluate(() => {
     return window.__noteser_test!.stores.workspaceStore.getState().panes[0]?.tabs.length ?? 0
   })
-  // Tab count should still be 1 — Ctrl+W is NOT wired up.
-  // If this ever equals 0, it means Ctrl+W was implemented and this
-  // test should be converted to a "pass" check.
-  expect(tabsAfter).toBe(1) // parity gap: should be 0 in Obsidian
+  expect(tabsAfter).toBe(0)
 })
 
 test('closing one of two tabs in a pane leaves the other tab active', async ({ page }) => {
@@ -101,17 +94,16 @@ test('closing one of two tabs in a pane leaves the other tab active', async ({ p
   await expect(page.getByTestId('folder-tree')).toBeVisible()
   await waitForTestHooks(page)
 
-  // Open two notes.
+  // Open two notes (via store — dblclick now triggers rename).
   await page.evaluate(() => {
-    const store = window.__noteser_test!.stores.noteStore.getState()
-    store.addNote({ folderId: null })
-    store.addNote({ folderId: null })
+    const ns = window.__noteser_test!.stores.noteStore.getState()
+    const ws = window.__noteser_test!.stores.workspaceStore.getState()
+    const a = ns.addNote({ folderId: null })
+    const b = ns.addNote({ folderId: null })
+    ws.openNote(a.id, { preview: false })
+    ws.openNote(b.id, { preview: false })
   })
-  await expect(page.getByTestId('note-row')).toHaveCount(2)
-
-  await page.getByTestId('note-row').nth(0).dblclick()
   await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 10_000 })
-  await page.getByTestId('note-row').nth(1).dblclick()
 
   const tabCount = await page.evaluate(() => {
     return window.__noteser_test!.stores.workspaceStore.getState().panes[0]?.tabs.length ?? 0

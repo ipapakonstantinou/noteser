@@ -1,19 +1,15 @@
 import { test, expect } from '@playwright/test'
-import { setupCleanVault } from './_helpers'
+import { setupCleanVault, waitForTestHooks } from './_helpers'
 
 // Obsidian-parity scenario: rename-note-inline
 //
-// Obsidian behavior: double-click a note title in the sidebar → the title
-// becomes an editable text input in place. Enter commits, Escape cancels.
+// Obsidian behavior: double-click a note title in the sidebar → the
+// title becomes an editable text input in place. Enter commits,
+// Escape cancels.
 //
-// Noteser today: double-click does NOT open an inline rename (deliberate).
-// Rename is only available via context-menu → Rename. This spec verifies the
-// context-menu path works AND flags the double-click gap as a parity
-// divergence.
-//
-// PARITY GAP: double-click on a note row does not trigger rename; it pins
-// the tab (opens as non-preview). Obsidian users who rely on double-click to
-// rename will need to use right-click → Rename instead.
+// Noteser today: matches. Both right-click → Rename AND double-click
+// land in the same inline-edit flow via useUIStore.requestRename.
+// (Was a parity gap until 2026-05-21.)
 
 test.beforeEach(async ({ page }) => {
   await setupCleanVault(page)
@@ -71,33 +67,22 @@ test('context-menu Rename → Escape cancels, title unchanged', async ({ page })
   await expect(page.getByTestId('note-row').first()).toContainText(originalTitle!.trim())
 })
 
-test('PARITY GAP: double-click opens pinned tab, does NOT trigger rename', async ({ page }) => {
+test('double-click on a note row triggers inline rename (Obsidian behaviour)', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
+  await waitForTestHooks(page)
 
   await page.getByTitle('New note (Alt+N)').click()
   await expect(page.getByTestId('note-row')).toHaveCount(1)
 
-  // Double-click the note row.
+  // Double-click → inline rename request lands in the UI store.
   await page.getByTestId('note-row').first().dblclick()
+  await page.waitForTimeout(150)
 
-  // Obsidian would open an inline rename input. Noteser opens a pinned tab.
-  // Assert that no inline input appeared (confirming the parity gap).
-  await expect(page.getByTestId('note-row').first().locator('input')).toHaveCount(0)
-
-  // And confirm the editor opened with a pinned tab (non-preview).
-  await expect(page.locator('.cm-editor').first()).toBeVisible({ timeout: 10_000 })
-  const tabTitle = page.locator('[class*="italic"]').first()
-  // A preview tab would be italic; a pinned tab is not italic.
-  // Check by store state — isPreview should be false after double-click.
-  const isPreview = await page.evaluate(() => {
-    const ws = window.__noteser_test?.stores.workspaceStore?.getState()
-    if (!ws) return null
-    const pane = ws.panes[0]
-    if (!pane) return null
-    const activeTab = pane.tabs.find((t: { id: string }) => t.id === pane.activeTabId)
-    return (activeTab as { isPreview?: boolean })?.isPreview ?? null
-  })
-  // After double-click the tab should NOT be a preview tab.
-  expect(isPreview).toBe(false)
+  const rename = await page.evaluate(() =>
+    window.__noteser_test!.stores.uiStore.getState().renameRequest,
+  )
+  expect(rename?.type).toBe('note')
+  // And the EditableText component renders an <input> for the row.
+  await expect(page.getByTestId('note-row').first().locator('input')).toHaveCount(1)
 })

@@ -200,13 +200,16 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     }, 200)
   }
   const handleNoteDoubleClick = (id: string) => {
-    const fromNonTreeView = currentView !== 'notes' && currentView !== 'trash'
+    // Obsidian behaviour: double-click a note row triggers inline
+    // rename (not pin). The pin gesture happens implicitly via
+    // typing into a preview tab, OR explicitly via right-click →
+    // Pin to top. Cancel any pending single-click handler so the
+    // note doesn't briefly flash into preview.
     if (clickTimerRef.current) {
       clearTimeout(clickTimerRef.current)
       clickTimerRef.current = null
     }
-    openNote(id, { preview: false })
-    if (fromNonTreeView) revealNote(id)
+    useUIStore.getState().requestRename({ type: 'note', id })
   }
 
   // ── Attachment helpers ─────────────────────────────────────────────────
