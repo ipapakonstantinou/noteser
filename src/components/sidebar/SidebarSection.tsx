@@ -160,17 +160,25 @@ export const SidebarSection = ({
         </div>
       )}
 
-      {/* Resize handle — bottom border, only when expanded */}
+      {/* Resize handle — bottom border, only when expanded. The
+          actual hit target is h-2 (8px) so it's easy to grab; we
+          show a subtler 2px stripe in the middle so the affordance
+          isn't visually heavy at rest. On hover/drag the full
+          target lights up in purple. */}
       {!collapsed && (
         <div
           role="separator"
           aria-orientation="horizontal"
           aria-label={`Resize ${title}`}
           onMouseDown={onResizeStart}
-          className={`h-1 cursor-row-resize flex-shrink-0 ${
-            dragging ? 'bg-obsidianAccentPurple' : 'hover:bg-obsidianAccentPurple/40'
+          className={`group h-2 cursor-row-resize flex-shrink-0 flex items-center justify-center ${
+            dragging ? 'bg-obsidianAccentPurple' : 'hover:bg-obsidianAccentPurple/30'
           } transition-colors`}
-        />
+        >
+          {!dragging && (
+            <span className="block w-8 h-[2px] rounded-full bg-obsidianBorder group-hover:bg-obsidianAccentPurple/80 transition-colors" />
+          )}
+        </div>
       )}
     </div>
   )
