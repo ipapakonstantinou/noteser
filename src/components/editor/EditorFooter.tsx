@@ -1,11 +1,12 @@
 'use client'
 
 import { useMemo } from 'react'
-import { ArrowPathIcon, FireIcon } from '@heroicons/react/24/outline'
+import { ArrowPathIcon, FireIcon, SignalIcon, SignalSlashIcon } from '@heroicons/react/24/outline'
 import { extractTags } from '@/utils/tags'
 import { useGitHubStore, useNoteStore, useUIStore, useSettingsStore } from '@/stores'
 import { classifyPendingChanges, totalPendingCount } from '@/utils/syncChanges'
 import { computeStreakFromDateStrings, dailyDateSet } from '@/utils/dailyStreak'
+import { useCollaboration } from '@/hooks/useCollaboration'
 import type { Note } from '@/types'
 
 interface EditorFooterProps {
@@ -110,6 +111,7 @@ export const EditorFooter = ({ note }: EditorFooterProps) => {
         )}
       </div>
       <div className="flex items-center gap-4 shrink-0">
+        <CollabPill />
         {streak.length >= 2 && (
           <span
             className="flex items-center gap-1 text-orange-400"
@@ -128,6 +130,39 @@ export const EditorFooter = ({ note }: EditorFooterProps) => {
         <span>Modified {formatDate(note.updatedAt)}</span>
       </div>
     </div>
+  )
+}
+
+// Tiny presence pill — shows the live-collab WebSocket health when
+// NEXT_PUBLIC_YJS_WS_URL is configured. Hidden when collab is off so
+// the footer stays uncluttered for the default single-user case.
+function CollabPill() {
+  const { status, attempts, url } = useCollaboration()
+  if (status === 'off' || url == null) return null
+
+  const labelByStatus: Record<Exclude<typeof status, 'off'>, string> = {
+    connecting: 'Live: connecting…',
+    connected: 'Live: on',
+    disconnected: attempts > 0 ? `Live: retrying (${attempts}/5)` : 'Live: paused',
+    error: 'Live: unreachable',
+  }
+  const colorByStatus: Record<Exclude<typeof status, 'off'>, string> = {
+    connecting: 'text-amber-400',
+    connected: 'text-green-500',
+    disconnected: 'text-amber-400',
+    error: 'text-red-400',
+  }
+  const Icon = status === 'connected' ? SignalIcon : SignalSlashIcon
+
+  return (
+    <span
+      className={`flex items-center gap-1 ${colorByStatus[status]}`}
+      title={`${labelByStatus[status]} · ${url}`}
+      data-testid="status-bar-collab"
+    >
+      <Icon className="w-3 h-3" />
+      <span>{labelByStatus[status]}</span>
+    </span>
   )
 }
 
