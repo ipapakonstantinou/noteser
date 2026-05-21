@@ -40,21 +40,18 @@ test('store API: openModal({ type: "settings" }) opens the settings modal', asyn
   await expect(page.getByTestId('settings-categories')).toBeVisible({ timeout: 5_000 })
 })
 
-test('PARITY GAP: Ctrl+, does NOT open the settings modal', async ({ page }) => {
+test('Ctrl+, opens the settings modal (Obsidian binding)', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
   await waitForTestHooks(page)
 
-  // Press Ctrl+, — this is what Obsidian users expect.
   await page.keyboard.press('Control+,')
   await page.waitForTimeout(200)
 
-  // The modal should NOT have opened.
   const modalState = await page.evaluate(() => {
     return window.__noteser_test!.stores.uiStore.getState().modal.type
   })
-  // Ctrl+, is not wired up — modal type should remain null.
-  expect(modalState).toBeNull() // parity gap: should be 'settings' in Obsidian
+  expect(modalState).toBe('settings')
 })
 
 test('command palette path opens settings', async ({ page }) => {

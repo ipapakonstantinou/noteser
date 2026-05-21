@@ -107,12 +107,14 @@ test('expanding .trash reveals the deleted note row', async ({ page }) => {
   await expect(page.getByTestId('note-row').filter({ hasText: 'To Be Trashed' })).toBeVisible()
 })
 
-test('PARITY GAP: right-click on deleted note shows no Restore option in context menu; use Trash view instead', async ({ page }) => {
+test('right-click on a deleted note shows a Restore option that revives it', async ({ page }) => {
+  // Was a parity gap until 2026-05-21 — restore was only available
+  // via the dedicated Trash view. Context-menu Restore is now wired
+  // for trashed rows.
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
   await waitForTestHooks(page)
 
-  // Seed 2 notes, soft-delete one.
   await page.evaluate(() => {
     const store = window.__noteser_test!.stores.noteStore.getState()
     const n1 = store.addNote({ folderId: null })
@@ -124,21 +126,23 @@ test('PARITY GAP: right-click on deleted note shows no Restore option in context
 
   await expect(page.getByTestId('note-row')).toHaveCount(1)
   await expect(page.getByTestId('trash-synthetic-folder')).toBeVisible()
-
-  // Expand .trash.
   await page.getByTestId('trash-synthetic-folder').locator('button').first().click()
   const deletedRow = page.getByTestId('note-row').filter({ hasText: 'Deleted Note' })
   await expect(deletedRow).toBeVisible()
 
-  // Right-click the deleted note — context menu should open but NO Restore option.
   await deletedRow.click({ button: 'right' })
   const restoreBtn = page.getByRole('button', { name: 'Restore' })
-  // PARITY GAP: Restore is not in the right-click context menu.
-  // Count 0 confirms the gap. If ever non-zero, the gap is fixed.
-  await expect(restoreBtn).toHaveCount(0)
+  await expect(restoreBtn).toBeVisible()
+  await restoreBtn.click()
 
-  // Close context menu.
-  await page.keyboard.press('Escape')
+  // After restore: two active note rows are visible, no trash folder
+  // (the only trashed note just came back).
+  await expect(page.getByTestId('note-row')).toHaveCount(2)
+  const deletedCount = await page.evaluate(() => {
+    const notes = window.__noteser_test!.stores.noteStore.getState().notes
+    return notes.filter(n => n.isDeleted).length
+  })
+  expect(deletedCount).toBe(0)
 })
 
 test('Restore works via the dedicated Trash view (currentView=trash)', async ({ page }) => {

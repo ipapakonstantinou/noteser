@@ -66,8 +66,12 @@ export const Modal = ({
       {/* Modal content. Capped at the viewport height with an internal
           flex column so the header stays pinned and the body scrolls
           when its content overflows (e.g. the Settings modal with many
-          sections). */}
+          sections). role="dialog" + aria-modal=true so screen readers
+          announce noteser modals correctly. */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? 'modal-title' : undefined}
         className={`relative w-full ${sizeClasses[size]} mx-4 bg-obsidianGray rounded-lg shadow-obsidian border border-obsidianBorder flex flex-col max-h-[90vh]`}
         onClick={e => e.stopPropagation()}
       >
@@ -75,7 +79,7 @@ export const Modal = ({
         {(title || showCloseButton) && (
           <div className="flex items-center justify-between px-4 py-3 border-b border-obsidianBorder flex-shrink-0">
             {title && (
-              <h2 className="text-lg font-medium text-obsidianText">{title}</h2>
+              <h2 id="modal-title" className="text-lg font-medium text-obsidianText">{title}</h2>
             )}
             {showCloseButton && (
               <button

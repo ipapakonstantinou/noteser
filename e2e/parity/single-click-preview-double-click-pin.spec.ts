@@ -89,7 +89,11 @@ test('single-clicking another note replaces the preview tab', async ({ page }) =
   expect(tabsAfter).toBe(1)
 })
 
-test('double-click pins the tab (isPreview=false)', async ({ page }) => {
+test('double-click triggers inline rename (not pin)', async ({ page }) => {
+  // Noteser maps double-click to inline-rename (matching Obsidian's
+  // double-click-on-title behaviour). Pin = right-click → Pin OR the
+  // auto-promote-preview-on-typing path. See
+  // e2e/parity/rename-note-inline.spec.ts for the rename coverage.
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
   await waitForTestHooks(page)
@@ -97,17 +101,15 @@ test('double-click pins the tab (isPreview=false)', async ({ page }) => {
   await seedNotes(page, 1)
   await expect(page.getByTestId('note-row')).toHaveCount(1)
 
-  // Double-click the note row.
   await page.getByTestId('note-row').first().dblclick()
-  await expect(page.locator('.cm-editor').first()).toBeVisible({ timeout: 10_000 })
+  await page.waitForTimeout(150)
 
-  const isPreview = await page.evaluate(() => {
-    const ws = window.__noteser_test!.stores.workspaceStore.getState()
-    const pane = ws.panes[0]
-    const activeTab = pane?.tabs.find((t: { id: string }) => t.id === pane.activeTabId)
-    return (activeTab as { isPreview?: boolean })?.isPreview ?? null
-  })
-  expect(isPreview).toBe(false)
+  const rename = await page.evaluate(() =>
+    window.__noteser_test!.stores.uiStore.getState().renameRequest,
+  )
+  expect(rename?.type).toBe('note')
+  // The rename input appears inline; CodeMirror does NOT mount.
+  await expect(page.getByTestId('note-row').first().locator('input')).toHaveCount(1)
 })
 
 test('typing into a preview tab auto-promotes it to pinned', async ({ page }) => {
