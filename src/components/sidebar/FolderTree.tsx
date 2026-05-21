@@ -744,7 +744,17 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   // icon but no longer get hoisted above the folder list).
   const rootNotes = sortNotes(activeNotes.filter(n => !n.folderId), folderSortMode)
 
-  if (rootFolders.length === 0 && rootNotes.length === 0 && attachmentMeta.length === 0) {
+  // Empty-state only fires when EVERYTHING is empty — including the
+  // .trash bucket. Previously this branch returned before
+  // TrashSyntheticFolder rendered, so a user who deleted their last
+  // note lost access to their trash (the synthetic folder vanished
+  // with the rest of the tree). Caught by qa-tester sweep 2026-05-21.
+  if (
+    rootFolders.length === 0 &&
+    rootNotes.length === 0 &&
+    attachmentMeta.length === 0 &&
+    deletedNotes.length === 0
+  ) {
     return (
       <div
         ref={treeRef}
