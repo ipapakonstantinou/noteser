@@ -79,7 +79,7 @@ export const TabBar = ({ pane }: Props) => {
               }`}
               title={title.tooltip}
             >
-              {tab.kind === 'merge-conflict'
+              {tab.kind === 'merge-conflict' || tab.kind === 'merge-batch'
                 ? <ExclamationTriangleIcon className="w-4 h-4 text-amber-400 flex-shrink-0" />
                 : tab.kind === 'welcome'
                   ? <SparklesIcon className="w-4 h-4 text-obsidianAccentPurple flex-shrink-0" />
@@ -128,6 +128,10 @@ function renderTitle(tab: Tab, notes: Array<{ id: string; title: string }>): Ren
   if (tab.kind === 'merge-conflict') {
     const path = tab.conflict.path
     return { text: path, tooltip: `Merge conflict — ${path}`, italic: false }
+  }
+  if (tab.kind === 'merge-batch') {
+    const n = tab.conflicts.length
+    return { text: `Conflicts (${n})`, tooltip: `${n} conflict${n === 1 ? '' : 's'} from the last pull`, italic: false }
   }
   if (tab.kind === 'welcome') {
     return { text: 'Welcome', tooltip: 'Welcome — getting started', italic: false }
