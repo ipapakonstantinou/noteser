@@ -1,5 +1,6 @@
 export { Sidebar } from './Sidebar'
 export { Ribbon } from './Ribbon'
+export { MobileTopBar } from './MobileTopBar'
 export { FolderTree } from './FolderTree'
 export { ContextMenu } from './ContextMenu'
 export { CalendarView } from './CalendarView'

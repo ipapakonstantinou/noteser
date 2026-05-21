@@ -75,9 +75,11 @@ for (const vp of VIEWPORTS) {
       // Drawer dismissed.
       await expect(backdrop).toHaveCount(0)
 
-      // The Alpha note is now the active tab — its title in the header.
-      const titleInput = page.locator('input[placeholder="Note title..."]')
-      await expect(titleInput).toHaveValue('Alpha note')
+      // The Alpha note is now the active tab. Phase B hides the
+      // EditorHeader on mobile, so we verify via the tab strip
+      // (which always shows the active note's title). The matching
+      // selector is the active-tab div with its purple top border.
+      await expect(page.locator('div.border-t-obsidianAccentPurple[title="Alpha note"]')).toBeVisible()
     })
 
     test('drawer dismisses on backdrop tap and Escape', async ({ page }) => {

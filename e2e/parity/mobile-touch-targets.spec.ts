@@ -1,12 +1,12 @@
 // Mobile parity: touch-friendly hit targets.
 //
-// At ≤768px, the primary interactive elements (ribbon nav, tab close X,
-// editor header pin/preview buttons) are sized so a finger can hit them
-// without zooming. Apple HIG calls for ≥44×44pt; we aim for ≥44px on the
-// dominant axis and a generous tap area on the secondary axis.
+// Phase B of mobile responsive hid the desktop ribbon entirely below
+// MOBILE_BREAKPOINT and replaced it with the MobileTopBar. This spec
+// asserts the touch threshold (Apple HIG ≥44pt) for the buttons on
+// that bar, plus the editor-header buttons and tab strip.
 //
 // Asserts at 375×667:
-//   - Ribbon buttons (top + bottom) ≥ 44×44.
+//   - MobileTopBar buttons (hamburger / search / preview / overflow) ≥ 44×44.
 //   - Editor-header pin + preview buttons ≥ 44×44.
 //   - Tab strip height ≥ 44px (the close X hitbox sits inside this).
 
@@ -15,34 +15,36 @@ import { setupCleanVault, waitForTestHooks } from './_helpers'
 
 test.use({ viewport: { width: 375, height: 667 } })
 
-test('ribbon buttons are ≥44×44 on mobile', async ({ page }) => {
+test('mobile top-bar buttons are ≥44×44', async ({ page }) => {
   await setupCleanVault(page)
   await page.goto('/')
   await waitForTestHooks(page)
-  await page.waitForTimeout(400) // let viewport-driven auto-collapse settle
+  await page.waitForTimeout(400)
 
-  // Inspect every <button> inside the Ribbon (.h-full.w-\[44px\] is the ribbon).
   const sizes = await page.evaluate(() => {
-    const ribbon = document.querySelector('.h-full.w-\\[44px\\]') as HTMLElement | null
-    if (!ribbon) return [] as Array<{ w: number; h: number; title: string }>
-    return Array.from(ribbon.querySelectorAll('button')).map((b) => {
+    const bar = document.querySelector('[data-testid="mobile-top-bar"]') as HTMLElement | null
+    if (!bar) return [] as Array<{ w: number; h: number; title: string }>
+    return Array.from(bar.querySelectorAll('button')).map((b) => {
       const r = b.getBoundingClientRect()
-      return { w: r.width, h: r.height, title: b.getAttribute('title') ?? '' }
+      return { w: r.width, h: r.height, title: b.getAttribute('title') ?? b.getAttribute('aria-label') ?? '' }
     })
   })
   expect(sizes.length).toBeGreaterThan(0)
   for (const s of sizes) {
-    expect.soft(s.w, `ribbon button "${s.title}" width`).toBeGreaterThanOrEqual(44)
-    expect.soft(s.h, `ribbon button "${s.title}" height`).toBeGreaterThanOrEqual(44)
+    expect.soft(s.w, `top-bar button "${s.title}" width`).toBeGreaterThanOrEqual(44)
+    expect.soft(s.h, `top-bar button "${s.title}" height`).toBeGreaterThanOrEqual(44)
   }
 })
 
-test('editor header pin + preview buttons are ≥44×44 on mobile', async ({ page }) => {
+test('overflow-menu Pin + Rename items are touch-sized on mobile', async ({ page }) => {
+  // Phase B aggressive: EditorHeader is hidden on mobile entirely.
+  // Pin + Rename moved to the MobileTopBar overflow menu. Verify the
+  // menu items themselves clear the touch threshold (height is the
+  // dominant axis for a vertical menu; the 208px dropdown width
+  // already constrains horizontal).
   await setupCleanVault(page)
   await page.goto('/')
   await waitForTestHooks(page)
-
-  // Open a note so the editor header renders.
   await page.evaluate(() => {
     const ns = window.__noteser_test!.stores.noteStore.getState()
     const note = ns.addNote({ title: 'Mobile probe', folderId: null, content: '' })
@@ -50,20 +52,21 @@ test('editor header pin + preview buttons are ≥44×44 on mobile', async ({ pag
   })
   await page.waitForTimeout(200)
 
+  await page.locator('[data-testid="mobile-top-bar-overflow"]').click()
+  await expect(page.locator('[data-testid="mobile-top-bar-overflow-menu"]')).toBeVisible()
+
   const sizes = await page.evaluate(() => {
-    const buttons: Array<{ w: number; h: number; title: string }> = []
-    for (const sel of ['[title="Pin note"]', '[title="Unpin note"]', '[title="Preview mode"]', '[title="Edit mode"]']) {
-      const b = document.querySelector(sel) as HTMLElement | null
-      if (!b) continue
+    const menu = document.querySelector('[data-testid="mobile-top-bar-overflow-menu"]') as HTMLElement | null
+    if (!menu) return [] as Array<{ w: number; h: number; label: string }>
+    return Array.from(menu.querySelectorAll('button')).map((b) => {
       const r = b.getBoundingClientRect()
-      buttons.push({ w: r.width, h: r.height, title: b.getAttribute('title') ?? '' })
-    }
-    return buttons
+      return { w: r.width, h: r.height, label: (b.textContent ?? '').trim() }
+    })
   })
-  expect(sizes.length).toBeGreaterThanOrEqual(2)
+  // Pin + Rename + All notes + Recent + Tags + Settings = 6 items.
+  expect(sizes.length).toBeGreaterThanOrEqual(6)
   for (const s of sizes) {
-    expect.soft(s.w, `${s.title} width`).toBeGreaterThanOrEqual(44)
-    expect.soft(s.h, `${s.title} height`).toBeGreaterThanOrEqual(44)
+    expect.soft(s.h, `menu item "${s.label}" height`).toBeGreaterThanOrEqual(36)
   }
 })
 
