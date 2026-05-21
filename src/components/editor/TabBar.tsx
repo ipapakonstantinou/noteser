@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { DocumentTextIcon, ExclamationTriangleIcon, XMarkIcon } from '@heroicons/react/24/outline'
+import { DocumentTextIcon, ExclamationTriangleIcon, XMarkIcon, SparklesIcon } from '@heroicons/react/24/outline'
 import { useNoteStore, useWorkspaceStore } from '@/stores'
 import { TAB_DRAG_MIME } from '@/hooks'
 import type { Tab, PaneState } from '@/stores/workspaceStore'
@@ -81,7 +81,9 @@ export const TabBar = ({ pane }: Props) => {
             >
               {tab.kind === 'merge-conflict'
                 ? <ExclamationTriangleIcon className="w-4 h-4 text-amber-400 flex-shrink-0" />
-                : <DocumentTextIcon className="w-4 h-4 flex-shrink-0" />}
+                : tab.kind === 'welcome'
+                  ? <SparklesIcon className="w-4 h-4 text-obsidianAccentPurple flex-shrink-0" />
+                  : <DocumentTextIcon className="w-4 h-4 flex-shrink-0" />}
               <span className={`truncate flex-1 min-w-0 ${title.italic ? 'italic' : ''}`}>{title.text}</span>
               <button
                 onClick={(e) => { e.stopPropagation(); closeTab(tab.id) }}
@@ -126,6 +128,9 @@ function renderTitle(tab: Tab, notes: Array<{ id: string; title: string }>): Ren
   if (tab.kind === 'merge-conflict') {
     const path = tab.conflict.path
     return { text: path, tooltip: `Merge conflict — ${path}`, italic: false }
+  }
+  if (tab.kind === 'welcome') {
+    return { text: 'Welcome', tooltip: 'Welcome — getting started', italic: false }
   }
   const note = notes.find(n => n.id === tab.noteId)
   const text = note?.title || 'Untitled'

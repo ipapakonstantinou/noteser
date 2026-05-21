@@ -203,6 +203,23 @@ async function seed(page: import('@playwright/test').Page) {
   await page.waitForTimeout(500)
 }
 
+test('00 — welcome tab', async ({ page }) => {
+  // First-run state: no notes, onboarding NOT marked shown, no GitHub.
+  // page.tsx auto-opens the welcome tab on hydrate.
+  await page.addInitScript(() => {
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem('noteser-settings') || '{}')
+      parsed.state = parsed.state || {}
+      parsed.state.onboardingShown = false
+      window.localStorage.setItem('noteser-settings', JSON.stringify(parsed))
+    } catch { /* ignore */ }
+  })
+  await page.goto('/')
+  await expect(page.getByTestId('welcome-pane')).toBeVisible()
+  await page.waitForTimeout(400)
+  await page.screenshot({ path: path.join(OUT, '00-welcome.png'), fullPage: false })
+})
+
 test('01 — editor hero', async ({ page }) => {
   await seed(page)
   await expect(page.getByTestId('folder-tree')).toBeVisible()

@@ -18,7 +18,6 @@ import {
   AIResultModal,
   VaultSettingsConflictModal,
 } from '@/components/modals'
-import { OnboardingModal } from '@/components/modals/OnboardingModal'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useKeyboardShortcuts, useHydration, useAutoSync, useAutoEmbedNotes, useApplyTheme } from '@/hooks'
 import { useUIStore, useWorkspaceStore, useGitHubStore } from '@/stores'
@@ -116,22 +115,24 @@ export default function Home() {
   //
   // Re-checks when notes arrive (e.g. async sync pull) so the modal
   // auto-dismisses the moment the user clearly isn't first-run.
-  const [showOnboarding, setShowOnboarding] = useState(false)
+  // First-run experience: open a "Welcome" tab in the workspace (VS
+  // Code-style) rather than a popup. Idempotent — workspaceStore.openWelcome
+  // focuses an existing welcome tab instead of stacking duplicates.
+  // Closing the tab flips onboardingShown via workspaceStore.closeTab so
+  // we don't reopen on the next session.
   const onboardingShown = useSettingsStore(s => s.onboardingShown)
   const githubToken = useGitHubStore(s => s.token)
   const noteCount = useNoteStore(s => s.notes.filter(n => !n.isDeleted).length)
   useEffect(() => {
     if (!hydrated) return
     if (onboardingShown) return
-    // Has GitHub creds OR notes already? Not a first-run user.
+    // Has GitHub creds OR notes already? Not a first-run user — mark
+    // dismissed so we don't show the welcome tab on subsequent loads.
     if (githubToken || noteCount > 0) {
-      // Mark dismissed permanently so this branch is fast on subsequent
-      // loads (avoids the "0 notes between reset and sync" flicker again).
       useSettingsStore.getState().setOnboardingShown(true)
-      setShowOnboarding(false)
       return
     }
-    setShowOnboarding(true)
+    useWorkspaceStore.getState().openWelcome()
   }, [hydrated, onboardingShown, githubToken, noteCount])
 
   // Import-from-share: when the URL has `?import=<fragment>`, decode it
@@ -289,7 +290,6 @@ export default function Home() {
       <BugReportModal />
       <AIResultModal />
       <VaultSettingsConflictModal />
-      <OnboardingModal isOpen={showOnboarding} onDismiss={() => setShowOnboarding(false)} />
       <ResetConfirmModal
         isOpen={showResetModal}
         hasUnsynced={resetHasUnsynced}
