@@ -100,6 +100,10 @@ Tailwind with an Obsidian-inspired dark palette in `tailwind.config.js` (`obsidi
 
 `@/` maps to `src/` (configured in `tsconfig.json`).
 
+### QA / Obsidian-parity testing
+
+The `qa-tester` subagent (`.claude/agents/qa-tester.md`) drives Playwright through user-style flows defined in `e2e/obsidian-parity.md`. Invoke it after UI changes when you want a sanity sweep without driving the browser yourself. The agent writes specs into `e2e/parity/`, captures screenshots + traces on failure (already configured in `playwright.config.ts`), and reports in plain language. Graduating a parity spec into the main `e2e/` suite is a manual decision.
+
 ### Security notes
 
 - OAuth token stored in `localStorage` — same trust model as Obsidian Git plugin. XSS would exfiltrate it.
