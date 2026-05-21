@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- noteser favicon: a bold "N" monogram in obsidian purple on a
+       rounded dark square. The dark background matches the app's
+       chrome, the purple matches the accent token used across the
+       UI (#8b5cf6). Kept letterform-based so it stays legible at
+       16x16 in browser tab strips. -->
+  <rect width="32" height="32" rx="6" fill="#1b1b1b"/>
+  <path
+    fill="#8b5cf6"
+    d="M9 7 h3.4 l7.2 11.5 V7 H23 v18 h-3.4 l-7.2-11.5 V25 H9 z"
+  />
+</svg>
