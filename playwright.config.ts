@@ -10,6 +10,11 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
+  // Filenames starting with `_` are utility scripts that piggyback on the
+  // Playwright runner (e.g. `_screenshots.spec.ts` which generates the
+  // marketing screenshots in docs/images/). Excluded from the regular
+  // suite — run them explicitly when needed.
+  testIgnore: '**/_*.spec.ts',
   // Single worker by default — the dev server is shared and Zustand
   // localStorage isolation is per-context. Parallelism can come later when
   // we have lots of tests; right now it just makes debugging harder.
