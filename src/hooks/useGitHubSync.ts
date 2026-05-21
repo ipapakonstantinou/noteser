@@ -84,7 +84,7 @@ async function runPush(
   token: string,
   repo: SyncRepo,
   commitMessage?: string,
-): Promise<{ result: SyncResult; pathUpdates: GitPathUpdate[]; vaultSettingsHashPushed?: string }> {
+): Promise<{ result: SyncResult; pathUpdates: GitPathUpdate[]; vaultSettingsHashPushed?: string; vaultGitignorePushed?: boolean }> {
   const { notes } = useNoteStore.getState()
   const { folders } = useFolderStore.getState()
   const settings = useSettingsStore.getState()
@@ -109,6 +109,9 @@ async function runPush(
   const outcome = await syncToGitHub({
     token, repo, notes, folders, commitMessage,
     vaultSettings: vaultSettingsInput,
+    // gi9n: thread the editor's draft through. Null = no pending edit;
+    // syncToGitHub will leave the remote `.gitignore` alone.
+    vaultGitignoreDraft: settings.vaultGitignoreDraft,
   })
   return outcome
 }
@@ -243,7 +246,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
         }
       }
 
-      const { result, pathUpdates, vaultSettingsHashPushed } = await runPush(activeToken, activeRepo, effectiveCommitMessage)
+      const { result, pathUpdates, vaultSettingsHashPushed, vaultGitignorePushed } = await runPush(activeToken, activeRepo, effectiveCommitMessage)
 
       // Write the per-note gitPath / gitLastPushedSha back so the next pull
       // classifies us as `unchanged` instead of detecting a phantom remote
@@ -256,6 +259,15 @@ export function useGitHubSync(): UseGitHubSyncResult {
       // when nothing has changed locally since.
       if (vaultSettingsHashPushed) {
         useSettingsStore.getState().setVaultSettingsLastPushedHash(vaultSettingsHashPushed)
+      }
+      // gi9n: if we just pushed the `.gitignore` draft, clear it and
+      // snapshot the pushed content as the new remote baseline so the
+      // editor stops showing a dirty marker and the next sync skips.
+      if (vaultGitignorePushed) {
+        const s = useSettingsStore.getState()
+        const pushed = s.vaultGitignoreDraft
+        s.setVaultGitignoreRemoteSnapshot(pushed)
+        s.setVaultGitignoreDraft(null)
       }
       recordSync(result.commitSha)
 

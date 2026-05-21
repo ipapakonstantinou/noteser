@@ -17,7 +17,7 @@ import {
   SwatchIcon,
 } from '@heroicons/react/24/outline'
 import { THEME_TOKENS, THEME_PRESETS } from '@/utils/theme'
-import { useUIStore, useSettingsStore } from '@/stores'
+import { useUIStore, useSettingsStore, useGitHubStore } from '@/stores'
 import type { FolderSortMode, TaskListDensity } from '@/stores'
 import type { TrashMode } from '@/stores/settingsStore'
 import { Modal } from '@/components/ui'
@@ -442,17 +442,114 @@ function GitHubPanel() {
           mono
         />
       </Field>
+      <VaultGitignoreField />
       <GitignoreOverlayField />
     </div>
   )
 }
 
+// In-app editor for the SHARED vault `.gitignore` (the file at the
+// repo root). Lets the user fetch the current content on demand, edit
+// it inline, and push on the next sync. The fetch button reads from
+// GitHub directly so we don't have to wait for a full sync to see
+// what's already there.
+function VaultGitignoreField() {
+  const token = useGitHubStore(s => s.token)
+  const syncRepo = useGitHubStore(s => s.syncRepo)
+  const draft = useSettingsStore(s => s.vaultGitignoreDraft)
+  const snapshot = useSettingsStore(s => s.vaultGitignoreRemoteSnapshot)
+  const setDraft = useSettingsStore(s => s.setVaultGitignoreDraft)
+  const setSnapshot = useSettingsStore(s => s.setVaultGitignoreRemoteSnapshot)
+
+  const [fetching, setFetching] = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
+
+  const connected = !!(token && syncRepo)
+  // Three UI states:
+  //   - never fetched (draft + snapshot both null) → empty textarea + prompt
+  //   - fetched + unchanged (draft === snapshot) → editor with no dirty marker
+  //   - fetched + dirty (draft !== snapshot) → "Will push on next sync" badge
+  const hasContent = draft != null || snapshot != null
+  const dirty = draft != null && draft !== (snapshot ?? '')
+
+  const handleFetch = async () => {
+    if (!token || !syncRepo) return
+    setFetching(true); setFetchError(null)
+    try {
+      const { fetchRemoteGitignore } = await import('@/utils/gitignoreSync')
+      const { content } = await fetchRemoteGitignore(token, syncRepo)
+      setSnapshot(content)
+      setDraft(content)
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : 'Fetch failed')
+    } finally {
+      setFetching(false)
+    }
+  }
+
+  const handleDiscard = () => {
+    // Snap the textarea back to the last fetched remote content.
+    // Clears the dirty marker without losing the snapshot.
+    setDraft(snapshot)
+  }
+
+  return (
+    <Field
+      label="Vault .gitignore"
+      description="The shared ignore file at the repo root. Fetch the current content, edit, and the next sync pushes your changes. Combined with the local overlay below for matching."
+    >
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={handleFetch}
+            disabled={!connected || fetching}
+            className="px-2 py-1 text-xs rounded border border-obsidianBorder bg-obsidianDarkGray text-obsidianText hover:border-obsidianAccentPurple disabled:opacity-50 disabled:cursor-not-allowed"
+            data-testid="vault-gitignore-fetch"
+          >
+            {fetching ? 'Fetching…' : (hasContent ? 'Refetch from sync repo' : 'Fetch from sync repo')}
+          </button>
+          {dirty && (
+            <span className="text-[11px] uppercase tracking-wide text-obsidianAccentPurple" data-testid="vault-gitignore-dirty">
+              Will push on next sync
+            </span>
+          )}
+          {dirty && (
+            <button
+              type="button"
+              onClick={handleDiscard}
+              className="text-xs text-obsidianSecondaryText hover:text-obsidianText underline"
+              data-testid="vault-gitignore-discard"
+            >
+              Discard
+            </button>
+          )}
+          {!connected && (
+            <span className="text-xs text-obsidianSecondaryText">Connect a sync repo to enable.</span>
+          )}
+          {fetchError && (
+            <span className="text-xs text-red-400" data-testid="vault-gitignore-error">{fetchError}</span>
+          )}
+        </div>
+        <textarea
+          value={draft ?? snapshot ?? ''}
+          onChange={e => setDraft(e.target.value)}
+          placeholder={hasContent ? '' : '# Click "Fetch from sync repo" to load the current .gitignore'}
+          rows={6}
+          spellCheck={false}
+          disabled={!connected}
+          className="w-full px-2 py-1.5 text-sm bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple font-mono resize-y disabled:opacity-50"
+          data-testid="vault-gitignore-textarea"
+        />
+      </div>
+    </Field>
+  )
+}
+
 // Editable local .gitignore overlay. Per-DEVICE — combined with the
 // remote vault `.gitignore` at sync time so the user can add personal
-// ignores (e.g. scratch files) without touching the shared file. The
-// remote `.gitignore` itself is NOT edited here; users round-trip
-// through GitHub for that today (a separate task tracks an in-app
-// editor for the remote file too).
+// ignores (e.g. scratch files) without touching the shared file.
+// The shared file itself is edited via VaultGitignoreField above.
 function GitignoreOverlayField() {
   const overlay = useSettingsStore(s => s.localGitignoreOverlay)
   const setOverlay = useSettingsStore(s => s.setLocalGitignoreOverlay)
