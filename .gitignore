@@ -59,6 +59,10 @@ pids
 # env files (can opt-in for committing if needed)
 .env*
 
+# Local Claude session secrets — never commit. Stores e.g. the Vercel
+# API token used to fetch preview URLs.
+.claude/*.env
+
 
 # typescript
 *.tsbuildinfo
