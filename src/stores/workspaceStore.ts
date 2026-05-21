@@ -11,6 +11,12 @@ export type ConflictTabData = Extract<PullClassification, { kind: 'conflict' } |
 export type Tab =
   | { id: string; kind: 'note'; noteId: string; isPreview: boolean }
   | { id: string; kind: 'merge-conflict'; conflict: ConflictTabData }
+  // VS Code-style Welcome tab. Opened automatically on first run
+  // instead of the old OnboardingModal popup. Not persisted (see
+  // `partialize` below) — closing or reloading drops it. Closing
+  // it also flips `settingsStore.onboardingShown` so it doesn't
+  // reappear on the next session.
+  | { id: string; kind: 'welcome' }
 
 export interface PaneState {
   id: string
@@ -26,6 +32,9 @@ interface WorkspaceState {
   mergeAppliedCount: number
 
   openNote: (noteId: string, opts?: { preview?: boolean; paneId?: string }) => void
+  // Open (or focus, if already open) the Welcome tab. Lives in the
+  // active pane. Idempotent — calling twice is a no-op past the first.
+  openWelcome: () => void
   openMergeConflicts: (conflicts: ConflictTabData[]) => void
   closeTab: (tabId: string) => void
   focusTab: (tabId: string) => void
@@ -129,6 +138,31 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         selectNoteFromActive(next, targetPaneId)
       },
 
+      openWelcome: () => {
+        const state = get()
+        // If a welcome tab is already open anywhere, focus it instead
+        // of creating a second one.
+        const existing = state.panes.flatMap(p => p.tabs.map(t => ({ pane: p, tab: t })))
+          .find(({ tab }) => tab.kind === 'welcome')
+        if (existing) {
+          const next = state.panes.map(p =>
+            p.id === existing.pane.id ? { ...p, activeTabId: existing.tab.id } : p,
+          )
+          set({ panes: next, activePaneId: existing.pane.id })
+          return
+        }
+        const targetPaneId = state.activePaneId ?? state.panes[0]?.id
+        if (!targetPaneId) return
+        const id = uuidv4()
+        const newTab: Tab = { id, kind: 'welcome' }
+        const next = state.panes.map(p =>
+          p.id === targetPaneId
+            ? { ...p, tabs: [...p.tabs, newTab], activeTabId: id }
+            : p,
+        )
+        set({ panes: next, activePaneId: targetPaneId })
+      },
+
       promoteTab: (tabId) => {
         set(state => ({
           panes: state.panes.map(p => ({
@@ -189,6 +223,16 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         const anyMergeLeft = compacted.some(p => p.tabs.some(t => t.kind === 'merge-conflict'))
         const lastMergeGone = closing.kind === 'merge-conflict' && !anyMergeLeft
         const shouldFireSync = lastMergeGone && state.mergeAppliedCount > 0
+
+        // Closing the welcome tab counts as "user has seen and dismissed
+        // the first-run experience" — flip onboardingShown so it doesn't
+        // reopen next session. Dynamic import to avoid a static cycle
+        // between workspaceStore and settingsStore.
+        if (closing.kind === 'welcome') {
+          import('./settingsStore').then(({ useSettingsStore }) => {
+            useSettingsStore.getState().setOnboardingShown(true)
+          }).catch(() => { /* settings store unavailable — best effort */ })
+        }
 
         // If the source pane was removed by compaction, fall back to the
         // surviving pane for focus.

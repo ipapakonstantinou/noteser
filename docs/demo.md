@@ -22,6 +22,18 @@ What's below is what that turned into.
 
 ---
 
+## First run — Welcome tab
+
+![Welcome tab — VS Code-style first-run experience](images/00-welcome.png)
+
+Open the app for the first time and you land on a Welcome tab — same
+shape VS Code uses for its welcome view. No popup, no wall of text:
+just a "Start" grid for the common first actions, a row of curated
+example vaults you can seed in one click, and a Learn section.
+Closing the tab dismisses it for good.
+
+---
+
 ## The editor
 
 ![Editor with live preview, sidebar tree, tabs](images/01-editor-hero.png)
