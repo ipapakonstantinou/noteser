@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, type ReactNode } from 'react'
+import { useState, useMemo, useEffect, useRef, type ReactNode } from 'react'
 import {
   CogIcon,
   PencilSquareIcon,
@@ -20,7 +20,8 @@ import { THEME_TOKENS, THEME_PRESETS } from '@/utils/theme'
 import { useUIStore, useSettingsStore, useGitHubStore } from '@/stores'
 import type { FolderSortMode, TaskListDensity } from '@/stores'
 import type { TrashMode } from '@/stores/settingsStore'
-import { Modal } from '@/components/ui'
+import { Modal, Button } from '@/components/ui'
+import { useGitHubSync } from '@/hooks/useGitHubSync'
 import { AttachmentsSection } from './AttachmentsSection'
 import { AISection } from './AISection'
 import { DailyNotesSection, TemplatesSection } from './DailyNotesSection'
@@ -90,7 +91,7 @@ export const SettingsModal = () => {
       size="3xl"
       bodyless
     >
-      <div className="flex flex-row h-[70vh] min-h-[480px]">
+      <div className="flex flex-row h-[70dvh] min-h-[480px]">
         {/* ── Left rail: category navigator ─────────────────────────── */}
         <nav
           aria-label="Settings categories"
@@ -493,7 +494,95 @@ function GitHubPanel() {
       </Field>
       <VaultGitignoreField />
       <GitignoreOverlayField />
+      <ResetToRemoteField />
     </div>
+  )
+}
+
+// Destructive escape hatch: drop local copies of pushed notes and pull
+// fresh from the repo. Useful when the user's local state drifted in a
+// way they don't want to merge (e.g. corrupted edits, abandoned
+// experiment, vault rebuilt elsewhere). Unpushed local notes are kept
+// by default; an "also drop unpushed notes" checkbox forces a true
+// clean slate.
+function ResetToRemoteField() {
+  const syncRepo = useGitHubStore(s => s.syncRepo)
+  const { runSync } = useGitHubSync()
+  const [confirming, setConfirming] = useState(false)
+  const [dropUnpushed, setDropUnpushed] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [resultMsg, setResultMsg] = useState<string | null>(null)
+  const confirmRef = useRef<HTMLDivElement | null>(null)
+
+  // When the strip opens, scroll it into view. The Settings modal's
+  // right pane is independently scrollable, so a long panel can clip
+  // the strip's Cancel / Yes-reset buttons below the fold — caught by
+  // qa-tester sweep on the deployed preview.
+  useEffect(() => {
+    if (confirming && confirmRef.current) {
+      confirmRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    }
+  }, [confirming])
+
+  if (!syncRepo) return null
+
+  const apply = async () => {
+    setBusy(true)
+    setResultMsg(null)
+    try {
+      const { resetToRemote } = await import('@/utils/resetToRemote')
+      const r = resetToRemote({ preserveUnpushed: !dropUnpushed })
+      // Kick the regular sync — it pulls and re-creates the wiped
+      // notes from remote. Any further failures surface in the
+      // standard sync status badge.
+      await runSync()
+      const kept = r.preserved > 0 ? ` · kept ${r.preserved} local-only` : ''
+      setResultMsg(`Reset complete — dropped ${r.pushedDropped} pushed${kept}.`)
+    } catch (err) {
+      setResultMsg(`Reset failed: ${err instanceof Error ? err.message : 'unknown error'}`)
+    } finally {
+      setBusy(false)
+      setConfirming(false)
+      setDropUnpushed(false)
+    }
+  }
+
+  return (
+    <Field
+      label="Reset to remote"
+      description="Discard local edits to pushed notes and pull a fresh copy from the repo. Unpushed local notes are kept by default."
+    >
+      <div className="space-y-2">
+        {!confirming ? (
+          <Button variant="ghost" onClick={() => setConfirming(true)} disabled={busy}>
+            Reset local to match remote…
+          </Button>
+        ) : (
+          <div ref={confirmRef} className="space-y-2 p-3 border border-amber-900/40 rounded bg-amber-900/10">
+            <div className="text-sm text-amber-200">
+              This drops every local note that has a synced path. The next pull will re-create them from the repo. There is no undo.
+            </div>
+            <label className="flex items-center gap-2 text-sm text-obsidianText">
+              <input
+                type="checkbox"
+                checked={dropUnpushed}
+                onChange={e => setDropUnpushed(e.target.checked)}
+              />
+              Also drop unpushed local notes (true clean slate)
+            </label>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" onClick={() => { setConfirming(false); setDropUnpushed(false) }} disabled={busy}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={apply} disabled={busy} data-testid="reset-to-remote-confirm">
+                {busy ? 'Resetting…' : 'Yes, reset'}
+              </Button>
+            </div>
+          </div>
+        )}
+        {resultMsg && <div className="text-xs text-obsidianSecondaryText">{resultMsg}</div>}
+      </div>
+    </Field>
   )
 }
 

@@ -106,30 +106,50 @@ export function decodeShareFragment(fragment: string): SharePayload | null {
   }
 }
 
-// Stable, fast, non-cryptographic. FNV-1a 32-bit — used to key the
-// per-link "this has been burned" entry in localStorage so the same
-// URL hash always lands in the same key without storing the full
-// payload as a key (could be very long).
-export function shareLinkBurnKey(fragment: string): string {
-  let h = 0x811c9dc5
-  for (let i = 0; i < fragment.length; i++) {
-    h ^= fragment.charCodeAt(i)
-    h = Math.imul(h, 0x01000193)
+// Derive the per-link "this has been burned" localStorage key from a
+// SHA-256 digest of the fragment, truncated to 128 bits (16 bytes) and
+// base64url-encoded. 128 bits is well past the collision horizon for
+// any realistic number of share links — vs. the old FNV-1a 32-bit,
+// which has a ~1-in-4-billion pairwise collision rate. We don't store
+// the full fragment as a key because it can be many KB (the whole note
+// is encoded in there).
+export async function shareLinkBurnKey(fragment: string): Promise<string> {
+  // crypto.subtle is available in any secure context (https or
+  // localhost) and in Node 20+ (which is what Jest's jsdom env runs
+  // on). If we're somehow without it, fall back to the raw fragment
+  // prefix — different fragments still produce different keys, just
+  // without the privacy property of hashing the URL.
+  if (typeof crypto === 'undefined' || !crypto.subtle) {
+    return `noteser-share-burned-${fragment.slice(0, 64)}`
   }
-  return `noteser-share-burned-${(h >>> 0).toString(16).padStart(8, '0')}`
+  const bytes = new TextEncoder().encode(fragment)
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  // First 16 bytes (128 bits) is plenty; encode as URL-safe base64
+  // without padding to keep the localStorage key short.
+  const truncated = new Uint8Array(digest).slice(0, 16)
+  let bin = ''
+  for (const b of truncated) bin += String.fromCharCode(b)
+  const b64 = btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  return `noteser-share-burned-${b64}`
 }
 
 // Has the recipient's browser already consumed this link? Used to
 // honor the burn flag across page reloads. Server has no view of
 // this — it's all in localStorage of the device that opened it.
-export function isShareLinkBurned(fragment: string): boolean {
+export async function isShareLinkBurned(fragment: string): Promise<boolean> {
   if (typeof window === 'undefined') return false
-  try { return window.localStorage.getItem(shareLinkBurnKey(fragment)) !== null } catch { return false }
+  try {
+    const key = await shareLinkBurnKey(fragment)
+    return window.localStorage.getItem(key) !== null
+  } catch { return false }
 }
 
-export function markShareLinkBurned(fragment: string): void {
+export async function markShareLinkBurned(fragment: string): Promise<void> {
   if (typeof window === 'undefined') return
-  try { window.localStorage.setItem(shareLinkBurnKey(fragment), String(Date.now())) } catch { /* quota */ }
+  try {
+    const key = await shareLinkBurnKey(fragment)
+    window.localStorage.setItem(key, String(Date.now()))
+  } catch { /* quota */ }
 }
 
 // Has the link expired? Returns true only when expiresAt is set AND

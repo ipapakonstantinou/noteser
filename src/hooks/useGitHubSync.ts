@@ -173,6 +173,12 @@ export function useGitHubSync(): UseGitHubSyncResult {
   const syncRepo = useGitHubStore((s) => s.syncRepo)
   const recordSync = useGitHubStore((s) => s.recordSync)
   const openMergeConflicts = useWorkspaceStore((s) => s.openMergeConflicts)
+  const openMergeBatch = useWorkspaceStore((s) => s.openMergeBatch)
+  // Threshold above which we route conflicts through the batch summary
+  // tab instead of opening N individual merge-conflict tabs. Three is
+  // the point where the tab strip starts to get cluttered; below that,
+  // the inline merge editor is faster.
+  const BATCH_THRESHOLD = 3
 
   const [syncState, setSyncState] = useState<SyncState>({ kind: 'idle' })
 
@@ -220,7 +226,11 @@ export function useGitHubSync(): UseGitHubSyncResult {
         // Apply everything that isn't in conflict; leave push for the user
         // to retry after they resolve the merge tabs.
         await runApply(classifications)
-        openMergeConflicts(conflicts)
+        if (conflicts.length >= BATCH_THRESHOLD) {
+          openMergeBatch(conflicts)
+        } else {
+          openMergeConflicts(conflicts)
+        }
         setSyncState({
           kind: 'err',
           message: `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} need review`,
@@ -290,7 +300,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
     // connects/disconnects) but their values aren't captured. ESLint can't
     // see that — disable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, syncRepo, recordSync, openMergeConflicts])
+  }, [token, syncRepo, recordSync, openMergeConflicts, openMergeBatch])
 
   // Pull-only path: fetch remote, apply non-conflicts, open merge tabs for
   // conflicts, and STOP. Never calls runPush, so local-only edits stay local.
@@ -315,9 +325,14 @@ export function useGitHubSync(): UseGitHubSyncResult {
       ) as ConflictTabData[]
       if (conflicts.length > 0) {
         // Same conflict-handling branch as runSync: apply everything that
-        // isn't in conflict, open merge tabs for the user to resolve.
+        // isn't in conflict, open merge tabs (batch view above
+        // BATCH_THRESHOLD) for the user to resolve.
         await runApply(classifications)
-        openMergeConflicts(conflicts)
+        if (conflicts.length >= BATCH_THRESHOLD) {
+          openMergeBatch(conflicts)
+        } else {
+          openMergeConflicts(conflicts)
+        }
         setSyncState({
           kind: 'err',
           message: `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} need review`,
@@ -340,7 +355,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
     }
     // See note above re: token + syncRepo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, syncRepo, openMergeConflicts])
+  }, [token, syncRepo, openMergeConflicts, openMergeBatch])
 
   return { syncState, runSync, runPullOnly, isConnected: !!(token && syncRepo) }
 }

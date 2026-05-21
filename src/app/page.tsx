@@ -19,7 +19,7 @@ import {
   VaultSettingsConflictModal,
 } from '@/components/modals'
 import { useSettingsStore } from '@/stores/settingsStore'
-import { useKeyboardShortcuts, useHydration, useAutoSync, useAutoEmbedNotes, useApplyTheme } from '@/hooks'
+import { useKeyboardShortcuts, useHydration, useAutoSync, useAutoEmbedNotes, useApplyTheme, useViewport } from '@/hooks'
 import { useUIStore, useWorkspaceStore, useGitHubStore } from '@/stores'
 import { switchVault } from '@/utils/switchVault'
 import { notesKey } from '@/utils/repoStorage'
@@ -42,9 +42,17 @@ export default function Home() {
   const hydrated = useHydration()
   const { sidebarCollapsed } = useUIStore()
   const pruneStaleTabs = useWorkspaceStore(s => s.pruneStaleTabs)
+  const { isMobile } = useViewport()
 
   // Use default value during SSR to avoid hydration mismatch
   const isSidebarCollapsed = hydrated ? sidebarCollapsed : false
+  // SSR / pre-hydration: render the desktop layout. Mobile branches
+  // only kick in after the viewport hook has measured the real width,
+  // matching the existing useViewport SSR contract.
+  const mobileLayout = hydrated && isMobile
+  // On mobile, the sidebar is an off-canvas drawer. We reuse
+  // sidebarCollapsed: true = drawer closed, false = drawer open.
+  const drawerOpen = mobileLayout && !isSidebarCollapsed
 
   // After hydration, drop any persisted tabs whose underlying notes are gone.
   useEffect(() => {
@@ -250,27 +258,82 @@ export default function Home() {
     installTestHooks()
   }, [])
 
+  // Close the mobile drawer when the user clicks the backdrop or
+  // presses Escape. Plain wrapper around toggleSidebar that only fires
+  // when the drawer is actually open, so it can't accidentally OPEN
+  // the drawer on desktop.
+  const closeMobileDrawer = () => {
+    if (drawerOpen) useUIStore.getState().toggleSidebar()
+  }
+  useEffect(() => {
+    if (!drawerOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        useUIStore.getState().toggleSidebar()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [drawerOpen])
+
   return (
-    <div className="flex h-screen w-screen bg-obsidianBlack text-obsidianText overflow-hidden">
+    <div className="flex h-dvh w-screen bg-obsidianBlack text-obsidianText overflow-hidden">
       {/* Ribbon */}
       <div className="flex-none">
         <Ribbon />
       </div>
 
-      {/* Sidebar */}
-      <div
-        className={`flex-none transition-all duration-300 ${
-          isSidebarCollapsed ? 'w-[50px]' : 'w-64'
-        }`}
-      >
-        <Sidebar />
-      </div>
+      {/* Sidebar — desktop: inline flex column; mobile: off-canvas drawer */}
+      {mobileLayout ? (
+        <>
+          {/* Backdrop — visible only when drawer is open. Tapping it
+              closes the drawer. z-30 sits above the editor (z-0) and
+              below modals (z-50). */}
+          {drawerOpen && (
+            <div
+              className="fixed inset-0 z-30 bg-black/50 transition-opacity duration-200"
+              onClick={closeMobileDrawer}
+              aria-hidden="true"
+              data-testid="mobile-sidebar-backdrop"
+            />
+          )}
+          {/* Drawer — fixed-position panel that slides in from the left
+              of the ribbon. Width capped at min(280px, 85vw) so even a
+              small phone leaves a peek of the editor behind. */}
+          <div
+            className={`fixed top-0 bottom-0 z-40 transition-transform duration-300 ease-out ${
+              drawerOpen
+                ? 'translate-x-0 pointer-events-auto'
+                : '-translate-x-full pointer-events-none'
+            }`}
+            style={{
+              left: '44px',
+              width: 'min(280px, 85vw)',
+            }}
+            data-testid="mobile-sidebar-drawer"
+            aria-hidden={drawerOpen ? undefined : true}
+          >
+            <Sidebar />
+          </div>
+        </>
+      ) : (
+        <div
+          className={`flex-none transition-all duration-300 ${
+            isSidebarCollapsed ? 'w-[50px]' : 'w-64'
+          }`}
+        >
+          <Sidebar />
+        </div>
+      )}
 
       {/* Editor */}
       <div
         className="flex-1 h-full overflow-hidden"
         style={{
-          width: `calc(100vw - 44px - ${isSidebarCollapsed ? '50px' : '16rem'})`
+          width: mobileLayout
+            ? 'calc(100vw - 44px)'
+            : `calc(100vw - 44px - ${isSidebarCollapsed ? '50px' : '16rem'})`,
         }}
       >
         <Editor />

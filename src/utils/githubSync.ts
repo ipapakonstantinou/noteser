@@ -26,6 +26,42 @@ import {
   getAttachmentTombstones,
   clearAttachmentTombstones,
 } from './attachments'
+import { encryptNoteContent, decryptNoteContent, isEncryptedContent } from './vaultCrypto'
+import { getVaultKey, VaultLockedError } from './vaultKey'
+
+// Encrypt note body for push, if the vault is unlocked AND encryption
+// is enabled at the settings layer. Returns the original content when
+// encryption is off — keeps the call sites tidy and ensures push works
+// in the default (unencrypted) configuration.
+async function maybeEncryptForPush(content: string): Promise<string> {
+  let enabled = false
+  try {
+    const { useSettingsStore } = await import('@/stores/settingsStore')
+    enabled = useSettingsStore.getState().vaultEncryptionEnabled
+  } catch {
+    // Test envs without the store — treat as disabled.
+  }
+  if (!enabled) return content
+  const key = getVaultKey()
+  if (!key) {
+    // Encryption is on but the user hasn't unlocked. Bail with a typed
+    // error the UI can catch to prompt for the passphrase.
+    throw new VaultLockedError('Push aborted — vault is encrypted but locked. Unlock to continue.')
+  }
+  return await encryptNoteContent(content, key)
+}
+
+// Decrypt remote note content on pull. Pass-through when the content
+// isn't an encrypted envelope. Throws VaultLockedError when an
+// envelope is present but the user hasn't unlocked yet — caller catches.
+async function maybeDecryptFromPull(content: string): Promise<string> {
+  if (!isEncryptedContent(content)) return content
+  const key = getVaultKey()
+  if (!key) {
+    throw new VaultLockedError('Pull skipped — remote blob is encrypted but vault is locked.')
+  }
+  return await decryptNoteContent(content, key)
+}
 
 export interface SyncResult {
   unchanged: boolean
@@ -351,10 +387,15 @@ export async function pullFromGitHub(input: {
       continue
     }
 
-    // Fetch the remote content lazily — only when we need it.
+    // Fetch the remote content lazily — only when we need it. bke1:
+    // decrypt the envelope when encryption is on; throws VaultLockedError
+    // upstream if the user hasn't unlocked.
     let remoteContent: string | null = null
     const loadRemote = async () => {
-      if (remoteContent === null) remoteContent = await getBlobContent(token, owner, name, remoteSha)
+      if (remoteContent === null) {
+        const raw = await getBlobContent(token, owner, name, remoteSha)
+        remoteContent = await maybeDecryptFromPull(raw)
+      }
       return remoteContent
     }
 
@@ -395,7 +436,8 @@ export async function pullFromGitHub(input: {
       let autoMerged: string | null = null
       if (lastPushed) {
         try {
-          const ancestor = await getBlobContent(token, owner, name, lastPushed)
+          const ancestorRaw = await getBlobContent(token, owner, name, lastPushed)
+          const ancestor = await maybeDecryptFromPull(ancestorRaw)
           const merged = threeWayMerge(ancestor, localContent, content)
           if (merged.ok) autoMerged = merged.merged
         } catch {
@@ -671,8 +713,12 @@ export async function pullFromZipball(input: {
     const path = rel.slice(slashIdx + 1)
 
     if (path.endsWith('.md')) {
-      const content = await file.async('string')
-      const remoteSha = await gitBlobSha(content)
+      const raw = await file.async('string')
+      // bke1: zipball blobs were written in the encrypted wire form. We
+      // compute the remoteSha against that wire form (matches what
+      // GitHub stored) but feed parseNote the decrypted body.
+      const remoteSha = await gitBlobSha(raw)
+      const content = await maybeDecryptFromPull(raw)
       const parsed = parseNote(content)
 
       classifications.push({
@@ -718,6 +764,14 @@ export function takeZipballAttachmentBytes(
 
 // ── Sync orchestrator ───────────────────────────────────────────────────────
 
+export type PushProgress =
+  | { phase: 'computing' }
+  | { phase: 'uploading-blobs'; uploaded: number; total: number; skipped: number }
+  | { phase: 'creating-tree' }
+  | { phase: 'creating-commit' }
+  | { phase: 'updating-ref' }
+  | { phase: 'done' }
+
 export interface SyncInput {
   token: string
   repo: SyncRepo
@@ -744,6 +798,36 @@ export interface SyncInput {
   // Pass undefined when the user hasn't touched the editor — the
   // remote file is left alone.
   vaultGitignoreDraft?: string | null
+  // Push-progress hook so the UI can surface "uploading 47 / 200 blobs"
+  // and tell the user which step failed when an error bubbles. Optional.
+  onProgress?: (event: PushProgress) => void
+}
+
+// In-memory cache of blob SHAs we've already uploaded to GitHub in this
+// tab session. Git blob SHAs are content-addressable, so a hit here
+// means GitHub already has that content — skip the redundant network
+// round-trip. Survives across syncToGitHub calls within the tab but is
+// cleared when the user reloads. Indexed per-repo so two different
+// vaults don't share state.
+const uploadedBlobShaCache = new Map<string, Set<string>>()
+
+function repoCacheKey(repo: SyncRepo): string {
+  return `${repo.owner}/${repo.name}#${repo.branch}`
+}
+
+function getUploadedShas(repo: SyncRepo): Set<string> {
+  const key = repoCacheKey(repo)
+  let set = uploadedBlobShaCache.get(key)
+  if (!set) {
+    set = new Set()
+    uploadedBlobShaCache.set(key, set)
+  }
+  return set
+}
+
+/** Test hook. Drops the in-memory upload cache. */
+export function _resetUploadedShaCache(): void {
+  uploadedBlobShaCache.clear()
 }
 
 export type GitPathUpdate = {
@@ -771,8 +855,10 @@ export interface SyncOutcome {
 }
 
 export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
-  const { token, repo, notes, folders, commitMessage, vaultSettings, vaultGitignoreDraft } = input
+  const { token, repo, notes, folders, commitMessage, vaultSettings, vaultGitignoreDraft, onProgress } = input
   const { owner, name, branch } = repo
+  const uploadedShas = getUploadedShas(repo)
+  onProgress?.({ phase: 'computing' })
 
   // 1. Compute desired files for every active note.
   const activeNotes = notes.filter(n => !n.isDeleted)
@@ -830,26 +916,74 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   // avoid serial awaits per note.
   const lastPushedToSnapshot: Array<{ noteId: string; content: string }> = []
 
+  // Pre-pass: classify every desired path into "skip" (remote already
+  // has this SHA, or our in-tab cache says we uploaded it) vs "needs
+  // upload". Keeping the pre-pass separate lets us emit a stable
+  // `total` to the progress callback.
+  interface NoteBlobPlan { path: string; content: string; note: Note; localSha: string; remoteSha: string | undefined }
+  const noteBlobPlan: NoteBlobPlan[] = []
   for (const [path, { content, note }] of desired) {
-    // Skip ignored paths entirely (gi9n). The user's .gitignore — or
-    // the default OS-junk preset when no file exists — should never
-    // see ignored notes uploaded.
     if (pushMatcher.isIgnored(path)) continue
-    const localSha = await gitBlobSha(content)
+    // bke1: when encryption is enabled, the wire form is what we hash
+    // and upload. plaintext stays available for the editor's gutter
+    // snapshot (it compares against the unencrypted body).
+    const wireContent = await maybeEncryptForPush(content)
+    const localSha = await gitBlobSha(wireContent)
     const remoteSha = remoteTree.get(path)
-    let finalSha = remoteSha ?? null
-    if (remoteSha !== localSha) {
-      // Need to upload a blob for the new content.
-      finalSha = await createBlob(token, owner, name, content)
-      entries.push({ path, mode: '100644', type: 'blob', sha: finalSha })
-      if (remoteSha) updated++; else created++
+    noteBlobPlan.push({ path, content: wireContent, note, localSha, remoteSha })
+  }
+  const noteBlobsToUpload = noteBlobPlan.filter(p => p.remoteSha !== p.localSha && !uploadedShas.has(p.localSha))
+  const noteBlobsCached   = noteBlobPlan.filter(p => p.remoteSha !== p.localSha &&  uploadedShas.has(p.localSha))
+
+  let blobsUploaded = 0
+  let blobsSkipped = noteBlobsCached.length
+  // Use a single running `total` that we refine after the attachment
+  // pre-pass below. For now: just notes.
+  let blobsTotal = noteBlobsToUpload.length
+
+  const emitBlobProgress = () => {
+    onProgress?.({ phase: 'uploading-blobs', uploaded: blobsUploaded, total: blobsTotal, skipped: blobsSkipped })
+  }
+
+  // Apply the cached-skip entries first — no network, just emit tree entries
+  // and bookkeeping.
+  for (const plan of noteBlobsCached) {
+    entries.push({ path: plan.path, mode: '100644', type: 'blob', sha: plan.localSha })
+    if (plan.remoteSha) updated++; else created++
+  }
+  // Pure-skip entries (remote has this SHA): no entry, no upload, but the
+  // note's path metadata may still need an update. The lastPushedSnapshot
+  // gets the PLAINTEXT body (gutter compares against unencrypted text).
+  for (const plan of noteBlobPlan) {
+    const skipped = plan.remoteSha === plan.localSha
+    const finalSha = skipped ? plan.remoteSha! : plan.localSha
+    if (skipped && (plan.note.gitPath !== plan.path || plan.note.gitLastPushedSha !== finalSha)) {
+      pathUpdates.push({ noteId: plan.note.id, gitPath: plan.path, gitLastPushedSha: finalSha })
     }
-    // Record the path + last-pushed SHA on the note. We always update this so
-    // first-time pushes (and content-equal-but-path-changed) write the field.
-    if (note.gitPath !== path || note.gitLastPushedSha !== finalSha) {
-      pathUpdates.push({ noteId: note.id, gitPath: path, gitLastPushedSha: finalSha ?? localSha })
+    // Gutter snapshot uses the plaintext, not the wire form — look it up
+    // from `desired` rather than `plan.content` (which is the wire form).
+    const desiredEntry = desired.get(plan.path)
+    if (desiredEntry) {
+      lastPushedToSnapshot.push({ noteId: plan.note.id, content: desiredEntry.content })
     }
-    lastPushedToSnapshot.push({ noteId: note.id, content })
+  }
+
+  // Upload the genuinely-changed blobs.
+  if (blobsTotal > 0) emitBlobProgress()
+  for (const plan of noteBlobsToUpload) {
+    const finalSha = await createBlob(token, owner, name, plan.content)
+    // Cache by LOCAL SHA — that's what the next iteration computes from
+    // the same content. (In production localSha === serverSha because
+    // both follow git's content-addressing, but the local key is what
+    // gates the next cache lookup.)
+    uploadedShas.add(plan.localSha)
+    entries.push({ path: plan.path, mode: '100644', type: 'blob', sha: finalSha })
+    if (plan.remoteSha) updated++; else created++
+    if (plan.note.gitPath !== plan.path || plan.note.gitLastPushedSha !== finalSha) {
+      pathUpdates.push({ noteId: plan.note.id, gitPath: plan.path, gitLastPushedSha: finalSha })
+    }
+    blobsUploaded++
+    emitBlobProgress()
   }
 
   // Fire-and-forget the per-note snapshot writes. The gutter will pick
@@ -865,19 +999,38 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   // 3b. Local attachments → binary blob entries. Push uploads any local
   // attachment whose SHA differs from the remote. Files only present
   // locally get created remotely; files present in both get updated when
-  // their content drifts.
+  // their content drifts. Same upload-cache + progress treatment as notes.
   const localAttachmentPaths = await listAttachmentPaths()
+  interface AttachmentPlan { path: string; localSha: string; remoteSha: string | undefined }
+  const attachmentPlan: AttachmentPlan[] = []
   for (const path of localAttachmentPaths) {
     if (pushMatcher.isIgnored(path)) continue
     const localSha = await getAttachmentGitSha(path)
     if (!localSha) continue
     const remoteSha = remoteTree.get(path)
-    if (remoteSha === localSha) continue
-    const blob = await getAttachmentBlob(path)
+    attachmentPlan.push({ path, localSha, remoteSha })
+  }
+  const attachmentsToUpload = attachmentPlan.filter(p => p.remoteSha !== p.localSha && !uploadedShas.has(p.localSha))
+  const attachmentsCached   = attachmentPlan.filter(p => p.remoteSha !== p.localSha &&  uploadedShas.has(p.localSha))
+  blobsTotal += attachmentsToUpload.length
+  blobsSkipped += attachmentsCached.length
+  if (blobsTotal > 0 || blobsSkipped > 0) emitBlobProgress()
+
+  for (const plan of attachmentsCached) {
+    entries.push({ path: plan.path, mode: '100644', type: 'blob', sha: plan.localSha })
+    if (plan.remoteSha) updated++; else created++
+  }
+  for (const plan of attachmentsToUpload) {
+    const blob = await getAttachmentBlob(plan.path)
     if (!blob) continue
     const uploadedSha = await createBlobBinary(token, owner, name, blob)
-    entries.push({ path, mode: '100644', type: 'blob', sha: uploadedSha })
-    if (remoteSha) updated++; else created++
+    // See the note loop above: cache the LOCAL sha for the next-pass
+    // lookup, which uses local-side hashing.
+    uploadedShas.add(plan.localSha)
+    entries.push({ path: plan.path, mode: '100644', type: 'blob', sha: uploadedSha })
+    if (plan.remoteSha) updated++; else created++
+    blobsUploaded++
+    emitBlobProgress()
   }
 
   // 3c. Apply attachment tombstones — paths the user explicitly deleted
@@ -963,16 +1116,25 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     }
   }
 
-  // 5. Create new tree → commit → fast-forward branch.
+  // 5. Create new tree → commit → fast-forward branch. Each step gets
+  // its own progress event so the UI (and any error) can pinpoint where
+  // a failure happened.
+  onProgress?.({ phase: 'creating-tree' })
   const newTreeSha = await createTree(token, owner, name, baseTreeSha, entries)
   const total = created + updated + deleted
   const autoMessage = `Sync from Noteser (${total} change${total === 1 ? '' : 's'})`
   const message = commitMessage && commitMessage.length > 0 ? commitMessage : autoMessage
+  onProgress?.({ phase: 'creating-commit' })
   const { sha: commitSha, html_url } = await createCommit(token, owner, name, message, newTreeSha, parentCommitSha)
+  onProgress?.({ phase: 'updating-ref' })
   await updateBranchRef(token, owner, name, branch, commitSha)
 
-  // Push succeeded — drop tombstones whose deletes are now in the commit.
+  // Push succeeded — drop tombstones whose deletes are now in the commit
+  // AND clear the upload cache for this repo. The next push will start
+  // from scratch (which is fine — remote tree will be consulted again).
   if (consumedTombstones.length > 0) await clearAttachmentTombstones(consumedTombstones)
+  uploadedShas.clear()
+  onProgress?.({ phase: 'done' })
 
   return {
     result: { unchanged: false, created, updated, deleted, commitSha, commitUrl: html_url },

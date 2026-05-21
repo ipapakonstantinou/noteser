@@ -132,7 +132,7 @@ export const VaultSettingsConflictModal = () => {
           </span>
         </div>
 
-        <div className="max-h-[55vh] overflow-y-auto border border-obsidianBorder rounded">
+        <div className="max-h-[55dvh] overflow-y-auto border border-obsidianBorder rounded">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-obsidianGray text-[11px] uppercase tracking-wide text-obsidianSecondaryText">
               <tr>

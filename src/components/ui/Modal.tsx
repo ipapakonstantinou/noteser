@@ -72,7 +72,7 @@ export const Modal = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby={title ? 'modal-title' : undefined}
-        className={`relative w-full ${sizeClasses[size]} mx-4 bg-obsidianGray rounded-lg shadow-obsidian border border-obsidianBorder flex flex-col max-h-[90vh]`}
+        className={`relative w-full ${sizeClasses[size]} mx-4 bg-obsidianGray rounded-lg shadow-obsidian border border-obsidianBorder flex flex-col max-h-[90dvh]`}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
