@@ -105,6 +105,14 @@ export const SidebarStack = ({ onRightClick }: Props) => {
     next.splice(Math.max(0, Math.min(insertAt, next.length)), 0, [id])
     setPinnedPanels(next)
   }
+  // reorderGroup replaces ONE group's id list with a new order — used
+  // by intra-strip drag-reorder inside a PinnedMiniStrip.
+  const reorderGroup = (groupIndex: number, newIds: SidebarTabId[]) => {
+    if (groupIndex < 0 || groupIndex >= pinnedGroups.length) return
+    if (newIds.length === 0) return
+    const next = pinnedGroups.map((g, i) => i === groupIndex ? newIds : g)
+    setPinnedPanels(next)
+  }
 
   // Track whether a sidebar drag is in flight. Used to inflate the
   // drop zones (main pin-zone + inter-group zones) so the user can
@@ -150,6 +158,7 @@ export const SidebarStack = ({ onRightClick }: Props) => {
                 group={group}
                 onUnpin={unpinPanel}
                 onAddToThisGroup={(otherId) => pinIntoGroup(otherId, groupIndex)}
+                onReorder={(newIds) => reorderGroup(groupIndex, newIds)}
                 onRightClick={onRightClick}
               />
             </div>

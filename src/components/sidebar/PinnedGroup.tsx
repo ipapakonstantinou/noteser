@@ -22,11 +22,13 @@ export interface PinnedGroupProps {
   // the mini-strip's drop handler when a tab is dragged from
   // elsewhere onto this group's strip.
   onAddToThisGroup: (id: SidebarTabId) => void
+  // Intra-strip reorder — passes a fresh id array for THIS group.
+  onReorder: (newIds: SidebarTabId[]) => void
   onRightClick: PanelRightClick
 }
 
 export const PinnedGroup = ({
-  group, onUnpin, onAddToThisGroup, onRightClick,
+  group, onUnpin, onAddToThisGroup, onReorder, onRightClick,
 }: PinnedGroupProps) => {
   const [activeTab, setActiveTab] = useState<SidebarTabId>(group[0])
   // If the group composition changed and the previous active tab is
@@ -40,12 +42,18 @@ export const PinnedGroup = ({
         onActivate={setActiveTab}
         onUnpin={onUnpin}
         onAddToThisGroup={onAddToThisGroup}
+        onReorder={onReorder}
       />
+      {/* No onHeaderContextMenu here: SidebarSection forwards that to
+          the CONTENT wrapper when hideHeader=true, which means a
+          right-click anywhere inside the panel body (e.g. on a folder
+          row in the Files tree) bubbles up and unpins the panel back
+          to the bottom strip. Reported via Telegram 2026-05-21. The
+          mini-strip icon's right-click already covers unpin. */}
       <SidebarSection
         id={safeActive}
         title={PANELS.find(p => p.id === safeActive)?.title ?? safeActive}
         hideHeader={true}
-        onHeaderContextMenu={e => { e.preventDefault(); onUnpin(safeActive) }}
       >
         <PanelBody id={safeActive} onRightClick={onRightClick} />
       </SidebarSection>
