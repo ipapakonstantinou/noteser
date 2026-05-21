@@ -2,34 +2,79 @@
  * featureTourNote.test.ts
  *
  * Coverage for the Feature-tour seed helper. We assert:
- *   - first call creates a new note + opens it
- *   - second call finds the existing note (no duplicate created) +
- *     just opens it
- *   - the body content references the raw.githubusercontent.com CDN
- *     so images render in-app (no relative `images/` paths that would
- *     break inside a note)
+ *   - first call ensures the Tutorial/ folder exists, creates a new note
+ *     inside it, and opens it
+ *   - second call finds the existing note (no duplicate)
+ *   - a soft-deleted tour note doesn't block a fresh seed
+ *   - the body uses vault-relative `Tutorial/X.png` paths (NOT remote
+ *     URLs) so screenshots resolve via IndexedDB attachments
+ *   - image attachments get fetched from /feature-tour/X.png and saved
+ *     under `Tutorial/X.png`
+ *
+ * Image-fetch is exercised by stubbing `global.fetch`; the
+ * `putAttachmentAtPath` side-effect is asserted via a spy.
  */
 
-import { seedFeatureTourNote, FEATURE_TOUR_TITLE, FEATURE_TOUR_BODY } from '../utils/featureTourNote'
+import {
+  seedFeatureTourNote,
+  FEATURE_TOUR_TITLE,
+  FEATURE_TOUR_BODY,
+  TUTORIAL_FOLDER_NAME,
+  TUTORIAL_IMAGES,
+} from '../utils/featureTourNote'
 import { useNoteStore } from '../stores/noteStore'
+import { useFolderStore } from '../stores/folderStore'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 
+// Mock the attachments module so we don't hit IDB in unit tests; just
+// capture which paths got putAttachmentAtPath'd.
+jest.mock('../utils/attachments', () => {
+  const seen = new Map<string, Blob>()
+  return {
+    putAttachmentAtPath: jest.fn(async (path: string, blob: Blob) => {
+      seen.set(path, blob)
+    }),
+    getAttachmentBlob: jest.fn(async (path: string) => seen.get(path) ?? null),
+    __seen: seen,
+    __reset: () => seen.clear(),
+  }
+})
+import * as attachmentsMock from '../utils/attachments'
+
+const stubFetch = () => {
+  const okBlob = new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: 'image/png' })
+  global.fetch = jest.fn(async () => ({
+    ok: true,
+    blob: async () => okBlob,
+  })) as unknown as typeof fetch
+}
+
 beforeEach(() => {
+  ;(attachmentsMock as unknown as { __reset: () => void }).__reset()
   useNoteStore.setState({ notes: [], selectedNoteId: null })
+  useFolderStore.setState({ folders: [], activeFolderId: null })
   useWorkspaceStore.setState({
     panes: [{ id: 'p1', tabs: [], activeTabId: null }],
     activePaneId: 'p1',
     mergeAppliedCount: 0,
   })
+  stubFetch()
 })
 
-test('first call creates the Feature tour note and opens it', () => {
-  const id = seedFeatureTourNote()
+test('first call ensures the Tutorial folder + creates+opens the note inside it', async () => {
+  const id = await seedFeatureTourNote()
 
+  // Folder exists.
+  const folders = useFolderStore.getState().folders
+  const tutorialFolder = folders.find(f => f.name === TUTORIAL_FOLDER_NAME)
+  expect(tutorialFolder).toBeTruthy()
+
+  // Note exists in that folder.
   const { notes, selectedNoteId } = useNoteStore.getState()
   expect(notes).toHaveLength(1)
   expect(notes[0].id).toBe(id)
   expect(notes[0].title).toBe(FEATURE_TOUR_TITLE)
+  expect(notes[0].folderId).toBe(tutorialFolder!.id)
   expect(notes[0].content).toBe(FEATURE_TOUR_BODY)
   expect(selectedNoteId).toBe(id)
 
@@ -39,33 +84,61 @@ test('first call creates the Feature tour note and opens it', () => {
   expect(panes[0].tabs[0]).toMatchObject({ kind: 'note', noteId: id, isPreview: false })
 })
 
-test('second call finds the existing note (no duplicate)', () => {
-  const firstId = seedFeatureTourNote()
-  const secondId = seedFeatureTourNote()
+test('second call finds the existing note (no duplicate)', async () => {
+  const firstId = await seedFeatureTourNote()
+  const secondId = await seedFeatureTourNote()
 
   expect(secondId).toBe(firstId)
   expect(useNoteStore.getState().notes).toHaveLength(1)
 })
 
-test('a soft-deleted Feature tour note does NOT block creating a fresh one', () => {
-  const firstId = seedFeatureTourNote()
-  // User trashes the tour note.
+test('a soft-deleted Feature tour note does NOT block creating a fresh one', async () => {
+  const firstId = await seedFeatureTourNote()
   useNoteStore.setState(state => ({
     notes: state.notes.map(n => n.id === firstId ? { ...n, isDeleted: true, deletedAt: Date.now() } : n),
   }))
 
-  const secondId = seedFeatureTourNote()
+  const secondId = await seedFeatureTourNote()
   expect(secondId).not.toBe(firstId)
-  // Two notes now: the trashed original + a fresh one.
   expect(useNoteStore.getState().notes).toHaveLength(2)
 })
 
-test('body uses the GitHub raw CDN for images (no relative paths)', () => {
-  expect(FEATURE_TOUR_BODY).toContain('https://raw.githubusercontent.com/')
-  // Each image reference should be fully-qualified.
+test('body uses vault-relative Tutorial/ paths, not remote URLs', () => {
+  // No raw.githubusercontent or any other http(s) image refs.
+  expect(FEATURE_TOUR_BODY).not.toContain('https://raw.githubusercontent.com')
+  expect(FEATURE_TOUR_BODY).not.toMatch(/!\[[^\]]*\]\(https?:\/\//)
+
   const matches = FEATURE_TOUR_BODY.match(/!\[[^\]]*\]\(([^)]+)\)/g) ?? []
-  expect(matches.length).toBeGreaterThan(0)
+  expect(matches.length).toBeGreaterThanOrEqual(9)
   for (const m of matches) {
-    expect(m).toMatch(/\(https?:\/\//)
+    expect(m).toMatch(/\(Tutorial\//)
   }
+})
+
+test('seeds attachments for each image under Tutorial/<filename>', async () => {
+  await seedFeatureTourNote()
+  // Wait for the void-promise fan-out of image fetches to settle.
+  await new Promise(r => setTimeout(r, 50))
+
+  for (const filename of TUTORIAL_IMAGES) {
+    const expectedPath = `${TUTORIAL_FOLDER_NAME}/${filename}`
+    expect(attachmentsMock.putAttachmentAtPath).toHaveBeenCalledWith(
+      expectedPath,
+      expect.any(Blob),
+      filename,
+    )
+  }
+})
+
+test('skips re-fetching images that are already seeded', async () => {
+  await seedFeatureTourNote()
+  await new Promise(r => setTimeout(r, 50))
+  const firstCallCount = (attachmentsMock.putAttachmentAtPath as jest.Mock).mock.calls.length
+
+  // Second call — every image is already in the mock store, so
+  // putAttachmentAtPath should NOT fire again.
+  await seedFeatureTourNote()
+  await new Promise(r => setTimeout(r, 50))
+
+  expect((attachmentsMock.putAttachmentAtPath as jest.Mock).mock.calls.length).toBe(firstCallCount)
 })
