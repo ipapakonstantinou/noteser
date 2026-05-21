@@ -20,6 +20,7 @@ import { useNoteStore } from '@/stores/noteStore'
 import { useFolderStore } from '@/stores/folderStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { putAttachmentAtPath, getAttachmentBlob } from '@/utils/attachments'
+import type { Note } from '@/types'
 
 export const FEATURE_TOUR_TITLE = 'Feature tour'
 export const TUTORIAL_FOLDER_NAME = 'Tutorial'
@@ -239,45 +240,65 @@ async function seedTutorialImage(filename: string): Promise<void> {
  *   2. Awaits image-attachment seeding so the note opens with images
  *      already in IndexedDB (no "Missing attachment" flash). Existing
  *      images are skipped.
- *   3. Finds an existing non-deleted "Feature tour" note ANYWHERE in
- *      the vault. If it's not in Tutorial/, MIGRATES it there. If its
- *      content drifted from FEATURE_TOUR_BODY (e.g. an older seed wrote
- *      raw GitHub URLs), RESETS the content to the current canonical
- *      body. Idempotent — repeated clicks just re-focus the note.
- *   4. If no existing note, creates one in Tutorial/.
+ *   3. Dedupes any duplicate "Feature tour" notes — only ONE canonical
+ *     copy survives, always at `Tutorial/Feature tour`. Extras get
+ *     soft-deleted. (Earlier seed versions could create duplicates
+ *     when re-clicked against stale localStorage; this heals that.)
+ *   4. Migrates / refreshes the canonical note's folder + content
+ *     so users with broken stale state get fixed by a single click.
+ *   5. If no existing note, creates one in Tutorial/.
  *
- * Returns a promise — call sites usually fire-and-forget.
+ * Returns a promise — call sites usually fire-and-forget, OR await it
+ * if they want to know the seed completed before doing UI follow-up.
  */
 export async function seedFeatureTourNote(): Promise<string> {
-  const { notes, addNote, updateNote } = useNoteStore.getState()
+  const noteState = useNoteStore.getState()
   const { ensureFolderPath } = useFolderStore.getState()
   const { openNote } = useWorkspaceStore.getState()
 
-  // 1. Make sure the Tutorial folder exists. ensureFolderPath is
-  //    idempotent — returns the existing folder id when present.
+  // 1. Make sure the Tutorial folder exists.
   const folderId = ensureFolderPath([TUTORIAL_FOLDER_NAME])
 
-  // 2. Seed any missing screenshots. AWAIT so the note opens with
-  //    images ready; a single broken-image flash is uglier than a
-  //    ~1s pause before the note appears.
+  // 2. Seed missing screenshots in parallel, then await all.
   await Promise.all(TUTORIAL_IMAGES.map(seedTutorialImage))
 
-  // 3. Heal-or-create: look for ANY existing Feature tour note (not
-  //    just one inside Tutorial/) so legacy root-level notes from
-  //    earlier seed versions get migrated cleanly.
-  const existing = notes.find(
+  // 3-4. Find ALL Feature tour notes (not just one). Read fresh state
+  // because `notes` captured earlier could be stale across the await.
+  const freshNotes = useNoteStore.getState().notes
+  const candidates: Note[] = freshNotes.filter(
     n => !n.isDeleted && n.title === FEATURE_TOUR_TITLE,
   )
-  if (existing) {
-    const patch: Partial<typeof existing> = {}
-    if (existing.folderId !== folderId) patch.folderId = folderId
-    if (existing.content !== FEATURE_TOUR_BODY) patch.content = FEATURE_TOUR_BODY
-    if (Object.keys(patch).length > 0) updateNote(existing.id, patch)
-    openNote(existing.id, { preview: false })
-    return existing.id
+
+  if (candidates.length > 0) {
+    // Prefer the one already in Tutorial/, else the most recently
+    // updated (so user's edits — if any — are preserved when we pick
+    // between two duplicates).
+    const canonical =
+      candidates.find(n => n.folderId === folderId)
+      ?? [...candidates].sort((a, b) => b.updatedAt - a.updatedAt)[0]
+
+    const updateNote = useNoteStore.getState().updateNote
+    const deleteNote = useNoteStore.getState().deleteNote
+
+    // Heal canonical: ensure right folder + canonical body.
+    const patch: Partial<Note> = {}
+    if (canonical.folderId !== folderId) patch.folderId = folderId
+    if (canonical.content !== FEATURE_TOUR_BODY) patch.content = FEATURE_TOUR_BODY
+    if (Object.keys(patch).length > 0) updateNote(canonical.id, patch)
+
+    // Soft-delete duplicates. deleteNote respects the user's trashMode
+    // setting (default 'trash' = soft-delete; 'hardDelete' = permanent).
+    // Either way we end up with one canonical note in Tutorial/.
+    for (const dup of candidates) {
+      if (dup.id !== canonical.id) deleteNote(dup.id)
+    }
+
+    openNote(canonical.id, { preview: false })
+    return canonical.id
   }
 
-  const created = addNote({
+  // 5. Nothing existed — fresh user. Create the note.
+  const created = noteState.addNote({
     title: FEATURE_TOUR_TITLE,
     folderId,
     content: FEATURE_TOUR_BODY,

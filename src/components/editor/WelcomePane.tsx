@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import {
   DocumentPlusIcon,
   FolderPlusIcon,
@@ -187,14 +187,7 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
             <li className="flex items-start gap-2">
               <BookOpenIcon className="w-4 h-4 mt-0.5 text-obsidianSecondaryText" />
               <span className="text-obsidianText">
-                <button
-                  type="button"
-                  onClick={() => { void seedFeatureTourNote(); closeTab(tabId) }}
-                  data-testid="welcome-feature-tour"
-                  className="text-obsidianAccentPurple hover:underline"
-                >
-                  Feature tour with screenshots
-                </button>
+                <FeatureTourButton onSeeded={() => closeTab(tabId)} />
                 <span className="text-obsidianSecondaryText"> — seeds a Tutorial folder in your vault with the note + screenshots.</span>
               </span>
             </li>
@@ -254,5 +247,33 @@ const WelcomeAction = ({ icon, label, hint, onClick, testId }: WelcomeActionProp
     <div className="text-xs text-obsidianSecondaryText mt-1">{hint}</div>
   </button>
 )
+
+// Async-aware button: shows a "Seeding…" label while the tour seeds
+// (~1-2s on first click for the parallel PNG fetches), then closes
+// the Welcome tab so the note becomes the active view.
+const FeatureTourButton = ({ onSeeded }: { onSeeded: () => void }) => {
+  const [busy, setBusy] = useState(false)
+  const handleClick = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await seedFeatureTourNote()
+      onSeeded()
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={busy}
+      data-testid="welcome-feature-tour"
+      className="text-obsidianAccentPurple hover:underline disabled:opacity-60 disabled:cursor-progress"
+    >
+      {busy ? 'Seeding tour…' : 'Feature tour with screenshots'}
+    </button>
+  )
+}
 
 export default WelcomePane
