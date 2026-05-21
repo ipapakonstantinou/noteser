@@ -91,7 +91,7 @@ export const SettingsModal = () => {
       size="3xl"
       bodyless
     >
-      <div className="flex flex-row h-[70vh] min-h-[480px]">
+      <div className="flex flex-row h-[70dvh] min-h-[480px]">
         {/* ── Left rail: category navigator ─────────────────────────── */}
         <nav
           aria-label="Settings categories"

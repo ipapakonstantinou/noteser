@@ -62,7 +62,7 @@
 /* Components */
 @layer components {
   .obsidian-sidebar {
-    @apply bg-obsidianGray border-r border-obsidianBorder h-screen overflow-y-auto;
+    @apply bg-obsidianGray border-r border-obsidianBorder h-full overflow-y-auto;
   }
 
   .obsidian-button {
