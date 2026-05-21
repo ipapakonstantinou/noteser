@@ -11,30 +11,29 @@ import { setupCleanVault, waitForTestHooks } from './_helpers'
 // (currentView === 'trash') shows all deleted notes with inline Restore
 // and Delete buttons.
 //
-// APP BUG (2026-05-21): When ALL active notes are deleted, FolderTree
-// takes an early-return "No notes yet" branch that does NOT include the
-// TrashSyntheticFolder component. Bug is in FolderTree.tsx line ~747: the
-// condition `rootFolders.length === 0 && rootNotes.length === 0 && attachmentMeta.length === 0`
-// needs `&& deletedNotes.length === 0` to guard properly.
+// Was broken (caught by qa-tester 2026-05-21, fixed same day): when
+// ALL active notes were deleted, FolderTree's empty-state early-return
+// rendered "No notes yet" without including TrashSyntheticFolder, so
+// the user lost access to their trash. Fixed by adding
+// `&& deletedNotes.length === 0` to the empty-state guard. These tests
+// guard the fix.
 //
-// PARITY GAP 2 (2026-05-21): The right-click context menu on a deleted note
-// does NOT include a "Restore" option. Restore is only available via inline
-// buttons in the dedicated Trash view (icon strip → Trash) or via the
-// notes-view TrashSyntheticFolder which uses a different render path.
-//
-// WORKAROUND IN TESTS: seed two notes — delete one, keep one active — so
-// the FolderTree takes the full render path that includes TrashSyntheticFolder.
+// PARITY GAP (2026-05-21, still pending): The right-click context menu
+// on a deleted note does NOT include a "Restore" option. Restore is
+// only available via the dedicated Trash view (icon strip → Trash) or
+// via the notes-view TrashSyntheticFolder.
 
 test.beforeEach(async ({ page }) => {
   await setupCleanVault(page)
 })
 
-test('APP BUG: when all notes deleted, trash-synthetic-folder does not render (empty-state early return skips it)', async ({ page }) => {
+test('with all notes deleted, .trash synthetic folder still renders', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
   await waitForTestHooks(page)
 
-  // Soft-delete the only note — should trigger empty-state path.
+  // Create then soft-delete the only note. Empty-state path used to
+  // swallow the trash folder; now it should still appear.
   await page.getByTitle('New note (Alt+N)').click()
   await expect(page.getByTestId('note-row')).toHaveCount(1)
 
@@ -43,20 +42,16 @@ test('APP BUG: when all notes deleted, trash-synthetic-folder does not render (e
   await expect(page.getByTestId('delete-confirm')).toBeVisible()
   await page.getByTestId('delete-confirm').click()
 
-  // The active note row should be gone.
   await expect(page.getByTestId('note-row')).toHaveCount(0)
 
-  // Note is soft-deleted in store.
   const deletedCount = await page.evaluate(() => {
     const notes = window.__noteser_test!.stores.noteStore.getState().notes
     return notes.filter((n: { isDeleted: boolean }) => n.isDeleted).length
   })
   expect(deletedCount).toBe(1)
 
-  // BUG: the trash synthetic folder does NOT appear because FolderTree
-  // takes the empty-state early-return path that omits TrashSyntheticFolder.
-  // Once fixed, this should be flipped to toBeVisible().
-  await expect(page.getByTestId('trash-synthetic-folder')).toHaveCount(0)
+  // .trash is still visible — the user can recover their deleted note.
+  await expect(page.getByTestId('trash-synthetic-folder')).toBeVisible()
 })
 
 test('trashed note appears in the synthetic .trash folder when there is also an active note', async ({ page }) => {
