@@ -72,7 +72,7 @@ export const TabBar = ({ pane }: Props) => {
               onDragEnd={onDragEnd}
               onClick={() => focusTab(tab.id)}
               onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); closeTab(tab.id) } }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm border-r border-obsidianBorder cursor-pointer max-w-[200px] flex-shrink-0 select-none ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 max-md:py-2.5 text-sm border-r border-obsidianBorder cursor-pointer max-w-[200px] flex-shrink-0 select-none min-h-[36px] max-md:min-h-[44px] ${
                 active
                   ? 'bg-obsidianBlack text-obsidianText border-t-2 border-t-obsidianAccentPurple'
                   : 'text-obsidianSecondaryText hover:bg-obsidianHighlight'
@@ -87,11 +87,11 @@ export const TabBar = ({ pane }: Props) => {
               <span className={`truncate flex-1 min-w-0 ${title.italic ? 'italic' : ''}`}>{title.text}</span>
               <button
                 onClick={(e) => { e.stopPropagation(); closeTab(tab.id) }}
-                className="flex-shrink-0 p-0.5 rounded hover:bg-obsidianHighlight text-obsidianSecondaryText"
+                className="flex-shrink-0 p-0.5 max-md:p-2 rounded hover:bg-obsidianHighlight text-obsidianSecondaryText inline-flex items-center justify-center max-md:min-w-[36px] max-md:min-h-[36px]"
                 title="Close tab"
                 aria-label="Close tab"
               >
-                <XMarkIcon className="w-3.5 h-3.5" />
+                <XMarkIcon className="w-3.5 h-3.5 max-md:w-4 max-md:h-4" />
               </button>
             </div>
             <DropGap

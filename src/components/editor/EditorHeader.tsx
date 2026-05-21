@@ -43,7 +43,7 @@ export const EditorHeader = ({ note, onTitleChange }: EditorHeaderProps) => {
       <div className="flex items-center gap-2 px-4 py-3">
       <button
         onClick={() => togglePinNote(note.id)}
-        className={`p-1.5 rounded transition-colors ${
+        className={`p-1.5 max-md:p-2.5 rounded transition-colors inline-flex items-center justify-center max-md:min-w-[44px] max-md:min-h-[44px] ${
           note.isPinned
             ? 'text-yellow-500 hover:bg-yellow-500/10'
             : 'text-obsidianSecondaryText hover:bg-obsidianHighlight'
@@ -70,7 +70,7 @@ export const EditorHeader = ({ note, onTitleChange }: EditorHeaderProps) => {
 
       <button
         onClick={togglePreview}
-        className="obsidian-button"
+        className="obsidian-button max-md:p-2.5 max-md:min-w-[44px] max-md:min-h-[44px] inline-flex items-center justify-center"
         title={isPreviewMode ? 'Edit mode' : 'Preview mode'}
       >
         {isPreviewMode ? (
