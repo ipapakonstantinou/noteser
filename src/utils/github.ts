@@ -16,6 +16,67 @@ export class DeviceFlowError extends Error {
   }
 }
 
+// Typed error thrown by every Git Data API helper below. Carries the HTTP
+// status, the GitHub error message (when the body parses as JSON), and any
+// rate-limit metadata so the UI can show a precise message instead of
+// "Failed to read tree (403)".
+export class GitHubAPIError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly operation: string,
+    public readonly githubMessage: string | null,
+    public readonly rateLimitReset: number | null,
+    public readonly remaining: number | null,
+  ) {
+    const tail = githubMessage ? ` — ${githubMessage}` : ''
+    super(`${operation} failed (${status})${tail}`)
+    this.name = 'GitHubAPIError'
+  }
+
+  /** True when this looks like a primary or secondary GitHub rate-limit hit. */
+  get isRateLimit(): boolean {
+    if (this.status === 429) return true
+    if (this.status === 403 && this.remaining === 0) return true
+    return false
+  }
+
+  /** Human-readable countdown until the rate-limit window resets. */
+  resetInSeconds(now = Date.now()): number | null {
+    if (this.rateLimitReset == null) return null
+    const ms = this.rateLimitReset * 1000 - now
+    return ms > 0 ? Math.ceil(ms / 1000) : 0
+  }
+
+  // Build from a non-ok Response. Best-effort: tries to read the JSON body
+  // for a "message" field, falls back to null. Always consumes the body.
+  static async fromResponse(res: Response, operation: string): Promise<GitHubAPIError> {
+    let githubMessage: string | null = null
+    try {
+      const body = await res.clone().json() as { message?: string }
+      if (typeof body.message === 'string') githubMessage = body.message
+    } catch {
+      // Body wasn't JSON, leave message null.
+    }
+    const reset = res.headers.get('x-ratelimit-reset')
+    const remaining = res.headers.get('x-ratelimit-remaining')
+    const resetN = reset != null ? parseInt(reset, 10) : NaN
+    const remainingN = remaining != null ? parseInt(remaining, 10) : NaN
+    return new GitHubAPIError(
+      res.status,
+      operation,
+      githubMessage,
+      Number.isFinite(resetN) ? resetN : null,
+      Number.isFinite(remainingN) ? remainingN : null,
+    )
+  }
+}
+
+/** Throw if the response isn't ok. Typed so callers can `instanceof` check. */
+export async function ensureOk(res: Response, operation: string): Promise<void> {
+  if (res.ok) return
+  throw await GitHubAPIError.fromResponse(res, operation)
+}
+
 // ── Step 1: ask the proxy to request a device code from GitHub ──────────────
 export async function startDeviceFlow(): Promise<DeviceFlowStart> {
   const res = await githubFetch('/api/github/device-code', { method: 'POST' })
@@ -78,7 +139,7 @@ export async function fetchGitHubUser(token: string): Promise<GitHubUser> {
   const res = await githubFetch('https://api.github.com/user', {
     headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' },
   })
-  if (!res.ok) throw new Error(`GitHub /user returned ${res.status}`)
+  await ensureOk(res, 'Fetch GitHub user')
   const data = await res.json()
   return {
     id: data.id,
@@ -106,7 +167,7 @@ export async function listUserRepos(token: string): Promise<GitHubRepo[]> {
   for (let page = 1; page <= MAX_PAGES; page++) {
     const url = `https://api.github.com/user/repos?per_page=${PER_PAGE}&sort=updated&affiliation=owner,collaborator,organization_member&page=${page}`
     const res = await githubFetch(url, { headers: GH_HEADERS(token) })
-    if (!res.ok) throw new Error(`Failed to list repos (${res.status})`)
+    await ensureOk(res, 'List repos')
     const batch: GitHubRepo[] = await res.json()
     out.push(...batch)
     if (batch.length < PER_PAGE) break
@@ -119,7 +180,7 @@ export async function listRepoBranches(token: string, owner: string, repo: strin
     `https://api.github.com/repos/${owner}/${repo}/branches?per_page=100`,
     { headers: GH_HEADERS(token) },
   )
-  if (!res.ok) throw new Error(`Failed to list branches (${res.status})`)
+  await ensureOk(res, 'List branches')
   return res.json()
 }
 
@@ -128,7 +189,7 @@ export async function getRepo(token: string, owner: string, repo: string): Promi
     `https://api.github.com/repos/${owner}/${repo}`,
     { headers: GH_HEADERS(token) },
   )
-  if (!res.ok) throw new Error(`Failed to fetch repo (${res.status})`)
+  await ensureOk(res, 'Fetch repo')
   return res.json()
 }
 
@@ -149,11 +210,7 @@ export async function createRepo(
       description: 'Noteser vault',
     }),
   })
-  if (!res.ok) {
-    const errBody = await res.json().catch(() => ({}))
-    const detail = errBody.errors?.[0]?.message ?? errBody.message ?? `HTTP ${res.status}`
-    throw new Error(`Failed to create repo: ${detail}`)
-  }
+  await ensureOk(res, 'Create repo')
   return res.json()
 }
 
@@ -183,7 +240,7 @@ export async function getBranchRefSha(token: string, owner: string, repo: string
   // the path keys on the URL and so always misses.
   const url = `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}?_=${Date.now()}`
   const res = await githubFetch(url, { headers: GH_HEADERS(token), cache: 'no-store' })
-  if (!res.ok) throw new Error(`Failed to read ref (${res.status})`)
+  await ensureOk(res, 'Read ref')
   const data = await res.json()
   // The `/refs/heads/{branch}` endpoint returns an array when the supplied
   // path is a prefix match for multiple refs (e.g. `main` matching both
@@ -201,7 +258,7 @@ export async function getCommitTreeSha(token: string, owner: string, repo: strin
     `https://api.github.com/repos/${owner}/${repo}/git/commits/${commitSha}`,
     { headers: GH_HEADERS(token) },
   )
-  if (!res.ok) throw new Error(`Failed to read commit (${res.status})`)
+  await ensureOk(res, 'Read commit')
   const data = await res.json()
   return data.tree.sha
 }
@@ -212,7 +269,7 @@ export async function getTreeMap(token: string, owner: string, repo: string, tre
     `https://api.github.com/repos/${owner}/${repo}/git/trees/${treeSha}?recursive=1`,
     { headers: GH_HEADERS(token) },
   )
-  if (!res.ok) throw new Error(`Failed to read tree (${res.status})`)
+  await ensureOk(res, 'Read tree')
   const data = await res.json()
   const out = new Map<string, string>()
   for (const entry of data.tree as Array<{ path: string; type: string; sha: string }>) {
@@ -230,7 +287,7 @@ export async function createBlob(token: string, owner: string, repo: string, con
       body: JSON.stringify({ content, encoding: 'utf-8' }),
     },
   )
-  if (!res.ok) throw new Error(`Failed to create blob (${res.status})`)
+  await ensureOk(res, 'Create blob')
   const data = await res.json()
   return data.sha as string
 }
@@ -250,7 +307,7 @@ export async function createTree(
       body: JSON.stringify({ base_tree: baseTreeSha, tree: entries }),
     },
   )
-  if (!res.ok) throw new Error(`Failed to create tree (${res.status})`)
+  await ensureOk(res, 'Create tree')
   const data = await res.json()
   return data.sha as string
 }
@@ -271,7 +328,7 @@ export async function createCommit(
       body: JSON.stringify({ message, tree: treeSha, parents: [parentSha] }),
     },
   )
-  if (!res.ok) throw new Error(`Failed to create commit (${res.status})`)
+  await ensureOk(res, 'Create commit')
   const data = await res.json()
   return { sha: data.sha, html_url: data.html_url }
 }
@@ -291,10 +348,7 @@ export async function updateBranchRef(
       body: JSON.stringify({ sha: commitSha, force: false }),
     },
   )
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(`Failed to update branch (${res.status}): ${err.message ?? ''}`)
-  }
+  await ensureOk(res, 'Update branch ref')
 }
 
 // Download the repo as a zip archive at a given ref via our own proxy route.
@@ -314,10 +368,7 @@ export async function fetchZipball(token: string, owner: string, repo: string, r
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ owner, repo, ref }),
   })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(`Failed to download zipball (${res.status}): ${err.error_description ?? ''}`)
-  }
+  await ensureOk(res, 'Download zipball')
   return res.arrayBuffer()
 }
 
@@ -327,7 +378,7 @@ export async function getBlobContent(token: string, owner: string, repo: string,
     `https://api.github.com/repos/${owner}/${repo}/git/blobs/${sha}`,
     { headers: GH_HEADERS(token) },
   )
-  if (!res.ok) throw new Error(`Failed to read blob ${sha} (${res.status})`)
+  await ensureOk(res, `Read blob ${sha}`)
   const data = await res.json()
   // GitHub may also return content with encoding 'utf-8' for small text blobs,
   // but base64 is the documented default and always safe to decode.
@@ -421,7 +472,7 @@ export async function createBlobBinary(
       body: JSON.stringify({ content: base64, encoding: 'base64' }),
     },
   )
-  if (!res.ok) throw new Error(`Failed to create binary blob (${res.status})`)
+  await ensureOk(res, 'Create binary blob')
   const data = await res.json()
   return data.sha as string
 }
@@ -439,7 +490,7 @@ export async function getBlobBytes(
     `https://api.github.com/repos/${owner}/${repo}/git/blobs/${sha}`,
     { headers: GH_HEADERS(token) },
   )
-  if (!res.ok) throw new Error(`Failed to read binary blob ${sha} (${res.status})`)
+  await ensureOk(res, `Read binary blob ${sha}`)
   const data = await res.json()
   if (data.encoding === 'base64') return base64ToBytes(data.content)
   // Unexpected — UTF-8 encoding on a binary blob would corrupt non-ASCII

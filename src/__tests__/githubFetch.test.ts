@@ -14,7 +14,13 @@
  * Headers, Request) is available — jsdom drops these.
  */
 
-import { githubFetch, computeWait } from '../utils/githubFetch'
+import {
+  githubFetch,
+  computeWait,
+  getLastRateLimit,
+  onRateLimit,
+  _resetRateLimitTelemetry,
+} from '../utils/githubFetch'
 
 function makeRes(status: number, headers: Record<string, string> = {}): Response {
   const h = new Headers(headers)
@@ -22,6 +28,9 @@ function makeRes(status: number, headers: Record<string, string> = {}): Response
 }
 
 describe('githubFetch — retry behaviour', () => {
+  beforeEach(() => { _resetRateLimitTelemetry() })
+
+
   test('returns immediately on 200', async () => {
     const fetchMock = jest.fn().mockResolvedValue(makeRes(200))
     global.fetch = fetchMock as unknown as typeof fetch
@@ -119,6 +128,118 @@ describe('githubFetch — retry behaviour', () => {
     const res = await githubFetch('https://example.com', undefined, {
       delayMs: async () => {},
     })
+    expect(res.status).toBe(200)
+  })
+})
+
+describe('githubFetch — 403 rate-limit handling', () => {
+  beforeEach(() => { _resetRateLimitTelemetry() })
+
+  test('treats 403 with x-ratelimit-remaining=0 as transient and retries', async () => {
+    const reset = String(Math.floor(Date.now() / 1000) + 1)
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce(makeRes(403, {
+        'x-ratelimit-remaining': '0',
+        'x-ratelimit-reset': reset,
+      }))
+      .mockResolvedValueOnce(makeRes(200))
+    global.fetch = fetchMock as unknown as typeof fetch
+    const delays: number[] = []
+    const res = await githubFetch('https://example.com', undefined, {
+      delayMs: async (ms) => { delays.push(ms) },
+    })
+    expect(res.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(delays).toHaveLength(1)
+  })
+
+  test('treats 403 with retry-after (secondary rate limit) as transient', async () => {
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce(makeRes(403, { 'retry-after': '2' }))
+      .mockResolvedValueOnce(makeRes(200))
+    global.fetch = fetchMock as unknown as typeof fetch
+    const delays: number[] = []
+    const res = await githubFetch('https://example.com', undefined, {
+      delayMs: async (ms) => { delays.push(ms) },
+    })
+    expect(res.status).toBe(200)
+    expect(delays).toEqual([2000])
+  })
+
+  test('does NOT retry a plain 403 with no rate-limit signal', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(makeRes(403))
+    global.fetch = fetchMock as unknown as typeof fetch
+    const res = await githubFetch('https://example.com', undefined, {
+      delayMs: async () => {},
+    })
+    expect(res.status).toBe(403)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('githubFetch — rate-limit telemetry', () => {
+  beforeEach(() => { _resetRateLimitTelemetry() })
+
+  test('captures x-ratelimit-* headers on successful responses', async () => {
+    const reset = Math.floor(Date.now() / 1000) + 3600
+    const fetchMock = jest.fn().mockResolvedValue(makeRes(200, {
+      'x-ratelimit-limit': '5000',
+      'x-ratelimit-remaining': '4998',
+      'x-ratelimit-reset': String(reset),
+      'x-ratelimit-resource': 'core',
+    }))
+    global.fetch = fetchMock as unknown as typeof fetch
+    await githubFetch('https://example.com', undefined, { delayMs: async () => {} })
+    const snap = getLastRateLimit()
+    expect(snap).not.toBeNull()
+    expect(snap!.limit).toBe(5000)
+    expect(snap!.remaining).toBe(4998)
+    expect(snap!.reset).toBe(reset)
+    expect(snap!.resource).toBe('core')
+  })
+
+  test('notifies subscribers on each captured response', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(makeRes(200, {
+      'x-ratelimit-limit': '5000',
+      'x-ratelimit-remaining': '4999',
+      'x-ratelimit-reset': '1000',
+    }))
+    global.fetch = fetchMock as unknown as typeof fetch
+    const seen: number[] = []
+    const unsub = onRateLimit((s) => { seen.push(s.remaining) })
+    await githubFetch('https://example.com', undefined, { delayMs: async () => {} })
+    await githubFetch('https://example.com', undefined, { delayMs: async () => {} })
+    unsub()
+    expect(seen).toEqual([4999, 4999])
+  })
+
+  test('skips capture when headers are absent', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(makeRes(200))
+    global.fetch = fetchMock as unknown as typeof fetch
+    await githubFetch('https://example.com', undefined, { delayMs: async () => {} })
+    expect(getLastRateLimit()).toBeNull()
+  })
+
+  test('skips capture when headers are non-numeric', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(makeRes(200, {
+      'x-ratelimit-limit': 'banana',
+      'x-ratelimit-remaining': '4999',
+      'x-ratelimit-reset': '1000',
+    }))
+    global.fetch = fetchMock as unknown as typeof fetch
+    await githubFetch('https://example.com', undefined, { delayMs: async () => {} })
+    expect(getLastRateLimit()).toBeNull()
+  })
+
+  test('listener exceptions do not break the fetch', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(makeRes(200, {
+      'x-ratelimit-limit': '5000',
+      'x-ratelimit-remaining': '1',
+      'x-ratelimit-reset': '999',
+    }))
+    global.fetch = fetchMock as unknown as typeof fetch
+    onRateLimit(() => { throw new Error('boom') })
+    const res = await githubFetch('https://example.com', undefined, { delayMs: async () => {} })
     expect(res.status).toBe(200)
   })
 })
