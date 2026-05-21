@@ -127,6 +127,58 @@ test('migrates a legacy root-level Feature tour note into Tutorial/', async () =
   expect(migrated.content).not.toContain('raw.githubusercontent.com')
 })
 
+test('dedupes when the vault has multiple Feature tour notes', async () => {
+  // Simulate the state a user hits after clicking the link across
+  // multiple seed-code generations: a stale root-level note AND a
+  // newer-but-different note in Tutorial/. The seed should pick the
+  // Tutorial/ one as canonical, refresh its content, and soft-delete
+  // the root-level one.
+  const now = Date.now()
+  // Materialise the Tutorial folder so we can put a duplicate into it.
+  const folderId = useFolderStore.getState().ensureFolderPath([TUTORIAL_FOLDER_NAME])
+  useNoteStore.setState({
+    notes: [
+      {
+        id: 'root-old',
+        title: FEATURE_TOUR_TITLE,
+        content: 'old root content',
+        folderId: null,
+        createdAt: now - 1000,
+        updatedAt: now - 1000,
+        isDeleted: false,
+        deletedAt: null,
+        isPinned: false,
+        templateId: null,
+      },
+      {
+        id: 'tutorial-dup',
+        title: FEATURE_TOUR_TITLE,
+        content: 'tutorial dup content',
+        folderId,
+        createdAt: now,
+        updatedAt: now,
+        isDeleted: false,
+        deletedAt: null,
+        isPinned: false,
+        templateId: null,
+      },
+    ],
+    selectedNoteId: null,
+  })
+
+  const id = await seedFeatureTourNote()
+
+  // The one inside Tutorial/ wins — root-level note is soft-deleted.
+  expect(id).toBe('tutorial-dup')
+  const active = useNoteStore.getState().notes.filter(n => !n.isDeleted)
+  expect(active).toHaveLength(1)
+  expect(active[0].id).toBe('tutorial-dup')
+  expect(active[0].content).toBe(FEATURE_TOUR_BODY)
+  // Root note still in the store but flagged deleted.
+  const root = useNoteStore.getState().notes.find(n => n.id === 'root-old')
+  expect(root?.isDeleted).toBe(true)
+})
+
 test('a soft-deleted Feature tour note does NOT block creating a fresh one', async () => {
   const firstId = await seedFeatureTourNote()
   useNoteStore.setState(state => ({
