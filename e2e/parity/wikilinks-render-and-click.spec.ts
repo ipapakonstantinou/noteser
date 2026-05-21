@@ -11,21 +11,13 @@ import { setupCleanVault, waitForTestHooks } from './_helpers'
 // openNote(target.id) when the note exists. Non-existent wikilinks render
 // in red (text-red-400) with a "Note not found" tooltip.
 //
-// APP BUG (2026-05-21): react-markdown v10 sanitizes URLs by default via
-// `defaultUrlTransform`. The `wikilink://` protocol is not in the allowlist
-// (only http/https/mailto/tel/# pass through). As a result:
-//   - WikilinkAnchor receives href=undefined instead of "wikilink://..."
-//   - It falls to the external <a> fallback with href=undefined
-//   - The wikilink renders in purple (text-obsidianAccentPurple from the <a>)
-//     but is NOT an interactive <span> with a click handler
-//   - Click-to-open does NOT work in preview mode
-//   - "Note not found" tooltip does NOT appear (tooltip is on the <span> path)
-//
-// FIX: Pass `urlTransform={(url) => url.startsWith('wikilink://') ? url : defaultUrlTransform(url)}`
-// to the ReactMarkdown component in EditorContent.tsx.
-//
-// The first test confirms wikilinks ARE rendered (text visible + some styling).
-// Tests 2 and 3 document the bug and are marked to fail.
+// Was broken (caught by qa-tester 2026-05-21, fixed same day): react-
+// markdown v10's defaultUrlTransform stripped the wikilink:// protocol,
+// so WikilinkAnchor received href=undefined and fell to the plain <a>
+// fallback — no click handler, no "Note not found" tooltip. Fixed by
+// passing `urlTransform={(url) => url.startsWith('wikilink://') ? url
+// : defaultUrlTransform(url)}` in EditorContent.tsx. These tests now
+// assert the working behaviour as a regression guard.
 
 test.beforeEach(async ({ page }) => {
   await setupCleanVault(page)
@@ -87,7 +79,7 @@ test('[[Target Note]] in preview mode renders as a clickable purple link', async
   expect(color).toBeTruthy()
 })
 
-test('APP BUG: clicking a [[Target Note]] wikilink does NOT open that note (react-markdown v10 strips wikilink:// URLs)', async ({ page }) => {
+test('clicking a [[Target Note]] wikilink in preview opens that note', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
   await waitForTestHooks(page)
@@ -101,7 +93,6 @@ test('APP BUG: clicking a [[Target Note]] wikilink does NOT open that note (reac
     return { sourceId: source.id, targetId: target.id }
   })
 
-  // Open source note, wait for CM to mount, THEN enable preview mode.
   await page.evaluate((nId) => {
     window.__noteser_test!.stores.workspaceStore.getState().openNote(nId, { preview: false })
   }, sourceId)
@@ -115,31 +106,28 @@ test('APP BUG: clicking a [[Target Note]] wikilink does NOT open that note (reac
   const prose = page.locator('.prose')
   await expect(prose).toContainText('Clickable Target', { timeout: 5_000 })
 
-  // BUG: WikilinkAnchor renders as <a> (not <span>) because react-markdown v10
-  // strips the wikilink:// protocol via defaultUrlTransform. The <span> path
-  // (which has the onClick handler) is never reached.
-  // Assert the text is in an <a> tag (not a span), confirming the bug path.
-  const wikilinkEl = prose.locator('a').filter({ hasText: 'Clickable Target' }).first()
-  // If the bug is fixed, this would be a span, not an <a>.
-  await expect(wikilinkEl).toBeVisible({ timeout: 3_000 })
+  // With the urlTransform pass-through, WikilinkAnchor takes the
+  // <span>+onClick path. The title attribute confirms it's the
+  // wikilink span, not a plain external <a>.
+  const wikilinkSpan = prose.locator('span[title^="Open:"]').filter({ hasText: 'Clickable Target' }).first()
+  await expect(wikilinkSpan).toBeVisible({ timeout: 5_000 })
 
-  // Bug confirmation: clicking the <a> does NOT open the target note (no onClick).
-  const activeNoteIdBefore = await page.evaluate(() => {
+  // Clicking opens the target note.
+  await wikilinkSpan.click()
+  const activeNoteIdAfter = await page.evaluate(() => {
     const ws = window.__noteser_test!.stores.workspaceStore.getState()
     const pane = ws.panes.find((p: { id: string }) => p.id === ws.activePaneId) ?? ws.panes[0]
     const activeTab = pane?.tabs.find((t: { id: string }) => t.id === pane.activeTabId)
     return (activeTab as { noteId?: string })?.noteId ?? null
   })
-  // Should currently be the source note.
-  expect(activeNoteIdBefore).toBe(sourceId)
+  expect(activeNoteIdAfter).toBe(targetId)
 })
 
-test('APP BUG: [[Missing Note]] wikilink renders without "Note not found" tooltip (react-markdown v10 strips wikilink:// URLs)', async ({ page }) => {
+test('[[Missing Note]] wikilink renders red with "Note not found" tooltip', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
   await waitForTestHooks(page)
 
-  // Seed a note with a wikilink to a note that doesn't exist.
   const noteId = await page.evaluate(() => {
     const store = window.__noteser_test!.stores.noteStore.getState()
     const note = store.addNote({ folderId: null })
@@ -147,7 +135,6 @@ test('APP BUG: [[Missing Note]] wikilink renders without "Note not found" toolti
     return note.id
   })
 
-  // Open note, wait for CM to mount, then switch to preview mode.
   await page.evaluate((nId) => {
     window.__noteser_test!.stores.workspaceStore.getState().openNote(nId, { preview: false })
   }, noteId)
@@ -161,38 +148,34 @@ test('APP BUG: [[Missing Note]] wikilink renders without "Note not found" toolti
   const prose = page.locator('.prose')
   await expect(prose).toContainText('Ghost Note That Does Not Exist', { timeout: 8_000 })
 
-  // BUG: WikilinkAnchor's <span title="Note not found: ..."> path is never
-  // reached because react-markdown v10 strips the wikilink:// protocol via
-  // defaultUrlTransform, so WikilinkAnchor receives href=undefined and falls
-  // to the <a> fallback instead. The "Note not found" tooltip is lost.
-  //
-  // Assert the text lands in an <a> element (confirming the bug path).
-  const ghostAnchor = prose.locator('a').filter({ hasText: 'Ghost Note That Does Not Exist' }).first()
-  await expect(ghostAnchor).toBeVisible({ timeout: 3_000 })
-
-  // Confirm the tooltip is NOT present (the <a> has no title="Note not found").
-  const titleAttr = await ghostAnchor.getAttribute('title')
-  expect(titleAttr ?? '').not.toMatch(/Note not found/)
-
-  // Also confirm no <span> with the tooltip exists anywhere in .prose.
-  const tooltipSpanCount = await prose.locator('span[title*="Note not found"]').count()
-  expect(tooltipSpanCount).toBe(0)
+  // Now reaches the <span title="Note not found: ..."> render path.
+  const ghostSpan = prose.locator('span[title^="Note not found:"]').filter({ hasText: 'Ghost Note That Does Not Exist' }).first()
+  await expect(ghostSpan).toBeVisible({ timeout: 5_000 })
+  const titleAttr = await ghostSpan.getAttribute('title')
+  expect(titleAttr).toMatch(/Note not found: Ghost Note That Does Not Exist/)
 })
 
 test('[[Note Name]] wikilink in live-edit mode (CodeMirror) does not crash', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
+  await waitForTestHooks(page)
 
   await page.getByTitle('New note (Alt+N)').click()
   await expect(page.locator('.cm-editor').first()).toBeVisible({ timeout: 10_000 })
+
+  // The "open notes in preview mode" default now lands fresh tabs in
+  // preview; the preview overlay intercepts clicks on .cm-content.
+  // Toggle to edit mode for this test (it's explicitly about CM
+  // behaviour, not the renderer).
+  await page.evaluate(() => {
+    window.__noteser_test!.stores.uiStore.getState().setPreviewMode(false)
+  })
 
   const content = page.locator('.cm-content').first()
   await content.click()
   await page.keyboard.type('[[Some Wikilink]]')
 
-  // The editor should still be mounted and not crashed.
   await expect(page.locator('.cm-editor').first()).toBeVisible()
-  // The WikilinkAutocomplete dropdown may appear — verify the editor stays functional.
   await page.keyboard.press('Escape')
   await expect(page.locator('.cm-editor').first()).toBeVisible()
 })
