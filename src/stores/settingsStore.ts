@@ -73,6 +73,12 @@ export interface SettingsState {
   // to the auto-generated "Sync from Noteser (N changes)" when off
   // or when the AI call fails. Costs 1 small AI call per sync.
   aiCommitMessages: boolean
+  // ── Editor defaults ────────────────────────────────────────────────────
+  // When true (default), opening a note lands you on rendered preview
+  // mode rather than the editable source view. New users get the
+  // "wow" rendered output up front; clicking pencil / pressing the
+  // toggle still switches to edit. Per-device.
+  notesOpenInPreviewMode: boolean
   // SECURITY NOTE: localStorage is readable by any script on the page; any
   // XSS would expose the key. Same trust model the GitHub OAuth token uses
   // (see `githubStore.ts`). Acceptable for a personal note tool, NOT for a
@@ -219,6 +225,7 @@ export interface SettingsState {
   setAiModel: (model: string) => void
   setAiEmbeddingsEnabled: (enabled: boolean) => void
   setAiCommitMessages: (enabled: boolean) => void
+  setNotesOpenInPreviewMode: (enabled: boolean) => void
   setShortcutOverride: (id: string, combo: string) => void
   clearShortcutOverride: (id: string) => void
   resetShortcutOverrides: () => void
@@ -300,6 +307,7 @@ const DEFAULTS = {
   aiModel: DEFAULT_AI_MODEL.anthropic,
   aiEmbeddingsEnabled: false,
   aiCommitMessages: false,
+  notesOpenInPreviewMode: true,
   shortcutOverrides: {} as Record<string, string>,
   trashMode: 'trash' as TrashMode,
   confirmBulkDelete: true,
@@ -352,6 +360,7 @@ export const useSettingsStore = create<SettingsState>()(
         setAiModel: (aiModel) => set({ aiModel }),
         setAiEmbeddingsEnabled: (aiEmbeddingsEnabled) => set({ aiEmbeddingsEnabled }),
         setAiCommitMessages: (aiCommitMessages) => set({ aiCommitMessages }),
+        setNotesOpenInPreviewMode: (notesOpenInPreviewMode) => set({ notesOpenInPreviewMode }),
         setShortcutOverride: (id, combo) =>
           set((state) => ({
             shortcutOverrides: { ...state.shortcutOverrides, [id]: combo },

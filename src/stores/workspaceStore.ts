@@ -113,6 +113,22 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           return
         }
 
+        // Fresh tab — apply the user's "open notes in preview mode"
+        // default. Dynamic import to avoid a static cycle between
+        // workspace and settings stores. Best-effort: if the import
+        // fails (test envs without the store), we just leave the
+        // global preview flag alone.
+        if (typeof window !== 'undefined') {
+          import('./settingsStore').then(({ useSettingsStore }) => {
+            const preferPreview = useSettingsStore.getState().notesOpenInPreviewMode
+            import('./uiStore').then(({ useUIStore }) => {
+              if (useUIStore.getState().isPreviewMode !== preferPreview) {
+                useUIStore.getState().setPreviewMode(preferPreview)
+              }
+            }).catch(() => { /* swallow */ })
+          }).catch(() => { /* swallow */ })
+        }
+
         // Adding a new tab. In preview mode, replace any existing preview tab
         // *within the target pane*.
         const next = state.panes.map(p => {

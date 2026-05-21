@@ -2,32 +2,30 @@
  * featureTourNote.test.ts
  *
  * Coverage for the Feature-tour seed helper. We assert:
- *   - first call ensures the Tutorial/ folder exists, creates a new note
- *     inside it, and opens it
+ *   - first call creates the note at vault root + opens it
  *   - second call finds the existing note (no duplicate)
+ *   - migrates a legacy in-folder Feature tour note back to root
+ *   - dedupes when the vault has multiple Feature tour notes
  *   - a soft-deleted tour note doesn't block a fresh seed
- *   - the body uses vault-relative `Tutorial/X.png` paths (NOT remote
- *     URLs) so screenshots resolve via IndexedDB attachments
- *   - image attachments get fetched from /feature-tour/X.png and saved
- *     under `Tutorial/X.png`
- *
- * Image-fetch is exercised by stubbing `global.fetch`; the
- * `putAttachmentAtPath` side-effect is asserted via a spy.
+ *   - body uses vault-relative `Files/feature-tour/X.png` paths
+ *     (NOT remote URLs, NOT Tutorial/)
+ *   - image attachments get fetched from /feature-tour/X.png and
+ *     saved under `Files/feature-tour/X.png`
  */
 
 import {
   seedFeatureTourNote,
+  buildFeatureTourBody,
+  tourAssetPath,
   FEATURE_TOUR_TITLE,
-  FEATURE_TOUR_BODY,
-  TUTORIAL_FOLDER_NAME,
   TUTORIAL_IMAGES,
 } from '../utils/featureTourNote'
 import { useNoteStore } from '../stores/noteStore'
 import { useFolderStore } from '../stores/folderStore'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 
-// Mock the attachments module so we don't hit IDB in unit tests; just
-// capture which paths got putAttachmentAtPath'd.
+// Mock the attachments module so we don't hit IDB; just capture which
+// paths got putAttachmentAtPath'd.
 jest.mock('../utils/attachments', () => {
   const seen = new Map<string, Blob>()
   return {
@@ -61,21 +59,16 @@ beforeEach(() => {
   stubFetch()
 })
 
-test('first call ensures the Tutorial folder + creates+opens the note inside it', async () => {
+test('first call creates the Feature tour note at vault root and opens it', async () => {
   const id = await seedFeatureTourNote()
 
-  // Folder exists.
-  const folders = useFolderStore.getState().folders
-  const tutorialFolder = folders.find(f => f.name === TUTORIAL_FOLDER_NAME)
-  expect(tutorialFolder).toBeTruthy()
-
-  // Note exists in that folder.
   const { notes, selectedNoteId } = useNoteStore.getState()
   expect(notes).toHaveLength(1)
   expect(notes[0].id).toBe(id)
   expect(notes[0].title).toBe(FEATURE_TOUR_TITLE)
-  expect(notes[0].folderId).toBe(tutorialFolder!.id)
-  expect(notes[0].content).toBe(FEATURE_TOUR_BODY)
+  // At the vault root — no folder.
+  expect(notes[0].folderId).toBeNull()
+  expect(notes[0].content).toBe(buildFeatureTourBody())
   expect(selectedNoteId).toBe(id)
 
   // Opened as a pinned (not preview) tab in the active pane.
@@ -92,16 +85,27 @@ test('second call finds the existing note (no duplicate)', async () => {
   expect(useNoteStore.getState().notes).toHaveLength(1)
 })
 
-test('migrates a legacy root-level Feature tour note into Tutorial/', async () => {
-  // Simulate the state a user has if they clicked Feature tour BEFORE
-  // the Tutorial/ folder change shipped: a note titled "Feature tour"
-  // at the vault root with stale (raw GitHub URL) content.
+test('migrates a Feature tour note out of any subfolder back to root', async () => {
+  // Simulate the previous seed version that put the note in Tutorial/.
+  useFolderStore.setState({
+    folders: [{
+      id: 'tutorial-folder',
+      name: 'Tutorial',
+      parentId: null,
+      createdAt: 0,
+      updatedAt: 0,
+      isDeleted: false,
+      deletedAt: null,
+      order: 0,
+    }],
+    activeFolderId: null,
+  })
   useNoteStore.setState({
     notes: [{
-      id: 'legacy',
+      id: 'in-tutorial',
       title: FEATURE_TOUR_TITLE,
-      content: '![old](https://raw.githubusercontent.com/foo.png)',
-      folderId: null,
+      content: 'stale content',
+      folderId: 'tutorial-folder',
       createdAt: Date.now(),
       updatedAt: Date.now(),
       isDeleted: false,
@@ -113,50 +117,48 @@ test('migrates a legacy root-level Feature tour note into Tutorial/', async () =
   })
 
   const id = await seedFeatureTourNote()
-
-  // Same note id — we migrated, not recreated.
-  expect(id).toBe('legacy')
-  // No duplicate created.
-  expect(useNoteStore.getState().notes).toHaveLength(1)
-  // Moved into the Tutorial folder.
-  const tutorialFolder = useFolderStore.getState().folders.find(f => f.name === TUTORIAL_FOLDER_NAME)
+  expect(id).toBe('in-tutorial')
   const migrated = useNoteStore.getState().notes[0]
-  expect(migrated.folderId).toBe(tutorialFolder!.id)
-  // Content refreshed to the current canonical body (no more raw GitHub URLs).
-  expect(migrated.content).toBe(FEATURE_TOUR_BODY)
-  expect(migrated.content).not.toContain('raw.githubusercontent.com')
+  expect(migrated.folderId).toBeNull()
+  expect(migrated.content).toBe(buildFeatureTourBody())
 })
 
 test('dedupes when the vault has multiple Feature tour notes', async () => {
-  // Simulate the state a user hits after clicking the link across
-  // multiple seed-code generations: a stale root-level note AND a
-  // newer-but-different note in Tutorial/. The seed should pick the
-  // Tutorial/ one as canonical, refresh its content, and soft-delete
-  // the root-level one.
   const now = Date.now()
-  // Materialise the Tutorial folder so we can put a duplicate into it.
-  const folderId = useFolderStore.getState().ensureFolderPath([TUTORIAL_FOLDER_NAME])
+  useFolderStore.setState({
+    folders: [{
+      id: 'old-tutorial',
+      name: 'Tutorial',
+      parentId: null,
+      createdAt: 0,
+      updatedAt: 0,
+      isDeleted: false,
+      deletedAt: null,
+      order: 0,
+    }],
+    activeFolderId: null,
+  })
   useNoteStore.setState({
     notes: [
       {
-        id: 'root-old',
+        id: 'root-recent',
         title: FEATURE_TOUR_TITLE,
-        content: 'old root content',
+        content: 'root content',
         folderId: null,
-        createdAt: now - 1000,
-        updatedAt: now - 1000,
+        createdAt: now,
+        updatedAt: now,
         isDeleted: false,
         deletedAt: null,
         isPinned: false,
         templateId: null,
       },
       {
-        id: 'tutorial-dup',
+        id: 'tutorial-older',
         title: FEATURE_TOUR_TITLE,
-        content: 'tutorial dup content',
-        folderId,
-        createdAt: now,
-        updatedAt: now,
+        content: 'tutorial content',
+        folderId: 'old-tutorial',
+        createdAt: now - 1000,
+        updatedAt: now - 1000,
         isDeleted: false,
         deletedAt: null,
         isPinned: false,
@@ -168,15 +170,14 @@ test('dedupes when the vault has multiple Feature tour notes', async () => {
 
   const id = await seedFeatureTourNote()
 
-  // The one inside Tutorial/ wins — root-level note is soft-deleted.
-  expect(id).toBe('tutorial-dup')
+  // Root one wins — it's already at the desired location.
+  expect(id).toBe('root-recent')
   const active = useNoteStore.getState().notes.filter(n => !n.isDeleted)
   expect(active).toHaveLength(1)
-  expect(active[0].id).toBe('tutorial-dup')
-  expect(active[0].content).toBe(FEATURE_TOUR_BODY)
-  // Root note still in the store but flagged deleted.
-  const root = useNoteStore.getState().notes.find(n => n.id === 'root-old')
-  expect(root?.isDeleted).toBe(true)
+  expect(active[0].id).toBe('root-recent')
+  expect(active[0].content).toBe(buildFeatureTourBody())
+  const tutorialNote = useNoteStore.getState().notes.find(n => n.id === 'tutorial-older')
+  expect(tutorialNote?.isDeleted).toBe(true)
 })
 
 test('a soft-deleted Feature tour note does NOT block creating a fresh one', async () => {
@@ -187,28 +188,30 @@ test('a soft-deleted Feature tour note does NOT block creating a fresh one', asy
 
   const secondId = await seedFeatureTourNote()
   expect(secondId).not.toBe(firstId)
-  expect(useNoteStore.getState().notes).toHaveLength(2)
+  expect(useNoteStore.getState().notes.filter(n => !n.isDeleted)).toHaveLength(1)
 })
 
-test('body uses vault-relative Tutorial/ paths, not remote URLs', () => {
-  // No raw.githubusercontent or any other http(s) image refs.
-  expect(FEATURE_TOUR_BODY).not.toContain('https://raw.githubusercontent.com')
-  expect(FEATURE_TOUR_BODY).not.toMatch(/!\[[^\]]*\]\(https?:\/\//)
+test('body uses Files/feature-tour/ attachment paths, not remote URLs and not Tutorial/', () => {
+  const body = buildFeatureTourBody()
+  expect(body).not.toContain('https://raw.githubusercontent.com')
+  expect(body).not.toContain('Tutorial/')
+  expect(body).not.toMatch(/!\[[^\]]*\]\(https?:\/\//)
 
-  const matches = FEATURE_TOUR_BODY.match(/!\[[^\]]*\]\(([^)]+)\)/g) ?? []
+  const matches = body.match(/!\[[^\]]*\]\(([^)]+)\)/g) ?? []
   expect(matches.length).toBeGreaterThanOrEqual(9)
   for (const m of matches) {
-    expect(m).toMatch(/\(Tutorial\//)
+    // Each image points at Files/feature-tour/<filename>
+    expect(m).toMatch(/\(Files\/feature-tour\//)
   }
 })
 
-test('seeds attachments for each image under Tutorial/<filename>', async () => {
+test('seeds attachments at Files/feature-tour/<filename>', async () => {
   await seedFeatureTourNote()
-  // Wait for the void-promise fan-out of image fetches to settle.
   await new Promise(r => setTimeout(r, 50))
 
   for (const filename of TUTORIAL_IMAGES) {
-    const expectedPath = `${TUTORIAL_FOLDER_NAME}/${filename}`
+    const expectedPath = tourAssetPath(filename)
+    expect(expectedPath).toBe(`Files/feature-tour/${filename}`)
     expect(attachmentsMock.putAttachmentAtPath).toHaveBeenCalledWith(
       expectedPath,
       expect.any(Blob),
@@ -222,10 +225,7 @@ test('skips re-fetching images that are already seeded', async () => {
   await new Promise(r => setTimeout(r, 50))
   const firstCallCount = (attachmentsMock.putAttachmentAtPath as jest.Mock).mock.calls.length
 
-  // Second call — every image is already in the mock store, so
-  // putAttachmentAtPath should NOT fire again.
   await seedFeatureTourNote()
   await new Promise(r => setTimeout(r, 50))
-
   expect((attachmentsMock.putAttachmentAtPath as jest.Mock).mock.calls.length).toBe(firstCallCount)
 })

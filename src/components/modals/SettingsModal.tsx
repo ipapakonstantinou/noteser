@@ -366,10 +366,21 @@ function normalizeForPicker(value: string, fallback: string): string {
 function EditorPanel() {
   const taskListDensity = useSettingsStore(s => s.taskListDensity)
   const setTaskListDensity = useSettingsStore(s => s.setTaskListDensity)
+  const notesOpenInPreviewMode = useSettingsStore(s => s.notesOpenInPreviewMode)
+  const setNotesOpenInPreviewMode = useSettingsStore(s => s.setNotesOpenInPreviewMode)
 
   return (
     <div className="space-y-4">
       <PanelHeading>Editor</PanelHeading>
+      <Field
+        label="Open notes in preview mode"
+        description="When ON (default), clicking a note opens the rendered markdown — the way readers see it. Toggle to edit mode any time with the pencil icon in the editor header."
+      >
+        <SettingsCheckbox
+          checked={notesOpenInPreviewMode}
+          onChange={setNotesOpenInPreviewMode}
+        />
+      </Field>
       <Field
         label="Task list density"
         description='Spacing inside `tasks` query blocks. "Comfortable" matches Obsidian; "Compact" is the legacy noteser default.'
