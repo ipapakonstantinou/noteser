@@ -23,8 +23,9 @@ import { useHydration } from './useHydration'
 
 export function useAutoSync(): void {
   const hydrated = useHydration()
-  const { runSync, isConnected, syncState } = useGitHubSync()
+  const { runSync, runPullOnly, isConnected, syncState } = useGitHubSync()
   const autoSyncOnStart = useSettingsStore(s => s.autoSyncOnStart)
+  const pullOnlyOnStartup = useSettingsStore(s => s.pullOnlyOnStartup)
   const intervalMinutes = useSettingsStore(s => s.autoSyncIntervalMinutes)
 
   // Latest syncState in a ref so the interval callback can read it
@@ -40,8 +41,17 @@ export function useAutoSync(): void {
     if (!isConnected) return
     if (!autoSyncOnStart) return
     startupRanRef.current = true
-    void runSync()
-  }, [hydrated, isConnected, autoSyncOnStart, runSync])
+    // pullOnlyOnStartup: run pull only on boot. Local unsynced edits
+    // stay local until the user clicks Commit & Sync (the pending-
+    // count chip in EditorFooter still surfaces them). Useful on
+    // devices that frequently have work-in-flight notes the user
+    // doesn't want auto-pushed on every page load.
+    if (pullOnlyOnStartup) {
+      void runPullOnly()
+    } else {
+      void runSync()
+    }
+  }, [hydrated, isConnected, autoSyncOnStart, pullOnlyOnStartup, runSync, runPullOnly])
 
   // ── Periodic sync ──────────────────────────────────────────────────
   useEffect(() => {

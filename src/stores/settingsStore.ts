@@ -39,6 +39,13 @@ export interface SettingsState {
   attachmentsFolder: string
   // Run a sync (pull-then-push) once on app boot if a repo is connected.
   autoSyncOnStart: boolean
+  // When true, the startup auto-sync runs PULL-ONLY — local edits that
+  // haven't been pushed yet stay local until the user explicitly clicks
+  // Commit & Sync. Useful on devices that frequently have work-in-flight
+  // notes the user doesn't want auto-pushed on every boot. The pending
+  // chip in EditorFooter still surfaces the unsynced count.
+  // Per-DEVICE — different devices can disagree.
+  pullOnlyOnStartup: boolean
   // Minutes between auto-syncs. 0 = off. Any positive integer is valid.
   autoSyncIntervalMinutes: number
   // Repo-relative folder for daily notes. Empty falls back to the default.
@@ -227,6 +234,7 @@ export interface SettingsState {
   setShowHiddenFolders: (value: boolean) => void
   setAttachmentsFolder: (folder: string) => void
   setAutoSyncOnStart: (value: boolean) => void
+  setPullOnlyOnStartup: (value: boolean) => void
   setAutoSyncIntervalMinutes: (minutes: number) => void
   setDailyNotesFolder: (folder: string) => void
   setDailyNoteDateFormat: (format: string) => void
@@ -318,6 +326,7 @@ const DEFAULTS = {
   showHiddenFolders: true,
   attachmentsFolder: 'Files',
   autoSyncOnStart: true,
+  pullOnlyOnStartup: false,
   autoSyncIntervalMinutes: 0,
   dailyNotesFolder: 'Notes/Daily',
   dailyNoteDateFormat: 'YYYY-MM-DD',
@@ -373,6 +382,7 @@ export const useSettingsStore = create<SettingsState>()(
         setShowHiddenFolders: (showHiddenFolders) => setVault({ showHiddenFolders }),
         setAttachmentsFolder: (attachmentsFolder) => setVault({ attachmentsFolder }),
         setAutoSyncOnStart: (autoSyncOnStart) => set({ autoSyncOnStart }),
+        setPullOnlyOnStartup: (pullOnlyOnStartup) => set({ pullOnlyOnStartup }),
         setAutoSyncIntervalMinutes: (autoSyncIntervalMinutes) => set({ autoSyncIntervalMinutes }),
         setDailyNotesFolder: (dailyNotesFolder) => setVault({ dailyNotesFolder }),
         setDailyNoteDateFormat: (dailyNoteDateFormat) => setVault({ dailyNoteDateFormat }),

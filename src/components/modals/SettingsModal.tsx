@@ -439,8 +439,10 @@ function EditorPanel() {
 
 function GitHubPanel() {
   const autoSyncOnStart = useSettingsStore(s => s.autoSyncOnStart)
+  const pullOnlyOnStartup = useSettingsStore(s => s.pullOnlyOnStartup)
   const autoSyncIntervalMinutes = useSettingsStore(s => s.autoSyncIntervalMinutes)
   const setAutoSyncOnStart = useSettingsStore(s => s.setAutoSyncOnStart)
+  const setPullOnlyOnStartup = useSettingsStore(s => s.setPullOnlyOnStartup)
   const setAutoSyncIntervalMinutes = useSettingsStore(s => s.setAutoSyncIntervalMinutes)
   const settingsFolderPath = useSettingsStore(s => s.settingsFolderPath)
   const setSettingsFolderPath = useSettingsStore(s => s.setSettingsFolderPath)
@@ -455,6 +457,15 @@ function GitHubPanel() {
         <SettingsCheckbox
           checked={autoSyncOnStart}
           onChange={setAutoSyncOnStart}
+        />
+      </Field>
+      <Field
+        label="Pull-only on startup"
+        description="When auto-sync runs on boot, only PULL — local edits stay local until you click Commit & Sync. The pending-count chip in the editor footer surfaces unsynced notes. Useful when this device often has work-in-flight you don't want auto-pushed."
+      >
+        <SettingsCheckbox
+          checked={pullOnlyOnStartup}
+          onChange={setPullOnlyOnStartup}
         />
       </Field>
       <Field
