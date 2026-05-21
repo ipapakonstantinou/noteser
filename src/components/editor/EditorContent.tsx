@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, createElement } from 'react'
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism'
@@ -522,6 +522,15 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={components}
+              // react-markdown v10's defaultUrlTransform strips
+              // anything outside its (http|https|mailto|tel|#) allowlist
+              // — that wiped our `wikilink://Title` hrefs and made the
+              // WikilinkAnchor's click handler unreachable in preview
+              // mode. Pass them through; sanitize everything else with
+              // the default behaviour. (Caught by the qa-tester sweep.)
+              urlTransform={(url) =>
+                url.startsWith('wikilink://') ? url : defaultUrlTransform(url)
+              }
             >
               {renderWikilinks(expandEmbeds(previewContent, getActiveNotes())) || '*Start writing...*'}
             </ReactMarkdown>
