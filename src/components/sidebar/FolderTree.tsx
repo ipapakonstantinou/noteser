@@ -10,7 +10,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
 import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore, useSettingsStore } from '@/stores'
-import { useHydration, useTreeDragDrop } from '@/hooks'
+import { useHydration, useTreeDragDrop, useViewport } from '@/hooks'
 import { EditableText } from '../shared/EditableText'
 import { collectAllTags } from '@/utils/tags'
 import { sortNotes } from '@/utils/sortNotes'
@@ -38,6 +38,15 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   const { currentView } = useUIStore()
   const renameRequest = useUIStore(s => s.renameRequest)
   const clearRenameRequest = useUIStore(s => s.clearRenameRequest)
+  const { isMobile } = useViewport()
+  const sidebarCollapsed = useUIStore(s => s.sidebarCollapsed)
+  const toggleSidebar = useUIStore(s => s.toggleSidebar)
+  // After opening a note on mobile, dismiss the off-canvas drawer so
+  // the user lands on the editor instead of staring at the sidebar
+  // they just used. No-op on desktop.
+  const closeDrawerIfMobile = useCallback(() => {
+    if (isMobile && !sidebarCollapsed) toggleSidebar()
+  }, [isMobile, sidebarCollapsed, toggleSidebar])
   const folderSortMode = useSettingsStore(s => s.folderSortMode)
   const showHiddenFolders = useSettingsStore(s => s.showHiddenFolders)
   const {
@@ -196,6 +205,9 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     clickTimerRef.current = setTimeout(() => {
       openNote(id, { preview: true })
       if (fromNonTreeView) revealNote(id)
+      // Mobile: dismiss the off-canvas drawer once the note is open
+      // (the user wants the editor next, not the file tree).
+      closeDrawerIfMobile()
       clickTimerRef.current = null
     }, 200)
   }
@@ -396,6 +408,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
         if (currentRow.kind === 'note') {
           // Enter = pinned open (matches double-click).
           openNote(currentRow.id, { preview: false })
+          closeDrawerIfMobile()
         } else {
           toggleFolderExpanded(currentRow.id)
         }
@@ -444,7 +457,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     // deps would re-bind the handler on every selection change which is
     // wasted work — both close over fresh refs via state/ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flattenedRows, focusedRow, expandedFolders, toggleFolderExpanded, openNote, moveFocusToIndex])
+  }, [flattenedRows, focusedRow, expandedFolders, toggleFolderExpanded, openNote, moveFocusToIndex, closeDrawerIfMobile])
 
   // Initialise the focused row when the tree first gains focus and nothing
   // is selected yet — drops the user on the first visible row.

@@ -40,8 +40,10 @@ export const Sidebar = () => {
   const { isMobile } = useViewport()
 
   // On the first mount in a mobile viewport, collapse the sidebar by
-  // default — phones lose half the screen otherwise. We only auto-collapse
-  // ONCE per session so the user's manual toggle isn't fought.
+  // default — phones lose half the screen otherwise. On mobile this also
+  // means the off-canvas drawer starts CLOSED on each fresh visit, which
+  // is what users expect (the editor is the headline content). We only
+  // auto-collapse ONCE per session so the user's manual toggle isn't fought.
   const autoCollapsedOnceRef = useRef(false)
   useEffect(() => {
     if (!isMobile || autoCollapsedOnceRef.current) return
@@ -49,6 +51,13 @@ export const Sidebar = () => {
     if (!sidebarCollapsed) toggleSidebar()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMobile])
+
+  // Mobile: render the sidebar at full drawer width (its parent in
+  // page.tsx is a fixed-position container sized to min(280px, 85vw)).
+  // The `sidebarCollapsed` flag on mobile is repurposed as drawer-open
+  // state on the parent container, so the inner sidebar always renders
+  // its "expanded" content here.
+  const isExpanded = isMobile ? true : !sidebarCollapsed
 
   // Auto-rerun sync after the conflict modal applies resolutions, so the
   // user doesn't have to click Sync a second time.
@@ -78,21 +87,27 @@ export const Sidebar = () => {
   return (
     <div
       className={`obsidian-sidebar h-full overflow-hidden flex flex-col transition-all duration-300 ${
-        sidebarCollapsed ? 'w-[50px]' : 'w-64'
+        isMobile ? 'w-full' : sidebarCollapsed ? 'w-[50px]' : 'w-64'
       }`}
       onClick={closeContextMenu}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-obsidianBorder">
-        {!sidebarCollapsed && (
+        {isExpanded && (
           <h1 className="text-lg font-semibold text-obsidianText">Noteser</h1>
         )}
         <button
           className="obsidian-button"
           onClick={toggleSidebar}
-          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={
+            isMobile
+              ? 'Close sidebar'
+              : sidebarCollapsed
+                ? 'Expand sidebar'
+                : 'Collapse sidebar'
+          }
         >
-          {sidebarCollapsed ? (
+          {!isMobile && sidebarCollapsed ? (
             <ChevronDoubleRightIcon className="w-4 h-4" />
           ) : (
             <ChevronDoubleLeftIcon className="w-4 h-4" />
@@ -101,12 +116,12 @@ export const Sidebar = () => {
       </div>
 
       {/* Content — stacked sidebar (files tree + collapsible mini-panels) */}
-      {!sidebarCollapsed && (
+      {isExpanded && (
         <SidebarStack onRightClick={handleRightClick} />
       )}
 
       {/* Footer */}
-      {!sidebarCollapsed && (
+      {isExpanded && (
         <div className="px-2 py-2 border-t border-obsidianBorder space-y-1">
           {hydrated && githubUser ? (
             <>
