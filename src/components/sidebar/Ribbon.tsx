@@ -156,7 +156,7 @@ export const Ribbon = () => {
   }
 
   return (
-    <div className="h-full w-[44px] md:w-[44px] sm:w-[52px] flex flex-col items-center gap-1 py-2 bg-obsidianBlack border-r border-obsidianBorder">
+    <div className="h-full w-[44px] max-md:w-12 flex flex-col items-center gap-1 py-2 bg-obsidianBlack border-r border-obsidianBorder">
       <RibbonButton onClick={openSearch} title="Search (Ctrl+K)">
         <MagnifyingGlassIcon className="w-5 h-5" />
       </RibbonButton>
@@ -229,7 +229,7 @@ const RibbonButton = ({
   <button
     onClick={onClick}
     title={title}
-    className="p-2 rounded text-obsidianSecondaryText hover:bg-obsidianDarkGray hover:text-obsidianText transition-colors"
+    className="p-2 max-md:p-2.5 rounded text-obsidianSecondaryText hover:bg-obsidianDarkGray hover:text-obsidianText transition-colors inline-flex items-center justify-center max-md:min-w-[44px] max-md:min-h-[44px]"
   >
     {children}
   </button>
@@ -241,7 +241,7 @@ const RibbonNavButton = ({
   <button
     onClick={onClick}
     title={title}
-    className={`p-2 rounded transition-colors ${
+    className={`p-2 max-md:p-2.5 rounded transition-colors inline-flex items-center justify-center max-md:min-w-[44px] max-md:min-h-[44px] ${
       active
         ? 'bg-obsidianHighlight text-obsidianText'
         : 'text-obsidianSecondaryText hover:bg-obsidianDarkGray hover:text-obsidianText'
