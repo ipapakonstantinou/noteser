@@ -97,16 +97,8 @@ export function sanitizeAttachmentName(name: string): string {
   return cleaned || 'image'
 }
 
-// Prefix used by the bundled "Feature tour" seed (see featureTourNote.ts).
-// Screenshots seeded into the user's vault live under `Tutorial/` so the
-// note and its images sit in the same folder. We recognise this prefix as
-// an attachment-bearing folder so AttachmentImage resolves the bundled
-// PNGs from IndexedDB instead of trying to fetch them over HTTP.
-export const TUTORIAL_ATTACHMENT_PREFIX = 'Tutorial/'
-
 export function isAttachmentPath(path: string): boolean {
   return attachmentsFolder.matchesPath(path)
-    || path.startsWith(TUTORIAL_ATTACHMENT_PREFIX)
 }
 
 // Save a blob under a unique, timestamped path. Sub-second collisions append a

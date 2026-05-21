@@ -1,33 +1,45 @@
 /**
  * featureTourNote.ts
  *
- * The "Feature tour" note that gets seeded into the user's vault when
- * they click the corresponding link in the WelcomePane.
+ * Bundled "Feature tour" content seeded into a fresh user's vault.
  *
- * Goal: a fresh noteser user sees ONE folder (`Tutorial/`) containing
- * the markdown note AND the screenshots that the note references —
- * like a normal Obsidian vault. No network dependency on the noteser
- * source repo: the screenshots are bundled as static assets under
- * `public/feature-tour/` and seeded into IndexedDB as attachments on
- * first use.
+ * Layout after a successful seed:
  *
- * `seedFeatureTourNote()` is idempotent: clicking the link a second
- * time focuses the existing note (and re-seeds any missing images so
- * the tour stays viewable even if the user accidentally deleted one).
+ *   /Feature tour            ← markdown note at vault root
+ *   /Files/                  ← user's attachments folder (current setting)
+ *     /feature-tour/
+ *       /00-welcome.png      ← 9 bundled screenshots stored as attachments
+ *       /01-editor-hero.png
+ *       …
+ *
+ * Why `Files/feature-tour/` rather than a dedicated `Tutorial/` folder:
+ * the user explicitly wanted screenshots in the standard attachments
+ * location, with the note itself sitting at root — matching how a
+ * normal Obsidian vault organises things.
+ *
+ * The seed is healing: every click finds ANY existing "Feature tour"
+ * note in the vault, picks one canonical copy, refreshes its content +
+ * folder placement, and soft-deletes duplicates. Image attachments
+ * already in IndexedDB are skipped on re-runs so repeat clicks are
+ * fast.
  */
 
 import { useNoteStore } from '@/stores/noteStore'
-import { useFolderStore } from '@/stores/folderStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { putAttachmentAtPath, getAttachmentBlob } from '@/utils/attachments'
+import { attachmentsFolder } from '@/utils/systemFolder'
 import type { Note } from '@/types'
 
 export const FEATURE_TOUR_TITLE = 'Feature tour'
-export const TUTORIAL_FOLDER_NAME = 'Tutorial'
 
-// Filenames bundled under `public/feature-tour/` — one per section in
-// the body. The names match the docs/images/ originals so future
-// re-captures can drop in without renaming.
+// Subdirectory under the user's current attachments folder where tour
+// screenshots live. Keeps tutorial assets cordoned off from the user's
+// own attachments so they don't clutter the Files browser.
+export const TUTORIAL_ASSETS_SUBDIR = 'feature-tour'
+
+// Bundled screenshot filenames — matched 1:1 with PNGs in
+// `public/feature-tour/`. Re-captures can drop in here without
+// renaming since the body builder references them by these names.
 export const TUTORIAL_IMAGES = [
   '00-welcome.png',
   '01-editor-hero.png',
@@ -40,14 +52,20 @@ export const TUTORIAL_IMAGES = [
   '08-sync-settings.png',
 ] as const
 
-// Body content of the seeded note. References use vault-relative paths
-// (`Tutorial/X.png`) — AttachmentImage resolves these via IndexedDB
-// because `Tutorial/` is registered as a recognised attachment prefix
-// in `src/utils/attachments.ts`.
-//
-// We deliberately DO NOT include the H1 title here — the note's
-// `title` field carries that; otherwise it would render twice.
-export const FEATURE_TOUR_BODY = `> **Browser-based Obsidian, with GitHub sync and task management.**
+// Compute the attachment path for a given filename, using the user's
+// CURRENT attachments folder setting (default `Files`). Exposed so
+// tests can verify the path scheme.
+export function tourAssetPath(filename: string): string {
+  return `${attachmentsFolder.get()}/${TUTORIAL_ASSETS_SUBDIR}/${filename}`
+}
+
+// Build the markdown body. Done as a function (not a constant) so the
+// image references track the user's attachments-folder setting if it
+// gets renamed between seed runs. The title is carried by Note.title,
+// not by an H1 in the body — otherwise it would render twice.
+export function buildFeatureTourBody(): string {
+  const path = (file: string) => tourAssetPath(file)
+  return `> **Browser-based Obsidian, with GitHub sync and task management.**
 > Built end-to-end by one person in **under 40 hours**, evenings and weekends,
 > with **zero hand-written lines of code** — every feature shaped through
 > natural-language conversation with Claude Code.
@@ -66,7 +84,7 @@ What's below is what that turned into.
 
 ## First run — Welcome tab
 
-![Welcome tab — VS Code-style first-run experience](Tutorial/00-welcome.png)
+![Welcome tab — VS Code-style first-run experience](${path('00-welcome.png')})
 
 Open the app for the first time and you land on a Welcome tab — same
 shape VS Code uses for its welcome view. No popup, no wall of text:
@@ -78,14 +96,14 @@ Closing the tab dismisses it for good.
 
 ## The editor
 
-![Editor with live preview, sidebar tree, tabs](Tutorial/01-editor-hero.png)
+![Editor with live preview, sidebar tree, tabs](${path('01-editor-hero.png')})
 
 A real markdown editor (CodeMirror 6) with **live preview** in the
 Obsidian sense — headings, tags, code fences, and wikilinks render
 inline as you type. The currently-edited line shows the raw markdown
 so you can see the structure; every other line is rendered.
 
-![Live-preview rendering of headings, tags, code, and wikilinks](Tutorial/02-live-preview.png)
+![Live-preview rendering of headings, tags, code, and wikilinks](${path('02-live-preview.png')})
 
 Tasks (\`- [ ]\` / \`- [x]\`) toggle with a keyboard shortcut. Tags appear
 in the sidebar automatically. Wikilinks (\`[[Note name]]\`) become
@@ -95,7 +113,7 @@ clickable jumps between notes.
 
 ## The workspace
 
-![Sidebar with pinned Calendar panel, tab strip, and folder tree](Tutorial/03-sidebar-pane-model.png)
+![Sidebar with pinned Calendar panel, tab strip, and folder tree](${path('03-sidebar-pane-model.png')})
 
 The sidebar uses Obsidian's stacked pane model:
 
@@ -116,7 +134,7 @@ the workspace into two horizontal panes.
 
 ## Quick switcher (Ctrl+K)
 
-![Quick switcher with fuzzy + semantic mode](Tutorial/04-quick-switcher.png)
+![Quick switcher with fuzzy + semantic mode](${path('04-quick-switcher.png')})
 
 Fuse.js-powered fuzzy search across titles, content, and tags, with a
 **semantic search** mode toggle that uses embeddings to find
@@ -127,7 +145,7 @@ embedding index re-builds itself when notes change.
 
 ## Templates — including auto-generated weekly review
 
-![Templates modal with Meeting Notes, Daily Journal, Project Plan, Todo List, Weekly Review, Blank Note](Tutorial/05-templates-modal.png)
+![Templates modal with Meeting Notes, Daily Journal, Project Plan, Todo List, Weekly Review, Blank Note](${path('05-templates-modal.png')})
 
 Six built-in templates. The Weekly Review one is special: it scans
 the past 7 days of notes and **auto-aggregates open tasks, completed
@@ -141,7 +159,7 @@ a date opens (or creates) that day's note in the configured folder.
 
 ## Export — including PDF
 
-![Export modal showing markdown / JSON / HTML / PDF options](Tutorial/06-export-modal-pdf.png)
+![Export modal showing markdown / JSON / HTML / PDF options](${path('06-export-modal-pdf.png')})
 
 Notes export as Markdown, JSON, or HTML (single note or full vault
 zip). The **PDF option** opens the system print dialog so the user
@@ -152,7 +170,7 @@ page breaks between notes.
 
 ## Theming
 
-![Settings → Appearance with preset themes and per-token color pickers](Tutorial/07-theme-editor.png)
+![Settings → Appearance with preset themes and per-token color pickers](${path('07-theme-editor.png')})
 
 Pick from preset themes (Default dark, Light, Sepia, Solarized dark) or
 adjust individual color tokens with the picker grid. Changes apply
@@ -163,7 +181,7 @@ across devices via the vault settings file.
 
 ## GitHub sync
 
-![Settings → GitHub sync with auto-sync, settings folder, vault gitignore editor, local overlay](Tutorial/08-sync-settings.png)
+![Settings → GitHub sync with auto-sync, settings folder, vault gitignore editor, local overlay](${path('08-sync-settings.png')})
 
 GitHub is the source of truth. One repo per vault, notes stored as
 plain \`.md\` at the repo root, full pull-then-push pipeline:
@@ -210,12 +228,13 @@ is centralised:
 - **Keyboard-first** — Ctrl+K search, Alt+N new note, Alt+Shift+L
   toggle task, customisable shortcut overrides
 `
+}
 
-// Fetch the bundled PNG from the deployed app and store it in
-// IndexedDB as an attachment under `Tutorial/<filename>`. Idempotent:
-// returns early if the attachment is already present.
+// Fetch the bundled PNG from /feature-tour/<filename> and store it
+// in IndexedDB at the resolved tourAssetPath. Idempotent: returns
+// early when the attachment is already present.
 async function seedTutorialImage(filename: string): Promise<void> {
-  const path = `${TUTORIAL_FOLDER_NAME}/${filename}`
+  const path = tourAssetPath(filename)
   const existing = await getAttachmentBlob(path)
   if (existing) return
   try {
@@ -224,71 +243,61 @@ async function seedTutorialImage(filename: string): Promise<void> {
     const blob = await res.blob()
     await putAttachmentAtPath(path, blob, filename)
   } catch {
-    // Best-effort — if the asset fetch fails (offline, broken deploy),
-    // the note still opens and renders text. The image positions show
-    // as "Missing attachment" via AttachmentImage.
+    // Best-effort — if the fetch fails, the note still opens. Missing
+    // images render as "Missing attachment" via AttachmentImage.
   }
 }
 
 /**
  * Seed (or focus) the Feature tour note. Returns the note id.
  *
- * Behaviour (intentionally healing — clicking this link should always
- * leave the user with a working tour, regardless of prior state):
+ * Behaviour (intentionally healing — clicking should always leave the
+ * user with one working tour, regardless of prior IDB state):
  *
- *   1. Ensures the `Tutorial/` folder exists.
- *   2. Awaits image-attachment seeding so the note opens with images
- *      already in IndexedDB (no "Missing attachment" flash). Existing
- *      images are skipped.
- *   3. Dedupes any duplicate "Feature tour" notes — only ONE canonical
- *     copy survives, always at `Tutorial/Feature tour`. Extras get
- *     soft-deleted. (Earlier seed versions could create duplicates
- *     when re-clicked against stale localStorage; this heals that.)
- *   4. Migrates / refreshes the canonical note's folder + content
- *     so users with broken stale state get fixed by a single click.
- *   5. If no existing note, creates one in Tutorial/.
+ *   1. Seeds missing screenshots into `Files/feature-tour/`.
+ *   2. Awaits the fetches so the note opens with images already in
+ *      IDB (no broken-image flash).
+ *   3. Finds ALL existing non-deleted "Feature tour" notes anywhere.
+ *      Picks one as canonical (preferring vault-root, else newest).
+ *      Refreshes its folderId (→ null = root) + content. Soft-deletes
+ *      every other duplicate.
+ *   4. If no existing note, creates one at root.
  *
- * Returns a promise — call sites usually fire-and-forget, OR await it
- * if they want to know the seed completed before doing UI follow-up.
+ * Returns a promise — call sites usually await to know the seed
+ * completed before doing UI follow-up.
  */
 export async function seedFeatureTourNote(): Promise<string> {
   const noteState = useNoteStore.getState()
-  const { ensureFolderPath } = useFolderStore.getState()
   const { openNote } = useWorkspaceStore.getState()
+  const body = buildFeatureTourBody()
 
-  // 1. Make sure the Tutorial folder exists.
-  const folderId = ensureFolderPath([TUTORIAL_FOLDER_NAME])
-
-  // 2. Seed missing screenshots in parallel, then await all.
+  // 1. Seed missing screenshots in parallel.
   await Promise.all(TUTORIAL_IMAGES.map(seedTutorialImage))
 
-  // 3-4. Find ALL Feature tour notes (not just one). Read fresh state
-  // because `notes` captured earlier could be stale across the await.
+  // 2. Find ALL Feature tour notes (re-read state — fresh).
   const freshNotes = useNoteStore.getState().notes
   const candidates: Note[] = freshNotes.filter(
     n => !n.isDeleted && n.title === FEATURE_TOUR_TITLE,
   )
 
   if (candidates.length > 0) {
-    // Prefer the one already in Tutorial/, else the most recently
-    // updated (so user's edits — if any — are preserved when we pick
-    // between two duplicates).
+    // Prefer the one already at root (folderId === null), else the
+    // most recently updated (preserves any user edits between
+    // duplicates).
     const canonical =
-      candidates.find(n => n.folderId === folderId)
+      candidates.find(n => n.folderId === null)
       ?? [...candidates].sort((a, b) => b.updatedAt - a.updatedAt)[0]
 
     const updateNote = useNoteStore.getState().updateNote
     const deleteNote = useNoteStore.getState().deleteNote
 
-    // Heal canonical: ensure right folder + canonical body.
+    // Heal canonical: ensure at root + canonical content.
     const patch: Partial<Note> = {}
-    if (canonical.folderId !== folderId) patch.folderId = folderId
-    if (canonical.content !== FEATURE_TOUR_BODY) patch.content = FEATURE_TOUR_BODY
+    if (canonical.folderId !== null) patch.folderId = null
+    if (canonical.content !== body) patch.content = body
     if (Object.keys(patch).length > 0) updateNote(canonical.id, patch)
 
-    // Soft-delete duplicates. deleteNote respects the user's trashMode
-    // setting (default 'trash' = soft-delete; 'hardDelete' = permanent).
-    // Either way we end up with one canonical note in Tutorial/.
+    // Soft-delete duplicates.
     for (const dup of candidates) {
       if (dup.id !== canonical.id) deleteNote(dup.id)
     }
@@ -297,11 +306,11 @@ export async function seedFeatureTourNote(): Promise<string> {
     return canonical.id
   }
 
-  // 5. Nothing existed — fresh user. Create the note.
+  // 3. Fresh user — create at root.
   const created = noteState.addNote({
     title: FEATURE_TOUR_TITLE,
-    folderId,
-    content: FEATURE_TOUR_BODY,
+    folderId: null,
+    content: body,
   })
   openNote(created.id, { preview: false })
   return created.id
