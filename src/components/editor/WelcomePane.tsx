@@ -189,13 +189,13 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
               <span className="text-obsidianText">
                 <button
                   type="button"
-                  onClick={() => { seedFeatureTourNote(); closeTab(tabId) }}
+                  onClick={() => { void seedFeatureTourNote(); closeTab(tabId) }}
                   data-testid="welcome-feature-tour"
                   className="text-obsidianAccentPurple hover:underline"
                 >
                   Feature tour with screenshots
                 </button>
-                <span className="text-obsidianSecondaryText"> — what&rsquo;s here and why. Opens as a note in your vault.</span>
+                <span className="text-obsidianSecondaryText"> — seeds a Tutorial folder in your vault with the note + screenshots.</span>
               </span>
             </li>
             <li className="flex items-start gap-2">

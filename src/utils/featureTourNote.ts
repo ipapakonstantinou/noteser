@@ -2,41 +2,54 @@
  * featureTourNote.ts
  *
  * The "Feature tour" note that gets seeded into the user's vault when
- * they click the corresponding link in the WelcomePane. Same content
- * as docs/demo.md, but image paths point at the GitHub raw CDN so
- * they render inside the in-app note (the note has no
- * docs/images/ folder of its own).
+ * they click the corresponding link in the WelcomePane.
  *
- * Kept as a static string (not imported from docs/demo.md at build
- * time) so the demo doc can drift independently — what the *email
- * recipient* sees on GitHub doesn't have to be byte-identical to
- * what the *user* sees in their vault.
+ * Goal: a fresh noteser user sees ONE folder (`Tutorial/`) containing
+ * the markdown note AND the screenshots that the note references —
+ * like a normal Obsidian vault. No network dependency on the noteser
+ * source repo: the screenshots are bundled as static assets under
+ * `public/feature-tour/` and seeded into IndexedDB as attachments on
+ * first use.
  *
- * `seedFeatureTourNote()` is idempotent: if a note with the canonical
- * title already exists in the vault, it's just opened. Avoids dupes
- * if the user clicks "Feature tour" more than once.
+ * `seedFeatureTourNote()` is idempotent: clicking the link a second
+ * time focuses the existing note (and re-seeds any missing images so
+ * the tour stays viewable even if the user accidentally deleted one).
  */
 
 import { useNoteStore } from '@/stores/noteStore'
+import { useFolderStore } from '@/stores/folderStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { putAttachmentAtPath, getAttachmentBlob } from '@/utils/attachments'
 
 export const FEATURE_TOUR_TITLE = 'Feature tour'
+export const TUTORIAL_FOLDER_NAME = 'Tutorial'
 
-const IMG_BASE = 'https://raw.githubusercontent.com/ipapakonstantinou/noteser/main/docs/images'
+// Filenames bundled under `public/feature-tour/` — one per section in
+// the body. The names match the docs/images/ originals so future
+// re-captures can drop in without renaming.
+export const TUTORIAL_IMAGES = [
+  '00-welcome.png',
+  '01-editor-hero.png',
+  '02-live-preview.png',
+  '03-sidebar-pane-model.png',
+  '04-quick-switcher.png',
+  '05-templates-modal.png',
+  '06-export-modal-pdf.png',
+  '07-theme-editor.png',
+  '08-sync-settings.png',
+] as const
 
-// Body kept verbatim from docs/demo.md with image paths rewritten to
-// absolute GitHub raw URLs. We DO NOT include the H1 title — the
-// note's `title` field carries that; rendering would otherwise show
-// it twice (once as the row header and once as a leading `# heading`).
+// Body content of the seeded note. References use vault-relative paths
+// (`Tutorial/X.png`) — AttachmentImage resolves these via IndexedDB
+// because `Tutorial/` is registered as a recognised attachment prefix
+// in `src/utils/attachments.ts`.
+//
+// We deliberately DO NOT include the H1 title here — the note's
+// `title` field carries that; otherwise it would render twice.
 export const FEATURE_TOUR_BODY = `> **Browser-based Obsidian, with GitHub sync and task management.**
 > Built end-to-end by one person in **under 40 hours**, evenings and weekends,
 > with **zero hand-written lines of code** — every feature shaped through
 > natural-language conversation with Claude Code.
-
-Live at **[noteser.thetechjon.com](https://noteser.thetechjon.com)** ·
-source on **[GitHub](https://github.com/ipapakonstantinou/noteser)**.
-
----
 
 ## The idea
 
@@ -52,7 +65,7 @@ What's below is what that turned into.
 
 ## First run — Welcome tab
 
-![Welcome tab — VS Code-style first-run experience](${IMG_BASE}/00-welcome.png)
+![Welcome tab — VS Code-style first-run experience](Tutorial/00-welcome.png)
 
 Open the app for the first time and you land on a Welcome tab — same
 shape VS Code uses for its welcome view. No popup, no wall of text:
@@ -64,14 +77,14 @@ Closing the tab dismisses it for good.
 
 ## The editor
 
-![Editor with live preview, sidebar tree, tabs](${IMG_BASE}/01-editor-hero.png)
+![Editor with live preview, sidebar tree, tabs](Tutorial/01-editor-hero.png)
 
 A real markdown editor (CodeMirror 6) with **live preview** in the
 Obsidian sense — headings, tags, code fences, and wikilinks render
 inline as you type. The currently-edited line shows the raw markdown
 so you can see the structure; every other line is rendered.
 
-![Live-preview rendering of headings, tags, code, and wikilinks](${IMG_BASE}/02-live-preview.png)
+![Live-preview rendering of headings, tags, code, and wikilinks](Tutorial/02-live-preview.png)
 
 Tasks (\`- [ ]\` / \`- [x]\`) toggle with a keyboard shortcut. Tags appear
 in the sidebar automatically. Wikilinks (\`[[Note name]]\`) become
@@ -81,7 +94,7 @@ clickable jumps between notes.
 
 ## The workspace
 
-![Sidebar with pinned Calendar panel, tab strip, and folder tree](${IMG_BASE}/03-sidebar-pane-model.png)
+![Sidebar with pinned Calendar panel, tab strip, and folder tree](Tutorial/03-sidebar-pane-model.png)
 
 The sidebar uses Obsidian's stacked pane model:
 
@@ -102,7 +115,7 @@ the workspace into two horizontal panes.
 
 ## Quick switcher (Ctrl+K)
 
-![Quick switcher with fuzzy + semantic mode](${IMG_BASE}/04-quick-switcher.png)
+![Quick switcher with fuzzy + semantic mode](Tutorial/04-quick-switcher.png)
 
 Fuse.js-powered fuzzy search across titles, content, and tags, with a
 **semantic search** mode toggle that uses embeddings to find
@@ -113,7 +126,7 @@ embedding index re-builds itself when notes change.
 
 ## Templates — including auto-generated weekly review
 
-![Templates modal with Meeting Notes, Daily Journal, Project Plan, Todo List, Weekly Review, Blank Note](${IMG_BASE}/05-templates-modal.png)
+![Templates modal with Meeting Notes, Daily Journal, Project Plan, Todo List, Weekly Review, Blank Note](Tutorial/05-templates-modal.png)
 
 Six built-in templates. The Weekly Review one is special: it scans
 the past 7 days of notes and **auto-aggregates open tasks, completed
@@ -127,7 +140,7 @@ a date opens (or creates) that day's note in the configured folder.
 
 ## Export — including PDF
 
-![Export modal showing markdown / JSON / HTML / PDF options](${IMG_BASE}/06-export-modal-pdf.png)
+![Export modal showing markdown / JSON / HTML / PDF options](Tutorial/06-export-modal-pdf.png)
 
 Notes export as Markdown, JSON, or HTML (single note or full vault
 zip). The **PDF option** opens the system print dialog so the user
@@ -138,7 +151,7 @@ page breaks between notes.
 
 ## Theming
 
-![Settings → Appearance with preset themes and per-token color pickers](${IMG_BASE}/07-theme-editor.png)
+![Settings → Appearance with preset themes and per-token color pickers](Tutorial/07-theme-editor.png)
 
 Pick from preset themes (Default dark, Light, Sepia, Solarized dark) or
 adjust individual color tokens with the picker grid. Changes apply
@@ -149,7 +162,7 @@ across devices via the vault settings file.
 
 ## GitHub sync
 
-![Settings → GitHub sync with auto-sync, settings folder, vault gitignore editor, local overlay](${IMG_BASE}/08-sync-settings.png)
+![Settings → GitHub sync with auto-sync, settings folder, vault gitignore editor, local overlay](Tutorial/08-sync-settings.png)
 
 GitHub is the source of truth. One repo per vault, notes stored as
 plain \`.md\` at the repo root, full pull-then-push pipeline:
@@ -185,17 +198,6 @@ is centralised:
 
 ---
 
-## Sharing
-
-A \`/share\` page that takes a note encoded into the URL fragment
-(no backend). v2 of this adds:
-
-- **Expiry timestamp** baked into the payload
-- **Burn-after-read** flag (recipient-side flip on first decode)
-- Default expiry / burn-on-share toggles in Settings
-
----
-
 ## Productivity flourishes
 
 - **Daily-note streak counter** — a 🔥 chip in the footer when there
@@ -206,41 +208,57 @@ A \`/share\` page that takes a note encoded into the URL fragment
   folders, tabs between panes, panels between strips
 - **Keyboard-first** — Ctrl+K search, Alt+N new note, Alt+Shift+L
   toggle task, customisable shortcut overrides
-
----
-
-## The "how"
-
-Every commit in this repo came from a conversation with **Claude Code**
-— I described the feature I wanted in plain English, Claude proposed
-an implementation, I responded with feedback, Claude iterated. I never
-opened a code file to type code by hand. Refactors, security passes,
-test additions, bug fixes — all of it.
-
-Total active time, by my reckoning: under 40 hours, spread across
-weekends and weekday evenings. The hardest part wasn't writing the
-code — it was knowing what to ask for next.
 `
+
+// Fetch the bundled PNG from the deployed app and store it in
+// IndexedDB as an attachment under `Tutorial/<filename>`. Idempotent:
+// returns early if the attachment is already present.
+async function seedTutorialImage(filename: string): Promise<void> {
+  const path = `${TUTORIAL_FOLDER_NAME}/${filename}`
+  const existing = await getAttachmentBlob(path)
+  if (existing) return
+  try {
+    const res = await fetch(`/feature-tour/${filename}`)
+    if (!res.ok) return
+    const blob = await res.blob()
+    await putAttachmentAtPath(path, blob, filename)
+  } catch {
+    // Best-effort — if the asset fetch fails (offline, broken deploy),
+    // the note still opens and renders text. The image positions show
+    // as "Missing attachment" via AttachmentImage.
+  }
+}
 
 /**
  * Seed (or focus) the Feature tour note. Returns the note id.
  *
  * Behaviour:
- *   - If a non-deleted note with title === FEATURE_TOUR_TITLE exists
- *     anywhere in the vault, just open it (preview=false → pinned).
- *   - Otherwise, create a new note at the vault root with the title +
- *     body and open it.
+ *   - Creates the `Tutorial/` folder if missing.
+ *   - Re-seeds any missing screenshot attachments (skips ones already
+ *     in IDB so re-clicks don't re-fetch the bundle).
+ *   - If a non-deleted note with title "Feature tour" exists in
+ *     Tutorial/, just focuses it; otherwise creates it.
  *
- * This is intentionally idempotent — the WelcomePane's Learn-section
- * button calls this directly, and the user might click it multiple
- * times on different visits.
+ * Returns a promise — the caller usually fires-and-forgets.
  */
-export function seedFeatureTourNote(): string {
+export async function seedFeatureTourNote(): Promise<string> {
   const { notes, addNote } = useNoteStore.getState()
+  const { ensureFolderPath } = useFolderStore.getState()
   const { openNote } = useWorkspaceStore.getState()
 
+  // 1. Make sure the Tutorial folder exists. ensureFolderPath is
+  //    idempotent — returns the existing folder id when it's already
+  //    there.
+  const folderId = ensureFolderPath([TUTORIAL_FOLDER_NAME])
+
+  // 2. Fan out image seeding. The note open below doesn't wait for
+  //    these — the markdown renderer's AttachmentImage will pick up
+  //    the blobs as they land (or show "Loading" until they do).
+  void Promise.all(TUTORIAL_IMAGES.map(seedTutorialImage))
+
+  // 3. Find-or-create the note.
   const existing = notes.find(
-    n => !n.isDeleted && n.title === FEATURE_TOUR_TITLE,
+    n => !n.isDeleted && n.title === FEATURE_TOUR_TITLE && n.folderId === folderId,
   )
   if (existing) {
     openNote(existing.id, { preview: false })
@@ -249,7 +267,7 @@ export function seedFeatureTourNote(): string {
 
   const created = addNote({
     title: FEATURE_TOUR_TITLE,
-    folderId: null,
+    folderId,
     content: FEATURE_TOUR_BODY,
   })
   openNote(created.id, { preview: false })

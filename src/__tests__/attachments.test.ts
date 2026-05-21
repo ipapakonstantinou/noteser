@@ -137,6 +137,18 @@ describe('isAttachmentPath', () => {
     expect(isAttachmentPath('assets/other.png')).toBe(false)
     expect(isAttachmentPath('attachments/legacy.png')).toBe(true) // still recognised
   })
+
+  test('recognises the Tutorial/ prefix (feature-tour seed)', () => {
+    // The bundled Feature tour note seeds its screenshots under
+    // `Tutorial/X.png` so the note and its images live in the same
+    // visible folder in the sidebar. The renderer needs to resolve
+    // those via IndexedDB just like the regular attachments folder.
+    expect(isAttachmentPath('Tutorial/00-welcome.png')).toBe(true)
+    expect(isAttachmentPath('Tutorial/some-image.gif')).toBe(true)
+    // Case-sensitive — a user-created folder named "tutorial"
+    // (lowercase) is NOT treated as an attachment folder.
+    expect(isAttachmentPath('tutorial/foo.png')).toBe(false)
+  })
 })
 
 // ── normalizeAttachmentDir ────────────────────────────────────────────────────
