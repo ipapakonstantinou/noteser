@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { useWorkspaceStore } from '@/stores'
+import { useViewport } from '@/hooks'
 import { Pane } from './Pane'
 
 // Renders the workspace's panes side by side. For v1 we cap at 2 panes
@@ -11,15 +12,29 @@ const DEFAULT_LEFT_RATIO = 0.5
 
 export const Editor = () => {
   const panes = useWorkspaceStore(s => s.panes)
+  const activePaneId = useWorkspaceStore(s => s.activePaneId)
   const [leftRatio, setLeftRatio] = useState(DEFAULT_LEFT_RATIO)
   const containerRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startRatio: number } | null>(null)
+  const { isMobile } = useViewport()
+
+  // Mobile: there isn't room for a horizontal split, so render only the
+  // active pane. The second pane's tabs stay in the store — when the
+  // viewport grows back past the breakpoint, the split reappears intact.
+  if (isMobile && panes.length > 1) {
+    const active = panes.find(p => p.id === activePaneId) ?? panes[0]
+    return (
+      <div className="flex h-full w-full overflow-hidden">
+        <Pane pane={active} allowSplitDropZone={false} />
+      </div>
+    )
+  }
 
   // Single pane: no divider, full width.
   if (panes.length <= 1) {
     return (
       <div className="flex h-full w-full overflow-hidden">
-        <Pane pane={panes[0]} allowSplitDropZone={true} />
+        <Pane pane={panes[0]} allowSplitDropZone={!isMobile} />
       </div>
     )
   }
