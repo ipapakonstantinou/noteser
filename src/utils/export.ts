@@ -266,7 +266,7 @@ const convertToHTML = (note: Note, _tags: Tag[], includeTags: boolean): string =
   <h1>${escapeHTML(note.title)}</h1>
   ${tagsHTML}
   <div class="content">
-    ${convertMarkdownToHTML(note.content)}
+    ${convertMarkdownToHTML(escapeHTML(note.content))}
   </div>
 </body>
 </html>`
