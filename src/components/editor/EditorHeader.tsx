@@ -3,6 +3,7 @@
 import { EyeIcon, PencilIcon, StarIcon } from '@heroicons/react/24/outline'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
 import { useUIStore, useNoteStore, useFolderStore } from '@/stores'
+import { useViewport } from '@/hooks'
 import { sanitizeTitleInput } from '@/utils/export'
 import type { Note } from '@/types'
 
@@ -15,6 +16,14 @@ export const EditorHeader = ({ note, onTitleChange }: EditorHeaderProps) => {
   const { isPreviewMode, togglePreview } = useUIStore()
   const { togglePinNote } = useNoteStore()
   const { getFolderById } = useFolderStore()
+  const { isMobile } = useViewport()
+
+  // Aggressive mobile mode (per user feedback on the Phase B build):
+  // hide the entire editor header on mobile — the tab strip already
+  // shows the title, MobileTopBar carries the preview toggle, and the
+  // overflow menu surfaces pin + rename. Reclaims ~58px of vertical
+  // space on a 375px viewport.
+  if (isMobile) return null
 
   // Build a "Folder / Subfolder" trail by walking parentId chain. Empty when
   // the note is at the root (no folder).
@@ -68,10 +77,15 @@ export const EditorHeader = ({ note, onTitleChange }: EditorHeaderProps) => {
         title="Title may only contain letters, digits, spaces, and - _ . ( )"
       />
 
+      {/* Preview/edit toggle. Hidden on mobile because MobileTopBar
+          carries the same control — two pencils side-by-side is just
+          noise on a 375px viewport. (Spotted in user-supplied screenshot
+          of the Phase B mobile build.) */}
       <button
         onClick={togglePreview}
-        className="obsidian-button max-md:p-2.5 max-md:min-w-[44px] max-md:min-h-[44px] inline-flex items-center justify-center"
+        className="obsidian-button max-md:hidden md:p-2.5 md:min-w-[44px] md:min-h-[44px] md:inline-flex md:items-center md:justify-center"
         title={isPreviewMode ? 'Edit mode' : 'Preview mode'}
+        data-testid="editor-header-preview-toggle"
       >
         {isPreviewMode ? (
           <PencilIcon className="w-5 h-5" />

@@ -11,8 +11,10 @@ import {
   DocumentDuplicateIcon,
   ClockIcon,
   TagIcon,
+  StarIcon,
 } from '@heroicons/react/24/outline'
-import { useUIStore } from '@/stores'
+import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
+import { useUIStore, useNoteStore, useWorkspaceStore } from '@/stores'
 
 // Mobile chrome bar that replaces the desktop ribbon below
 // MOBILE_BREAKPOINT. Obsidian-mobile-style: tiny hamburger on the left,
@@ -32,6 +34,13 @@ export const MobileTopBar = () => {
   const openModal = useUIStore(s => s.openModal)
   const setCurrentView = useUIStore(s => s.setCurrentView)
   const currentView = useUIStore(s => s.currentView)
+  const requestRename = useUIStore(s => s.requestRename)
+  const togglePinNote = useNoteStore(s => s.togglePinNote)
+  // Resolve the active note (if any) so the overflow menu can offer
+  // Pin / Rename for it. Mobile hides EditorHeader (Phase B aggressive
+  // mode), so these gestures need a home and the overflow menu is the
+  // obvious one.
+  const activeNote = useActiveNote()
 
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
@@ -120,9 +129,29 @@ export const MobileTopBar = () => {
         {menuOpen && (
           <div
             role="menu"
-            className="absolute right-0 top-full mt-1 w-48 z-50 bg-obsidianGray border border-obsidianBorder rounded shadow-obsidian py-1"
+            className="absolute right-0 top-full mt-1 w-52 z-50 bg-obsidianGray border border-obsidianBorder rounded shadow-obsidian py-1"
             data-testid="mobile-top-bar-overflow-menu"
           >
+            {activeNote && (
+              <>
+                <MenuItem
+                  icon={activeNote.isPinned
+                    ? <StarIconSolid className="w-4 h-4 text-yellow-500" />
+                    : <StarIcon className="w-4 h-4" />}
+                  label={activeNote.isPinned ? 'Unpin note' : 'Pin note'}
+                  onClick={() => { togglePinNote(activeNote.id); setMenuOpen(false) }}
+                />
+                <MenuItem
+                  icon={<PencilIcon className="w-4 h-4" />}
+                  label="Rename note"
+                  onClick={() => {
+                    requestRename({ type: 'note', id: activeNote.id })
+                    setMenuOpen(false)
+                  }}
+                />
+                <div className="border-t border-obsidianBorder my-1" />
+              </>
+            )}
             <MenuItem
               icon={<DocumentDuplicateIcon className="w-4 h-4" />}
               label="All notes"
@@ -176,5 +205,19 @@ const MenuItem = ({
     <span className="truncate">{label}</span>
   </button>
 )
+
+// Resolve the active pane's active note tab so the overflow menu can
+// surface Pin / Rename for the note the user is looking at. Returns
+// undefined when no note tab is focused (welcome / merge tab / empty
+// pane all return undefined → menu hides the per-note items).
+function useActiveNote() {
+  const panes = useWorkspaceStore(s => s.panes)
+  const activePaneId = useWorkspaceStore(s => s.activePaneId)
+  const notes = useNoteStore(s => s.notes)
+  const pane = panes.find(p => p.id === activePaneId) ?? panes[0]
+  const tab = pane?.tabs.find(t => t.id === pane?.activeTabId)
+  if (!tab || tab.kind !== 'note') return undefined
+  return notes.find(n => n.id === tab.noteId)
+}
 
 export default MobileTopBar
