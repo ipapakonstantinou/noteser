@@ -18,23 +18,19 @@ import {
 //      click to pin).
 //   3. The active tab's panel body, full-height.
 //
-// Owns all the drag state for the strip; the host (SidebarStack)
-// passes a `dragActive` flag derived from a window-level dragstart
-// listener so this strip's pin-zone lights up even when the drag
-// began from a different child (e.g. a pinned mini-strip above).
+// The strip owns the drag state for its own icons (reorder + cross-
+// pane move). Pinning is now exclusively via right-click on an icon —
+// the visible "↑ PIN TO TOP" drop zone was removed per user feedback.
 export interface TabSwitcherProps {
   pinnedIds: SidebarTabId[]
   tabOrderSaved: string[]
   onRightClick: PanelRightClick
   onPinPanel: (id: SidebarTabId) => void
   onUnpinPanel: (id: SidebarTabId) => void
-  // True when ANY sidebar drag is in flight — inflates the pin-zone
-  // so the user can land a drop without pixel-precise hovering.
-  dragActive: boolean
 }
 
 export const TabSwitcher = ({
-  pinnedIds, tabOrderSaved, onRightClick, onPinPanel, onUnpinPanel, dragActive,
+  pinnedIds, tabOrderSaved, onRightClick, onPinPanel, onUnpinPanel,
 }: TabSwitcherProps) => {
   const tabId = useUIStore(s => s.sidebarTabId)
   const setTab = useUIStore(s => s.setSidebarTab)
@@ -56,11 +52,6 @@ export const TabSwitcher = ({
   const [draggingId, setDraggingId] = useState<SidebarTabId | null>(null)
   const [dropTargetId, setDropTargetId] = useState<SidebarTabId | null>(null)
   const dropPos = useRef<'before' | 'after'>('before')
-
-  // Pin-zone drop indicator. When a tab is being dragged near the top
-  // edge of the strip we light up a horizontal bar that doubles as the
-  // pin-target — drop here = move to pinned-top.
-  const [pinDropActive, setPinDropActive] = useState(false)
 
   const handleDragStart = (id: SidebarTabId) => (e: React.DragEvent) => {
     e.dataTransfer.setData(TAB_DRAG_MIME, id)
@@ -118,48 +109,16 @@ export const TabSwitcher = ({
   }
 
   const handleDragEnd = () => {
-    setDraggingId(null); setDropTargetId(null); setPinDropActive(false)
-  }
-
-  // Pin drop-zone (above the strip). Listens for tab-MIME payloads;
-  // on drop, pins the dragged tab.
-  const onPinDropOver = (e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    setPinDropActive(true)
-  }
-  const onPinDrop = (e: React.DragEvent) => {
-    const id = e.dataTransfer.getData(TAB_DRAG_MIME) as SidebarTabId
-    setPinDropActive(false)
-    if (!id) return
-    e.preventDefault()
-    onPinPanel(id)
+    setDraggingId(null); setDropTargetId(null)
   }
 
   return (
     <div className="flex-1 min-h-0 flex flex-col border-t border-obsidianBorder">
-      {/* Pin drop zone — visible whenever ANY sidebar drag is in
-          flight, not just a drag started from this strip. The
-          inflated 24px height makes the target easy to land on
-          (the user complained that 6px was too thin). */}
-      <div
-        onDragOver={onPinDropOver}
-        onDragLeave={() => setPinDropActive(false)}
-        onDrop={onPinDrop}
-        className={`${(draggingId || dragActive) ? 'h-6' : 'h-0'} transition-all flex-shrink-0 flex items-center justify-center text-[10px] uppercase tracking-wide ${
-          pinDropActive
-            ? 'bg-obsidianAccentPurple text-white'
-            : (draggingId || dragActive)
-              ? 'bg-obsidianAccentPurple/15 text-obsidianAccentPurple'
-              : 'bg-transparent text-transparent'
-        }`}
-        aria-label="Drop here to pin tab at top"
-        data-testid="sidebar-pin-dropzone"
-      >
-        {(draggingId || dragActive) && (pinDropActive ? 'Drop to pin' : '↑ pin to top')}
-      </div>
-
+      {/* The visible "↑ PIN TO TOP" drop zone was removed per user
+          feedback (2026-05-21) — it added vertical noise during
+          drags and could get visually stuck after an external
+          dragend. Pinning a tab from the bottom strip is now done
+          via right-click on the icon (already wired below). */}
       <div className="flex items-center gap-0.5 px-1 py-1 border-b border-obsidianBorder bg-obsidianDarkGray/40">
         {orderedIds.map(id => {
           const def = panelsById.get(id)

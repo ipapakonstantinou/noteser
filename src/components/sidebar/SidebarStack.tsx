@@ -190,7 +190,6 @@ export const SidebarStack = ({ onRightClick }: Props) => {
         onRightClick={onRightClick}
         onPinPanel={pinAsNewGroup}
         onUnpinPanel={unpinPanel}
-        dragActive={dragActive}
       />
     </div>
   )
