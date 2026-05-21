@@ -92,6 +92,41 @@ test('second call finds the existing note (no duplicate)', async () => {
   expect(useNoteStore.getState().notes).toHaveLength(1)
 })
 
+test('migrates a legacy root-level Feature tour note into Tutorial/', async () => {
+  // Simulate the state a user has if they clicked Feature tour BEFORE
+  // the Tutorial/ folder change shipped: a note titled "Feature tour"
+  // at the vault root with stale (raw GitHub URL) content.
+  useNoteStore.setState({
+    notes: [{
+      id: 'legacy',
+      title: FEATURE_TOUR_TITLE,
+      content: '![old](https://raw.githubusercontent.com/foo.png)',
+      folderId: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      isDeleted: false,
+      deletedAt: null,
+      isPinned: false,
+      templateId: null,
+    }],
+    selectedNoteId: null,
+  })
+
+  const id = await seedFeatureTourNote()
+
+  // Same note id — we migrated, not recreated.
+  expect(id).toBe('legacy')
+  // No duplicate created.
+  expect(useNoteStore.getState().notes).toHaveLength(1)
+  // Moved into the Tutorial folder.
+  const tutorialFolder = useFolderStore.getState().folders.find(f => f.name === TUTORIAL_FOLDER_NAME)
+  const migrated = useNoteStore.getState().notes[0]
+  expect(migrated.folderId).toBe(tutorialFolder!.id)
+  // Content refreshed to the current canonical body (no more raw GitHub URLs).
+  expect(migrated.content).toBe(FEATURE_TOUR_BODY)
+  expect(migrated.content).not.toContain('raw.githubusercontent.com')
+})
+
 test('a soft-deleted Feature tour note does NOT block creating a fresh one', async () => {
   const firstId = await seedFeatureTourNote()
   useNoteStore.setState(state => ({
