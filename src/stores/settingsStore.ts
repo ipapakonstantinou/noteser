@@ -188,6 +188,18 @@ export interface SettingsState {
   // along with the remote lines.
   localGitignoreOverlay: string
 
+  // Pending edit to the vault's shared `.gitignore`. null = no pending
+  // change (the next sync uses whatever is on the remote). A string
+  // (incl. '') = the user clicked Save in the editor and wants this
+  // pushed on the next sync, replacing the remote file. Cleared back to
+  // null by useGitHubSync once the push succeeds.
+  vaultGitignoreDraft: string | null
+  // Snapshot of the remote `.gitignore` content captured the last time
+  // the user clicked "Fetch from sync repo". Used by the editor to
+  // detect unsaved local edits ("draft differs from snapshot") so the
+  // UI can show a dirty marker.
+  vaultGitignoreRemoteSnapshot: string | null
+
   setFolderSortMode: (mode: FolderSortMode) => void
   setTaskListDensity: (density: TaskListDensity) => void
   setShowHiddenFolders: (value: boolean) => void
@@ -221,6 +233,8 @@ export interface SettingsState {
   setSettingsFolderPath: (path: string) => void
   setVaultSettingsLastPushedHash: (hash: string) => void
   setLocalGitignoreOverlay: (text: string) => void
+  setVaultGitignoreDraft: (text: string | null) => void
+  setVaultGitignoreRemoteSnapshot: (text: string | null) => void
   setShareDefaultExpiryDays: (days: number) => void
   setShareDefaultBurn: (value: boolean) => void
   setThemeOverrides: (overrides: Record<string, string>) => void
@@ -302,6 +316,8 @@ const DEFAULTS = {
   vaultSettingsUpdatedAt: 0,
   vaultSettingsLastPushedHash: '',
   localGitignoreOverlay: '',
+  vaultGitignoreDraft: null as string | null,
+  vaultGitignoreRemoteSnapshot: null as string | null,
   shareDefaultExpiryDays: 0,
   shareDefaultBurn: false,
   themeOverrides: {} as Record<string, string>,
@@ -363,6 +379,8 @@ export const useSettingsStore = create<SettingsState>()(
         setSettingsFolderPath: (path) => set({ settingsFolderPath: path }),
         setVaultSettingsLastPushedHash: (hash) => set({ vaultSettingsLastPushedHash: hash }),
         setLocalGitignoreOverlay: (localGitignoreOverlay) => set({ localGitignoreOverlay }),
+        setVaultGitignoreDraft: (vaultGitignoreDraft) => set({ vaultGitignoreDraft }),
+        setVaultGitignoreRemoteSnapshot: (vaultGitignoreRemoteSnapshot) => set({ vaultGitignoreRemoteSnapshot }),
         setShareDefaultExpiryDays: (shareDefaultExpiryDays) => set({ shareDefaultExpiryDays }),
         setShareDefaultBurn: (shareDefaultBurn) => set({ shareDefaultBurn }),
         // Theme is part of the vault-synced slice — going through

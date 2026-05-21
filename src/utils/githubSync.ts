@@ -738,6 +738,12 @@ export interface SyncInput {
     contentHash: string
     lastPushedHash: string
   }
+  // Pending vault `.gitignore` edit from the in-app editor (gi9n
+  // Settings UI). When provided, the push tree includes a `.gitignore`
+  // blob with this content IF it differs from the current remote file.
+  // Pass undefined when the user hasn't touched the editor — the
+  // remote file is left alone.
+  vaultGitignoreDraft?: string | null
 }
 
 export type GitPathUpdate = {
@@ -757,10 +763,15 @@ export interface SyncOutcome {
   // already up to date with `lastPushedHash`). Caller should persist
   // this so subsequent pushes skip when content-equal.
   vaultSettingsHashPushed?: string
+  // True when this push wrote the vault `.gitignore` (i.e. the caller's
+  // `vaultGitignoreDraft` differed from remote and we uploaded it).
+  // Caller should clear the draft + refresh its snapshot to the pushed
+  // content so the next sync doesn't try to push again.
+  vaultGitignorePushed?: boolean
 }
 
 export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
-  const { token, repo, notes, folders, commitMessage, vaultSettings } = input
+  const { token, repo, notes, folders, commitMessage, vaultSettings, vaultGitignoreDraft } = input
   const { owner, name, branch } = repo
 
   // 1. Compute desired files for every active note.
@@ -884,6 +895,18 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     consumedTombstones.push(path)
   }
 
+  // 3d-pre. Vault `.gitignore` editor draft (gi9n Settings UI). Push
+  // a tree entry for `.gitignore` only when the caller provided a
+  // draft AND it differs from the current remote content. Skipping
+  // the no-change case keeps idle syncs commit-free.
+  let vaultGitignorePushed = false
+  if (vaultGitignoreDraft != null && vaultGitignoreDraft !== pushRemoteRaw) {
+    const blobSha = await createBlob(token, owner, name, vaultGitignoreDraft)
+    entries.push({ path: GITIGNORE_PATH, mode: '100644', type: 'blob', sha: blobSha })
+    if (remoteGitignoreSha) updated++; else created++
+    vaultGitignorePushed = true
+  }
+
   // 3d. Vault settings file (vs8x). Include it in the push tree when
   // either (a) the local hash differs from the last pushed hash (the
   // user changed something), or (b) the file is missing remotely (first
@@ -936,6 +959,7 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
       result: { unchanged: true, created: 0, updated: 0, deleted: 0, commitSha: parentCommitSha, commitUrl: null },
       pathUpdates,
       vaultSettingsHashPushed,
+      vaultGitignorePushed,
     }
   }
 
@@ -954,5 +978,6 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     result: { unchanged: false, created, updated, deleted, commitSha, commitUrl: html_url },
     pathUpdates,
     vaultSettingsHashPushed,
+    vaultGitignorePushed,
   }
 }
