@@ -208,6 +208,18 @@ export function CodeMirrorEditor({
       },
     },
     {
+      // Alt+L toggles the "- [ ]" task bullet (add on plain lines, remove
+      // on task lines). Alt+Shift+L toggles the [x]/[ ] checkmark
+      // (Obsidian-style with ✅ date stamp).
+      //
+      // CodeMirror's idiom for "same base key with/without Shift" is one
+      // binding with both `run` (no shift) and `shift` (with shift). An
+      // earlier attempt registered them as two separate bindings
+      // (`Alt-l` + `Alt-Shift-l`); CodeMirror's chord resolver did NOT
+      // pick the Shift variant for Alt+Shift+L and Alt-l ran on every
+      // press. The `shift` field on the base binding is the documented
+      // way to disambiguate. (Caught by the qa-tester sweep on
+      // 2026-05-21.)
       key: 'Alt-l',
       preventDefault: true,
       run(view) {
@@ -216,7 +228,6 @@ export function CodeMirrorEditor({
         const line = state.doc.lineAt(head)
         const taskMatch = line.text.match(/^(\s*)([-*+]\s+\[[ xX]\]\s+)/)
         if (taskMatch) {
-          // Toggle off: remove the task marker
           const indent = taskMatch[1].length
           const markerLen = taskMatch[2].length
           view.dispatch({
@@ -224,7 +235,6 @@ export function CodeMirrorEditor({
             selection: { anchor: Math.max(line.from, head - markerLen) },
           })
         } else {
-          // Toggle on: prepend "- [ ] " (preserving any indentation)
           const indent = line.text.match(/^(\s*)/)![1].length
           const insertAt = line.from + indent
           view.dispatch({
@@ -234,14 +244,7 @@ export function CodeMirrorEditor({
         }
         return true
       },
-    },
-    {
-      // Partner to Alt+L. Check/uncheck the task on the current line, with
-      // Obsidian-style ✅ date stamp on check / strip on uncheck. No-op on
-      // non-task lines (falls through to default key handling).
-      key: 'Alt-Shift-l',
-      preventDefault: true,
-      run(view) {
+      shift(view) {
         const { head } = view.state.selection.main
         const line = view.state.doc.lineAt(head)
         const newLine = toggleTaskLineText(line.text)
