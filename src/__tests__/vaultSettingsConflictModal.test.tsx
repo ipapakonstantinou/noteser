@@ -77,3 +77,22 @@ test('Cancel keeps the modal open until... it closes; settings unchanged', () =>
   fireEvent.click(screen.getByText(/Cancel/))
   expect(useSettingsStore.getState().folderSortMode).toBe('modified')
 })
+
+test('does NOT crash when a different modal is open with a non-conflict data payload', () => {
+  // Regression: VaultSettingsConflictModal is always mounted at the
+  // root of the tree (alongside DeleteConfirmModal, TemplatesModal,
+  // etc.). When the user opens ANY other modal, modal.data carries that
+  // modal's payload — e.g. { type: 'note', id } for delete. The old
+  // implementation cast modal.data as ConflictData unconditionally and
+  // iterated data.diffKeys inside a useMemo, throwing "is not iterable"
+  // and trapping clicks behind the Next.js dev overlay. (Caught by the
+  // qa-tester sweep on 2026-05-21.)
+  useUIStore.setState({
+    modal: { type: 'delete', data: { type: 'note', id: 'some-id' } },
+  })
+  // Render must not throw, and the modal must render NOTHING (it's not
+  // the active modal type).
+  expect(() => render(<VaultSettingsConflictModal />)).not.toThrow()
+  // No vs8x-* testids should appear in the DOM.
+  expect(screen.queryByTestId('vs8x-conflict-apply')).not.toBeInTheDocument()
+})

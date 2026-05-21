@@ -27,7 +27,14 @@ type Choice = 'local' | 'remote'
 export const VaultSettingsConflictModal = () => {
   const { modal, closeModal } = useUIStore()
   const isOpen = modal.type === 'vault-settings-conflict'
-  const data = modal.data as ConflictData | undefined
+  // Only treat modal.data as conflict-shaped when THIS modal is the one
+  // open. `modal.data` is shared across every modal kind, so a delete-
+  // confirm or templates open puts a totally different shape in there —
+  // accessing data.diffKeys without this gate throws "not iterable" and
+  // the dev overlay then traps all clicks. (Caught by qa-tester sweep.)
+  const data: ConflictData | undefined = isOpen
+    ? (modal.data as ConflictData | undefined)
+    : undefined
 
   const [choices, setChoices] = useState<Record<string, Choice>>({})
 
@@ -41,7 +48,7 @@ export const VaultSettingsConflictModal = () => {
   }, [isOpen, data])
 
   const summary = useMemo(() => {
-    if (!data) return { local: 0, remote: 0 }
+    if (!data || !Array.isArray(data.diffKeys)) return { local: 0, remote: 0 }
     let local = 0
     let remote = 0
     for (const k of data.diffKeys) {
