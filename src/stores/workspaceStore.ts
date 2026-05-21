@@ -11,6 +11,13 @@ export type ConflictTabData = Extract<PullClassification, { kind: 'conflict' } |
 export type Tab =
   | { id: string; kind: 'note'; noteId: string; isPreview: boolean }
   | { id: string; kind: 'merge-conflict'; conflict: ConflictTabData }
+  // Single tab summarising a whole batch of conflicts after a pull
+  // brings back drift across many files. Lets the user resolve
+  // "use mine" / "use theirs" per file (or all at once) without
+  // wading through N individual merge-editor tabs. Drill-down still
+  // available — the summary spawns a per-conflict merge-conflict tab
+  // when the user clicks "Open merge editor" on a row.
+  | { id: string; kind: 'merge-batch'; conflicts: ConflictTabData[] }
   // VS Code-style Welcome tab. Opened automatically on first run
   // instead of the old OnboardingModal popup. Not persisted (see
   // `partialize` below) — closing or reloading drops it. Closing
@@ -36,6 +43,11 @@ interface WorkspaceState {
   // active pane. Idempotent — calling twice is a no-op past the first.
   openWelcome: () => void
   openMergeConflicts: (conflicts: ConflictTabData[]) => void
+  // Opens a SINGLE summary tab covering all conflicts. Replaces any
+  // existing merge-conflict / merge-batch tabs in the workspace.
+  // The threshold for using this vs per-tab merge-conflict lives in
+  // useGitHubSync — the store API doesn't impose one.
+  openMergeBatch: (conflicts: ConflictTabData[]) => void
   closeTab: (tabId: string) => void
   focusTab: (tabId: string) => void
   focusPane: (paneId: string) => void
@@ -198,7 +210,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         // Drop any stale merge tabs across ALL panes.
         const stripped = state.panes.map(p => ({
           ...p,
-          tabs: p.tabs.filter(t => t.kind !== 'merge-conflict'),
+          tabs: p.tabs.filter(t => t.kind !== 'merge-conflict' && t.kind !== 'merge-batch'),
         }))
         // Add new merge tabs to the active pane (or first pane).
         const targetPaneId = state.activePaneId ?? stripped[0]?.id ?? null
@@ -210,6 +222,23 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         }))
         const next = stripped.map(p => p.id === targetPaneId
           ? { ...p, tabs: [...p.tabs, ...newTabs], activeTabId: newTabs[0].id }
+          : p,
+        )
+        set({ panes: next, activePaneId: targetPaneId, mergeAppliedCount: 0 })
+      },
+
+      openMergeBatch: (conflicts) => {
+        if (conflicts.length === 0) return
+        const state = get()
+        const stripped = state.panes.map(p => ({
+          ...p,
+          tabs: p.tabs.filter(t => t.kind !== 'merge-conflict' && t.kind !== 'merge-batch'),
+        }))
+        const targetPaneId = state.activePaneId ?? stripped[0]?.id ?? null
+        if (!targetPaneId) return
+        const tab: Tab = { id: uuidv4(), kind: 'merge-batch', conflicts }
+        const next = stripped.map(p => p.id === targetPaneId
+          ? { ...p, tabs: [...p.tabs, tab], activeTabId: tab.id }
           : p,
         )
         set({ panes: next, activePaneId: targetPaneId, mergeAppliedCount: 0 })
@@ -235,9 +264,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         )
         const compacted = compactPanes(updatedPanes)
 
-        // Did we just close the last merge tab in the whole workspace?
-        const anyMergeLeft = compacted.some(p => p.tabs.some(t => t.kind === 'merge-conflict'))
-        const lastMergeGone = closing.kind === 'merge-conflict' && !anyMergeLeft
+        // Did we just close the last merge tab (per-conflict OR batch
+        // summary) in the whole workspace?
+        const isMergeKind = (k: Tab['kind']) => k === 'merge-conflict' || k === 'merge-batch'
+        const anyMergeLeft = compacted.some(p => p.tabs.some(t => isMergeKind(t.kind)))
+        const lastMergeGone = isMergeKind(closing.kind) && !anyMergeLeft
         const shouldFireSync = lastMergeGone && state.mergeAppliedCount > 0
 
         // Closing the welcome tab counts as "user has seen and dismissed
@@ -353,7 +384,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         const state = get()
         const stripped = state.panes.map(p => ({
           ...p,
-          tabs: p.tabs.filter(t => t.kind !== 'merge-conflict'),
+          tabs: p.tabs.filter(t => t.kind !== 'merge-conflict' && t.kind !== 'merge-batch'),
         }))
         const compacted = compactPanes(stripped)
         const activeStillThere = compacted.find(p => p.id === state.activePaneId)

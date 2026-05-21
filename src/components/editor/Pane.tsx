@@ -9,6 +9,7 @@ import { EditorFooter } from './EditorFooter'
 import { EditorContent } from './EditorContent'
 import { TabBar } from './TabBar'
 import { MergeEditorView } from './MergeEditorView'
+import { MergeBatchView } from './MergeBatchView'
 import { WelcomePane } from './WelcomePane'
 import { EmptyState } from '@/components/ui'
 import type { PaneState } from '@/stores/workspaceStore'
@@ -69,6 +70,8 @@ export const Pane = ({ pane, allowSplitDropZone }: Props) => {
     )
   } else if (activeTab.kind === 'merge-conflict') {
     body = <MergeEditorView tabId={activeTab.id} conflict={activeTab.conflict} />
+  } else if (activeTab.kind === 'merge-batch') {
+    body = <MergeBatchView tabId={activeTab.id} conflicts={activeTab.conflicts} />
   } else if (activeTab.kind === 'welcome') {
     body = <WelcomePane tabId={activeTab.id} />
   } else {
