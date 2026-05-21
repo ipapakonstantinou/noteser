@@ -70,6 +70,19 @@ adapter, your own VPS). The two `/api/github/*` routes are required (they
 proxy the OAuth device-flow endpoints which don't support CORS), so a
 pure-static export won't work.
 
+### Branch model
+
+| Branch | Auto-deploys to | Purpose |
+|---|---|---|
+| `main` | noteser.thetechjon.com | Production. Only PR-merge from `dev` or hotfixes |
+| `dev` | `noteser-git-dev-*.vercel.app` (auto) | Integration / preview |
+| `feat/*` · `fix/*` | per-branch preview URLs | Feature work |
+| `hotfix/*` | per-branch preview URL | Prod emergencies, PR straight to `main` |
+
+CI (`.github/workflows/ci.yml`) runs lint + typecheck + tests + build on
+every push and PR — read the badge before merging. Full workflow is in
+[`docs/release-process.md`](docs/release-process.md).
+
 For a custom domain:
 1. Point a `CNAME` (or `A`) record to your hosting platform.
 2. Set `NEXT_PUBLIC_GITHUB_CLIENT_ID` (and optionally `NEXT_PUBLIC_YJS_WS_URL`) in the platform's environment variables.

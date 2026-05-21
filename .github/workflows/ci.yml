@@ -5,10 +5,16 @@ name: CI
 # See docs/release-process.md for the full workflow plan.
 
 on:
+  # Validate every push to main (catches direct-to-main mistakes — still
+  # legal but should be red if something broke) AND to dev (the staging
+  # branch that auto-deploys to Vercel preview).
   push:
-    branches: [main]
+    branches: [main, dev]
+  # Validate PRs targeting either main or dev. Branch protection on main
+  # is not enforceable without GitHub Pro on private repos, so this is
+  # the practical gate — read the CI badge before merging.
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
 # Cancel in-flight runs when a newer commit lands on the same ref. Saves
 # CI minutes on noisy push streaks.
