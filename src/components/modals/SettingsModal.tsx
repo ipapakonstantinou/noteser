@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, type ReactNode } from 'react'
+import { useState, useMemo, useEffect, useRef, type ReactNode } from 'react'
 import {
   CogIcon,
   PencilSquareIcon,
@@ -512,6 +512,17 @@ function ResetToRemoteField() {
   const [dropUnpushed, setDropUnpushed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [resultMsg, setResultMsg] = useState<string | null>(null)
+  const confirmRef = useRef<HTMLDivElement | null>(null)
+
+  // When the strip opens, scroll it into view. The Settings modal's
+  // right pane is independently scrollable, so a long panel can clip
+  // the strip's Cancel / Yes-reset buttons below the fold — caught by
+  // qa-tester sweep on the deployed preview.
+  useEffect(() => {
+    if (confirming && confirmRef.current) {
+      confirmRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    }
+  }, [confirming])
 
   if (!syncRepo) return null
 
@@ -547,7 +558,7 @@ function ResetToRemoteField() {
             Reset local to match remote…
           </Button>
         ) : (
-          <div className="space-y-2 p-3 border border-amber-900/40 rounded bg-amber-900/10">
+          <div ref={confirmRef} className="space-y-2 p-3 border border-amber-900/40 rounded bg-amber-900/10">
             <div className="text-sm text-amber-200">
               This drops every local note that has a synced path. The next pull will re-create them from the repo. There is no undo.
             </div>

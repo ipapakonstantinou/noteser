@@ -303,7 +303,9 @@ export default function Home() {
               small phone leaves a peek of the editor behind. */}
           <div
             className={`fixed top-0 bottom-0 z-40 transition-transform duration-300 ease-out ${
-              drawerOpen ? 'translate-x-0' : '-translate-x-full'
+              drawerOpen
+                ? 'translate-x-0 pointer-events-auto'
+                : '-translate-x-full pointer-events-none'
             }`}
             style={{
               left: '44px',
