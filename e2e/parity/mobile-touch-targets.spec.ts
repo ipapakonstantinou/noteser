@@ -1,12 +1,12 @@
 // Mobile parity: touch-friendly hit targets.
 //
-// At ≤768px, the primary interactive elements (ribbon nav, tab close X,
-// editor header pin/preview buttons) are sized so a finger can hit them
-// without zooming. Apple HIG calls for ≥44×44pt; we aim for ≥44px on the
-// dominant axis and a generous tap area on the secondary axis.
+// Phase B of mobile responsive hid the desktop ribbon entirely below
+// MOBILE_BREAKPOINT and replaced it with the MobileTopBar. This spec
+// asserts the touch threshold (Apple HIG ≥44pt) for the buttons on
+// that bar, plus the editor-header buttons and tab strip.
 //
 // Asserts at 375×667:
-//   - Ribbon buttons (top + bottom) ≥ 44×44.
+//   - MobileTopBar buttons (hamburger / search / preview / overflow) ≥ 44×44.
 //   - Editor-header pin + preview buttons ≥ 44×44.
 //   - Tab strip height ≥ 44px (the close X hitbox sits inside this).
 
@@ -15,25 +15,24 @@ import { setupCleanVault, waitForTestHooks } from './_helpers'
 
 test.use({ viewport: { width: 375, height: 667 } })
 
-test('ribbon buttons are ≥44×44 on mobile', async ({ page }) => {
+test('mobile top-bar buttons are ≥44×44', async ({ page }) => {
   await setupCleanVault(page)
   await page.goto('/')
   await waitForTestHooks(page)
-  await page.waitForTimeout(400) // let viewport-driven auto-collapse settle
+  await page.waitForTimeout(400)
 
-  // Inspect every <button> inside the Ribbon (.h-full.w-\[44px\] is the ribbon).
   const sizes = await page.evaluate(() => {
-    const ribbon = document.querySelector('.h-full.w-\\[44px\\]') as HTMLElement | null
-    if (!ribbon) return [] as Array<{ w: number; h: number; title: string }>
-    return Array.from(ribbon.querySelectorAll('button')).map((b) => {
+    const bar = document.querySelector('[data-testid="mobile-top-bar"]') as HTMLElement | null
+    if (!bar) return [] as Array<{ w: number; h: number; title: string }>
+    return Array.from(bar.querySelectorAll('button')).map((b) => {
       const r = b.getBoundingClientRect()
-      return { w: r.width, h: r.height, title: b.getAttribute('title') ?? '' }
+      return { w: r.width, h: r.height, title: b.getAttribute('title') ?? b.getAttribute('aria-label') ?? '' }
     })
   })
   expect(sizes.length).toBeGreaterThan(0)
   for (const s of sizes) {
-    expect.soft(s.w, `ribbon button "${s.title}" width`).toBeGreaterThanOrEqual(44)
-    expect.soft(s.h, `ribbon button "${s.title}" height`).toBeGreaterThanOrEqual(44)
+    expect.soft(s.w, `top-bar button "${s.title}" width`).toBeGreaterThanOrEqual(44)
+    expect.soft(s.h, `top-bar button "${s.title}" height`).toBeGreaterThanOrEqual(44)
   }
 })
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Sidebar, Ribbon } from '@/components/sidebar'
+import { Sidebar, Ribbon, MobileTopBar } from '@/components/sidebar'
 import { Editor } from '@/components/editor'
 import {
   SearchModal,
@@ -277,69 +277,10 @@ export default function Home() {
     return () => window.removeEventListener('keydown', onKey)
   }, [drawerOpen])
 
-  return (
-    <div className="flex h-dvh w-screen bg-obsidianBlack text-obsidianText overflow-hidden">
-      {/* Ribbon */}
-      <div className="flex-none">
-        <Ribbon />
-      </div>
-
-      {/* Sidebar — desktop: inline flex column; mobile: off-canvas drawer */}
-      {mobileLayout ? (
-        <>
-          {/* Backdrop — visible only when drawer is open. Tapping it
-              closes the drawer. z-30 sits above the editor (z-0) and
-              below modals (z-50). */}
-          {drawerOpen && (
-            <div
-              className="fixed inset-0 z-30 bg-black/50 transition-opacity duration-200"
-              onClick={closeMobileDrawer}
-              aria-hidden="true"
-              data-testid="mobile-sidebar-backdrop"
-            />
-          )}
-          {/* Drawer — fixed-position panel that slides in from the left
-              of the ribbon. Width capped at min(280px, 85vw) so even a
-              small phone leaves a peek of the editor behind. */}
-          <div
-            className={`fixed top-0 bottom-0 z-40 transition-transform duration-300 ease-out ${
-              drawerOpen
-                ? 'translate-x-0 pointer-events-auto'
-                : '-translate-x-full pointer-events-none'
-            }`}
-            style={{
-              left: '44px',
-              width: 'min(280px, 85vw)',
-            }}
-            data-testid="mobile-sidebar-drawer"
-            aria-hidden={drawerOpen ? undefined : true}
-          >
-            <Sidebar />
-          </div>
-        </>
-      ) : (
-        <div
-          className={`flex-none transition-all duration-300 ${
-            isSidebarCollapsed ? 'w-[50px]' : 'w-64'
-          }`}
-        >
-          <Sidebar />
-        </div>
-      )}
-
-      {/* Editor */}
-      <div
-        className="flex-1 h-full overflow-hidden"
-        style={{
-          width: mobileLayout
-            ? 'calc(100vw - 44px)'
-            : `calc(100vw - 44px - ${isSidebarCollapsed ? '50px' : '16rem'})`,
-        }}
-      >
-        <Editor />
-      </div>
-
-      {/* Modals */}
+  // Modals are identical between mobile and desktop branches. Extracted
+  // into a helper so the two render trees below don't drift.
+  const renderModals = () => (
+    <>
       <SearchModal />
       <DeleteConfirmModal />
       <ShortcutsModal />
@@ -361,6 +302,87 @@ export default function Home() {
         onFullWipe={handleFullWipe}
         onCancel={() => setShowResetModal(false)}
       />
+    </>
+  )
+
+  // Two distinct layout trees — mobile is a flex-COLUMN with a slim top
+  // action bar above the editor and an off-canvas drawer behind, while
+  // desktop is a flex-ROW with the ribbon column + sidebar column +
+  // editor. Phase B of mobile responsive: the desktop ribbon is hidden
+  // entirely on mobile so the 375px viewport doesn't lose ~12% to a
+  // vertical icon strip the user can't read at that size.
+  if (mobileLayout) {
+    return (
+      <div className="flex flex-col h-dvh w-screen bg-obsidianBlack text-obsidianText overflow-hidden">
+        <MobileTopBar />
+
+        {drawerOpen && (
+          <div
+            className="fixed inset-0 z-30 bg-black/50 transition-opacity duration-200"
+            onClick={closeMobileDrawer}
+            aria-hidden="true"
+            data-testid="mobile-sidebar-backdrop"
+          />
+        )}
+
+        {/* Drawer — fixed-position, slides in from the LEFT EDGE now
+            that the ribbon is gone. Width capped at min(280px, 85vw)
+            so even a small phone leaves a peek of the editor behind.
+            Pointer-events guarded so the closed drawer doesn't eat
+            clicks on the underlying editor (qa fix from prior batch). */}
+        <div
+          className={`fixed top-0 bottom-0 z-40 transition-transform duration-300 ease-out ${
+            drawerOpen
+              ? 'translate-x-0 pointer-events-auto'
+              : '-translate-x-full pointer-events-none'
+          }`}
+          style={{
+            left: 0,
+            width: 'min(280px, 85vw)',
+          }}
+          data-testid="mobile-sidebar-drawer"
+          aria-hidden={drawerOpen ? undefined : true}
+        >
+          <Sidebar />
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <Editor />
+        </div>
+
+        {/* Modals are portaled to body so the column layout doesn't
+            affect their positioning. Same set as desktop. */}
+        {renderModals()}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-dvh w-screen bg-obsidianBlack text-obsidianText overflow-hidden">
+      {/* Ribbon */}
+      <div className="flex-none">
+        <Ribbon />
+      </div>
+
+      <div
+        className={`flex-none transition-all duration-300 ${
+          isSidebarCollapsed ? 'w-[50px]' : 'w-64'
+        }`}
+      >
+        <Sidebar />
+      </div>
+
+      {/* Editor */}
+      <div
+        className="flex-1 h-full overflow-hidden"
+        style={{
+          width: `calc(100vw - 44px - ${isSidebarCollapsed ? '50px' : '16rem'})`,
+        }}
+      >
+        <Editor />
+      </div>
+
+      {renderModals()}
     </div>
   )
 }
