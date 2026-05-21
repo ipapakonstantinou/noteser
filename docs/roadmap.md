@@ -5,35 +5,55 @@ Loosely prioritized — top section is what's being picked up next, bottom is
 (`.claude/orchestrator/queue.json`) holds the *active* work; this file is the
 wider backlog.
 
-Last refresh: 2026-05-21.
+Last refresh: 2026-05-21 (post-batch).
 
-> A LOT shipped between 2026-05-19 and 2026-05-21. Highlights: full
-> branch-per-feature deploy workflow, Welcome tab replacing the
-> onboarding modal, Feature tour seed with bundled screenshots,
-> parallel-QA infrastructure (35 new parity specs), three QA-found
-> bug fixes, sidebar polish (resize handles, intra-strip reorder),
-> Settings → Editor preview-mode default, the noteser favicon, AI
-> commit messages, daily streak, weekly review, PDF export.
+> 14 PRs opened in a single batch on 2026-05-21. Every roadmap item in
+> the "Next" and "Later" sections got a Phase A shipped or fully closed.
+> See "In review" below for the open PRs and "Recently shipped" for the
+> earlier work. The user feedback in Telegram added one new item
+> (Reset to remote, PR #23, shipped same batch).
 
 ## In flight
 
-_Nothing right now — promote from Next when starting work._
+_Nothing right now — promote from In review once the batch lands._
 
-## Next
+## In review (open PRs from the 2026-05-21 batch)
 
-- **Sync robustness.** Very large vaults (>5k notes), explicit rate-limit
-  handling on the GitHub Git Data API, partial-failure recovery for
-  multi-blob pushes that 502 halfway through, polished conflict-resolution
-  UX for bulk drift after long offline edits.
-- **Mobile / responsive layout.** Collapsible sidebar by default, touch-
-  friendly tab bar, single-pane mode below a width threshold, virtual-
-  keyboard-safe editor. The current layout assumes ≥1024px wide.
-- **Backup encryption.** Optional passphrase-protected blob encryption
-  before push so the GitHub repo can stay public-safe.
+Mobile / responsive layout — closed:
+- **PR #11** Mobile responsive (dvh heights, single-pane mode, ≥44px touch targets, sidebar drawer, parity smoke at 375×667 + 414×896).
 
-## Parity gaps documented but not fixed
+Sync robustness — all four sub-items closed:
+- **PR #12** `feat/sync-rate-limit` — typed `GitHubAPIError`, 403 + `x-ratelimit-remaining=0` retries, telemetry layer.
+- **PR #17** `feat/sync-partial-failure` — push progress events, per-repo in-tab upload cache so a retry skips re-uploaded blobs.
+- **PR #21** `feat/sync-large-vault-perf` — per-note tag WeakMap cache + memoised `getActiveNotes/getDeletedNotes`. Bench: 5k notes warm in <1ms.
+- **PR #22** `feat/sync-bulk-drift-ux` — `merge-batch` summary tab (≥3 conflicts) with per-row Mine/Theirs/Merge actions + bulk apply.
+- **PR #23** `feat/sync-reset-to-remote` — user-requested "Reset to remote" escape hatch (Settings → GitHub sync). Preserves unpushed local notes by default.
 
-_All 6 closed 2026-05-21 in commit d16a9e7 — see Recently shipped._
+Backup encryption:
+- **PR #16** `feat/vault-crypto-module` — PBKDF2-SHA256 → AES-GCM, envelope format with `noteser-encrypted: 1` banner, 18 tests.
+- **PR #20** `feat/backup-encryption-integration` — wired into push (maybeEncryptForPush before gitBlobSha) and pull (maybeDecryptFromPull after getBlobContent). `vaultKey.ts` in-memory key holder. **UI is a follow-up.**
+
+Security hardening — audit + 3 fixes:
+- **PR #13** `feat/security-audit-2026-05-21` — read-only audit doc (1 high, 3 medium, 4 low).
+- **PR #14** `feat/security-html-export-escape` — Finding 1 (high): ZIP HTML export now escapes note bodies. Static-source guard test locks the call shape.
+- **PR #18** `feat/security-csp-websocket-scope` — Finding 5 (medium): `wss:/ws:` no longer wildcards; derives origin from `NEXT_PUBLIC_YJS_WS_URL` or omits entirely.
+- **PR #19** `feat/security-share-burn-hash` — Finding 8 (low): FNV-1a → SHA-256 truncated to 128 bits.
+
+Live collaboration:
+- **PR #24** `feat/collab-presence` — Phase A: WebSocket connectivity probe + EditorFooter "Live" pill. Real Y.Doc + remote cursors are Phase B/C.
+
+Native apple-touch-icon:
+- **PR #15** `feat/apple-touch-icon` — 180×180 PNG rasterised from `icon.svg`; Next.js 15 auto-discovers.
+
+## Next (post-merge follow-ups from the batch)
+
+- **Backup encryption — Phase B (UI).** Settings → Sync section: enable toggle, passphrase modal, lock-on-startup prompt, wrong-passphrase recovery. Builds on PR #20.
+- **Live collaboration — Phase B/C.** Add yjs + y-websocket deps; bind a `Y.Doc` per note; integrate y-codemirror.next for remote cursors. Builds on PR #24.
+- **Security audit follow-ups** still open (medium severity, deferred this batch):
+  - Finding 2: OAuth scope — needs user input on `repo` → `public_repo` / fine-grained PAT trade-off.
+  - Finding 3: in-memory rate limiter on serverless — needs Vercel KV or Upstash dep.
+  - Finding 4: XFF spoofing on non-Vercel deployments — env-var-controlled trust depth.
+  - Finding 6: nonce-based `script-src` — Next.js middleware investigation.
 
 ## User feedback pending clarification
 
@@ -46,17 +66,7 @@ _All 6 closed 2026-05-21 in commit d16a9e7 — see Recently shipped._
 
 ## Later
 
-- **Security hardening.** Token storage review (currently localStorage —
-  fine for personal tool, not for multi-tenant), XSS surface in rendered
-  markdown (mostly addressed via the urlTransform fix and the static-
-  source XSS guards), tighter auth on the `/api/github/*` proxy routes,
-  CSP review.
-- **Live collaboration.** `useCollaboration` already has Yjs WS plumbing
-  (opt-in via `NEXT_PUBLIC_YJS_WS_URL`); needs a UI to invite collaborators,
-  show remote cursors, and surface presence in the editor footer.
-- **Native apple-touch-icon PNG.** SVG isn't accepted by Next.js for
-  the apple-icon convention; generate a 180×180 PNG from `icon.svg`
-  if anyone actually adds noteser to their iOS home screen.
+- **Real-time editing (collab Phase B-D)** as a single sustained track once Phase A lands and a Yjs server is available.
 
 ## Recently shipped (2026-05-19 → 2026-05-21)
 
