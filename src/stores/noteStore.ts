@@ -12,6 +12,14 @@ import {
 import { STORAGE_KEYS } from '@/utils/storageKeys'
 import { useSettingsStore } from '@/stores/settingsStore'
 
+// Module-scoped memoisation for the active / deleted getters. Keyed by
+// the `notes` ARRAY IDENTITY — Zustand's set() always replaces the
+// array on mutation, so reference equality is a perfect cache key.
+// At 5k notes this turns a re-filter into a single object compare on
+// every selector read that didn't trigger a store update.
+let cachedActive: { notes: Note[]; result: Note[] } = { notes: [], result: [] }
+let cachedDeleted: { notes: Note[]; result: Note[] } = { notes: [], result: [] }
+
 interface NoteState {
   notes: Note[]
   selectedNoteId: string | null
@@ -212,12 +220,26 @@ export const useNoteStore = create<NoteState>()(
         return newNote
       },
 
-      // Getters
+      // Getters. Memoised by `notes` array IDENTITY — Zustand replaces
+      // the array on every mutation, so we trust ref equality. Saves a
+      // 5k-element re-filter on every render that calls these helpers.
       getNoteById: (id) => get().notes.find(note => note.id === id),
 
-      getActiveNotes: () => get().notes.filter(note => !note.isDeleted),
+      getActiveNotes: () => {
+        const notes = get().notes
+        if (cachedActive.notes === notes) return cachedActive.result
+        const result = notes.filter(note => !note.isDeleted)
+        cachedActive = { notes, result }
+        return result
+      },
 
-      getDeletedNotes: () => get().notes.filter(note => note.isDeleted),
+      getDeletedNotes: () => {
+        const notes = get().notes
+        if (cachedDeleted.notes === notes) return cachedDeleted.result
+        const result = notes.filter(note => note.isDeleted)
+        cachedDeleted = { notes, result }
+        return result
+      },
 
       getNotesByFolder: (folderId) =>
         get().notes.filter(note => !note.isDeleted && note.folderId === folderId),
