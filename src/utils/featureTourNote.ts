@@ -232,35 +232,47 @@ async function seedTutorialImage(filename: string): Promise<void> {
 /**
  * Seed (or focus) the Feature tour note. Returns the note id.
  *
- * Behaviour:
- *   - Creates the `Tutorial/` folder if missing.
- *   - Re-seeds any missing screenshot attachments (skips ones already
- *     in IDB so re-clicks don't re-fetch the bundle).
- *   - If a non-deleted note with title "Feature tour" exists in
- *     Tutorial/, just focuses it; otherwise creates it.
+ * Behaviour (intentionally healing — clicking this link should always
+ * leave the user with a working tour, regardless of prior state):
  *
- * Returns a promise — the caller usually fires-and-forgets.
+ *   1. Ensures the `Tutorial/` folder exists.
+ *   2. Awaits image-attachment seeding so the note opens with images
+ *      already in IndexedDB (no "Missing attachment" flash). Existing
+ *      images are skipped.
+ *   3. Finds an existing non-deleted "Feature tour" note ANYWHERE in
+ *      the vault. If it's not in Tutorial/, MIGRATES it there. If its
+ *      content drifted from FEATURE_TOUR_BODY (e.g. an older seed wrote
+ *      raw GitHub URLs), RESETS the content to the current canonical
+ *      body. Idempotent — repeated clicks just re-focus the note.
+ *   4. If no existing note, creates one in Tutorial/.
+ *
+ * Returns a promise — call sites usually fire-and-forget.
  */
 export async function seedFeatureTourNote(): Promise<string> {
-  const { notes, addNote } = useNoteStore.getState()
+  const { notes, addNote, updateNote } = useNoteStore.getState()
   const { ensureFolderPath } = useFolderStore.getState()
   const { openNote } = useWorkspaceStore.getState()
 
   // 1. Make sure the Tutorial folder exists. ensureFolderPath is
-  //    idempotent — returns the existing folder id when it's already
-  //    there.
+  //    idempotent — returns the existing folder id when present.
   const folderId = ensureFolderPath([TUTORIAL_FOLDER_NAME])
 
-  // 2. Fan out image seeding. The note open below doesn't wait for
-  //    these — the markdown renderer's AttachmentImage will pick up
-  //    the blobs as they land (or show "Loading" until they do).
-  void Promise.all(TUTORIAL_IMAGES.map(seedTutorialImage))
+  // 2. Seed any missing screenshots. AWAIT so the note opens with
+  //    images ready; a single broken-image flash is uglier than a
+  //    ~1s pause before the note appears.
+  await Promise.all(TUTORIAL_IMAGES.map(seedTutorialImage))
 
-  // 3. Find-or-create the note.
+  // 3. Heal-or-create: look for ANY existing Feature tour note (not
+  //    just one inside Tutorial/) so legacy root-level notes from
+  //    earlier seed versions get migrated cleanly.
   const existing = notes.find(
-    n => !n.isDeleted && n.title === FEATURE_TOUR_TITLE && n.folderId === folderId,
+    n => !n.isDeleted && n.title === FEATURE_TOUR_TITLE,
   )
   if (existing) {
+    const patch: Partial<typeof existing> = {}
+    if (existing.folderId !== folderId) patch.folderId = folderId
+    if (existing.content !== FEATURE_TOUR_BODY) patch.content = FEATURE_TOUR_BODY
+    if (Object.keys(patch).length > 0) updateNote(existing.id, patch)
     openNote(existing.id, { preview: false })
     return existing.id
   }
