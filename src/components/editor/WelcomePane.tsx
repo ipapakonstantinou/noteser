@@ -88,6 +88,35 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
           </p>
         </div>
 
+        {/* Learn — moved to the top so a first-time user lands directly
+            on "click here to see what this app can do." The Feature
+            tour is the visual centerpiece (full-width call-to-action
+            card); the keyboard + sidebar tips are smaller bullets
+            underneath for ambient discovery. */}
+        <section aria-labelledby="welcome-learn">
+          <h2 id="welcome-learn" className="text-sm font-medium text-obsidianText/90 uppercase tracking-wide mb-3">
+            Start here
+          </h2>
+          <FeatureTourCard onSeeded={() => closeTab(tabId)} />
+          <ul className="mt-4 space-y-2 text-sm">
+            <li className="flex items-start gap-2">
+              <SparklesIcon className="w-4 h-4 mt-0.5 text-obsidianSecondaryText" />
+              <span className="text-obsidianText">
+                Press <kbd className="px-1 py-0.5 text-xs rounded bg-obsidianHighlight text-obsidianText">Ctrl</kbd>
+                {' + '}
+                <kbd className="px-1 py-0.5 text-xs rounded bg-obsidianHighlight text-obsidianText">K</kbd>
+                <span className="text-obsidianSecondaryText"> to search across every note. Toggle to semantic mode for concept matches.</span>
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <FolderPlusIcon className="w-4 h-4 mt-0.5 text-obsidianSecondaryText" />
+              <span className="text-obsidianText">
+                Right-click in the sidebar to create folders, rename, or pin panels to the top strip.
+              </span>
+            </li>
+          </ul>
+        </section>
+
         {/* Start */}
         <section aria-labelledby="welcome-start">
           <h2 id="welcome-start" className="text-sm font-medium text-obsidianText/90 uppercase tracking-wide mb-3">
@@ -178,37 +207,6 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
           </section>
         )}
 
-        {/* Learn */}
-        <section aria-labelledby="welcome-learn">
-          <h2 id="welcome-learn" className="text-sm font-medium text-obsidianText/90 uppercase tracking-wide mb-3">
-            Learn
-          </h2>
-          <ul className="space-y-2 text-sm">
-            <li className="flex items-start gap-2">
-              <BookOpenIcon className="w-4 h-4 mt-0.5 text-obsidianSecondaryText" />
-              <span className="text-obsidianText">
-                <FeatureTourButton onSeeded={() => closeTab(tabId)} />
-                <span className="text-obsidianSecondaryText"> — seeds a Tutorial folder in your vault with the note + screenshots.</span>
-              </span>
-            </li>
-            <li className="flex items-start gap-2">
-              <SparklesIcon className="w-4 h-4 mt-0.5 text-obsidianSecondaryText" />
-              <span className="text-obsidianText">
-                Press <kbd className="px-1 py-0.5 text-xs rounded bg-obsidianHighlight text-obsidianText">Ctrl</kbd>
-                {' + '}
-                <kbd className="px-1 py-0.5 text-xs rounded bg-obsidianHighlight text-obsidianText">K</kbd>
-                <span className="text-obsidianSecondaryText"> to search across every note. Toggle to semantic mode for concept matches.</span>
-              </span>
-            </li>
-            <li className="flex items-start gap-2">
-              <FolderPlusIcon className="w-4 h-4 mt-0.5 text-obsidianSecondaryText" />
-              <span className="text-obsidianText">
-                Right-click in the sidebar to create folders, rename, or pin panels to the top strip.
-              </span>
-            </li>
-          </ul>
-        </section>
-
         <div className="pt-4 border-t border-obsidianBorder text-xs text-obsidianSecondaryText">
           Close this tab to dismiss the welcome view. You can always reopen it from
           {' '}<button
@@ -248,10 +246,12 @@ const WelcomeAction = ({ icon, label, hint, onClick, testId }: WelcomeActionProp
   </button>
 )
 
-// Async-aware button: shows a "Seeding…" label while the tour seeds
-// (~1-2s on first click for the parallel PNG fetches), then closes
-// the Welcome tab so the note becomes the active view.
-const FeatureTourButton = ({ onSeeded }: { onSeeded: () => void }) => {
+// Full-width call-to-action card for the Feature tour. Sits at the top
+// of the welcome view so a first-time user immediately sees "click here
+// to see what this app can do." Async-aware: shows a "Seeding…" state
+// while the 9 PNGs land in IndexedDB (~1-2s), then closes the Welcome
+// tab so the seeded note becomes the active view.
+const FeatureTourCard = ({ onSeeded }: { onSeeded: () => void }) => {
   const [busy, setBusy] = useState(false)
   const handleClick = async () => {
     if (busy) return
@@ -269,9 +269,20 @@ const FeatureTourButton = ({ onSeeded }: { onSeeded: () => void }) => {
       onClick={handleClick}
       disabled={busy}
       data-testid="welcome-feature-tour"
-      className="text-obsidianAccentPurple hover:underline disabled:opacity-60 disabled:cursor-progress"
+      className="w-full text-left p-4 rounded-lg border border-obsidianAccentPurple/40 bg-obsidianAccentPurple/10 hover:bg-obsidianAccentPurple/20 hover:border-obsidianAccentPurple transition-colors disabled:opacity-60 disabled:cursor-progress"
     >
-      {busy ? 'Seeding tour…' : 'Feature tour with screenshots'}
+      <div className="flex items-center gap-3">
+        <BookOpenIcon className="w-6 h-6 text-obsidianAccentPurple flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="text-base font-semibold text-obsidianText">
+            {busy ? 'Seeding tour…' : 'Take the feature tour'}
+          </div>
+          <div className="text-xs text-obsidianSecondaryText mt-0.5">
+            Adds a `Feature tour` note + screenshots in `Files/feature-tour/` and opens it — the 30-second walkthrough of what noteser does.
+          </div>
+        </div>
+        {!busy && <span className="text-obsidianAccentPurple text-sm">→</span>}
+      </div>
     </button>
   )
 }
