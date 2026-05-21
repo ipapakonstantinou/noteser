@@ -118,6 +118,13 @@ export const SidebarStack = ({ onRightClick }: Props) => {
   // drop zones (main pin-zone + inter-group zones) so the user can
   // hit them more easily. Window-level dragstart / dragend listener
   // so we react regardless of which child started the drag.
+  //
+  // Defensive: HTML5 dnd can drop dragend if the user releases the
+  // drag outside the browser (window blur, alt-tab, devtools focus,
+  // etc.). When that happens the dragActive flag gets stuck true and
+  // the "↑ PIN TO TOP" bar sticks around forever. We layer extra
+  // clears on `mouseup` and `blur` so any mouse release / window
+  // de-focus also resets it.
   const [dragActive, setDragActive] = useState(false)
   useEffect(() => {
     const onStart = (e: DragEvent) => {
@@ -131,10 +138,17 @@ export const SidebarStack = ({ onRightClick }: Props) => {
     window.addEventListener('dragstart', onStart)
     window.addEventListener('dragend', onEnd)
     window.addEventListener('drop', onEnd)
+    // Belt-and-braces: mouseup outside a drop zone, or the window
+    // losing focus, also clears the flag. Both are guaranteed to
+    // fire even when dragend doesn't.
+    window.addEventListener('mouseup', onEnd)
+    window.addEventListener('blur', onEnd)
     return () => {
       window.removeEventListener('dragstart', onStart)
       window.removeEventListener('dragend', onEnd)
       window.removeEventListener('drop', onEnd)
+      window.removeEventListener('mouseup', onEnd)
+      window.removeEventListener('blur', onEnd)
     }
   }, [])
 
