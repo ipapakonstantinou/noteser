@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-const PREVIEW = 'https://noteser-el5t7g6px-ipapakonstantinous-projects.vercel.app'
+const PREVIEW = 'https://noteser.thetechjon.com'
 
 test.use({ viewport: { width: 1440, height: 900 } })
 
