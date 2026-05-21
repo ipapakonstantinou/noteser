@@ -147,18 +147,42 @@ describe('burn-after-read', () => {
     expect(decoded.burn).toBe(true)
   })
 
-  test('shareLinkBurnKey is deterministic per fragment', () => {
+  test('shareLinkBurnKey is deterministic per fragment', async () => {
     const frag = encodeShareLink('t', 'c', undefined, 'http://x').split('#')[1]
-    expect(shareLinkBurnKey(frag)).toBe(shareLinkBurnKey(frag))
+    expect(await shareLinkBurnKey(frag)).toBe(await shareLinkBurnKey(frag))
     // Different fragment → different key.
     const other = encodeShareLink('t', 'other', undefined, 'http://x').split('#')[1]
-    expect(shareLinkBurnKey(frag)).not.toBe(shareLinkBurnKey(other))
+    expect(await shareLinkBurnKey(frag)).not.toBe(await shareLinkBurnKey(other))
   })
 
-  test('isShareLinkBurned is false until markShareLinkBurned, then true', () => {
+  test('shareLinkBurnKey resists collisions across many distinct fragments', async () => {
+    // SHA-256 truncated to 128 bits makes accidental collisions
+    // astronomically unlikely. The old FNV-1a 32-bit was vulnerable
+    // to ~1-in-4-billion pairwise collisions; this is a smoke test
+    // that distinct inputs reliably yield distinct keys.
+    const keys = new Set<string>()
+    for (let i = 0; i < 500; i++) {
+      const frag = encodeShareLink(`t${i}`, `c${i}`, undefined, 'http://x').split('#')[1]
+      keys.add(await shareLinkBurnKey(frag))
+    }
+    expect(keys.size).toBe(500)
+  })
+
+  test('shareLinkBurnKey produces a stable, URL-safe localStorage key', async () => {
+    const key = await shareLinkBurnKey('hello-fragment')
+    expect(key.startsWith('noteser-share-burned-')).toBe(true)
+    // The suffix is base64url (no +, /, =), short enough to fit in
+    // any localStorage budget.
+    const suffix = key.slice('noteser-share-burned-'.length)
+    expect(suffix).not.toMatch(/[+/=]/)
+    expect(suffix.length).toBeGreaterThan(0)
+    expect(suffix.length).toBeLessThan(32)
+  })
+
+  test('isShareLinkBurned is false until markShareLinkBurned, then true', async () => {
     const frag = 'abc123'
-    expect(isShareLinkBurned(frag)).toBe(false)
-    markShareLinkBurned(frag)
-    expect(isShareLinkBurned(frag)).toBe(true)
+    expect(await isShareLinkBurned(frag)).toBe(false)
+    await markShareLinkBurned(frag)
+    expect(await isShareLinkBurned(frag)).toBe(true)
   })
 })
