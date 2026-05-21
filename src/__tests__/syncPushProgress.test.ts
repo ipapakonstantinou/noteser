@@ -39,7 +39,7 @@ jest.mock('../stores/settingsStore', () => ({
   useSettingsStore: { getState: () => ({ localGitignoreOverlay: '' }) },
 }))
 
-const REPO: SyncRepo = { owner: 'o', name: 'r', branch: 'main' }
+const REPO: SyncRepo = { owner: 'o', name: 'r', branch: 'main', isPrivate: true }
 
 function makeNote(id: string, title: string, content: string): Note {
   return {
@@ -47,7 +47,6 @@ function makeNote(id: string, title: string, content: string): Note {
     title,
     content,
     folderId: null,
-    tags: [],
     createdAt: 0,
     updatedAt: 0,
     isDeleted: false,

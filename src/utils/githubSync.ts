@@ -26,6 +26,42 @@ import {
   getAttachmentTombstones,
   clearAttachmentTombstones,
 } from './attachments'
+import { encryptNoteContent, decryptNoteContent, isEncryptedContent } from './vaultCrypto'
+import { getVaultKey, VaultLockedError } from './vaultKey'
+
+// Encrypt note body for push, if the vault is unlocked AND encryption
+// is enabled at the settings layer. Returns the original content when
+// encryption is off — keeps the call sites tidy and ensures push works
+// in the default (unencrypted) configuration.
+async function maybeEncryptForPush(content: string): Promise<string> {
+  let enabled = false
+  try {
+    const { useSettingsStore } = await import('@/stores/settingsStore')
+    enabled = useSettingsStore.getState().vaultEncryptionEnabled
+  } catch {
+    // Test envs without the store — treat as disabled.
+  }
+  if (!enabled) return content
+  const key = getVaultKey()
+  if (!key) {
+    // Encryption is on but the user hasn't unlocked. Bail with a typed
+    // error the UI can catch to prompt for the passphrase.
+    throw new VaultLockedError('Push aborted — vault is encrypted but locked. Unlock to continue.')
+  }
+  return await encryptNoteContent(content, key)
+}
+
+// Decrypt remote note content on pull. Pass-through when the content
+// isn't an encrypted envelope. Throws VaultLockedError when an
+// envelope is present but the user hasn't unlocked yet — caller catches.
+async function maybeDecryptFromPull(content: string): Promise<string> {
+  if (!isEncryptedContent(content)) return content
+  const key = getVaultKey()
+  if (!key) {
+    throw new VaultLockedError('Pull skipped — remote blob is encrypted but vault is locked.')
+  }
+  return await decryptNoteContent(content, key)
+}
 
 export interface SyncResult {
   unchanged: boolean
@@ -351,10 +387,15 @@ export async function pullFromGitHub(input: {
       continue
     }
 
-    // Fetch the remote content lazily — only when we need it.
+    // Fetch the remote content lazily — only when we need it. bke1:
+    // decrypt the envelope when encryption is on; throws VaultLockedError
+    // upstream if the user hasn't unlocked.
     let remoteContent: string | null = null
     const loadRemote = async () => {
-      if (remoteContent === null) remoteContent = await getBlobContent(token, owner, name, remoteSha)
+      if (remoteContent === null) {
+        const raw = await getBlobContent(token, owner, name, remoteSha)
+        remoteContent = await maybeDecryptFromPull(raw)
+      }
       return remoteContent
     }
 
@@ -395,7 +436,8 @@ export async function pullFromGitHub(input: {
       let autoMerged: string | null = null
       if (lastPushed) {
         try {
-          const ancestor = await getBlobContent(token, owner, name, lastPushed)
+          const ancestorRaw = await getBlobContent(token, owner, name, lastPushed)
+          const ancestor = await maybeDecryptFromPull(ancestorRaw)
           const merged = threeWayMerge(ancestor, localContent, content)
           if (merged.ok) autoMerged = merged.merged
         } catch {
@@ -671,8 +713,12 @@ export async function pullFromZipball(input: {
     const path = rel.slice(slashIdx + 1)
 
     if (path.endsWith('.md')) {
-      const content = await file.async('string')
-      const remoteSha = await gitBlobSha(content)
+      const raw = await file.async('string')
+      // bke1: zipball blobs were written in the encrypted wire form. We
+      // compute the remoteSha against that wire form (matches what
+      // GitHub stored) but feed parseNote the decrypted body.
+      const remoteSha = await gitBlobSha(raw)
+      const content = await maybeDecryptFromPull(raw)
       const parsed = parseNote(content)
 
       classifications.push({
@@ -878,9 +924,13 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   const noteBlobPlan: NoteBlobPlan[] = []
   for (const [path, { content, note }] of desired) {
     if (pushMatcher.isIgnored(path)) continue
-    const localSha = await gitBlobSha(content)
+    // bke1: when encryption is enabled, the wire form is what we hash
+    // and upload. plaintext stays available for the editor's gutter
+    // snapshot (it compares against the unencrypted body).
+    const wireContent = await maybeEncryptForPush(content)
+    const localSha = await gitBlobSha(wireContent)
     const remoteSha = remoteTree.get(path)
-    noteBlobPlan.push({ path, content, note, localSha, remoteSha })
+    noteBlobPlan.push({ path, content: wireContent, note, localSha, remoteSha })
   }
   const noteBlobsToUpload = noteBlobPlan.filter(p => p.remoteSha !== p.localSha && !uploadedShas.has(p.localSha))
   const noteBlobsCached   = noteBlobPlan.filter(p => p.remoteSha !== p.localSha &&  uploadedShas.has(p.localSha))
@@ -902,14 +952,20 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     if (plan.remoteSha) updated++; else created++
   }
   // Pure-skip entries (remote has this SHA): no entry, no upload, but the
-  // note's path metadata may still need an update.
+  // note's path metadata may still need an update. The lastPushedSnapshot
+  // gets the PLAINTEXT body (gutter compares against unencrypted text).
   for (const plan of noteBlobPlan) {
     const skipped = plan.remoteSha === plan.localSha
     const finalSha = skipped ? plan.remoteSha! : plan.localSha
     if (skipped && (plan.note.gitPath !== plan.path || plan.note.gitLastPushedSha !== finalSha)) {
       pathUpdates.push({ noteId: plan.note.id, gitPath: plan.path, gitLastPushedSha: finalSha })
     }
-    lastPushedToSnapshot.push({ noteId: plan.note.id, content: plan.content })
+    // Gutter snapshot uses the plaintext, not the wire form — look it up
+    // from `desired` rather than `plan.content` (which is the wire form).
+    const desiredEntry = desired.get(plan.path)
+    if (desiredEntry) {
+      lastPushedToSnapshot.push({ noteId: plan.note.id, content: desiredEntry.content })
+    }
   }
 
   // Upload the genuinely-changed blobs.

@@ -169,6 +169,22 @@ export interface SettingsState {
   // re-uploading the file).
   vaultSettingsLastPushedHash: string
 
+  // ── Backup encryption (bke1) ──────────────────────────────────────────
+  // When true, note `.md` bodies are AES-GCM encrypted before push and
+  // decrypted on pull. The DERIVED KEY is held only in memory (see
+  // src/utils/vaultKey.ts); the passphrase is never persisted anywhere.
+  // The 16-byte salt is shared across devices so the same passphrase
+  // derives the same key everywhere.
+  //
+  // VAULT-SYNCED so a fresh client picking up the repo knows it needs to
+  // prompt for a passphrase rather than silently treating encrypted
+  // bodies as garbage markdown.
+  vaultEncryptionEnabled: boolean
+  // Base64-encoded 16-byte salt for PBKDF2. Generated once per vault on
+  // first enabling; never rotated. null = encryption disabled OR the
+  // user hasn't completed first-time setup yet.
+  vaultEncryptionSalt: string | null
+
   // ── Custom theme (th3m) ────────────────────────────────────────────────
   // Per-token color overrides applied as CSS variables on :root at
   // runtime. Keys come from THEME_TOKEN_KEYS; values are any valid
@@ -242,6 +258,10 @@ export interface SettingsState {
   setLocalGitignoreOverlay: (text: string) => void
   setVaultGitignoreDraft: (text: string | null) => void
   setVaultGitignoreRemoteSnapshot: (text: string | null) => void
+  // Enable encryption with a fresh salt; clears salt + flag when
+  // disabling. The derived key lives in `vaultKey.ts` — this setter
+  // ONLY touches the persisted flag + salt.
+  setVaultEncryption: (enabled: boolean, saltBase64: string | null) => void
   setShareDefaultExpiryDays: (days: number) => void
   setShareDefaultBurn: (value: boolean) => void
   setThemeOverrides: (overrides: Record<string, string>) => void
@@ -283,6 +303,11 @@ export const VAULT_SETTING_KEYS = [
   'betaEnabled',
   'betaFlags',
   'themeOverrides',
+  // Encryption flag + salt are vault-synced so a fresh device picks
+  // them up from the repo's settings.json and knows to unlock the vault
+  // before applying remote notes.
+  'vaultEncryptionEnabled',
+  'vaultEncryptionSalt',
 ] as const
 
 export type VaultSettingKey = (typeof VAULT_SETTING_KEYS)[number]
@@ -329,6 +354,8 @@ const DEFAULTS = {
   shareDefaultExpiryDays: 0,
   shareDefaultBurn: false,
   themeOverrides: {} as Record<string, string>,
+  vaultEncryptionEnabled: false,
+  vaultEncryptionSalt: null as string | null,
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -390,6 +417,8 @@ export const useSettingsStore = create<SettingsState>()(
         setLocalGitignoreOverlay: (localGitignoreOverlay) => set({ localGitignoreOverlay }),
         setVaultGitignoreDraft: (vaultGitignoreDraft) => set({ vaultGitignoreDraft }),
         setVaultGitignoreRemoteSnapshot: (vaultGitignoreRemoteSnapshot) => set({ vaultGitignoreRemoteSnapshot }),
+        setVaultEncryption: (vaultEncryptionEnabled, vaultEncryptionSalt) =>
+          setVault({ vaultEncryptionEnabled, vaultEncryptionSalt }),
         setShareDefaultExpiryDays: (shareDefaultExpiryDays) => set({ shareDefaultExpiryDays }),
         setShareDefaultBurn: (shareDefaultBurn) => set({ shareDefaultBurn }),
         // Theme is part of the vault-synced slice — going through
