@@ -33,20 +33,7 @@ _Nothing right now — promote from Next when starting work._
 
 ## Parity gaps documented but not fixed
 
-Surfaced by the qa-tester subagent's two parity sweeps (23 + 17 specs).
-Each one currently passes by asserting the existing (non-Obsidian)
-behaviour — flipping any of these is a small, scoped commit:
-
-- **Ctrl+W** doesn't close the active tab (Obsidian binding). × button works.
-- **Ctrl+,** doesn't open Settings (Obsidian binding). Command palette works.
-- **Double-clicking** a note row doesn't trigger inline rename. Context-
-  menu → Rename works.
-- **Right-clicking a deleted note** doesn't show "Restore" — only the
-  dedicated Trash view has that.
-- `splitTabRight` removes the empty left pane on the only-tab split.
-  Obsidian keeps the empty pane visible.
-- The `Modal` component lacks `role="dialog"` — small a11y gap; screen
-  readers don't announce noteser modals as dialogs.
+_All 6 closed 2026-05-21 in commit d16a9e7 — see Recently shipped._
 
 ## User feedback pending clarification
 
@@ -104,6 +91,23 @@ A lot landed across these three days — grouped by area.
   pinned mini-strip to reorder; insertion line shown at drop target.
 - **`dragActive` cleanup** — defensive `mouseup` + `blur` listeners
   so the drag state can't get stuck visible after an external dragend.
+
+### Obsidian-parity polish batch (2026-05-21)
+6 small flippable gaps closed in one feat branch — first run of the
+new branch-per-feature workflow with preview smoke + dev → main
+promotion.
+
+- **Ctrl+W** closes the active tab (data-driven shortcut).
+- **Ctrl+,** opens Settings (data-driven shortcut).
+- **`role="dialog"` + `aria-modal`** added to the shared Modal —
+  screen readers now announce all noteser modals correctly.
+- **Restore** option appears in the right-click context menu on a
+  deleted note (above the standard items).
+- **Double-click on a note row** triggers inline rename via
+  `uiStore.requestRename` (was opening pinned, which is now
+  exclusive to right-click → Pin / auto-promote-on-typing).
+- **`splitTabRight`** keeps the empty left pane visible after
+  splitting the only tab (Obsidian behaviour).
 
 ### QA-found bug fixes (2026-05-21)
 - **Wikilinks broken in preview** — react-markdown v10's
