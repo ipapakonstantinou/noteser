@@ -19,6 +19,7 @@ import {
   useSettingsStore,
 } from '@/stores'
 import { STARTER_VAULTS, seedStarterVault, type StarterVault } from '@/utils/starterVaults'
+import { seedFeatureTourNote } from '@/utils/featureTourNote'
 
 // VS Code-style "Welcome" tab content. Replaces the old OnboardingModal
 // popup with an in-workspace landing view that feels like a note —
@@ -186,15 +187,15 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
             <li className="flex items-start gap-2">
               <BookOpenIcon className="w-4 h-4 mt-0.5 text-obsidianSecondaryText" />
               <span className="text-obsidianText">
-                <a
-                  href="https://github.com/ipapakonstantinou/noteser/blob/main/docs/demo.md"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
+                  onClick={() => { seedFeatureTourNote(); closeTab(tabId) }}
+                  data-testid="welcome-feature-tour"
                   className="text-obsidianAccentPurple hover:underline"
                 >
                   Feature tour with screenshots
-                </a>
-                <span className="text-obsidianSecondaryText"> — what&rsquo;s here and why.</span>
+                </button>
+                <span className="text-obsidianSecondaryText"> — what&rsquo;s here and why. Opens as a note in your vault.</span>
               </span>
             </li>
             <li className="flex items-start gap-2">
