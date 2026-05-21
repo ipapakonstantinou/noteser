@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180">
+  <!-- Apple touch icon variant — 180×180, larger rounded radius +
+       proportionally larger "N" so it reads on iOS home screens. -->
+  <rect width="180" height="180" rx="36" fill="#1b1b1b"/>
+  <path
+    fill="#8b5cf6"
+    d="M50 40 h19 l40 65 V40 h21 v100 h-19 l-40-65 V140 H50 z"
+  />
+</svg>

@@ -261,7 +261,45 @@ function GeneralPanel() {
           />
         </Field>
       </div>
+
+      {/* First-run / onboarding. Lets users re-open the Welcome tab
+          after they've dismissed it — the tab no longer auto-opens
+          once onboardingShown=true. */}
+      <div className="pt-3 mt-3 border-t border-obsidianBorder space-y-3">
+        <div className="text-xs uppercase tracking-wide text-obsidianSecondaryText">
+          First run
+        </div>
+        <ShowWelcomeButton />
+      </div>
     </div>
+  )
+}
+
+// Small action: open (or focus, if already open) the Welcome tab.
+// Closes the Settings modal afterwards so the user lands on the tab.
+function ShowWelcomeButton() {
+  const closeModal = useUIStore(s => s.closeModal)
+  return (
+    <Field
+      label="Show welcome tab"
+      description="Reopens the Welcome tab with the feature-tour link, starter vaults, and getting-started shortcuts."
+    >
+      <button
+        type="button"
+        onClick={() => {
+          // Avoid a static import cycle (settings panel ↔ workspace store
+          // are loaded together). Dynamic import is fine — single click.
+          import('@/stores/workspaceStore').then(({ useWorkspaceStore }) => {
+            useWorkspaceStore.getState().openWelcome()
+            closeModal()
+          })
+        }}
+        data-testid="settings-show-welcome"
+        className="px-3 py-1.5 text-sm rounded border border-obsidianBorder bg-obsidianDarkGray text-obsidianText hover:border-obsidianAccentPurple hover:bg-obsidianHighlight/40 transition-colors"
+      >
+        Show welcome tab
+      </button>
+    </Field>
   )
 }
 

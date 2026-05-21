@@ -7,10 +7,10 @@ export const metadata: Metadata = {
   keywords: ['notes', 'markdown', 'collaborative', 'productivity', 'writing'],
   authors: [{ name: 'Noteser' }],
   manifest: '/manifest.json',
-  icons: {
-    icon: '/favicon.ico',
-    apple: '/apple-touch-icon.png'
-  }
+  // No manual `icons` block — Next.js 15 auto-discovers
+  // src/app/icon.svg + src/app/apple-icon.svg and emits the right
+  // <link> tags automatically.
+  // https://nextjs.org/docs/app/api-reference/file-conventions/metadata/app-icons
 }
 
 export const viewport: Viewport = {

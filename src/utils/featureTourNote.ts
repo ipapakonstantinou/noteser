@@ -227,6 +227,15 @@ is centralised:
   folders, tabs between panes, panels between strips
 - **Keyboard-first** — Ctrl+K search, Alt+N new note, Alt+Shift+L
   toggle task, customisable shortcut overrides
+
+---
+
+## Coming back to this tour
+
+Closed the Welcome tab and want it back? Go to **Settings → General →
+"Show welcome tab"** to reopen it any time. You can also pin the
+Feature tour note (right-click in the sidebar → Pin) so it stays at
+the top of your file list.
 `
 }
 
