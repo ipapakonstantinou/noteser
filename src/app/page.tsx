@@ -251,7 +251,7 @@ export default function Home() {
   }, [])
 
   return (
-    <div className="flex h-screen w-screen bg-obsidianBlack text-obsidianText overflow-hidden">
+    <div className="flex h-dvh w-screen bg-obsidianBlack text-obsidianText overflow-hidden">
       {/* Ribbon */}
       <div className="flex-none">
         <Ribbon />
