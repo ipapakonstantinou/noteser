@@ -138,12 +138,12 @@ export const MobileTopBar = () => {
                   icon={activeNote.isPinned
                     ? <StarIconSolid className="w-4 h-4 text-yellow-500" />
                     : <StarIcon className="w-4 h-4" />}
-                  label={activeNote.isPinned ? 'Unpin note' : 'Pin note'}
+                  label={activeNote.isPinned ? 'Unpin' : 'Pin'}
                   onClick={() => { togglePinNote(activeNote.id); setMenuOpen(false) }}
                 />
                 <MenuItem
                   icon={<PencilIcon className="w-4 h-4" />}
-                  label="Rename note"
+                  label="Rename"
                   onClick={() => {
                     requestRename({ type: 'note', id: activeNote.id })
                     setMenuOpen(false)
