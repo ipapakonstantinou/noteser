@@ -727,6 +727,8 @@ function GitHubPanel() {
   const setAutoSyncOnStart = useSettingsStore(s => s.setAutoSyncOnStart)
   const setPullOnlyOnStartup = useSettingsStore(s => s.setPullOnlyOnStartup)
   const setAutoSyncIntervalMinutes = useSettingsStore(s => s.setAutoSyncIntervalMinutes)
+  const defaultCommitMessage = useSettingsStore(s => s.defaultCommitMessage)
+  const setDefaultCommitMessage = useSettingsStore(s => s.setDefaultCommitMessage)
   const settingsFolderPath = useSettingsStore(s => s.settingsFolderPath)
   const setSettingsFolderPath = useSettingsStore(s => s.setSettingsFolderPath)
 
@@ -773,6 +775,17 @@ function GitHubPanel() {
           />
           <span className="text-sm text-obsidianMuted">min</span>
         </div>
+      </Field>
+      <Field
+        label="Default commit message"
+        description='Pre-fills the Source Control commit textarea. Supports {{date}} which is substituted with today&apos;s YYYY-MM-DD at commit time. Vault-synced — any device sharing this repo gets the same template.'
+      >
+        <SettingsTextInput
+          value={defaultCommitMessage}
+          onCommit={setDefaultCommitMessage}
+          placeholder="Sync from Noteser ({{date}})"
+          mono
+        />
       </Field>
       <Field
         label="Settings folder"
