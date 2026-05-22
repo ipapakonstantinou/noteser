@@ -180,14 +180,19 @@ const RecentCommits = () => {
               href={c.htmlUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 px-1 py-0.5 text-xs text-obsidianText hover:bg-obsidianHighlight/40 rounded group"
-              title={c.message}
+              className="flex items-center gap-1.5 px-1 py-0.5 text-xs text-obsidianText hover:bg-obsidianHighlight/40 rounded"
+              // Full commit subject in the tooltip — the row truncates
+              // at ~20 chars in the narrow sidebar.
+              title={`${c.shortSha} · ${c.authorName} · ${c.message || '(no message)'}`}
               data-testid="recent-commit-row"
             >
               <code className="flex-none text-[10px] text-obsidianAccentPurple font-mono">{c.shortSha}</code>
               <span className="flex-1 truncate text-obsidianSecondaryText">{c.message || '(no message)'}</span>
               <span className="flex-none text-[10px] text-obsidianSecondaryText">{formatRelativeAuthorDate(c.authorDate)}</span>
-              <ArrowTopRightOnSquareIcon className="w-3 h-3 flex-none text-obsidianSecondaryText opacity-0 group-hover:opacity-100 transition-opacity" />
+              {/* Always-visible external-link icon — hover-only doesn't
+                  work on touch devices, where the polite affordance
+                  matters most. */}
+              <ArrowTopRightOnSquareIcon className="w-3 h-3 flex-none text-obsidianSecondaryText" />
             </a>
           ))}
         </div>

@@ -40,6 +40,17 @@ export const FileHistoryModal = () => {
   const [contentLoading, setContentLoading] = useState(false)
   const [contentError, setContentError] = useState<string | null>(null)
   const [restoring, setRestoring] = useState(false)
+  // Two-step restore: first click sets `confirming`, second click in
+  // the now-armed button actually applies. Re-arms after 5s of no
+  // second-click so a forgotten state doesn't blast the user's
+  // content on their next click. Modal-internal because a native
+  // confirm() gets hidden behind the modal on iOS.
+  const [confirming, setConfirming] = useState(false)
+  useEffect(() => {
+    if (!confirming) return
+    const t = setTimeout(() => setConfirming(false), 5000)
+    return () => clearTimeout(t)
+  }, [confirming])
 
   // Reset state every time the modal re-opens for a fresh note.
   useEffect(() => {
@@ -132,15 +143,21 @@ export const FileHistoryModal = () => {
 
   const restore = () => {
     if (selectedContent == null) return
+    if (!confirming) {
+      setConfirming(true)
+      return
+    }
     setRestoring(true)
     try {
       // Update the local content. Push on next sync will upload the
       // restored version as a new commit — the history grows, the old
-      // versions stay accessible.
+      // versions stay accessible. Ctrl+Z in the editor undoes a
+      // mistaken restore.
       updateNote(note.id, { content: selectedContent })
       closeModal()
     } finally {
       setRestoring(false)
+      setConfirming(false)
     }
   }
 
@@ -231,9 +248,14 @@ export const FileHistoryModal = () => {
               onClick={restore}
               disabled={selectedContent == null || contentLoading || restoring}
               data-testid="file-history-restore"
+              title={confirming ? 'Click again to confirm — this overwrites local content' : undefined}
             >
               <ArrowUturnLeftIcon className="w-4 h-4" />
-              {restoring ? 'Restoring…' : 'Restore this version'}
+              {restoring
+                ? 'Restoring…'
+                : confirming
+                  ? 'Click again to confirm'
+                  : 'Restore this version'}
             </Button>
           </div>
         </div>

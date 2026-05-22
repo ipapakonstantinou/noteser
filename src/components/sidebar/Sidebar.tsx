@@ -22,6 +22,7 @@ function relativeTime(ts: number): string {
 }
 import { useHydration, useViewport } from '@/hooks'
 import { SidebarStack } from './SidebarStack'
+import { FolderTree } from './FolderTree'
 import { ContextMenu } from './ContextMenu'
 import type { ContextMenuState } from '@/types'
 
@@ -115,9 +116,16 @@ export const Sidebar = () => {
         </button>
       </div>
 
-      {/* Content — stacked sidebar (files tree + collapsible mini-panels) */}
+      {/* Content. Desktop gets the full SidebarStack (files tree +
+          collapsible mini-panels for outline / source-control /
+          search / bookmarks / related). Mobile gets just the file
+          tree — the panel strip on a phone is noise the user can't
+          read, and the MobileTopBar's overflow menu already covers
+          the nav actions (All notes / Recent / Tags). */}
       {isExpanded && (
-        <SidebarStack onRightClick={handleRightClick} />
+        isMobile
+          ? <div className="flex-1 min-h-0 overflow-y-auto p-1"><FolderTree onRightClick={handleRightClick} /></div>
+          : <SidebarStack onRightClick={handleRightClick} />
       )}
 
       {/* Footer */}
