@@ -126,6 +126,9 @@ export interface SettingsState {
   pinnedPanels: string[][]
   // See `DEFAULTS.collapsedPinnedGroups`. Keys are `group.join(',')`.
   collapsedPinnedGroups: string[]
+  // Sidebar tab ids hidden via the right-click context menu. Filtered
+  // out at render time in both strips. Restored via Settings → Sidebar.
+  hiddenSidebarTabs: string[]
 
   // ── Onboarding ─────────────────────────────────────────────────────────
   // True once the first-run onboarding modal has been dismissed (either by
@@ -263,6 +266,16 @@ export interface SettingsState {
   setSidebarTabOrder: (order: string[]) => void
   setPinnedPanels: (panels: string[][]) => void
   togglePinnedGroupCollapsed: (key: string) => void
+  // Adds an id to `hiddenSidebarTabs` if not present. The tab disappears
+  // from both strips immediately. Auto-unpins as a side effect — keeping
+  // a hidden tab in `pinnedPanels` would resurrect it the next time the
+  // user shows it, which is fine, but it would leak through the pinned-
+  // group key (`group.join(',')`) and reset collapse state. Cleaner to
+  // detach.
+  hideSidebarTab: (id: string) => void
+  // Removes from `hiddenSidebarTabs`. The tab rejoins the bottom strip
+  // in its persisted `sidebarTabOrder` slot (or default order if absent).
+  showSidebarTab: (id: string) => void
   setOnboardingShown: (value: boolean) => void
   setSettingsFolderPath: (path: string) => void
   setVaultSettingsLastPushedHash: (hash: string) => void
@@ -362,6 +375,11 @@ const DEFAULTS = {
   // (the key no longer matches), so collapse state resets on pin/unpin
   // — that's intentional, the new group is a new entity.
   collapsedPinnedGroups: [] as string[],
+  // Sidebar tab ids the user has hidden via the right-click context
+  // menu. Hidden tabs are filtered out of BOTH the bottom strip and
+  // any pinned mini-strip at render time. They can be restored via
+  // Settings → Sidebar. Default empty.
+  hiddenSidebarTabs: [] as string[],
   onboardingShown: false,
   settingsFolderPath: '.noteser',
   vaultSettingsUpdatedAt: 0,
@@ -437,6 +455,23 @@ export const useSettingsStore = create<SettingsState>()(
             else set_.add(key)
             return { collapsedPinnedGroups: Array.from(set_) }
           }),
+        hideSidebarTab: (id) =>
+          set((state) => {
+            if (state.hiddenSidebarTabs.includes(id)) return state
+            // Auto-unpin: remove the id from any pinned group it lives
+            // in, then drop empty groups. Keeps pinnedPanels honest.
+            const nextPinned = state.pinnedPanels
+              .map(g => g.filter(p => p !== id))
+              .filter(g => g.length > 0)
+            return {
+              hiddenSidebarTabs: [...state.hiddenSidebarTabs, id],
+              pinnedPanels: nextPinned,
+            }
+          }),
+        showSidebarTab: (id) =>
+          set((state) => ({
+            hiddenSidebarTabs: state.hiddenSidebarTabs.filter(t => t !== id),
+          })),
         setOnboardingShown: (onboardingShown) => set({ onboardingShown }),
         setSettingsFolderPath: (path) => set({ settingsFolderPath: path }),
         setVaultSettingsLastPushedHash: (hash) => set({ vaultSettingsLastPushedHash: hash }),

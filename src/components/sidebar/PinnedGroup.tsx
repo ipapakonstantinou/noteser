@@ -32,10 +32,13 @@ export interface PinnedGroupProps {
   // Intra-strip reorder — passes a fresh id array for THIS group.
   onReorder: (newIds: SidebarTabId[]) => void
   onRightClick: PanelRightClick
+  // Right-click on a mini-strip icon — routed to SidebarStack so the
+  // TabContextMenu is rendered at a single instance level.
+  onTabContextMenu: (id: SidebarTabId, e: React.MouseEvent) => void
 }
 
 export const PinnedGroup = ({
-  group, onUnpin, onAddToThisGroup, onReorder, onRightClick,
+  group, onUnpin, onAddToThisGroup, onReorder, onRightClick, onTabContextMenu,
 }: PinnedGroupProps) => {
   const [activeTab, setActiveTab] = useState<SidebarTabId>(group[0])
   // If the group composition changed and the previous active tab is
@@ -57,6 +60,7 @@ export const PinnedGroup = ({
         onUnpin={onUnpin}
         onAddToThisGroup={onAddToThisGroup}
         onReorder={onReorder}
+        onTabContextMenu={onTabContextMenu}
         leadingSlot={
           <button
             type="button"
