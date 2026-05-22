@@ -569,8 +569,100 @@ function GitHubPanel() {
       </Field>
       <VaultGitignoreField />
       <GitignoreOverlayField />
+      <VaultEncryptionField />
       <ResetToRemoteField />
     </div>
+  )
+}
+
+// Vault encryption controls. Phase B of the backup-encryption feature.
+// Surfaces three buttons depending on current state:
+//   - Disabled:          [Enable encryption…]
+//   - Enabled + locked:  [Unlock…] + [Disable encryption…]
+//   - Enabled + unlocked: [Lock now] + [Disable encryption…]
+//
+// Subscribes to vaultKey's lock listener so the "locked vs unlocked"
+// label flips live when sync unlocks the vault behind the scenes (or
+// when a remote salt rotation invalidates the in-memory key).
+function VaultEncryptionField() {
+  const enabled = useSettingsStore(s => s.vaultEncryptionEnabled)
+  const openModal = useUIStore(s => s.openModal)
+  const [unlocked, setUnlocked] = useState(false)
+
+  useEffect(() => {
+    // Dynamic import keeps the settings panel free of a hard
+    // vault-key dep at module load (helps SSR + keeps the
+    // Settings → General panel zero-cost).
+    let cancelled = false
+    let unsub: (() => void) | undefined
+    void (async () => {
+      const { isVaultUnlocked, onVaultLockChange } = await import('@/utils/vaultKey')
+      if (cancelled) return
+      setUnlocked(isVaultUnlocked())
+      unsub = onVaultLockChange(() => setUnlocked(isVaultUnlocked()))
+    })()
+    return () => {
+      cancelled = true
+      unsub?.()
+    }
+  }, [])
+
+  return (
+    <Field
+      label="Vault encryption"
+      description="AES-GCM-encrypt note bodies before pushing to GitHub. Passphrase is never persisted — there is no recovery if you forget it."
+    >
+      {!enabled ? (
+        <button
+          type="button"
+          onClick={() => openModal({ type: 'vault-encryption', data: { mode: 'enable' } })}
+          className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors"
+          data-testid="settings-encryption-enable"
+        >
+          Enable encryption…
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <div className="text-xs text-obsidianSecondaryText" data-testid="settings-encryption-status">
+            Status: {unlocked
+              ? <span className="text-emerald-300">Enabled and unlocked</span>
+              : <span className="text-amber-300">Enabled, vault is locked</span>}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {unlocked ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  const { lockVault } = await import('@/utils/vaultKey')
+                  lockVault()
+                }}
+                className="px-3 py-1.5 text-sm border border-obsidianBorder text-obsidianText rounded hover:bg-obsidianHighlight transition-colors"
+                data-testid="settings-encryption-lock"
+              >
+                Lock now
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => openModal({ type: 'vault-encryption', data: { mode: 'unlock' } })}
+                className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors"
+                data-testid="settings-encryption-unlock"
+              >
+                Unlock…
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => openModal({ type: 'vault-encryption', data: { mode: 'confirm-disable' } })}
+              className="px-3 py-1.5 text-sm border border-red-900/40 text-red-300 rounded hover:bg-red-900/20 transition-colors"
+              data-testid="settings-encryption-disable"
+            >
+              Disable encryption…
+            </button>
+          </div>
+        </div>
+      )}
+    </Field>
   )
 }
 

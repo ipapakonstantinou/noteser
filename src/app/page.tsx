@@ -19,6 +19,7 @@ import {
   VaultSettingsConflictModal,
   FileHistoryModal,
   PublishGistModal,
+  VaultEncryptionModal,
 } from '@/components/modals'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useKeyboardShortcuts, useHydration, useAutoSync, useAutoEmbedNotes, useApplyTheme, useViewport } from '@/hooks'
@@ -115,6 +116,23 @@ export default function Home() {
   // colors to :root CSS variables so Tailwind utilities pick them up
   // live. No-op when themeOverrides is empty.
   useApplyTheme()
+
+  // Lock-on-startup: if the vault has encryption enabled but the
+  // in-memory key isn't loaded (every page refresh re-locks by
+  // design — the key lives only in vaultKey's closure), prompt the
+  // user to unlock before the first auto-sync runs.
+  useEffect(() => {
+    if (!hydrated) return
+    const enabled = useSettingsStore.getState().vaultEncryptionEnabled
+    if (!enabled) return
+    // Dynamic import so the desktop bundle doesn't eagerly load the
+    // crypto module for every user.
+    void import('@/utils/vaultKey').then(({ isVaultUnlocked }) => {
+      if (!isVaultUnlocked()) {
+        useUIStore.getState().openModal({ type: 'vault-encryption', data: { mode: 'unlock' } })
+      }
+    })
+  }, [hydrated])
 
   // First-run onboarding: show the starter-vault picker only for genuine
   // first-run users — no notes, no GitHub configured, and the user hasn't
@@ -298,6 +316,7 @@ export default function Home() {
       <VaultSettingsConflictModal />
       <FileHistoryModal />
       <PublishGistModal />
+      <VaultEncryptionModal />
       <ResetConfirmModal
         isOpen={showResetModal}
         hasUnsynced={resetHasUnsynced}

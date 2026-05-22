@@ -9,7 +9,7 @@
 // settings.json). This module mediates between user-facing
 // "passphrase" and the WebCrypto key the sync layer needs.
 
-import { deriveKey, saltFromString } from './vaultCrypto'
+import { deriveKey, saltFromString, verifyCanary } from './vaultCrypto'
 import type { SettingsState } from '@/stores/settingsStore'
 
 interface KeyHolder {
@@ -50,6 +50,32 @@ export async function unlockVault(passphrase: string, saltBase64: string): Promi
   if (!saltBase64) return false
   const salt = saltFromString(saltBase64)
   const key = await deriveKey(passphrase, salt)
+  holder.key = key
+  holder.saltKey = saltBase64
+  notify()
+  return true
+}
+
+/**
+ * Like `unlockVault` but VERIFIES the passphrase against a stored canary
+ * before committing the key to the in-memory holder. This is what the
+ * unlock UI should call — a wrong passphrase returns false (caller shows
+ * "wrong passphrase, try again") instead of silently caching a bad key
+ * that explodes on the next pull.
+ *
+ * `canary` is the encrypted blob persisted at enable-time (see
+ * `makeCanary` in vaultCrypto). Pass settings.vaultEncryptionCanary.
+ */
+export async function verifyAndUnlockVault(
+  passphrase: string,
+  saltBase64: string,
+  canary: string | null,
+): Promise<boolean> {
+  if (!saltBase64) return false
+  const salt = saltFromString(saltBase64)
+  const key = await deriveKey(passphrase, salt)
+  const ok = await verifyCanary(canary, key)
+  if (!ok) return false
   holder.key = key
   holder.saltKey = saltBase64
   notify()
