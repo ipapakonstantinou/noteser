@@ -196,6 +196,13 @@ export interface SettingsState {
   // first enabling; never rotated. null = encryption disabled OR the
   // user hasn't completed first-time setup yet.
   vaultEncryptionSalt: string | null
+  // Canary blob — a known plaintext encrypted with the derived key at
+  // enable time. The unlock UI decrypts this with the passphrase the
+  // user types and checks the result matches; if not, the passphrase
+  // was wrong. Without a canary we'd only detect "wrong passphrase" on
+  // the next pull's first decrypt, which is laggy and confusing.
+  // Vault-synced so any device opening the vault can verify locally.
+  vaultEncryptionCanary: string | null
 
   // ── Custom theme (th3m) ────────────────────────────────────────────────
   // Per-token color overrides applied as CSS variables on :root at
@@ -285,7 +292,7 @@ export interface SettingsState {
   // Enable encryption with a fresh salt; clears salt + flag when
   // disabling. The derived key lives in `vaultKey.ts` — this setter
   // ONLY touches the persisted flag + salt.
-  setVaultEncryption: (enabled: boolean, saltBase64: string | null) => void
+  setVaultEncryption: (enabled: boolean, saltBase64: string | null, canary: string | null) => void
   setShareDefaultExpiryDays: (days: number) => void
   setShareDefaultBurn: (value: boolean) => void
   setThemeOverrides: (overrides: Record<string, string>) => void
@@ -332,6 +339,7 @@ export const VAULT_SETTING_KEYS = [
   // before applying remote notes.
   'vaultEncryptionEnabled',
   'vaultEncryptionSalt',
+  'vaultEncryptionCanary',
 ] as const
 
 export type VaultSettingKey = (typeof VAULT_SETTING_KEYS)[number]
@@ -392,6 +400,7 @@ const DEFAULTS = {
   themeOverrides: {} as Record<string, string>,
   vaultEncryptionEnabled: false,
   vaultEncryptionSalt: null as string | null,
+  vaultEncryptionCanary: null as string | null,
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -478,8 +487,8 @@ export const useSettingsStore = create<SettingsState>()(
         setLocalGitignoreOverlay: (localGitignoreOverlay) => set({ localGitignoreOverlay }),
         setVaultGitignoreDraft: (vaultGitignoreDraft) => set({ vaultGitignoreDraft }),
         setVaultGitignoreRemoteSnapshot: (vaultGitignoreRemoteSnapshot) => set({ vaultGitignoreRemoteSnapshot }),
-        setVaultEncryption: (vaultEncryptionEnabled, vaultEncryptionSalt) =>
-          setVault({ vaultEncryptionEnabled, vaultEncryptionSalt }),
+        setVaultEncryption: (vaultEncryptionEnabled, vaultEncryptionSalt, vaultEncryptionCanary) =>
+          setVault({ vaultEncryptionEnabled, vaultEncryptionSalt, vaultEncryptionCanary }),
         setShareDefaultExpiryDays: (shareDefaultExpiryDays) => set({ shareDefaultExpiryDays }),
         setShareDefaultBurn: (shareDefaultBurn) => set({ shareDefaultBurn }),
         // Theme is part of the vault-synced slice — going through

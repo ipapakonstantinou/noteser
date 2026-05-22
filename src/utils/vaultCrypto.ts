@@ -196,3 +196,31 @@ export async function decryptNoteContent(
 
   return new TextDecoder().decode(plaintextBuf)
 }
+
+// ── canary (passphrase verification) ─────────────────────────────────────────
+
+// Known plaintext encrypted into the canary at enable-time. Bumping
+// this would invalidate every existing vault's canary — don't.
+export const CANARY_PLAINTEXT = 'noteser-vault-canary-v1'
+
+// Build the canary blob to persist alongside the salt + enabled flag.
+// Encrypts a fixed plaintext so the unlock UI can verify the passphrase
+// locally without needing to round-trip an actual note through pull.
+export async function makeCanary(key: CryptoKey): Promise<string> {
+  return encryptNoteContent(CANARY_PLAINTEXT, key)
+}
+
+// Try to decrypt the stored canary with `key`. Returns true if the
+// decryption succeeded AND the plaintext matches CANARY_PLAINTEXT.
+// Returns false on any failure (wrong passphrase, malformed canary,
+// missing canary). Never throws — wrong-passphrase is the expected
+// failure mode and shouldn't surface as an exception to the UI.
+export async function verifyCanary(canary: string | null, key: CryptoKey): Promise<boolean> {
+  if (!canary) return false
+  try {
+    const decoded = await decryptNoteContent(canary, key)
+    return decoded === CANARY_PLAINTEXT
+  } catch {
+    return false
+  }
+}
