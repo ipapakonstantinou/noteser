@@ -121,10 +121,16 @@ export default function Home() {
   // in-memory key isn't loaded (every page refresh re-locks by
   // design — the key lives only in vaultKey's closure), prompt the
   // user to unlock before the first auto-sync runs.
+  //
+  // We subscribe to the setting via the store hook rather than
+  // `getState()` so the effect re-runs once persisted state finishes
+  // rehydrating (Zustand persist with localStorage is supposed to be
+  // synchronous, but qa-tester confirmed the effect was missing the
+  // hydrated→true → enabled→true window when read with getState()).
+  const vaultEncryptionEnabled = useSettingsStore(s => s.vaultEncryptionEnabled)
   useEffect(() => {
     if (!hydrated) return
-    const enabled = useSettingsStore.getState().vaultEncryptionEnabled
-    if (!enabled) return
+    if (!vaultEncryptionEnabled) return
     // Dynamic import so the desktop bundle doesn't eagerly load the
     // crypto module for every user.
     void import('@/utils/vaultKey').then(({ isVaultUnlocked }) => {
@@ -132,7 +138,7 @@ export default function Home() {
         useUIStore.getState().openModal({ type: 'vault-encryption', data: { mode: 'unlock' } })
       }
     })
-  }, [hydrated])
+  }, [hydrated, vaultEncryptionEnabled])
 
   // First-run onboarding: show the starter-vault picker only for genuine
   // first-run users — no notes, no GitHub configured, and the user hasn't

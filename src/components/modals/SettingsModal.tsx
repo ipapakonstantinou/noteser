@@ -615,7 +615,7 @@ function VaultEncryptionField() {
       {!enabled ? (
         <button
           type="button"
-          onClick={() => openModal({ type: 'vault-encryption', data: { mode: 'enable' } })}
+          onClick={() => openModal({ type: 'vault-encryption', data: { mode: 'enable', returnTo: 'settings' } })}
           className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors"
           data-testid="settings-encryption-enable"
         >
@@ -644,7 +644,7 @@ function VaultEncryptionField() {
             ) : (
               <button
                 type="button"
-                onClick={() => openModal({ type: 'vault-encryption', data: { mode: 'unlock' } })}
+                onClick={() => openModal({ type: 'vault-encryption', data: { mode: 'unlock', returnTo: 'settings' } })}
                 className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors"
                 data-testid="settings-encryption-unlock"
               >
@@ -653,7 +653,7 @@ function VaultEncryptionField() {
             )}
             <button
               type="button"
-              onClick={() => openModal({ type: 'vault-encryption', data: { mode: 'confirm-disable' } })}
+              onClick={() => openModal({ type: 'vault-encryption', data: { mode: 'confirm-disable', returnTo: 'settings' } })}
               className="px-3 py-1.5 text-sm border border-red-900/40 text-red-300 rounded hover:bg-red-900/20 transition-colors"
               data-testid="settings-encryption-disable"
             >

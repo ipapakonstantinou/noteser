@@ -46,13 +46,31 @@ const MIN_PASSPHRASE_LENGTH = 12
 
 interface VaultEncryptionModalData {
   mode: 'enable' | 'unlock' | 'confirm-disable'
+  // When set, the close handler re-opens that modal type instead of
+  // leaving the user staring at the editor. Used by Settings → GitHub
+  // sync's encryption row so the user lands back in Settings after
+  // their sub-flow completes (qa-tester feedback: the abrupt exit
+  // felt broken). Auto-prompt callers (lock-on-startup, sync errors)
+  // pass nothing and close cleanly.
+  returnTo?: 'settings'
 }
 
 export const VaultEncryptionModal = () => {
-  const { modal, closeModal } = useUIStore()
+  const { modal, closeModal, openModal } = useUIStore()
   const data = modal.data as VaultEncryptionModalData | undefined
   const isOpen = modal.type === 'vault-encryption'
   const mode = data?.mode ?? 'unlock'
+  const returnTo = data?.returnTo
+
+  // Close handler that respects `returnTo`. Defined once at the
+  // component level so every branch below uses the same exit logic.
+  const dismiss = () => {
+    if (returnTo === 'settings') {
+      openModal({ type: 'settings' })
+    } else {
+      closeModal()
+    }
+  }
 
   const salt = useSettingsStore(s => s.vaultEncryptionSalt)
   const canary = useSettingsStore(s => s.vaultEncryptionCanary)
@@ -99,7 +117,7 @@ export const VaultEncryptionModal = () => {
         // Cache the key in memory so the next sync push works
         // without prompting again.
         await unlockVault(passphrase, saltStr)
-        closeModal()
+        dismiss()
       } catch (err) {
         setError(`Couldn't enable encryption: ${(err as Error).message}`)
       } finally {
@@ -108,7 +126,7 @@ export const VaultEncryptionModal = () => {
     }
 
     return (
-      <Modal isOpen={isOpen} onClose={closeModal} title="Enable vault encryption" size="md">
+      <Modal isOpen={isOpen} onClose={dismiss} title="Enable vault encryption" size="md">
         <div className="space-y-4 text-sm">
           <div className="flex items-start gap-2 p-3 rounded bg-amber-900/20 border border-amber-900/40 text-amber-200">
             <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
@@ -155,7 +173,7 @@ export const VaultEncryptionModal = () => {
           )}
 
           <div className="flex justify-end gap-2 pt-2 border-t border-obsidianBorder">
-            <Button variant="ghost" onClick={closeModal} disabled={busy}>Cancel</Button>
+            <Button variant="ghost" onClick={dismiss} disabled={busy}>Cancel</Button>
             <Button
               variant="primary"
               onClick={handleEnable}
@@ -186,7 +204,7 @@ export const VaultEncryptionModal = () => {
           setError('Wrong passphrase. Try again.')
           return
         }
-        closeModal()
+        dismiss()
       } catch (err) {
         setError(`Unlock failed: ${(err as Error).message}`)
       } finally {
@@ -195,7 +213,7 @@ export const VaultEncryptionModal = () => {
     }
 
     return (
-      <Modal isOpen={isOpen} onClose={closeModal} title="Unlock vault" size="md">
+      <Modal isOpen={isOpen} onClose={dismiss} title="Unlock vault" size="md">
         <div className="space-y-4 text-sm">
           <p className="text-obsidianSecondaryText">
             This vault is encrypted. Enter your passphrase to unlock it — the key
@@ -226,7 +244,7 @@ export const VaultEncryptionModal = () => {
             </p>
           </details>
           <div className="flex justify-end gap-2 pt-2 border-t border-obsidianBorder">
-            <Button variant="ghost" onClick={closeModal} disabled={busy}>Cancel</Button>
+            <Button variant="ghost" onClick={dismiss} disabled={busy}>Cancel</Button>
             <Button
               variant="primary"
               onClick={handleUnlock}
@@ -248,11 +266,11 @@ export const VaultEncryptionModal = () => {
     // a half-enabled state (enabled=false but salt still set, etc.).
     setVaultEncryption(false, null, null)
     lockVault()
-    closeModal()
+    dismiss()
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={closeModal} title="Disable vault encryption" size="md">
+    <Modal isOpen={isOpen} onClose={dismiss} title="Disable vault encryption" size="md">
       <div className="space-y-4 text-sm">
         <div className="flex items-start gap-2 p-3 rounded bg-amber-900/20 border border-amber-900/40 text-amber-200">
           <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
@@ -266,7 +284,7 @@ export const VaultEncryptionModal = () => {
           </div>
         </div>
         <div className="flex justify-end gap-2 pt-2 border-t border-obsidianBorder">
-          <Button variant="ghost" onClick={closeModal}>Cancel</Button>
+          <Button variant="ghost" onClick={dismiss}>Cancel</Button>
           <Button
             variant="primary"
             onClick={handleDisable}
