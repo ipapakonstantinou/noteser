@@ -191,6 +191,27 @@ fully succeed or get retried on next attempt.
   attack surface (literally just forwards JSON) keeps this acceptable
   for a personal-vault model. NOT acceptable for a hosted multi-user
   deployment without further hardening.
+- **`TRUSTED_PROXY_COUNT`** controls how the proxy routes derive the
+  client IP from `X-Forwarded-For` for that rate limiter (see
+  `src/utils/rateLimit.ts` → `getClientIp`). XFF is comma-separated:
+  `<client>, <proxy-1>, <proxy-2>, …`. We strip `TRUSTED_PROXY_COUNT`
+  entries from the right and take the rightmost survivor — that's the
+  IP the closest trusted proxy actually saw, which an attacker can't
+  spoof.
+  - **Vercel (default)**: leave unset. Defaults to `1`, matching
+    Vercel's edge contract where the platform appends one entry it
+    controls.
+  - **Self-hosted behind nginx / Caddy / Cloudflare**: set it to the
+    number of proxies between the public internet and your Next.js
+    process. Two proxies → `TRUSTED_PROXY_COUNT=2`.
+  - **No reverse proxy** (rare for browser apps): set
+    `TRUSTED_PROXY_COUNT=0`. The proxy routes will ignore XFF entirely
+    and fall back to `x-real-ip`, then the `__unknown__` sentinel.
+  - Misconfiguring with too HIGH a count is dangerous: the read
+    position slides into the attacker-controlled left of the XFF list,
+    letting them rotate buckets at will. Too LOW just makes more
+    legit clients share a single bucket — annoying, not exploitable.
+    Err LOW if unsure.
 - Three-way-merge correctness depends on `gitLastPushedSha` being
   accurate. If the localStorage state is wiped or transferred without
   it, the next sync will conservatively treat every local note as
