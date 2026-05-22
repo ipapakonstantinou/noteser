@@ -1,0 +1,113 @@
+import { NextRequest, NextResponse } from 'next/server'
+
+// Smart HTTP CORS proxy for isomorphic-git pushes.
+//
+// GitHub's git endpoints (`https://github.com/<owner>/<repo>.git/info/refs`,
+// `https://github.com/<owner>/<repo>.git/git-upload-pack`, etc.) don't
+// return CORS headers, so a browser can't speak git directly to them.
+// Same shape as the `cors.isomorphic-git.org` public proxy — but
+// hosted on our own infra so we control the trust + lifetime.
+//
+// The path under `/api/git-proxy/...` is forwarded to
+// `https://<rest>`. So `GET /api/git-proxy/github.com/foo/bar.git/info/refs?service=git-upload-pack`
+// hits `https://github.com/foo/bar.git/info/refs?service=git-upload-pack`.
+//
+// Methods forwarded verbatim: GET (capability discovery), POST
+// (push + fetch pack-files). Body, query-string, and the relevant
+// headers (Authorization, User-Agent, Content-Type, Accept) are
+// passed through.
+
+// We only forward to a tight allow-list of hosts so the proxy can't
+// be turned into an open relay. Add hosts here if a user reports
+// needing them (GitLab, Bitbucket, self-hosted Gitea, etc.).
+const ALLOWED_HOSTS = new Set([
+  'github.com',
+])
+
+const FORWARD_REQUEST_HEADERS = [
+  'authorization',
+  'content-type',
+  'accept',
+  'user-agent',
+  'git-protocol',
+]
+
+const FORWARD_RESPONSE_HEADERS = [
+  'content-type',
+  'content-length',
+  'cache-control',
+  'content-encoding',
+]
+
+// Single handler used for both GET and POST — the only difference is
+// whether we forward a body.
+async function handle(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  const resolved = await params
+  const segments = resolved.path ?? []
+  if (segments.length < 2) {
+    return NextResponse.json({ error: 'bad_request', message: 'Missing host + path' }, { status: 400 })
+  }
+  const [host, ...rest] = segments
+  if (!ALLOWED_HOSTS.has(host)) {
+    return NextResponse.json({ error: 'forbidden_host', message: `Host ${host} not in allow-list` }, { status: 403 })
+  }
+
+  // Reconstruct target URL — git's Smart HTTP needs the query string
+  // (?service=git-upload-pack) preserved verbatim.
+  const url = new URL(`https://${host}/${rest.join('/')}`)
+  const incoming = new URL(req.url)
+  url.search = incoming.search
+
+  const headers = new Headers()
+  for (const h of FORWARD_REQUEST_HEADERS) {
+    const v = req.headers.get(h)
+    if (v) headers.set(h, v)
+  }
+
+  const init: RequestInit = {
+    method: req.method,
+    headers,
+    redirect: 'manual',
+  }
+  if (req.method === 'POST') {
+    init.body = await req.arrayBuffer()
+  }
+
+  const upstream = await fetch(url.toString(), init)
+
+  const outHeaders = new Headers()
+  for (const h of FORWARD_RESPONSE_HEADERS) {
+    const v = upstream.headers.get(h)
+    if (v) outHeaders.set(h, v)
+  }
+  // CORS — opens the response back up to the browser. The fetch from
+  // isomorphic-git originated from the same noteser origin, so this
+  // is reasonable.
+  outHeaders.set('Access-Control-Allow-Origin', '*')
+  outHeaders.set('Access-Control-Allow-Headers', 'authorization, content-type, accept, user-agent, git-protocol')
+  outHeaders.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+
+  return new NextResponse(upstream.body, {
+    status: upstream.status,
+    headers: outHeaders,
+  })
+}
+
+export async function GET(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
+  return handle(req, ctx)
+}
+
+export async function POST(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
+  return handle(req, ctx)
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'authorization, content-type, accept, user-agent, git-protocol',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    },
+  })
+}
