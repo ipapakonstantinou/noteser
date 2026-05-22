@@ -64,6 +64,11 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   } = useNoteStore()
   const { getFolderById, addFolder, deleteFolder, getActiveFolders, toggleFolderExpanded, expandedFolders } = useFolderStore()
   const openNote = useWorkspaceStore(s => s.openNote)
+  // "Publish as gist" reuses the GitHub OAuth token. Hooked up here at
+  // the top of the component so it sits BEFORE the early `if (!item)
+  // return` below — react-hooks/rules-of-hooks won't accept a hook
+  // call after an early return.
+  const hasGithubToken = useGitHubStore(s => Boolean(s.token))
 
   const isNote = contextMenu.type === 'note'
   const item = isNote
@@ -206,10 +211,6 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
     useUIStore.getState().openModal({ type: 'publish-gist', data: { noteId: contextMenu.id } })
     onClose()
   }
-  // "Publish as gist" reuses the GitHub OAuth token. Hide the entry
-  // when the user hasn't connected — the modal would just render a
-  // "connect first" hint, but a missing menu item is the cleaner UX.
-  const hasGithubToken = useGitHubStore(s => Boolean(s.token))
 
   const handleNewNoteInFolder = () => {
     if (!isNote) {
