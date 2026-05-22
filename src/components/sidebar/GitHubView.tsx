@@ -16,7 +16,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
 } from '@heroicons/react/24/outline'
-import { useGitHubStore, useUIStore, useWorkspaceStore } from '@/stores'
+import { useGitHubStore, useUIStore, useWorkspaceStore, useSettingsStore } from '@/stores'
 import { useGitHubSync, useHydration } from '@/hooks'
 import { SourceControlPanel } from './SourceControlPanel'
 
@@ -83,9 +83,22 @@ export const GitHubView = () => {
   const focusTab = useWorkspaceStore(s => s.focusTab)
 
   const { runSync, runPullOnly, syncState } = useGitHubSync()
+  // Default commit-message template — vault-synced via settingsStore.
+  // Users edit it in Settings → GitHub sync. Supports {{date}} →
+  // today's YYYY-MM-DD via `expandCommitMessage` below.
+  const defaultCommitMessage = useSettingsStore(s => s.defaultCommitMessage)
 
   const [commitMsg, setCommitMsg] = useState('')
   const [changesExpanded, setChangesExpanded] = useState(true)
+
+  // Seed the input with the configured template on mount + whenever
+  // the template changes (e.g. user edited it in Settings while this
+  // view was mounted but unused). Only seeds when the input is empty
+  // so we don't clobber an in-progress draft.
+  useEffect(() => {
+    if (!commitMsg) setCommitMsg(defaultCommitMessage)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultCommitMessage])
 
   // Not connected → minimal CTA.
   if (!hydrated || !user) {
