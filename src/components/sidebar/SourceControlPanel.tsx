@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDownIcon, ChevronRightIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline'
-import { useNoteStore, useGitHubStore, useWorkspaceStore } from '@/stores'
+import { ChevronDownIcon, ChevronRightIcon, ArrowTopRightOnSquareIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/outline'
+import { useNoteStore, useGitHubStore, useWorkspaceStore, useUIStore } from '@/stores'
 import {
   classifyPendingChanges,
   totalPendingCount,
@@ -175,28 +175,57 @@ const RecentCommits = () => {
             <div className="px-2 py-1 text-xs text-obsidianSecondaryText italic">No commits yet on this branch.</div>
           )}
           {commits && commits.map(c => (
-            <a
-              key={c.sha}
-              href={c.htmlUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 px-1 py-0.5 text-xs text-obsidianText hover:bg-obsidianHighlight/40 rounded"
-              // Full commit subject in the tooltip — the row truncates
-              // at ~20 chars in the narrow sidebar.
-              title={`${c.shortSha} · ${c.authorName} · ${c.message || '(no message)'}`}
-              data-testid="recent-commit-row"
-            >
-              <code className="flex-none text-[10px] text-obsidianAccentPurple font-mono">{c.shortSha}</code>
-              <span className="flex-1 truncate text-obsidianSecondaryText">{c.message || '(no message)'}</span>
-              <span className="flex-none text-[10px] text-obsidianSecondaryText">{formatRelativeAuthorDate(c.authorDate)}</span>
-              {/* Always-visible external-link icon — hover-only doesn't
-                  work on touch devices, where the polite affordance
-                  matters most. */}
-              <ArrowTopRightOnSquareIcon className="w-3 h-3 flex-none text-obsidianSecondaryText" />
-            </a>
+            <CommitRow key={c.sha} commit={c} />
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// Single row in the Recent commits list. Splits the "open on GitHub"
+// link from the "revert vault to this commit" action so we don't nest
+// interactive elements inside an anchor (invalid HTML, and Safari
+// disables the inner button on touch).
+const CommitRow = ({ commit }: { commit: FileCommitEntry }) => {
+  const openModal = useUIStore(s => s.openModal)
+  return (
+    <div
+      className="flex items-center gap-1 px-1 py-0.5 text-xs hover:bg-obsidianHighlight/40 rounded"
+      title={`${commit.shortSha} · ${commit.authorName} · ${commit.message || '(no message)'}`}
+      data-testid="recent-commit-row"
+    >
+      <a
+        href={commit.htmlUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex-1 flex items-center gap-1.5 text-obsidianText min-w-0"
+        data-testid="recent-commit-link"
+      >
+        <code className="flex-none text-[10px] text-obsidianAccentPurple font-mono">{commit.shortSha}</code>
+        <span className="flex-1 truncate text-obsidianSecondaryText">{commit.message || '(no message)'}</span>
+        <span className="flex-none text-[10px] text-obsidianSecondaryText">{formatRelativeAuthorDate(commit.authorDate)}</span>
+        <ArrowTopRightOnSquareIcon className="w-3 h-3 flex-none text-obsidianSecondaryText" />
+      </a>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault()
+          openModal({
+            type: 'revert-to-commit',
+            data: {
+              commitSha: commit.sha,
+              shortSha: commit.shortSha,
+              message: commit.message,
+            },
+          })
+        }}
+        title="Revert vault to this commit"
+        className="p-0.5 rounded text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText transition-colors flex-none"
+        data-testid="recent-commit-revert"
+      >
+        <ArrowUturnLeftIcon className="w-3 h-3" />
+      </button>
     </div>
   )
 }
