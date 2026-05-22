@@ -12,33 +12,38 @@ import {
 } from './sidebarPanelRegistry'
 
 // Lower-half tab switcher in the sidebar (Obsidian model). Renders:
-//   1. A "drop here to pin to top" zone above the strip — inflated
-//      while ANY sidebar drag is in flight so it's easy to hit.
-//   2. The horizontal icon strip itself (drag to reorder + right-
-//      click to pin).
-//   3. The active tab's panel body, full-height.
+//   1. The horizontal icon strip itself (drag to reorder + right-click
+//      opens the TabContextMenu for Pin/Hide).
+//   2. The active tab's panel body, full-height.
 //
 // The strip owns the drag state for its own icons (reorder + cross-
-// pane move). Pinning is now exclusively via right-click on an icon —
-// the visible "↑ PIN TO TOP" drop zone was removed per user feedback.
+// pane move). Pinning is routed through the parent SidebarStack's
+// TabContextMenu — right-click no longer pins instantly.
 export interface TabSwitcherProps {
   pinnedIds: SidebarTabId[]
   tabOrderSaved: string[]
+  // Tab ids the user has hidden via the context menu. We filter them
+  // out of the visible strip but leave them in the saved order so a
+  // future unhide brings them back where they were.
+  hiddenIds: ReadonlySet<string>
   onRightClick: PanelRightClick
-  onPinPanel: (id: SidebarTabId) => void
+  onTabContextMenu: (id: SidebarTabId, e: React.MouseEvent) => void
+  // Drag-down-from-pinned-strip unpins via this callback. Separate
+  // from the right-click context menu (which routes through
+  // onTabContextMenu) because drag is its own gesture.
   onUnpinPanel: (id: SidebarTabId) => void
 }
 
 export const TabSwitcher = ({
-  pinnedIds, tabOrderSaved, onRightClick, onPinPanel, onUnpinPanel,
+  pinnedIds, tabOrderSaved, hiddenIds, onRightClick, onTabContextMenu, onUnpinPanel,
 }: TabSwitcherProps) => {
   const tabId = useUIStore(s => s.sidebarTabId)
   const setTab = useUIStore(s => s.setSidebarTab)
   const setSidebarTabOrder = useSettingsStore(s => s.setSidebarTabOrder)
 
   const orderedIds = useMemo(
-    () => resolveTabOrder(tabOrderSaved, pinnedIds),
-    [tabOrderSaved, pinnedIds],
+    () => resolveTabOrder(tabOrderSaved, pinnedIds).filter(id => !hiddenIds.has(id)),
+    [tabOrderSaved, pinnedIds, hiddenIds],
   )
   // The store may hold a tabId that's currently pinned (e.g. user just
   // pinned the active tab). In that case fall back to the first id in
@@ -153,14 +158,8 @@ export const TabSwitcher = ({
               <button
                 type="button"
                 onClick={() => setTab(id)}
-                onContextMenu={e => {
-                  // Right-click pins the tab to the top zone (creating
-                  // a new pinned mini-strip group). Pairs with the
-                  // drag-up gesture.
-                  e.preventDefault()
-                  onPinPanel(id)
-                }}
-                title={`${def.title} — right-click to pin to top`}
+                onContextMenu={e => onTabContextMenu(id, e)}
+                title={`${def.title} — right-click for options`}
                 aria-label={def.title}
                 aria-pressed={active}
                 data-testid={`sidebar-tab-${id}`}

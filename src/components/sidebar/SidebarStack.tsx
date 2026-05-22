@@ -6,6 +6,7 @@ import { SIDEBAR_PANEL_DRAG_MIME } from './SidebarSection'
 import { InterGroupDropZone } from './InterGroupDropZone'
 import { PinnedGroup } from './PinnedGroup'
 import { TabSwitcher } from './TabSwitcher'
+import { TabContextMenu, type TabContextMenuLocation } from './TabContextMenu'
 import {
   KNOWN_IDS,
   TAB_DRAG_MIME,
@@ -25,11 +26,18 @@ export const SidebarStack = ({ onRightClick }: Props) => {
   const pinnedSaved = useSettingsStore(s => s.pinnedPanels)
   const setPinnedPanels = useSettingsStore(s => s.setPinnedPanels)
   const tabOrderSaved = useSettingsStore(s => s.sidebarTabOrder)
+  const hiddenSidebarTabs = useSettingsStore(s => s.hiddenSidebarTabs)
+  const hideSidebarTab = useSettingsStore(s => s.hideSidebarTab)
+
+  // Hidden-tab filter: any id the user has hidden via right-click is
+  // dropped from BOTH the pinned strips and the bottom switcher at
+  // render time. Settings → Sidebar exposes the unhide UI.
+  const hiddenSet = useMemo(() => new Set(hiddenSidebarTabs), [hiddenSidebarTabs])
 
   // Sanitise pinnedPanels: outer array = groups, each inner array =
   // tabs in that group. Drop unknown ids, drop empty groups, de-dupe
-  // across groups (a panel can only live in one place). Returns
-  // SidebarTabId[][].
+  // across groups (a panel can only live in one place), drop hidden
+  // ids. Returns SidebarTabId[][].
   const pinnedGroups = useMemo<SidebarTabId[][]>(() => {
     const seen = new Set<string>()
     const out: SidebarTabId[][] = []
@@ -37,7 +45,7 @@ export const SidebarStack = ({ onRightClick }: Props) => {
       if (!Array.isArray(group)) continue
       const cleaned: SidebarTabId[] = []
       for (const id of group) {
-        if (KNOWN_IDS.has(id as SidebarTabId) && !seen.has(id)) {
+        if (KNOWN_IDS.has(id as SidebarTabId) && !seen.has(id) && !hiddenSet.has(id)) {
           seen.add(id)
           cleaned.push(id as SidebarTabId)
         }
@@ -45,7 +53,7 @@ export const SidebarStack = ({ onRightClick }: Props) => {
       if (cleaned.length > 0) out.push(cleaned)
     }
     return out
-  }, [pinnedSaved])
+  }, [pinnedSaved, hiddenSet])
 
   // Flat list of every pinned id — handy for resolveTabOrder + lookup.
   const pinnedFlat = useMemo<SidebarTabId[]>(
@@ -126,6 +134,24 @@ export const SidebarStack = ({ onRightClick }: Props) => {
   // clears on `mouseup` and `blur` so any mouse release / window
   // de-focus also resets it.
   const [dragActive, setDragActive] = useState(false)
+
+  // Right-click context-menu state for sidebar tab icons. The menu
+  // replaces the old "right-click = instant pin/unpin" behaviour
+  // (Telegram feedback 2026-05-22). Both TabSwitcher (bottom strip)
+  // and PinnedMiniStrip (top strips) route through this single
+  // instance so we get consistent positioning + outside-click semantics.
+  const [tabMenu, setTabMenu] = useState<{
+    id: SidebarTabId
+    x: number
+    y: number
+    location: TabContextMenuLocation
+  } | null>(null)
+  const openTabMenu = (id: SidebarTabId, e: React.MouseEvent, location: TabContextMenuLocation) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setTabMenu({ id, x: e.clientX, y: e.clientY, location })
+  }
+  const closeTabMenu = () => setTabMenu(null)
   useEffect(() => {
     const onStart = (e: DragEvent) => {
       const t = e.dataTransfer?.types
@@ -174,6 +200,7 @@ export const SidebarStack = ({ onRightClick }: Props) => {
                 onAddToThisGroup={(otherId) => pinIntoGroup(otherId, groupIndex)}
                 onReorder={(newIds) => reorderGroup(groupIndex, newIds)}
                 onRightClick={onRightClick}
+                onTabContextMenu={(id, e) => openTabMenu(id, e, 'pinned')}
               />
             </div>
           ))}
@@ -184,13 +211,37 @@ export const SidebarStack = ({ onRightClick }: Props) => {
           />
         </div>
       )}
+      {/* When there are no pinned groups yet, render a single drop
+          zone ABOVE the bottom switcher so the user can pin via
+          drag-up from the empty state (otherwise the only way in
+          is the right-click → Pin menu). Inactive height collapses
+          to zero, so we don't introduce extra padding when no drag
+          is in flight. */}
+      {pinnedGroups.length === 0 && (
+        <InterGroupDropZone
+          active={dragActive}
+          onDropId={(id) => pinAsNewGroupAt(id, 0)}
+        />
+      )}
       <TabSwitcher
         pinnedIds={pinnedFlat}
         tabOrderSaved={tabOrderSaved}
+        hiddenIds={hiddenSet}
         onRightClick={onRightClick}
-        onPinPanel={pinAsNewGroup}
+        onTabContextMenu={(id, e) => openTabMenu(id, e, 'bottom')}
         onUnpinPanel={unpinPanel}
       />
+      {tabMenu && (
+        <TabContextMenu
+          x={tabMenu.x}
+          y={tabMenu.y}
+          location={tabMenu.location}
+          onPin={() => { pinAsNewGroup(tabMenu.id); closeTabMenu() }}
+          onUnpin={() => { unpinPanel(tabMenu.id); closeTabMenu() }}
+          onHide={() => { hideSidebarTab(tabMenu.id); closeTabMenu() }}
+          onClose={closeTabMenu}
+        />
+      )}
     </div>
   )
 }
