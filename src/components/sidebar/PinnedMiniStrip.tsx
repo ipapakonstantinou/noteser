@@ -26,6 +26,10 @@ export interface PinnedMiniStripProps {
   // Intra-strip: replace this group's id list with a new order.
   // Called when the user drags an icon left/right within the strip.
   onReorder?: (newIds: SidebarTabId[]) => void
+  // Optional element rendered inside the strip, BEFORE the first icon.
+  // Used by PinnedGroup to surface the expand/collapse chevron without
+  // adding a second header row.
+  leadingSlot?: React.ReactNode
 }
 
 // Where in the strip a drop would land: before or after the icon at
@@ -33,7 +37,7 @@ export interface PinnedMiniStripProps {
 type DropPos = { idx: number; side: 'before' | 'after' } | null
 
 export const PinnedMiniStrip = ({
-  ids, activeId, onActivate, onUnpin, onAddToThisGroup, onReorder,
+  ids, activeId, onActivate, onUnpin, onAddToThisGroup, onReorder, leadingSlot,
 }: PinnedMiniStripProps) => {
   const [dropActive, setDropActive] = useState(false)
   const [dropPos, setDropPos] = useState<DropPos>(null)
@@ -120,6 +124,7 @@ export const PinnedMiniStrip = ({
       onDrop={onDrop}
       data-testid="sidebar-pinned-strip"
     >
+      {leadingSlot}
       {ids.map((id, idx) => {
         const def = PANELS.find(p => p.id === id)
         if (!def) return null

@@ -124,6 +124,8 @@ export interface SettingsState {
   // bottom strip). Users drag tabs UP to pin into a new group or
   // ONTO an existing mini-strip to join that group.
   pinnedPanels: string[][]
+  // See `DEFAULTS.collapsedPinnedGroups`. Keys are `group.join(',')`.
+  collapsedPinnedGroups: string[]
 
   // ── Onboarding ─────────────────────────────────────────────────────────
   // True once the first-run onboarding modal has been dismissed (either by
@@ -260,6 +262,7 @@ export interface SettingsState {
   setRibbonOrder: (order: string[]) => void
   setSidebarTabOrder: (order: string[]) => void
   setPinnedPanels: (panels: string[][]) => void
+  togglePinnedGroupCollapsed: (key: string) => void
   setOnboardingShown: (value: boolean) => void
   setSettingsFolderPath: (path: string) => void
   setVaultSettingsLastPushedHash: (hash: string) => void
@@ -353,6 +356,12 @@ const DEFAULTS = {
   // tab strip. Users drag tabs UP to pin into a new group, or onto
   // an existing mini-strip to join that group (Obsidian pane model).
   pinnedPanels: [] as string[][],
+  // Pinned-group keys (group.join(',')) that the user has collapsed —
+  // their mini-strip is still visible, but the panel body is hidden.
+  // Entries here are dropped naturally when group composition changes
+  // (the key no longer matches), so collapse state resets on pin/unpin
+  // — that's intentional, the new group is a new entity.
+  collapsedPinnedGroups: [] as string[],
   onboardingShown: false,
   settingsFolderPath: '.noteser',
   vaultSettingsUpdatedAt: 0,
@@ -421,6 +430,13 @@ export const useSettingsStore = create<SettingsState>()(
         setRibbonOrder: (ribbonOrder) => set({ ribbonOrder }),
         setSidebarTabOrder: (sidebarTabOrder) => set({ sidebarTabOrder }),
         setPinnedPanels: (pinnedPanels) => set({ pinnedPanels }),
+        togglePinnedGroupCollapsed: (key) =>
+          set((state) => {
+            const set_ = new Set(state.collapsedPinnedGroups)
+            if (set_.has(key)) set_.delete(key)
+            else set_.add(key)
+            return { collapsedPinnedGroups: Array.from(set_) }
+          }),
         setOnboardingShown: (onboardingShown) => set({ onboardingShown }),
         setSettingsFolderPath: (path) => set({ settingsFolderPath: path }),
         setVaultSettingsLastPushedHash: (hash) => set({ vaultSettingsLastPushedHash: hash }),
