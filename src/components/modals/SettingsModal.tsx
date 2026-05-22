@@ -614,9 +614,9 @@ function LocalFolderPanel() {
 
       <p className="text-sm text-obsidianSecondaryText">
         Mirror your vault to a folder on disk (Obsidian-style local vault). Edit notes in another
-        editor and re-import; push the current vault out to a folder for backup. The folder may
-        be a git repo &mdash; commits + pushes are handled by your terminal or GitHub Desktop for
-        now (in-app git is a future feature).
+        editor and re-import; push the current vault out to a folder for backup. If the folder is
+        a git repo, the In-folder git section below handles init / commit / push directly from
+        noteser.
       </p>
 
       {status === 'unsupported' && (
@@ -708,6 +708,244 @@ function LocalFolderPanel() {
       {lastError && (
         <div className="text-xs text-red-300 p-2 rounded border border-red-900/40 bg-red-900/20">
           {lastError}
+        </div>
+      )}
+
+      {status === 'connected' && <InFolderGitSection />}
+    </div>
+  )
+}
+
+// In-folder git operations — only renders when the user has a connected
+// local folder. Owns its own state machine: not-a-repo / no-remote /
+// ready (repo + remote + token). Pure UI shell around the helpers in
+// `src/utils/inBrowserGit.ts`.
+function InFolderGitSection() {
+  const handle = useLocalFolderStore(s => s.handle)
+  const token = useGitHubStore(s => s.token)
+  const user = useGitHubStore(s => s.user)
+  const [isRepoNow, setIsRepoNow] = useState<boolean | null>(null)
+  const [remote, setRemote] = useState<string | null>(null)
+  const [remoteDraft, setRemoteDraft] = useState('')
+  const [commitMsg, setCommitMsg] = useState('')
+  const [busyStep, setBusyStep] = useState<null | 'init' | 'remote' | 'commit' | 'push'>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState<{ modified: number; untracked: number; deleted: number } | null>(null)
+
+  // Detect repo state + remote whenever the connected folder changes.
+  useEffect(() => {
+    if (!handle) return
+    let cancelled = false
+    setError(null)
+    setIsRepoNow(null)
+    setStatus(null)
+    void (async () => {
+      try {
+        const { isRepo, getRemoteUrl, summarizeStatus } = await import('@/utils/inBrowserGit')
+        const repo = await isRepo(handle)
+        if (cancelled) return
+        setIsRepoNow(repo)
+        if (repo) {
+          const url = await getRemoteUrl(handle)
+          if (cancelled) return
+          setRemote(url)
+          setRemoteDraft(url ?? '')
+          try {
+            const s = await summarizeStatus(handle)
+            if (!cancelled) {
+              setStatus({
+                modified: s.modified.length,
+                untracked: s.untracked.length,
+                deleted: s.deleted.length,
+              })
+            }
+          } catch {
+            // statusMatrix can fail on a fresh init with no commits;
+            // that's fine — we just don't show the counts yet.
+          }
+        }
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Git inspect failed')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [handle])
+
+  if (!handle) return null
+
+  const handleInit = async () => {
+    setBusyStep('init')
+    setError(null)
+    try {
+      const { initRepo } = await import('@/utils/inBrowserGit')
+      await initRepo({ root: handle })
+      setIsRepoNow(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Init failed')
+    } finally {
+      setBusyStep(null)
+    }
+  }
+
+  const handleSetRemote = async () => {
+    setBusyStep('remote')
+    setError(null)
+    try {
+      const { setRemoteUrl } = await import('@/utils/inBrowserGit')
+      await setRemoteUrl(handle, remoteDraft.trim())
+      setRemote(remoteDraft.trim())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Set remote failed')
+    } finally {
+      setBusyStep(null)
+    }
+  }
+
+  const handleCommit = async () => {
+    if (!commitMsg.trim()) return
+    setBusyStep('commit')
+    setError(null)
+    try {
+      const { stageAll, commit, summarizeStatus } = await import('@/utils/inBrowserGit')
+      await stageAll({ root: handle })
+      await commit({
+        root: handle,
+        message: commitMsg.trim(),
+        author: {
+          name: user?.name || user?.login || 'Noteser User',
+          email: user?.login ? `${user.login}@users.noreply.github.com` : 'noteser@example.com',
+        },
+      })
+      setCommitMsg('')
+      const s = await summarizeStatus(handle)
+      setStatus({ modified: s.modified.length, untracked: s.untracked.length, deleted: s.deleted.length })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Commit failed')
+    } finally {
+      setBusyStep(null)
+    }
+  }
+
+  const handlePush = async () => {
+    if (!token) {
+      setError('Connect GitHub (Settings → GitHub sync) first — push needs your OAuth token.')
+      return
+    }
+    setBusyStep('push')
+    setError(null)
+    try {
+      const { push } = await import('@/utils/inBrowserGit')
+      await push({ root: handle, token })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Push failed')
+    } finally {
+      setBusyStep(null)
+    }
+  }
+
+  const busy = busyStep != null
+
+  return (
+    <div className="space-y-3 mt-2 pt-4 border-t border-obsidianBorder" data-testid="in-folder-git">
+      <div className="text-[11px] uppercase tracking-wide text-obsidianSecondaryText">
+        In-folder git
+      </div>
+
+      {isRepoNow === null && (
+        <div className="text-xs text-obsidianSecondaryText italic">Inspecting folder…</div>
+      )}
+
+      {isRepoNow === false && (
+        <div className="space-y-2">
+          <p className="text-xs text-obsidianSecondaryText">
+            Not a git repo yet. Initialise it to start tracking commits from inside noteser.
+          </p>
+          <button
+            type="button"
+            onClick={handleInit}
+            disabled={busy}
+            className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors disabled:opacity-50"
+            data-testid="in-folder-git-init"
+          >
+            {busyStep === 'init' ? 'Initialising…' : 'Initialise git repo'}
+          </button>
+        </div>
+      )}
+
+      {isRepoNow === true && (
+        <div className="space-y-3">
+          <div className="text-xs text-obsidianSecondaryText">
+            {status
+              ? `Status: ${status.modified} modified · ${status.untracked} new · ${status.deleted} deleted`
+              : 'No status yet (no commits in this repo).'}
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-[10px] uppercase tracking-wide text-obsidianSecondaryText">
+              Remote (origin)
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={remoteDraft}
+                onChange={e => setRemoteDraft(e.target.value)}
+                placeholder="https://github.com/owner/repo.git"
+                className="flex-1 px-2 py-1 text-xs font-mono bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple"
+                data-testid="in-folder-git-remote-input"
+              />
+              <button
+                type="button"
+                onClick={handleSetRemote}
+                disabled={busy || remoteDraft.trim() === (remote ?? '')}
+                className="px-3 py-1 text-xs border border-obsidianBorder text-obsidianText rounded hover:bg-obsidianHighlight transition-colors disabled:opacity-50"
+                data-testid="in-folder-git-set-remote"
+              >
+                {busyStep === 'remote' ? 'Setting…' : 'Set'}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-[10px] uppercase tracking-wide text-obsidianSecondaryText">
+              Commit message
+            </label>
+            <textarea
+              value={commitMsg}
+              onChange={e => setCommitMsg(e.target.value)}
+              placeholder="Describe what changed…"
+              rows={2}
+              className="w-full px-2 py-1 text-xs font-mono bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple resize-none"
+              data-testid="in-folder-git-commit-message"
+            />
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleCommit}
+              disabled={busy || !commitMsg.trim()}
+              className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors disabled:opacity-50"
+              data-testid="in-folder-git-commit"
+            >
+              {busyStep === 'commit' ? 'Committing…' : 'Commit'}
+            </button>
+            <button
+              type="button"
+              onClick={handlePush}
+              disabled={busy || !remote}
+              className="px-3 py-1.5 text-sm border border-obsidianBorder text-obsidianText rounded hover:bg-obsidianHighlight transition-colors disabled:opacity-50"
+              title={remote ? '' : 'Set a remote first'}
+              data-testid="in-folder-git-push"
+            >
+              {busyStep === 'push' ? 'Pushing…' : 'Push to origin'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="text-xs text-red-300 p-2 rounded border border-red-900/40 bg-red-900/20">
+          {error}
         </div>
       )}
     </div>
