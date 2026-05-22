@@ -120,6 +120,10 @@ export const SidebarSection = ({
           draggable={Boolean(draggablePanelId)}
           onDragStart={(e: React.DragEvent) => {
             if (!draggablePanelId) return
+            // See PinnedMiniStrip — right-click on a draggable header
+            // can fire dragstart in Firefox + Chromium-Linux. Gate so
+            // the unpin context-menu action doesn't ghost-drag.
+            if (e.nativeEvent && e.nativeEvent.button !== 0) return
             e.dataTransfer.setData(SIDEBAR_PANEL_DRAG_MIME, draggablePanelId)
             e.dataTransfer.effectAllowed = 'move'
           }}

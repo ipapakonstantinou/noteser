@@ -50,7 +50,21 @@ export function useTreeDragDrop({ getFolderRepoPath }: UseTreeDragDropOptions): 
   const draggedItemRef = useRef<DraggedItem | null>(null)
   const [dragOverTarget, setDragOverTarget] = useState<string | null>(null)
 
+  // Firefox + Chromium-Linux fire `dragstart` on draggable elements
+  // even for non-primary mouse buttons, which means a right-click on
+  // a note/folder/attachment row bleeds into a phantom drag before
+  // the context menu can render. The spec says non-primary buttons
+  // SHOULD be ignored here; not all engines comply. Cheap fix: gate
+  // every beginDrag on `button === 0`. Treat "no nativeEvent info"
+  // (synthetic test events) as primary so existing test fixtures
+  // keep working — real browsers always populate the button field.
+  const isPrimaryButton = (e: React.DragEvent) => {
+    const btn = e.nativeEvent?.button
+    return btn == null || btn === 0
+  }
+
   const beginNoteDrag = useCallback((e: React.DragEvent, noteId: string) => {
+    if (!isPrimaryButton(e)) return
     draggedItemRef.current = { kind: 'note', id: noteId }
     // Required for Firefox to register the drag; also exposes the id to drop.
     e.dataTransfer.setData('application/x-noteser-note', noteId)
@@ -58,12 +72,14 @@ export function useTreeDragDrop({ getFolderRepoPath }: UseTreeDragDropOptions): 
   }, [])
 
   const beginAttachmentDrag = useCallback((e: React.DragEvent, path: string) => {
+    if (!isPrimaryButton(e)) return
     draggedItemRef.current = { kind: 'attachment', path }
     e.dataTransfer.setData('application/x-noteser-attachment', path)
     e.dataTransfer.effectAllowed = 'move'
   }, [])
 
   const beginFolderDrag = useCallback((e: React.DragEvent, folderId: string) => {
+    if (!isPrimaryButton(e)) return
     draggedItemRef.current = { kind: 'folder', id: folderId }
     e.dataTransfer.setData('application/x-noteser-folder', folderId)
     e.dataTransfer.effectAllowed = 'move'

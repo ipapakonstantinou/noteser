@@ -114,6 +114,8 @@ export const Ribbon = () => {
   const dropPos = useRef<'before' | 'after'>('before')
 
   const handleDragStart = (id: ItemView) => (e: React.DragEvent) => {
+    // Primary-button guard — see useTreeDragDrop for the full reasoning.
+    if (e.nativeEvent && e.nativeEvent.button !== 0) return
     e.dataTransfer.setData(RIBBON_DRAG_MIME, id)
     e.dataTransfer.effectAllowed = 'move'
     setDraggingId(id)

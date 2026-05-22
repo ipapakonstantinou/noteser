@@ -48,7 +48,7 @@ function mountHarness(getFolderRepoPath: (id: string) => string | undefined = ()
 // Fake React.DragEvent. setData/setDropEffect just record; preventDefault
 // and stopPropagation are no-ops (the hook calls both — the latter was
 // added to fix the "drop to root doesn't work" bubbling bug).
-function makeDragEvent(): React.DragEvent {
+function makeDragEvent(opts: { button?: number } = {}): React.DragEvent {
   const calls: Array<[string, string]> = []
   return {
     dataTransfer: {
@@ -56,6 +56,7 @@ function makeDragEvent(): React.DragEvent {
       effectAllowed: '' as DataTransfer['effectAllowed'],
       dropEffect: '' as DataTransfer['dropEffect'],
     } as unknown as DataTransfer,
+    nativeEvent: { button: opts.button ?? 0 } as unknown as DragEvent,
     preventDefault: jest.fn(),
     stopPropagation: jest.fn(),
     currentTarget: {} as EventTarget,
@@ -209,5 +210,36 @@ describe('useTreeDragDrop', () => {
     act(() => { api().onFolderDrop(makeDragEvent(), 'P') })
     const a = useFolderStore.getState().folders.find(f => f.id === 'A')
     expect(a?.parentId).toBe('P') // unchanged
+  })
+
+  // ── Primary-button guard ────────────────────────────────────────────────
+  // Firefox + Chromium-Linux fire dragstart on draggable rows for any
+  // mouse button. We gate every begin*Drag on button === 0 so right-click
+  // (which opens the context menu) doesn't ghost-drag the row.
+
+  test('beginNoteDrag with button=2 (right-click) does NOT record a drag', () => {
+    const { api } = mountHarness()
+    const evt = makeDragEvent({ button: 2 })
+    act(() => { api().beginNoteDrag(evt, 'note-1') })
+    // No highlight, no payload — subsequent onFolderDragOver would be a no-op.
+    act(() => { api().onFolderDragOver(makeDragEvent(), 'folder-1') })
+    expect(api().dragOverTarget).toBeNull()
+  })
+
+  test('beginFolderDrag with button=2 does NOT record a drag', () => {
+    seedFolders([{ id: 'A' }, { id: 'B' }])
+    const { api } = mountHarness()
+    act(() => { api().beginFolderDrag(makeDragEvent({ button: 2 }), 'A') })
+    // Dropping should be a no-op — no drag is active.
+    act(() => { api().onFolderDrop(makeDragEvent(), 'B') })
+    const a = useFolderStore.getState().folders.find(f => f.id === 'A')
+    expect(a?.parentId).toBeNull()
+  })
+
+  test('beginAttachmentDrag with button=2 does NOT record a drag', async () => {
+    const { api } = mountHarness((id) => id === 'folder-images' ? 'images' : undefined)
+    act(() => { api().beginAttachmentDrag(makeDragEvent({ button: 2 }), 'attachments/old.png') })
+    await act(async () => { api().onFolderDrop(makeDragEvent(), 'folder-images') })
+    expect(moveAttachmentMock).not.toHaveBeenCalled()
   })
 })

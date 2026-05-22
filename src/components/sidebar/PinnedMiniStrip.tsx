@@ -133,6 +133,11 @@ export const PinnedMiniStrip = ({
             type="button"
             draggable
             onDragStart={e => {
+              // Right-click on a draggable button fires dragstart on
+              // Firefox + Chromium-Linux before the contextmenu — gating
+              // on the primary button stops the unpin click from
+              // bleeding into a phantom drag.
+              if (e.nativeEvent && e.nativeEvent.button !== 0) return
               e.dataTransfer.setData(SIDEBAR_PANEL_DRAG_MIME, id)
               e.dataTransfer.effectAllowed = 'move'
             }}

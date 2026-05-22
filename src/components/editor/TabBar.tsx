@@ -26,6 +26,8 @@ export const TabBar = ({ pane }: Props) => {
   const paneIsActive = pane.id === activePaneId
 
   const onDragStart = (e: React.DragEvent, tabId: string) => {
+    // Primary-button guard — see useTreeDragDrop for the full reasoning.
+    if (e.nativeEvent && e.nativeEvent.button !== 0) return
     e.dataTransfer.setData(TAB_DRAG_MIME, tabId)
     e.dataTransfer.effectAllowed = 'move'
   }

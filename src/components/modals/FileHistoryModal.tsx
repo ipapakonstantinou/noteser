@@ -183,24 +183,35 @@ export const FileHistoryModal = () => {
           {commits && commits.map(c => {
             const active = c.sha === selectedSha
             return (
-              <button
-                key={c.sha}
-                type="button"
-                onClick={() => setSelectedSha(c.sha)}
-                className={`w-full text-left px-3 py-2 border-b border-obsidianBorder text-xs transition-colors ${
-                  active
-                    ? 'bg-obsidianAccentPurple/15 border-l-2 border-l-obsidianAccentPurple pl-[10px] text-obsidianText'
-                    : 'text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText'
-                }`}
-                data-testid="file-history-row"
-              >
-                <div className="flex items-center gap-2">
-                  <code className="text-[10px] text-obsidianAccentPurple flex-none">{c.shortSha}</code>
-                  <span className="text-[10px] text-obsidianSecondaryText flex-1 text-right">{formatRelativeAuthorDate(c.authorDate)}</span>
-                </div>
-                <div className="mt-1 line-clamp-2 leading-snug">{c.message || '(no message)'}</div>
-                <div className="mt-1 text-[10px] text-obsidianSecondaryText truncate">{c.authorName}</div>
-              </button>
+              <div key={c.sha} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setSelectedSha(c.sha)}
+                  className={`w-full text-left px-3 py-2 border-b border-obsidianBorder text-xs transition-colors ${
+                    active
+                      ? 'bg-obsidianAccentPurple/15 border-l-2 border-l-obsidianAccentPurple pl-[10px] text-obsidianText'
+                      : 'text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText'
+                  }`}
+                  data-testid="file-history-row"
+                >
+                  <div className="flex items-center gap-2 pr-6">
+                    <code className="text-[10px] text-obsidianAccentPurple flex-none">{c.shortSha}</code>
+                    <span className="text-[10px] text-obsidianSecondaryText flex-1 text-right">{formatRelativeAuthorDate(c.authorDate)}</span>
+                  </div>
+                  <div className="mt-1 line-clamp-2 leading-snug">{c.message || '(no message)'}</div>
+                  <div className="mt-1 text-[10px] text-obsidianSecondaryText truncate">{c.authorName}</div>
+                </button>
+                <a
+                  href={c.htmlUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="absolute top-1.5 right-1.5 p-1 rounded text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText transition-colors"
+                  title="Open commit on GitHub"
+                  data-testid="file-history-row-external-link"
+                >
+                  <ArrowTopRightOnSquareIcon className="w-3 h-3" />
+                </a>
+              </div>
             )
           })}
         </div>
