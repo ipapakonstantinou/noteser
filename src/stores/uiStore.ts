@@ -53,11 +53,12 @@ interface UIState {
   // Sidebar (left)
   sidebarCollapsed: boolean
   sidebarWidth: number
-  // Right sidebar — collapsible per-note "Properties" pane (v1: just
-  // Properties; future passes can add Outline / Backlinks tabs). Defaults
-  // closed so first-run users don't see clutter; opening is opt-in via
-  // the PanelRightIcon toggle on the right edge.
+  // Right sidebar — collapsible per-note panel (Properties + Backlinks).
+  // Defaults closed so first-run users don't see clutter; opening is
+  // opt-in via the PanelRightIcon toggle on the right edge.
   rightSidebarOpen: boolean
+  // Which tab is active in the right sidebar. Defaults to Properties.
+  rightSidebarTab: 'properties' | 'backlinks'
   // Per-section collapse + height state. In v2 only Calendar uses this;
   // old entries for outline/backlinks/source-control are kept for
   // backwards compat but ignored.
@@ -89,6 +90,7 @@ interface UIState {
   toggleSidebar: () => void
   setSidebarWidth: (width: number) => void
   toggleRightSidebar: () => void
+  setRightSidebarTab: (tab: 'properties' | 'backlinks') => void
   setRightSidebarOpen: (open: boolean) => void
   toggleSidebarSection: (id: SidebarSectionId) => void
   setSidebarSectionCollapsed: (id: SidebarSectionId, collapsed: boolean) => void
@@ -116,6 +118,7 @@ export const useUIStore = create<UIState>()(
       sidebarCollapsed: false,
       sidebarWidth: 256,
       rightSidebarOpen: false,
+      rightSidebarTab: 'properties',
       sidebarSections: {},
       sidebarTabId: 'files',
       isSearchOpen: false,
@@ -137,6 +140,10 @@ export const useUIStore = create<UIState>()(
 
       toggleRightSidebar: () => {
         set(state => ({ rightSidebarOpen: !state.rightSidebarOpen }))
+      },
+
+      setRightSidebarTab: (rightSidebarTab) => {
+        set({ rightSidebarTab })
       },
 
       setRightSidebarOpen: (open) => {
@@ -254,6 +261,7 @@ export const useUIStore = create<UIState>()(
         sidebarCollapsed: state.sidebarCollapsed,
         sidebarWidth: state.sidebarWidth,
         rightSidebarOpen: state.rightSidebarOpen,
+        rightSidebarTab: state.rightSidebarTab,
         sidebarSections: state.sidebarSections,
         sidebarTabId: state.sidebarTabId,
         isPreviewMode: state.isPreviewMode,
