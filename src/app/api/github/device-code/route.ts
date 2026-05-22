@@ -35,10 +35,17 @@ export async function POST(request: Request) {
     )
   }
 
+  // Scopes:
+  //   repo  — read/write vault repo content (the original capability)
+  //   gist  — create gists from the "Publish as gist" surface
+  // Existing tokens issued with `repo` only still work for sync, but
+  // the gist endpoint returns 404/401 for them; PublishGistModal
+  // surfaces a "re-authorise" message via GistScopeError when that
+  // happens, so the upgrade path is gentle (no forced re-auth at startup).
   const upstream = await fetch('https://github.com/login/device/code', {
     method: 'POST',
     headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client_id: clientId, scope: 'repo' }),
+    body: JSON.stringify({ client_id: clientId, scope: 'repo gist' }),
   })
 
   const data = await upstream.json().catch(() => ({}))
