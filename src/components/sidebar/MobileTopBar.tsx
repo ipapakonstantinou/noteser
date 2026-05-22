@@ -12,6 +12,8 @@ import {
   ClockIcon,
   TagIcon,
   StarIcon,
+  CalendarIcon,
+  CodeBracketIcon,
 } from '@heroicons/react/24/outline'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
 import { useUIStore, useNoteStore, useWorkspaceStore } from '@/stores'
@@ -34,6 +36,8 @@ export const MobileTopBar = () => {
   const openModal = useUIStore(s => s.openModal)
   const setCurrentView = useUIStore(s => s.setCurrentView)
   const currentView = useUIStore(s => s.currentView)
+  const sidebarTabId = useUIStore(s => s.sidebarTabId)
+  const setSidebarTab = useUIStore(s => s.setSidebarTab)
   const requestRename = useUIStore(s => s.requestRename)
   const togglePinNote = useNoteStore(s => s.togglePinNote)
   // Resolve the active note (if any) so the overflow menu can offer
@@ -65,6 +69,17 @@ export const MobileTopBar = () => {
     // Make the drawer visible too, since these views render INSIDE the
     // sidebar. Otherwise the user taps a view and nothing happens
     // because the drawer is still closed.
+    const uiState = useUIStore.getState()
+    if (uiState.sidebarCollapsed) toggleSidebar()
+    setMenuOpen(false)
+  }
+
+  // Switch to a sidebar PANEL (calendar, source-control) and open the
+  // drawer. Phase B mobile dropped the panel mini-strip entirely so
+  // these panels were unreachable on mobile — this is the bridge
+  // back per the user's Telegram feedback (#23).
+  const goPanel = (id: 'calendar' | 'source-control') => {
+    setSidebarTab(id)
     const uiState = useUIStore.getState()
     if (uiState.sidebarCollapsed) toggleSidebar()
     setMenuOpen(false)
@@ -169,6 +184,19 @@ export const MobileTopBar = () => {
               label="Tags"
               active={currentView === 'tags'}
               onClick={() => goView('tags')}
+            />
+            <div className="border-t border-obsidianBorder my-1" />
+            <MenuItem
+              icon={<CalendarIcon className="w-4 h-4" />}
+              label="Calendar"
+              active={sidebarTabId === 'calendar'}
+              onClick={() => goPanel('calendar')}
+            />
+            <MenuItem
+              icon={<CodeBracketIcon className="w-4 h-4" />}
+              label="Git / Source control"
+              active={sidebarTabId === 'source-control'}
+              onClick={() => goPanel('source-control')}
             />
             <div className="border-t border-obsidianBorder my-1" />
             <MenuItem
