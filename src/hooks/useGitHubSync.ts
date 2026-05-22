@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { useGitHubStore, useNoteStore, useFolderStore, useSettingsStore, useWorkspaceStore } from '@/stores'
+import { useGitHubStore, useNoteStore, useFolderStore, useSettingsStore, useWorkspaceStore, useUIStore } from '@/stores'
+import { VaultLockedError } from '@/utils/vaultKey'
 import { syncToGitHub, pullFromGitHub, pullFromZipball } from '@/utils/githubSync'
 import type { PullClassification, SyncResult, GitPathUpdate } from '@/utils/githubSync'
 import { applyNonConflicts, applyAttachmentClassifications } from '@/utils/syncApply'
@@ -288,7 +289,16 @@ export function useGitHubSync(): UseGitHubSyncResult {
       })
       setTimeout(() => setSyncState({ kind: 'idle' }), 5000)
     } catch (err) {
-      setSyncState({ kind: 'err', message: err instanceof Error ? err.message : 'Sync failed' })
+      // Vault encryption is on but locked — the sync layer throws
+      // VaultLockedError before any HTTP traffic. Surface as an
+      // unlock prompt rather than a generic "Sync failed" message so
+      // the user has a one-click path back to working sync.
+      if (err instanceof VaultLockedError) {
+        useUIStore.getState().openModal({ type: 'vault-encryption', data: { mode: 'unlock' } })
+        setSyncState({ kind: 'err', message: 'Vault is locked — unlock to sync.' })
+      } else {
+        setSyncState({ kind: 'err', message: err instanceof Error ? err.message : 'Sync failed' })
+      }
     } finally {
       // Always release the global guard, even on errors / early returns from
       // the conflict branch — otherwise a failed sync wedges every future
@@ -349,7 +359,12 @@ export function useGitHubSync(): UseGitHubSyncResult {
       })
       setTimeout(() => setSyncState({ kind: 'idle' }), 5000)
     } catch (err) {
-      setSyncState({ kind: 'err', message: err instanceof Error ? err.message : 'Pull failed' })
+      if (err instanceof VaultLockedError) {
+        useUIStore.getState().openModal({ type: 'vault-encryption', data: { mode: 'unlock' } })
+        setSyncState({ kind: 'err', message: 'Vault is locked — unlock to pull.' })
+      } else {
+        setSyncState({ kind: 'err', message: err instanceof Error ? err.message : 'Pull failed' })
+      }
     } finally {
       useGitHubStore.getState().setIsSyncing(false)
     }
