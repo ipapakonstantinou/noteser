@@ -50,9 +50,14 @@ export interface SidebarSectionState {
 export const DEFAULT_SECTION_HEIGHT = 220
 
 interface UIState {
-  // Sidebar
+  // Sidebar (left)
   sidebarCollapsed: boolean
   sidebarWidth: number
+  // Right sidebar — collapsible per-note "Properties" pane (v1: just
+  // Properties; future passes can add Outline / Backlinks tabs). Defaults
+  // closed so first-run users don't see clutter; opening is opt-in via
+  // the PanelRightIcon toggle on the right edge.
+  rightSidebarOpen: boolean
   // Per-section collapse + height state. In v2 only Calendar uses this;
   // old entries for outline/backlinks/source-control are kept for
   // backwards compat but ignored.
@@ -83,6 +88,8 @@ interface UIState {
   // Actions
   toggleSidebar: () => void
   setSidebarWidth: (width: number) => void
+  toggleRightSidebar: () => void
+  setRightSidebarOpen: (open: boolean) => void
   toggleSidebarSection: (id: SidebarSectionId) => void
   setSidebarSectionCollapsed: (id: SidebarSectionId, collapsed: boolean) => void
   setSidebarSectionHeight: (id: SidebarSectionId, height: number) => void
@@ -108,6 +115,7 @@ export const useUIStore = create<UIState>()(
       // Initial state
       sidebarCollapsed: false,
       sidebarWidth: 256,
+      rightSidebarOpen: false,
       sidebarSections: {},
       sidebarTabId: 'files',
       isSearchOpen: false,
@@ -125,6 +133,14 @@ export const useUIStore = create<UIState>()(
 
       setSidebarWidth: (width) => {
         set({ sidebarWidth: Math.max(200, Math.min(500, width)) })
+      },
+
+      toggleRightSidebar: () => {
+        set(state => ({ rightSidebarOpen: !state.rightSidebarOpen }))
+      },
+
+      setRightSidebarOpen: (open) => {
+        set({ rightSidebarOpen: open })
       },
 
       toggleSidebarSection: (id) => {
@@ -237,6 +253,7 @@ export const useUIStore = create<UIState>()(
       partialize: (state) => ({
         sidebarCollapsed: state.sidebarCollapsed,
         sidebarWidth: state.sidebarWidth,
+        rightSidebarOpen: state.rightSidebarOpen,
         sidebarSections: state.sidebarSections,
         sidebarTabId: state.sidebarTabId,
         isPreviewMode: state.isPreviewMode,
