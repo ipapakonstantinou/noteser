@@ -78,8 +78,21 @@ export async function ensureOk(res: Response, operation: string): Promise<void> 
 }
 
 // ── Step 1: ask the proxy to request a device code from GitHub ──────────────
-export async function startDeviceFlow(): Promise<DeviceFlowStart> {
-  const res = await githubFetch('/api/github/device-code', { method: 'POST' })
+//
+// `scope` is optional. Omit it for normal sign-in (proxy defaults to
+// `repo`). Pass `'repo gist'` when the user has explicitly opted into a
+// scope upgrade — currently only the "Publish as gist" first-use flow.
+// The proxy validates against an allow-list, so any other value is
+// silently downgraded to `repo`.
+export async function startDeviceFlow(scope?: 'repo' | 'repo gist'): Promise<DeviceFlowStart> {
+  const init: RequestInit = scope
+    ? {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope }),
+      }
+    : { method: 'POST' }
+  const res = await githubFetch('/api/github/device-code', init)
   const json = await res.json().catch(() => ({}))
   if (!res.ok || json.error) {
     if (json.error === 'missing_client_id') {
@@ -136,17 +149,53 @@ export async function pollForToken({ deviceCode, interval, expiresIn, signal }: 
 
 // ── Step 3: use the token to fetch identifying info ─────────────────────────
 export async function fetchGitHubUser(token: string): Promise<GitHubUser> {
+  const { user } = await fetchGitHubUserAndScopes(token)
+  return user
+}
+
+// Variant of `fetchGitHubUser` that also reports the token's OAuth
+// scopes, parsed from the `X-OAuth-Scopes` response header (a
+// comma-separated list, e.g. `repo, gist`). Returned as a normalised
+// array of trimmed lowercase strings.
+//
+// Used by:
+//   - GitHubAuthModal sign-in / scope-upgrade flows — to remember
+//     whether the just-issued token includes `gist` and avoid asking
+//     again for users who already authorised it.
+//   - PublishGistModal — to decide between "Publish gist" and
+//     "Authorize gist publishing" without hitting the gists endpoint
+//     first.
+//
+// If the header is missing entirely (some proxies strip it) we return
+// `null` so callers can fall back to "best effort try, recover from
+// GistScopeError" rather than blocking the user.
+export async function fetchGitHubUserAndScopes(
+  token: string,
+): Promise<{ user: GitHubUser; scopes: string[] | null }> {
   const res = await githubFetch('https://api.github.com/user', {
     headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' },
   })
   await ensureOk(res, 'Fetch GitHub user')
   const data = await res.json()
-  return {
+  const user: GitHubUser = {
     id: data.id,
     login: data.login,
     name: data.name ?? null,
     avatar_url: data.avatar_url,
   }
+  return { user, scopes: parseOAuthScopesHeader(res.headers.get('x-oauth-scopes')) }
+}
+
+// Exported for unit tests. Returns null if the header is absent —
+// "absent" is meaningfully different from "empty list" (the latter
+// would be a token with no scopes, which GitHub does issue for
+// "public-only" reads).
+export function parseOAuthScopesHeader(raw: string | null): string[] | null {
+  if (raw == null) return null
+  return raw
+    .split(',')
+    .map(s => s.trim().toLowerCase())
+    .filter(s => s.length > 0)
 }
 
 // ── Repo APIs (after auth) ──────────────────────────────────────────────────

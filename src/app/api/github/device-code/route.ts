@@ -36,16 +36,42 @@ export async function POST(request: Request) {
   }
 
   // Scopes:
-  //   repo  — read/write vault repo content (the original capability)
-  //   gist  — create gists from the "Publish as gist" surface
-  // Existing tokens issued with `repo` only still work for sync, but
-  // the gist endpoint returns 404/401 for them; PublishGistModal
-  // surfaces a "re-authorise" message via GistScopeError when that
-  // happens, so the upgrade path is gentle (no forced re-auth at startup).
+  //   repo  — read/write vault repo content (the original capability,
+  //           granted to every user at sign-in).
+  //   gist  — create gists from the "Publish as gist" surface. Requested
+  //           on demand only — the FIRST time a user tries to publish a
+  //           gist, PublishGistModal kicks off a second device flow that
+  //           sends `{ scope: 'repo gist' }` here so GitHub re-issues a
+  //           wider token. Users who never publish a gist are never asked
+  //           for the gist scope, which keeps the localStorage-token XSS
+  //           blast radius minimal (see security-audit Finding 2).
+  //
+  // Allow-list of scope strings we will forward. Anything else (or no
+  // body at all) falls back to the safe default `repo`. This stops a
+  // malicious page from coaxing the proxy into asking GitHub for
+  // arbitrary scopes (`admin:org`, `delete_repo`, …) on the user's
+  // behalf — even though the same-origin guard above already blocks
+  // cross-origin callers, defence in depth is cheap here.
+  const ALLOWED_SCOPES = new Set(['repo', 'repo gist'])
+  let requestedScope = 'repo'
+  try {
+    // Body is optional — old callers (`startDeviceFlow()` with no arg)
+    // send no body, so JSON.parse on empty string would throw.
+    const text = await request.text()
+    if (text) {
+      const body = JSON.parse(text) as { scope?: unknown }
+      if (typeof body.scope === 'string' && ALLOWED_SCOPES.has(body.scope)) {
+        requestedScope = body.scope
+      }
+    }
+  } catch {
+    // Malformed JSON → fall through with the default `repo` scope.
+  }
+
   const upstream = await fetch('https://github.com/login/device/code', {
     method: 'POST',
     headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client_id: clientId, scope: 'repo gist' }),
+    body: JSON.stringify({ client_id: clientId, scope: requestedScope }),
   })
 
   const data = await upstream.json().catch(() => ({}))
