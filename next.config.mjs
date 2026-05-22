@@ -16,6 +16,7 @@ function deriveCollabWsOrigin(raw) {
 }
 
 const collabWsOrigin = deriveCollabWsOrigin(process.env.NEXT_PUBLIC_YJS_WS_URL)
+const isProduction = process.env.NODE_ENV === 'production'
 
 const connectSrc = [
   "'self'",
@@ -26,6 +27,21 @@ const connectSrc = [
   ...(collabWsOrigin ? [collabWsOrigin] : []),
 ].join(' ')
 
+// script-src — 'unsafe-inline' covers Next's bootstrap inline scripts. We
+// only add 'unsafe-eval' in non-production environments: Next.js dev mode
+// (HMR / React Refresh) and Jest both rely on eval-style execution, but
+// React/Next ship no eval calls in their production bundles, and the
+// CodeMirror packages we use (state, view, lang-markdown, etc.) do not
+// construct Functions at runtime either. Dropping 'unsafe-eval' in
+// production neutralises eval-based XSS payloads even if an inline
+// injection slips through.
+function buildScriptSrc(productionMode) {
+  const parts = ["'self'", "'unsafe-inline'"]
+  if (!productionMode) parts.push("'unsafe-eval'")
+  return parts.join(' ')
+}
+const scriptSrc = buildScriptSrc(isProduction)
+
 // Security headers applied to every response. CSP is permissive enough to
 // keep the app working (CodeMirror + react-syntax-highlighter use inline
 // styles, Tailwind injects style tags, BYO AI APIs hit Anthropic / OpenAI
@@ -35,10 +51,7 @@ const securityHeaders = [
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
-      // unsafe-inline + unsafe-eval are required by Next.js dev mode and the
-      // CodeMirror runtime. We keep them in production too because Next emits
-      // some bootstrap scripts inline.
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      `script-src ${scriptSrc}`,
       "style-src 'self' 'unsafe-inline'",
       // User notes can ![]() any HTTPS image. data:/blob: for attachments.
       // We leave img-src open to https: rather than maintain an allowlist of
@@ -78,5 +91,5 @@ const nextConfig = {
 
 // Exported for tests so the CSP string can be exercised without spinning up
 // a Next server. Not part of the Next runtime contract.
-export { deriveCollabWsOrigin, securityHeaders }
+export { deriveCollabWsOrigin, securityHeaders, buildScriptSrc }
 export default nextConfig
