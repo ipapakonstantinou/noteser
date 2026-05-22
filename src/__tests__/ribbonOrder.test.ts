@@ -8,10 +8,12 @@
  *   - Duplicates in the saved list are de-duped.
  *   - Empty saved list returns the full source order.
  *
- * Source order after the 2026-05-20 de-dup: notes, recent, tags.
- * All the previous duplicate-with-the-tab-strip items (backlinks,
- * calendar, outline, trash, github) were removed — old saved orders
- * referencing them get silently filtered out by the unknown-id branch.
+ * Source order after the 2026-05-22 Obsidian-parity rebuild:
+ *   new-note, daily-note, command-palette, templates.
+ * Previous item ids (notes / recent / tags from the filter-mode era,
+ * plus the older backlinks / calendar / outline / github / trash) were
+ * removed — old saved orders referencing them get silently filtered
+ * out by the unknown-id branch, so users don't see phantom items.
  */
 
 jest.mock('idb-keyval', () => ({
@@ -22,7 +24,7 @@ jest.mock('idb-keyval', () => ({
 
 import { resolveRibbonOrder } from '../components/sidebar/Ribbon'
 
-const DEFAULT_ORDER = ['notes', 'recent', 'tags'] as const
+const DEFAULT_ORDER = ['new-note', 'daily-note', 'command-palette', 'templates'] as const
 
 describe('resolveRibbonOrder', () => {
   test('empty saved list returns default order', () => {
@@ -30,27 +32,30 @@ describe('resolveRibbonOrder', () => {
   })
 
   test('passes through a fully-specified valid order verbatim', () => {
-    const saved = ['recent', 'tags', 'notes']
+    const saved = ['daily-note', 'templates', 'new-note', 'command-palette']
     expect(resolveRibbonOrder(saved)).toEqual(saved)
   })
 
-  test('drops unknown ids (incl. removed legacy ids)', () => {
-    // 'backlinks' / 'calendar' / 'outline' / 'trash' / 'github' were
-    // valid ribbon ids before the de-dup; they MUST be silently
-    // dropped so a returning user's saved order doesn't render
-    // phantom items.
-    expect(resolveRibbonOrder(['notes', 'banana', 'recent', 'calendar', 'github'])).toEqual([
-      'notes', 'recent', 'tags',
-    ])
+  test('drops unknown ids — incl. every removed legacy id', () => {
+    // 'notes' / 'recent' / 'tags' were valid before the 2026-05-22
+    // rebuild; 'backlinks' / 'calendar' / 'outline' / 'trash' / 'github'
+    // were valid before the earlier 2026-05-20 de-dup. All MUST be
+    // silently dropped so a returning user's saved order doesn't
+    // render phantom items.
+    expect(
+      resolveRibbonOrder(['new-note', 'banana', 'notes', 'recent', 'tags', 'calendar']),
+    ).toEqual(['new-note', 'daily-note', 'command-palette', 'templates'])
   })
 
   test('appends new items (not in saved list) at the end', () => {
-    expect(resolveRibbonOrder(['recent', 'notes'])).toEqual(['recent', 'notes', 'tags'])
+    expect(resolveRibbonOrder(['templates', 'new-note'])).toEqual([
+      'templates', 'new-note', 'daily-note', 'command-palette',
+    ])
   })
 
   test('de-duplicates a saved list', () => {
-    expect(resolveRibbonOrder(['notes', 'notes', 'recent'])).toEqual([
-      'notes', 'recent', 'tags',
+    expect(resolveRibbonOrder(['new-note', 'new-note', 'daily-note'])).toEqual([
+      'new-note', 'daily-note', 'command-palette', 'templates',
     ])
   })
 })
