@@ -12,8 +12,6 @@ import {
 import { Modal, Button } from '@/components/ui'
 import { useUIStore, useNoteStore, useGitHubStore } from '@/stores'
 import { publishGist, GistScopeError, sanitizeGistFilename } from '@/utils/githubGist'
-import { bodyWithInlineTags } from '@/utils/syncApply'
-import { extractTags } from '@/utils/tags'
 
 // Publish-as-gist surface for a single note. Open via:
 //   useUIStore.openModal({ type: 'publish-gist', data: { noteId } })
@@ -85,11 +83,12 @@ export const PublishGistModal = () => {
     setError(null)
     setScopeError(false)
     try {
-      // Compose the gist body the same way we'd compose a vault push: tags
-      // get rolled back into the body as `#tag` lines. Keeps the gist's
-      // markdown identical to what a reader would see in the app.
-      const tags = extractTags(note.content)
-      const content = bodyWithInlineTags(note.content, tags)
+      // Noteser tags are already inline in `note.content` (extracted on
+      // the fly from `#word` patterns), so we don't need to re-stamp
+      // them — uploading the raw body matches what readers see in the
+      // app and avoids the double-tag-line bug from an earlier draft
+      // that called `bodyWithInlineTags` (a pull-side helper).
+      const content = note.content
       const result = await publishGist({
         token,
         filename: sanitizeGistFilename(note.title || 'note'),

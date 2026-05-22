@@ -253,6 +253,8 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
         top: contextMenu.y,
         left: contextMenu.x
       }}
+      role="menu"
+      data-testid="context-menu"
     >
       {!isNote && (
         <>
