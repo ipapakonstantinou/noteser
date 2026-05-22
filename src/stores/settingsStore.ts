@@ -48,6 +48,11 @@ export interface SettingsState {
   pullOnlyOnStartup: boolean
   // Minutes between auto-syncs. 0 = off. Any positive integer is valid.
   autoSyncIntervalMinutes: number
+  // Template used as the default commit-message when the user presses
+  // Commit & Sync without typing anything. Supports `{{date}}` →
+  // today's YYYY-MM-DD via `expandCommitMessage`. Same default as
+  // Obsidian Git's "vault backup: {{date}}".
+  defaultCommitMessage: string
   // Repo-relative folder for daily notes. Empty falls back to the default.
   dailyNotesFolder: string
   // Date format used as both the title of a daily note and the calendar
@@ -248,6 +253,7 @@ export interface SettingsState {
   setAutoSyncOnStart: (value: boolean) => void
   setPullOnlyOnStartup: (value: boolean) => void
   setAutoSyncIntervalMinutes: (minutes: number) => void
+  setDefaultCommitMessage: (template: string) => void
   setDailyNotesFolder: (folder: string) => void
   setDailyNoteDateFormat: (format: string) => void
   setWeeklyNotesFolder: (folder: string) => void
@@ -340,6 +346,7 @@ export const VAULT_SETTING_KEYS = [
   'vaultEncryptionEnabled',
   'vaultEncryptionSalt',
   'vaultEncryptionCanary',
+  'defaultCommitMessage',
 ] as const
 
 export type VaultSettingKey = (typeof VAULT_SETTING_KEYS)[number]
@@ -352,6 +359,7 @@ const DEFAULTS = {
   autoSyncOnStart: true,
   pullOnlyOnStartup: false,
   autoSyncIntervalMinutes: 0,
+  defaultCommitMessage: 'Sync from Noteser ({{date}})',
   dailyNotesFolder: 'Notes/Daily',
   dailyNoteDateFormat: 'YYYY-MM-DD',
   weeklyNotesFolder: 'Notes/Weekly',
@@ -420,6 +428,7 @@ export const useSettingsStore = create<SettingsState>()(
         setAutoSyncOnStart: (autoSyncOnStart) => set({ autoSyncOnStart }),
         setPullOnlyOnStartup: (pullOnlyOnStartup) => set({ pullOnlyOnStartup }),
         setAutoSyncIntervalMinutes: (autoSyncIntervalMinutes) => set({ autoSyncIntervalMinutes }),
+        setDefaultCommitMessage: (defaultCommitMessage) => setVault({ defaultCommitMessage }),
         setDailyNotesFolder: (dailyNotesFolder) => setVault({ dailyNotesFolder }),
         setDailyNoteDateFormat: (dailyNoteDateFormat) => setVault({ dailyNoteDateFormat }),
         setWeeklyNotesFolder: (weeklyNotesFolder) => setVault({ weeklyNotesFolder }),
