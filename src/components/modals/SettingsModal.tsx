@@ -1411,7 +1411,7 @@ function AboutPanel() {
         </p>
         <p>
           <a
-            href="https://github.com/ipapakonstantinou/noteser#readme"
+            href="/help"
             target="_blank"
             rel="noopener noreferrer"
             className="text-obsidianAccentPurple hover:underline"
@@ -1419,7 +1419,7 @@ function AboutPanel() {
           >
             Help &amp; docs →
           </a>
-          <span className="text-obsidianSecondaryText"> (README on GitHub — covers GitHub sync, pinning panels, shortcuts, and getting started)</span>
+          <span className="text-obsidianSecondaryText"> (in-app help — getting started, GitHub sync, local folder, shortcuts, FAQ)</span>
         </p>
         <p>
           <a
