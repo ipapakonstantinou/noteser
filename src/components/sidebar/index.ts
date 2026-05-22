@@ -1,4 +1,5 @@
 export { Sidebar } from './Sidebar'
+export { RightSidebar } from './RightSidebar'
 export { Ribbon } from './Ribbon'
 export { MobileTopBar } from './MobileTopBar'
 export { FolderTree } from './FolderTree'

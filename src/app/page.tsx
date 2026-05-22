@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Sidebar, Ribbon, MobileTopBar } from '@/components/sidebar'
+import { Sidebar, RightSidebar, Ribbon, MobileTopBar } from '@/components/sidebar'
 import { Editor } from '@/components/editor'
 import {
   SearchModal,
@@ -376,15 +376,16 @@ export default function Home() {
         <Sidebar />
       </div>
 
-      {/* Editor */}
-      <div
-        className="flex-1 h-full overflow-hidden"
-        style={{
-          width: `calc(100vw - 44px - ${isSidebarCollapsed ? '50px' : '16rem'})`,
-        }}
-      >
+      {/* Editor — width is "fill remaining" rather than the hard
+          100vw calc we used before, so the right sidebar can claim
+          its own track without us doing the arithmetic. flex-1
+          + min-w-0 stops the editor from blowing past its allotted
+          width when long note content tries to grow it. */}
+      <div className="flex-1 min-w-0 h-full overflow-hidden">
         <Editor />
       </div>
+
+      <RightSidebar />
 
       {renderModals()}
     </div>
