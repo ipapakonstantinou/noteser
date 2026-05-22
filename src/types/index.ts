@@ -86,7 +86,7 @@ export type ContextMenuState = {
 } | null
 
 export interface ModalState {
-  type: 'delete' | 'template' | 'export' | 'import' | 'settings' | 'shortcuts' | 'github-auth' | 'github-repo' | 'task-edit' | 'command-palette' | 'bug-report' | 'ai-result' | 'vault-settings-conflict' | 'file-history' | null
+  type: 'delete' | 'template' | 'export' | 'import' | 'settings' | 'shortcuts' | 'github-auth' | 'github-repo' | 'task-edit' | 'command-palette' | 'bug-report' | 'ai-result' | 'vault-settings-conflict' | 'file-history' | 'publish-gist' | null
   data?: Record<string, unknown>
 }
 

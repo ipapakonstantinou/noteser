@@ -14,8 +14,9 @@ import {
   SparklesIcon,
   ArrowUturnLeftIcon,
   ClockIcon,
+  ShareIcon,
 } from '@heroicons/react/24/outline'
-import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore, useSettingsStore } from '@/stores'
+import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore, useSettingsStore, useGitHubStore } from '@/stores'
 import type { ContextMenuState, Folder } from '@/types'
 import { AI_ACTIONS } from '@/utils/aiActions'
 import { runNoteAIAction } from '@/utils/runNoteAIAction'
@@ -63,6 +64,11 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   } = useNoteStore()
   const { getFolderById, addFolder, deleteFolder, getActiveFolders, toggleFolderExpanded, expandedFolders } = useFolderStore()
   const openNote = useWorkspaceStore(s => s.openNote)
+  // "Publish as gist" reuses the GitHub OAuth token. Hooked up here at
+  // the top of the component so it sits BEFORE the early `if (!item)
+  // return` below — react-hooks/rules-of-hooks won't accept a hook
+  // call after an early return.
+  const hasGithubToken = useGitHubStore(s => Boolean(s.token))
 
   const isNote = contextMenu.type === 'note'
   const item = isNote
@@ -201,6 +207,11 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   // GitHub.
   const canViewHistory = isNote && !!(item as { gitPath?: string | null }).gitPath
 
+  const handlePublishGist = () => {
+    useUIStore.getState().openModal({ type: 'publish-gist', data: { noteId: contextMenu.id } })
+    onClose()
+  }
+
   const handleNewNoteInFolder = () => {
     if (!isNote) {
       const note = addNote({ folderId: contextMenu.id })
@@ -298,6 +309,13 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
               icon={ClockIcon}
               label="View history"
               onClick={handleViewHistory}
+            />
+          )}
+          {hasGithubToken && !isTrashedNote && (
+            <MenuButton
+              icon={ShareIcon}
+              label="Publish as gist"
+              onClick={handlePublishGist}
             />
           )}
 

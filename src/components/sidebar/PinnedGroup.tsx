@@ -1,10 +1,12 @@
 'use client'
 
 import { useState } from 'react'
+import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
 import { SidebarSection } from './SidebarSection'
 import { PinnedMiniStrip } from './PinnedMiniStrip'
 import { PANELS, PanelBody, type PanelRightClick } from './sidebarPanelRegistry'
 import { type SidebarTabId } from '@/stores'
+import { useSettingsStore } from '@/stores'
 
 // A pinned GROUP: a mini tab strip (one or more icons) + the active
 // tab's content below. Single-icon strips look like a labelled
@@ -15,6 +17,11 @@ import { type SidebarTabId } from '@/stores'
 // composition is keyed on `group.join(',')` from the parent, so
 // adding/removing members remounts and naturally resets to a sane
 // default.
+//
+// Collapse state IS persisted (settings store keys on the same
+// `group.join(',')`), so a hidden panel stays hidden across reloads.
+// When the group composition changes, the key changes too — the old
+// collapse entry is silently ignored and the new group starts expanded.
 export interface PinnedGroupProps {
   group: SidebarTabId[]
   onUnpin: (id: SidebarTabId) => void
@@ -34,8 +41,15 @@ export const PinnedGroup = ({
   // If the group composition changed and the previous active tab is
   // gone, snap to the first available.
   const safeActive = group.includes(activeTab) ? activeTab : group[0]
+
+  const groupKey = group.join(',')
+  const isCollapsed = useSettingsStore(s => s.collapsedPinnedGroups.includes(groupKey))
+  const toggleCollapsed = useSettingsStore(s => s.togglePinnedGroupCollapsed)
+
+  const activePanelTitle = PANELS.find(p => p.id === safeActive)?.title ?? safeActive
+
   return (
-    <div className="flex-shrink-0 flex flex-col border-t border-obsidianBorder">
+    <div className="flex-shrink-0 flex flex-col border-t border-obsidianBorder" data-testid="pinned-group" data-collapsed={isCollapsed ? 'true' : 'false'}>
       <PinnedMiniStrip
         ids={group}
         activeId={safeActive}
@@ -43,6 +57,21 @@ export const PinnedGroup = ({
         onUnpin={onUnpin}
         onAddToThisGroup={onAddToThisGroup}
         onReorder={onReorder}
+        leadingSlot={
+          <button
+            type="button"
+            onClick={() => toggleCollapsed(groupKey)}
+            className="flex items-center justify-center w-5 h-5 rounded text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText transition-colors flex-none"
+            title={isCollapsed ? `Expand ${activePanelTitle}` : `Collapse ${activePanelTitle}`}
+            aria-label={isCollapsed ? 'Expand pinned panel' : 'Collapse pinned panel'}
+            aria-expanded={!isCollapsed}
+            data-testid="pinned-group-collapse-toggle"
+          >
+            {isCollapsed
+              ? <ChevronRightIcon className="w-3.5 h-3.5" />
+              : <ChevronDownIcon className="w-3.5 h-3.5" />}
+          </button>
+        }
       />
       {/* No onHeaderContextMenu here: SidebarSection forwards that to
           the CONTENT wrapper when hideHeader=true, which means a
@@ -50,13 +79,15 @@ export const PinnedGroup = ({
           row in the Files tree) bubbles up and unpins the panel back
           to the bottom strip. Reported via Telegram 2026-05-21. The
           mini-strip icon's right-click already covers unpin. */}
-      <SidebarSection
-        id={safeActive}
-        title={PANELS.find(p => p.id === safeActive)?.title ?? safeActive}
-        hideHeader={true}
-      >
-        <PanelBody id={safeActive} onRightClick={onRightClick} />
-      </SidebarSection>
+      {!isCollapsed && (
+        <SidebarSection
+          id={safeActive}
+          title={activePanelTitle}
+          hideHeader={true}
+        >
+          <PanelBody id={safeActive} onRightClick={onRightClick} />
+        </SidebarSection>
+      )}
     </div>
   )
 }

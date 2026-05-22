@@ -54,6 +54,13 @@ export const TabSwitcher = ({
   const dropPos = useRef<'before' | 'after'>('before')
 
   const handleDragStart = (id: SidebarTabId) => (e: React.DragEvent) => {
+    // Guard against right-click-initiated drag. Firefox + Chromium-Linux
+    // fire dragstart on draggable elements for non-primary mouse buttons,
+    // which lets a right-click bleed into a phantom "drop on top" — the
+    // SidebarStack window listener then inflates drop zones, looking like
+    // the row jumped on its own. Spec says browsers SHOULD ignore non-
+    // primary buttons here; not all do.
+    if (e.nativeEvent && e.nativeEvent.button !== 0) return
     e.dataTransfer.setData(TAB_DRAG_MIME, id)
     e.dataTransfer.effectAllowed = 'move'
     setDraggingId(id)

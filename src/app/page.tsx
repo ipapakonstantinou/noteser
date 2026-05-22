@@ -18,6 +18,7 @@ import {
   AIResultModal,
   VaultSettingsConflictModal,
   FileHistoryModal,
+  PublishGistModal,
 } from '@/components/modals'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useKeyboardShortcuts, useHydration, useAutoSync, useAutoEmbedNotes, useApplyTheme, useViewport } from '@/hooks'
@@ -296,6 +297,7 @@ export default function Home() {
       <AIResultModal />
       <VaultSettingsConflictModal />
       <FileHistoryModal />
+      <PublishGistModal />
       <ResetConfirmModal
         isOpen={showResetModal}
         hasUnsynced={resetHasUnsynced}

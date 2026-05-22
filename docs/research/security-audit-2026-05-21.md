@@ -104,6 +104,13 @@ The app's XSS resistance rests entirely on the render layer (ReactMarkdown witho
 **Suggested fix:**
 For production builds, investigate nonce-based `script-src` via Next.js middleware (`middleware.ts` with a per-request nonce injected into `<script>` tags). This would allow dropping `'unsafe-inline'`. `'unsafe-eval'` may still be required by CodeMirror and warrants a separate evaluation. Until then, the static guard tests remain the primary control and must not be weakened.
 
+**Investigation log (2026-05-22):**
+First attempt followed the official Next.js pattern — `src/middleware.ts` generates a per-request base64 nonce, sets `x-nonce` on the forwarded request headers, and writes a `Content-Security-Policy` response header with `script-src 'self' 'nonce-X' 'strict-dynamic' 'unsafe-eval'`. The root layout was switched to `dynamic = 'force-dynamic'` and read the header via `headers().get('x-nonce')`.
+
+Result: build succeeded, middleware emitted a fresh nonce per request, but Next.js 15.5.18 did **not** auto-attribute the nonce to its emitted `<script>` tags (verified via `curl` of the production server — no `nonce="..."` attribute on any of the 17 bootstrap scripts). With `'strict-dynamic'` in effect, `'self'` is ignored by CSP3 browsers, so the external chunks would be blocked → fully broken app. Dropping `'strict-dynamic'` would let the chunks load via `'self'` but the inline `(self.__next_f=…).push(…)` hydration scripts would still be blocked.
+
+Tracked as a follow-up needing a deeper Next.js investigation (or a version bump). Possible angles: explicit `<Script>` tags with `nonce={nonce}` in the layout, the `unstable_*` nonce APIs, or hash-based `script-src` instead of nonce. The exploratory branch `feat/security-csp-nonce` was reverted to avoid shipping a broken CSP.
+
 ---
 
 ### 7. GitHub OAuth Client ID is public; device-flow can be initiated by third parties [severity: low]
