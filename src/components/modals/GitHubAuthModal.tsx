@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowTopRightOnSquareIcon, CheckCircleIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline'
 import { Modal, Button } from '@/components/ui'
 import { useUIStore, useGitHubStore } from '@/stores'
-import { startDeviceFlow, pollForToken, fetchGitHubUser, DeviceFlowError, type DeviceFlowStart } from '@/utils/github'
+import { startDeviceFlow, pollForToken, fetchGitHubUserAndScopes, DeviceFlowError, type DeviceFlowStart } from '@/utils/github'
 
 type Status =
   | { kind: 'requesting' }
@@ -41,9 +41,13 @@ export const GitHubAuthModal = () => {
           signal: controller.signal,
         })
         if (controller.signal.aborted) return
-        const user = await fetchGitHubUser(token)
+        // Capture the token's OAuth scopes alongside the user so the
+        // gist-publish path can tell whether the user has already
+        // authorised `gist` (avoids a redundant scope-upgrade prompt
+        // for users who happen to have a wider token from elsewhere).
+        const { user, scopes } = await fetchGitHubUserAndScopes(token)
         if (controller.signal.aborted) return
-        setSession(token, user)
+        setSession(token, user, scopes)
         setStatus({ kind: 'success', login: user.login })
         // Brief success view, then chain into the repo picker (or just close
         // if the user already has a sync repo from a previous session).
@@ -93,8 +97,8 @@ export const GitHubAuthModal = () => {
           signal: controller.signal,
         })
         if (controller.signal.aborted) return
-        const user = await fetchGitHubUser(token)
-        setSession(token, user)
+        const { user, scopes } = await fetchGitHubUserAndScopes(token)
+        setSession(token, user, scopes)
         setStatus({ kind: 'success', login: user.login })
         setTimeout(() => { if (!controller.signal.aborted) closeModal() }, 1200)
       } catch (err) {

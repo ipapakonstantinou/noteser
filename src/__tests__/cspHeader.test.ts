@@ -15,17 +15,26 @@
 type ConfigModule = {
   deriveCollabWsOrigin: (raw: string | undefined) => string | null
   securityHeaders: Array<{ key: string; value: string }>
+  buildScriptSrc: (productionMode: boolean) => string
 }
 
-function getConnectSrc(headers: ConfigModule['securityHeaders']): string {
+function getDirective(headers: ConfigModule['securityHeaders'], name: string): string {
   const csp = headers.find((h) => h.key === 'Content-Security-Policy')
   if (!csp) throw new Error('no CSP header')
   const directive = csp.value
     .split(';')
     .map((s) => s.trim())
-    .find((d) => d.startsWith('connect-src'))
-  if (!directive) throw new Error('no connect-src directive')
+    .find((d) => d.startsWith(`${name} `) || d === name)
+  if (!directive) throw new Error(`no ${name} directive`)
   return directive
+}
+
+function getConnectSrc(headers: ConfigModule['securityHeaders']): string {
+  return getDirective(headers, 'connect-src')
+}
+
+function getScriptSrc(headers: ConfigModule['securityHeaders']): string {
+  return getDirective(headers, 'script-src')
 }
 
 let mod: ConfigModule
@@ -114,5 +123,49 @@ describe('connect-src CSP directive (with NEXT_PUBLIC_YJS_WS_URL)', () => {
   it('falls back to null (= no WS in directive) when malformed', () => {
     expect(mod.deriveCollabWsOrigin('https://not-a-ws-url.example')).toBeNull()
     expect(mod.deriveCollabWsOrigin('totally bogus')).toBeNull()
+  })
+})
+
+/**
+ * script-src — Audit finding 6 follow-up. 'unsafe-eval' is *only* allowed
+ * in non-production environments (dev / test) where Next.js HMR + Jest
+ * need it. Production builds drop it so eval-based XSS payloads stop
+ * working even if an inline injection somehow slips past 'unsafe-inline'.
+ *
+ * The module-level constant `scriptSrc` is computed once with the
+ * `NODE_ENV` Jest is running under (typically 'test'), so the snapshot
+ * directive we read off `securityHeaders` reflects the non-production
+ * branch. We exercise both branches via the exported `buildScriptSrc`
+ * helper to make the contract explicit and resilient to env shifts.
+ */
+describe('script-src CSP directive', () => {
+  it('keeps the "self" and "unsafe-inline" sources in both branches', () => {
+    expect(mod.buildScriptSrc(true)).toContain("'self'")
+    expect(mod.buildScriptSrc(true)).toContain("'unsafe-inline'")
+    expect(mod.buildScriptSrc(false)).toContain("'self'")
+    expect(mod.buildScriptSrc(false)).toContain("'unsafe-inline'")
+  })
+
+  it("drops 'unsafe-eval' in production mode", () => {
+    const prod = mod.buildScriptSrc(true)
+    expect(prod).not.toContain("'unsafe-eval'")
+    // Strict equality lock — flag any future drift in directive shape.
+    expect(prod).toBe("'self' 'unsafe-inline'")
+  })
+
+  it("keeps 'unsafe-eval' in dev / test mode (Next HMR + Jest need it)", () => {
+    const dev = mod.buildScriptSrc(false)
+    expect(dev).toContain("'unsafe-eval'")
+    expect(dev).toBe("'self' 'unsafe-inline' 'unsafe-eval'")
+  })
+
+  it('emits the directive in the live securityHeaders snapshot', () => {
+    // The Jest env is non-production, so the snapshot directive should
+    // reflect the dev/test branch. This guards against an accidental
+    // hardcoding regression in next.config.mjs.
+    const directive = getScriptSrc(mod.securityHeaders)
+    expect(directive.startsWith('script-src ')).toBe(true)
+    expect(directive).toContain("'self'")
+    expect(directive).toContain("'unsafe-inline'")
   })
 })

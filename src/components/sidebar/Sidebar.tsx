@@ -2,13 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react'
 import {
-  ChevronDoubleLeftIcon,
-  ChevronDoubleRightIcon,
+  XMarkIcon,
   CodeBracketIcon,
   CloudArrowUpIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,
 } from '@heroicons/react/24/outline'
+import { PanelLeftIcon } from '@/components/ui'
 import { useUIStore, useGitHubStore } from '@/stores'
 import { useGitHubSync } from '@/hooks/useGitHubSync'
 import { SYNC_REQUEST_EVENT } from '@/utils/events'
@@ -108,11 +108,13 @@ export const Sidebar = () => {
                 : 'Collapse sidebar'
           }
         >
-          {!isMobile && sidebarCollapsed ? (
-            <ChevronDoubleRightIcon className="w-4 h-4" />
-          ) : (
-            <ChevronDoubleLeftIcon className="w-4 h-4" />
-          )}
+          {/* Obsidian-style panel-toggle icon — a rectangle with the
+              "left edge" bar indicating the sidebar slides leftward.
+              On mobile the same button closes the drawer, so we swap
+              in an X glyph there for clearer intent. */}
+          {isMobile
+            ? <XMarkIcon className="w-4 h-4" />
+            : <PanelLeftIcon className="w-4 h-4" />}
         </button>
       </div>
 

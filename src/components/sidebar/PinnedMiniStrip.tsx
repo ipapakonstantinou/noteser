@@ -26,6 +26,10 @@ export interface PinnedMiniStripProps {
   // Intra-strip: replace this group's id list with a new order.
   // Called when the user drags an icon left/right within the strip.
   onReorder?: (newIds: SidebarTabId[]) => void
+  // Right-click on an icon opens the TabContextMenu (Unpin / Hide).
+  // Replaces the old "right-click = instant unpin" behaviour. Wired
+  // up by PinnedGroup → SidebarStack so there's one menu instance.
+  onTabContextMenu?: (id: SidebarTabId, e: React.MouseEvent) => void
   // Optional element rendered inside the strip, BEFORE the first icon.
   // Used by PinnedGroup to surface the expand/collapse chevron without
   // adding a second header row.
@@ -37,7 +41,7 @@ export interface PinnedMiniStripProps {
 type DropPos = { idx: number; side: 'before' | 'after' } | null
 
 export const PinnedMiniStrip = ({
-  ids, activeId, onActivate, onUnpin, onAddToThisGroup, onReorder, leadingSlot,
+  ids, activeId, onActivate, onUnpin, onAddToThisGroup, onReorder, onTabContextMenu, leadingSlot,
 }: PinnedMiniStripProps) => {
   const [dropActive, setDropActive] = useState(false)
   const [dropPos, setDropPos] = useState<DropPos>(null)
@@ -148,8 +152,18 @@ export const PinnedMiniStrip = ({
             }}
             onDragOver={onIconDragOver(idx)}
             onClick={() => onActivate(id)}
-            onContextMenu={e => { e.preventDefault(); onUnpin(id) }}
-            title={`${def.title} — drag to reorder, right-click to unpin`}
+            onContextMenu={e => {
+              if (onTabContextMenu) {
+                onTabContextMenu(id, e)
+              } else {
+                // Fallback: when no menu wiring is provided (older
+                // call sites or storybook-style harnesses), preserve
+                // the legacy instant-unpin behaviour.
+                e.preventDefault()
+                onUnpin(id)
+              }
+            }}
+            title={`${def.title} — drag to reorder, right-click for options`}
             aria-label={def.title}
             aria-pressed={active}
             data-testid={`sidebar-pinned-tab-${id}`}

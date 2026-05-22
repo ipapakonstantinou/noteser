@@ -3,71 +3,96 @@
 import { useMemo, useRef, useState } from 'react'
 import {
   MagnifyingGlassIcon,
-  DocumentDuplicateIcon,
-  ClockIcon,
-  TagIcon,
+  DocumentPlusIcon,
+  CalendarDaysIcon,
+  CommandLineIcon,
+  RectangleStackIcon,
   Cog6ToothIcon,
 } from '@heroicons/react/24/outline'
-import { useUIStore, useNoteStore, useSettingsStore } from '@/stores'
-import { useHydration } from '@/hooks'
+import { useUIStore, useSettingsStore, useWorkspaceStore, useNoteStore } from '@/stores'
 
-// Obsidian-style far-left ribbon. Always visible. Holds Search + nav icons
-// (All Notes, Recent, Tags, Trash, Calendar) plus a Settings gear pinned
-// to the bottom. Clicking a nav icon switches the sidebar's content area
-// to that view.
+// Obsidian-style far-left ribbon. Permanent, always visible.
 //
-// The nav items are user-reorderable via drag-and-drop. Order persists in
-// `useSettingsStore.ribbonOrder`. Items not yet in the saved order (e.g.
-// when a future release adds a new nav target) are appended at the end so
-// new features don't get hidden by an old saved order.
+// Through May 2026 the ribbon held filter-mode icons (Notes / Recent /
+// Tags) that re-filtered the already-visible Files panel. Telegram
+// feedback flagged them as "not doing anything" — the visual change was
+// too subtle. After this redesign the ribbon hosts quick-launch ACTIONS:
+// each click opens or creates something concrete. The filter modes
+// stayed in the store but are no longer surfaced from the ribbon — the
+// FolderTreeToolbar / future view-picker is the right home for them.
+//
+// Items are user-reorderable via drag-and-drop. Order persists in
+// `useSettingsStore.ribbonOrder`. Saved orders that reference the now-
+// removed filter ids ('notes' / 'recent' / 'tags' / 'backlinks' /
+// 'calendar' / etc.) are silently dropped by `resolveRibbonOrder` — no
+// migration needed; the new ids get appended in source order.
 
-// Filter-mode views still surfaced from the ribbon. Used as the
-// `currentView` value when an ItemDef is clicked — FolderTree reads
-// currentView to decide what slice of notes to render. Older saved
-// ribbonOrder entries referencing the removed items (calendar,
-// outline, github, backlinks, trash) are silently dropped by
-// resolveRibbonOrder, so no migration is needed.
-type ItemView =
-  | 'notes' | 'recent' | 'tags'
+// Action ids. Adding a new id requires extending this union AND adding
+// an entry to `ITEMS` below. The ordering inside `ITEMS` is the default
+// rendering order when the user has no saved customisation.
+type ItemId =
+  | 'new-note'
+  | 'daily-note'
+  | 'command-palette'
+  | 'templates'
 
 interface ItemDef {
-  id: ItemView
-  Icon: typeof DocumentDuplicateIcon
-  title: (ctx: BadgeCtx) => string
-  badgeRed?: (ctx: BadgeCtx) => boolean
-  /** If false, the item is hidden entirely (e.g. GitHub before connect). */
-  visible?: (ctx: BadgeCtx) => boolean
+  id: ItemId
+  Icon: typeof DocumentPlusIcon
+  title: string
+  // Fired on click. Pulls from store getState() inside the action to
+  // avoid prop drilling — the ribbon doesn't need to re-render when
+  // unrelated store fields change.
+  action: () => void
 }
 
-interface BadgeCtx {
-  recentCount: number
-}
-
-// Ribbon items kept after the great de-dup of 2026-05-20. We removed
-// `calendar` (pinned section above the strip), `outline`, `backlinks`
-// (folded into outline tab pending its own home), and `github` —
-// every one of those has a dedicated SidebarStack tab now, so a
-// second click target on the ribbon was pure duplication. `trash` is
-// also gone: the upcoming `.trash` folder model (task 103) will
-// surface deleted notes in the regular folder tree.
-// Remaining items are filter modes for the Files tab (notes / recent
-// / tags), since those don't have tabs of their own.
+// Source-of-truth list. New ids get appended here; resolveRibbonOrder
+// merges with the user's saved order at render time.
 const ITEMS: readonly ItemDef[] = [
-  { id: 'notes',  Icon: DocumentDuplicateIcon, title: () => 'All notes' },
-  { id: 'recent', Icon: ClockIcon, title: c => `Recent${c.recentCount ? ` (${c.recentCount})` : ''}` },
-  { id: 'tags',   Icon: TagIcon, title: () => 'Tags' },
+  {
+    id: 'new-note',
+    Icon: DocumentPlusIcon,
+    title: 'New note (Alt+N)',
+    action: () => {
+      const note = useNoteStore.getState().addNote({ folderId: null })
+      useWorkspaceStore.getState().openNote(note.id, { preview: false })
+    },
+  },
+  {
+    id: 'daily-note',
+    Icon: CalendarDaysIcon,
+    title: "Open today's daily note",
+    action: () => {
+      // Lazy import keeps the ribbon free of a hard daily-notes
+      // dependency at module load (same pattern useKeyboardShortcuts
+      // uses for the Ctrl+Alt+D shortcut).
+      void import('@/utils/dailyNotes').then(({ openTodayNote }) => openTodayNote())
+    },
+  },
+  {
+    id: 'command-palette',
+    Icon: CommandLineIcon,
+    title: 'Command palette',
+    action: () => useUIStore.getState().openModal({ type: 'command-palette' }),
+  },
+  {
+    id: 'templates',
+    Icon: RectangleStackIcon,
+    title: 'Templates',
+    action: () => useUIStore.getState().openModal({ type: 'template' }),
+  },
 ]
 
 // Merge the user's saved order with the source order, dropping ids that
 // no longer exist and appending any new ids. Pure function — easy to test.
-export function resolveRibbonOrder(saved: string[]): ItemView[] {
+export function resolveRibbonOrder(saved: string[]): ItemId[] {
   const known = new Set(ITEMS.map(i => i.id))
   const seen = new Set<string>()
-  const out: ItemView[] = []
+  const out: ItemId[] = []
   for (const id of saved) {
-    if (known.has(id as ItemView) && !seen.has(id)) {
+    if (known.has(id as ItemId) && !seen.has(id)) {
       seen.add(id)
-      out.push(id as ItemView)
+      out.push(id as ItemId)
     }
   }
   for (const item of ITEMS) {
@@ -78,70 +103,45 @@ export function resolveRibbonOrder(saved: string[]): ItemView[] {
 
 const RIBBON_DRAG_MIME = 'application/x-noteser-ribbon-item'
 
-// Ribbon de-dup (2026-05-20) means every ribbon item is a
-// filter-mode view now. The tab-routing map is empty but kept as a
-// hook for future ribbon-only entries that target a stack tab.
-import type { SidebarTabId } from '@/stores'
-const VIEW_TO_TAB_ID: Partial<Record<ItemView, SidebarTabId>> = {}
-
 export const Ribbon = () => {
-  const { openSearch, currentView, setCurrentView, openModal, setSidebarTab } = useUIStore()
-  const { getRecentNotes } = useNoteStore()
+  const openSearch = useUIStore(s => s.openSearch)
+  const openModal = useUIStore(s => s.openModal)
   const ribbonOrder = useSettingsStore(s => s.ribbonOrder)
   const setRibbonOrder = useSettingsStore(s => s.setRibbonOrder)
-  const hydrated = useHydration()
-
-  const recentCount = hydrated ? getRecentNotes(99).length : 0
-
-  // Memoise ctx so it doesn't tear the orderedItems memo on every render.
-  // Each scalar dep is referentially stable, so this is cheap.
-  const ctx: BadgeCtx = useMemo(
-    () => ({ recentCount }),
-    [recentCount],
-  )
 
   const orderedIds = useMemo(() => resolveRibbonOrder(ribbonOrder), [ribbonOrder])
-  const orderedItems = useMemo(() => {
-    const byId = new Map(ITEMS.map(i => [i.id, i]))
-    return orderedIds
-      .map(id => byId.get(id))
-      .filter((i): i is ItemDef => Boolean(i))
-      .filter(item => item.visible == null || item.visible(ctx))
-  }, [orderedIds, ctx])
+  const itemsById = useMemo(() => new Map(ITEMS.map(i => [i.id, i])), [])
 
-  const [draggingId, setDraggingId] = useState<ItemView | null>(null)
-  const [dropTargetId, setDropTargetId] = useState<ItemView | null>(null)
+  const [draggingId, setDraggingId] = useState<ItemId | null>(null)
+  const [dropTargetId, setDropTargetId] = useState<ItemId | null>(null)
   const dropPos = useRef<'before' | 'after'>('before')
 
-  const handleDragStart = (id: ItemView) => (e: React.DragEvent) => {
-    // Primary-button guard — see useTreeDragDrop for the full reasoning.
+  const handleDragStart = (id: ItemId) => (e: React.DragEvent) => {
+    // Primary-button guard — keeps right-click from ghost-dragging
+    // ribbon icons (Firefox + Chromium-Linux quirk).
     if (e.nativeEvent && e.nativeEvent.button !== 0) return
     e.dataTransfer.setData(RIBBON_DRAG_MIME, id)
     e.dataTransfer.effectAllowed = 'move'
     setDraggingId(id)
   }
 
-  const handleDragOver = (id: ItemView) => (e: React.DragEvent) => {
+  const handleDragOver = (id: ItemId) => (e: React.DragEvent) => {
     if (!e.dataTransfer.types.includes(RIBBON_DRAG_MIME)) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-    // Halfway-point detection: top half = drop ABOVE this item; bottom = below.
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
     dropPos.current = (e.clientY - rect.top) < rect.height / 2 ? 'before' : 'after'
     setDropTargetId(id)
   }
 
-  const handleDragLeave = () => {
-    setDropTargetId(null)
-  }
+  const handleDragLeave = () => setDropTargetId(null)
 
-  const handleDrop = (targetId: ItemView) => (e: React.DragEvent) => {
-    const droppedId = e.dataTransfer.getData(RIBBON_DRAG_MIME) as ItemView
+  const handleDrop = (targetId: ItemId) => (e: React.DragEvent) => {
+    const droppedId = e.dataTransfer.getData(RIBBON_DRAG_MIME) as ItemId
     if (!droppedId || droppedId === targetId) {
       setDraggingId(null); setDropTargetId(null); return
     }
     e.preventDefault()
-    // Recompute the next order: pull `droppedId` out, insert relative to target.
     const next = orderedIds.filter(id => id !== droppedId)
     const idx = next.indexOf(targetId)
     if (idx === -1) {
@@ -163,33 +163,21 @@ export const Ribbon = () => {
         <MagnifyingGlassIcon className="w-5 h-5" />
       </RibbonButton>
 
-      {orderedItems.map(item => {
-        const tabId = VIEW_TO_TAB_ID[item.id]
-        // Items that target a SidebarStack tab don't carry the
-        // After the ribbon de-dup, every remaining item is a
-        // filter-mode view (notes/recent/tags). The active highlight
-        // mirrors currentView; clicks route through setCurrentView.
-        const active = !tabId && currentView === item.id
-        const dragging = draggingId === item.id
-        const isDropTarget = dropTargetId === item.id
+      {orderedIds.map(id => {
+        const item = itemsById.get(id)
+        if (!item) return null
         const Icon = item.Icon
-        const badgeRed = item.badgeRed?.(ctx) ?? false
-        const handleClick = () => {
-          if (tabId) {
-            setSidebarTab(tabId)
-            return
-          }
-          setCurrentView(item.id)
-        }
+        const dragging = draggingId === id
+        const isDropTarget = dropTargetId === id
         return (
           <div
-            key={item.id}
-            data-testid={`ribbon-item-${item.id}`}
+            key={id}
+            data-testid={`ribbon-item-${id}`}
             draggable
-            onDragStart={handleDragStart(item.id)}
-            onDragOver={handleDragOver(item.id)}
+            onDragStart={handleDragStart(id)}
+            onDragOver={handleDragOver(id)}
             onDragLeave={handleDragLeave}
-            onDrop={handleDrop(item.id)}
+            onDrop={handleDrop(id)}
             onDragEnd={handleDragEnd}
             className={[
               'relative',
@@ -198,20 +186,9 @@ export const Ribbon = () => {
               isDropTarget && dropPos.current === 'after'  ? 'border-b-2 border-obsidianAccentPurple -mb-[2px]' : '',
             ].join(' ')}
           >
-            <RibbonNavButton
-              active={active}
-              onClick={handleClick}
-              title={item.title(ctx)}
-            >
-              {badgeRed ? (
-                <div className="relative">
-                  <Icon className="w-5 h-5" />
-                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500" />
-                </div>
-              ) : (
-                <Icon className="w-5 h-5" />
-              )}
-            </RibbonNavButton>
+            <RibbonButton onClick={item.action} title={item.title}>
+              <Icon className="w-5 h-5" />
+            </RibbonButton>
           </div>
         )
       })}
@@ -232,22 +209,6 @@ const RibbonButton = ({
     onClick={onClick}
     title={title}
     className="p-2 max-md:p-2.5 rounded text-obsidianSecondaryText hover:bg-obsidianDarkGray hover:text-obsidianText transition-colors inline-flex items-center justify-center max-md:min-w-[44px] max-md:min-h-[44px]"
-  >
-    {children}
-  </button>
-)
-
-const RibbonNavButton = ({
-  active, onClick, title, children,
-}: { active: boolean; onClick: () => void; title: string; children: React.ReactNode }) => (
-  <button
-    onClick={onClick}
-    title={title}
-    className={`p-2 max-md:p-2.5 rounded transition-colors inline-flex items-center justify-center max-md:min-w-[44px] max-md:min-h-[44px] ${
-      active
-        ? 'bg-obsidianHighlight text-obsidianText'
-        : 'text-obsidianSecondaryText hover:bg-obsidianDarkGray hover:text-obsidianText'
-    }`}
   >
     {children}
   </button>
