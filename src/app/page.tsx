@@ -21,6 +21,7 @@ import {
   PublishGistModal,
   VaultEncryptionModal,
   RevertToCommitModal,
+  LocalFolderImportModal,
 } from '@/components/modals'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useKeyboardShortcuts, useHydration, useAutoSync, useAutoEmbedNotes, useApplyTheme, useViewport } from '@/hooks'
@@ -325,6 +326,7 @@ export default function Home() {
       <PublishGistModal />
       <VaultEncryptionModal />
       <RevertToCommitModal />
+      <LocalFolderImportModal />
       <ResetConfirmModal
         isOpen={showResetModal}
         hasUnsynced={resetHasUnsynced}
