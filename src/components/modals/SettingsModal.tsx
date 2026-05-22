@@ -17,10 +17,11 @@ import {
   SwatchIcon,
   ViewColumnsIcon,
   EyeIcon,
+  FolderOpenIcon,
 } from '@heroicons/react/24/outline'
 import { PANELS } from '@/components/sidebar/sidebarPanelRegistry'
 import { THEME_TOKENS, THEME_PRESETS } from '@/utils/theme'
-import { useUIStore, useSettingsStore, useGitHubStore } from '@/stores'
+import { useUIStore, useSettingsStore, useGitHubStore, useLocalFolderStore, useNoteStore } from '@/stores'
 import type { FolderSortMode, TaskListDensity } from '@/stores'
 import type { TrashMode } from '@/stores/settingsStore'
 import { Modal, Button } from '@/components/ui'
@@ -50,6 +51,7 @@ type CategoryId =
   | 'daily-notes'
   | 'templates'
   | 'github'
+  | 'local-folder'
   | 'ai'
   | 'shortcuts'
   | 'export'
@@ -72,6 +74,7 @@ const CATEGORIES: readonly CategoryDef[] = [
   { id: 'daily-notes', label: 'Daily notes', Icon: CalendarDaysIcon },
   { id: 'templates',   label: 'Templates',   Icon: DocumentDuplicateIcon },
   { id: 'github',      label: 'GitHub sync', Icon: CloudIcon },
+  { id: 'local-folder', label: 'Local folder', Icon: FolderOpenIcon },
   { id: 'ai',          label: 'AI',          Icon: SparklesIcon },
   { id: 'shortcuts',   label: 'Shortcuts',   Icon: CommandLineIcon },
   { id: 'export',      label: 'Export',      Icon: ArrowDownTrayIcon },
@@ -154,6 +157,7 @@ function CategoryPanel({ id }: { id: CategoryId }): ReactNode {
     case 'daily-notes': return <DailyNotesSection />
     case 'templates':   return <TemplatesSection />
     case 'github':      return <GitHubPanel />
+    case 'local-folder': return <LocalFolderPanel />
     case 'ai':          return <AISection />
     case 'shortcuts':   return <ShortcutsSection />
     case 'export':      return <ExportSection />
@@ -500,6 +504,221 @@ function SidebarPanel() {
     </div>
   )
 }
+
+// Local folder sync (File System Access API — Chromium only). Pick a
+// directory, then push the vault to it / import from it on demand. No
+// auto-mirror for v1 — pushes happen via the buttons here so the user
+// can keep the model in their head. The handle is persisted in IDB
+// (see `localFolderSync.ts`); permission re-prompts once per session.
+function LocalFolderPanel() {
+  const status = useLocalFolderStore(s => s.status)
+  const folderName = useLocalFolderStore(s => s.folderName)
+  const lastSyncedAt = useLocalFolderStore(s => s.lastSyncedAt)
+  const busy = useLocalFolderStore(s => s.busy)
+  const lastError = useLocalFolderStore(s => s.lastError)
+  const setStatus = useLocalFolderStore(s => s.setStatus)
+  const setHandle = useLocalFolderStore(s => s.setHandle)
+  const setBusy = useLocalFolderStore(s => s.setBusy)
+  const recordSync = useLocalFolderStore(s => s.recordSync)
+  const setLastError = useLocalFolderStore(s => s.setLastError)
+  const openModal = useUIStore(s => s.openModal)
+
+  // Boot: detect support + try to re-acquire a previously-saved handle.
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const { isLocalFolderSupported, loadLocalFolderHandle } = await import('@/utils/localFolderSync')
+      if (cancelled) return
+      if (!isLocalFolderSupported()) {
+        setStatus('unsupported')
+        return
+      }
+      const saved = await loadLocalFolderHandle()
+      if (cancelled) return
+      if (saved) {
+        setHandle(saved, saved.name)
+        setStatus('reconnecting')
+      } else {
+        setStatus('idle')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [setStatus, setHandle])
+
+  const handleConnect = async () => {
+    setLastError(null)
+    try {
+      const { pickLocalFolder, saveLocalFolderHandle } = await import('@/utils/localFolderSync')
+      const handle = await pickLocalFolder()
+      await saveLocalFolderHandle(handle)
+      setHandle(handle, handle.name)
+      setStatus('connected')
+    } catch (err) {
+      // User-cancel raises AbortError; treat that as silent. Other
+      // errors get surfaced.
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!msg.toLowerCase().includes('abort')) {
+        setLastError(msg)
+      }
+    }
+  }
+
+  const handleReconnect = async () => {
+    setLastError(null)
+    const { ensureFolderPermission } = await import('@/utils/localFolderSync')
+    const handle = useLocalFolderStore.getState().handle
+    if (!handle) return
+    const granted = await ensureFolderPermission(handle)
+    if (granted) {
+      setStatus('connected')
+    } else {
+      setStatus('denied')
+      setLastError('Permission denied. Click Reconnect to try again.')
+    }
+  }
+
+  const handlePushToFolder = async () => {
+    const handle = useLocalFolderStore.getState().handle
+    if (!handle) return
+    setBusy(true)
+    setLastError(null)
+    try {
+      const { pushNotesToFolder, ensureFolderPermission } = await import('@/utils/localFolderSync')
+      const granted = await ensureFolderPermission(handle)
+      if (!granted) {
+        setLastError('Permission denied.')
+        setStatus('denied')
+        return
+      }
+      await pushNotesToFolder(handle, useNoteStore.getState().notes)
+      recordSync()
+    } catch (err) {
+      setLastError(err instanceof Error ? err.message : 'Push failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleImport = () => openModal({ type: 'local-folder-import' })
+
+  const handleDisconnect = async () => {
+    const { clearLocalFolderHandle } = await import('@/utils/localFolderSync')
+    await clearLocalFolderHandle()
+    setHandle(null, null)
+    setStatus('idle')
+  }
+
+  return (
+    <div className="space-y-4">
+      <PanelHeading>Local folder sync</PanelHeading>
+
+      <p className="text-sm text-obsidianSecondaryText">
+        Mirror your vault to a folder on disk (Obsidian-style local vault). Edit notes in another
+        editor and re-import; push the current vault out to a folder for backup. The folder may
+        be a git repo &mdash; commits + pushes are handled by your terminal or GitHub Desktop for
+        now (in-app git is a future feature).
+      </p>
+
+      {status === 'unsupported' && (
+        <div className="flex items-start gap-2 p-3 rounded bg-amber-900/20 border border-amber-900/40 text-amber-200 text-xs">
+          <ExclamationTriangleIconUnsupported />
+          <span>
+            Your browser doesn&apos;t support the File System Access API. Use Chrome / Edge / Brave /
+            Arc, or wait for the desktop build.
+          </span>
+        </div>
+      )}
+
+      {(status === 'idle' || status === 'denied') && (
+        <button
+          type="button"
+          onClick={handleConnect}
+          className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors"
+          data-testid="local-folder-connect"
+        >
+          Connect a folder…
+        </button>
+      )}
+
+      {status === 'reconnecting' && (
+        <div className="space-y-2">
+          <div className="text-xs text-obsidianSecondaryText">
+            Previously connected to <span className="text-obsidianText font-mono">{folderName}</span>.
+            Reconnect to grant permission again for this session.
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleReconnect}
+              className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors"
+              data-testid="local-folder-reconnect"
+            >
+              Reconnect
+            </button>
+            <button
+              type="button"
+              onClick={handleDisconnect}
+              className="px-3 py-1.5 text-sm border border-obsidianBorder text-obsidianSecondaryText rounded hover:text-obsidianText hover:bg-obsidianHighlight transition-colors"
+            >
+              Forget folder
+            </button>
+          </div>
+        </div>
+      )}
+
+      {status === 'connected' && (
+        <div className="space-y-3" data-testid="local-folder-connected">
+          <div className="text-xs text-obsidianSecondaryText">
+            Connected: <span className="text-obsidianText font-mono">{folderName}</span>
+            {lastSyncedAt && (
+              <> &middot; last synced {new Date(lastSyncedAt).toLocaleTimeString()}</>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handlePushToFolder}
+              disabled={busy}
+              className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors disabled:opacity-50"
+              data-testid="local-folder-push"
+            >
+              {busy ? 'Working…' : 'Push vault to folder'}
+            </button>
+            <button
+              type="button"
+              onClick={handleImport}
+              disabled={busy}
+              className="px-3 py-1.5 text-sm border border-obsidianBorder text-obsidianText rounded hover:bg-obsidianHighlight transition-colors disabled:opacity-50"
+              data-testid="local-folder-import-open"
+            >
+              Sync from folder…
+            </button>
+            <button
+              type="button"
+              onClick={handleDisconnect}
+              disabled={busy}
+              className="px-3 py-1.5 text-sm border border-red-900/40 text-red-300 rounded hover:bg-red-900/20 transition-colors disabled:opacity-50"
+            >
+              Disconnect
+            </button>
+          </div>
+        </div>
+      )}
+
+      {lastError && (
+        <div className="text-xs text-red-300 p-2 rounded border border-red-900/40 bg-red-900/20">
+          {lastError}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const ExclamationTriangleIconUnsupported = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-4 h-4 flex-shrink-0 mt-0.5">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+  </svg>
+)
 
 function GitHubPanel() {
   const autoSyncOnStart = useSettingsStore(s => s.autoSyncOnStart)
