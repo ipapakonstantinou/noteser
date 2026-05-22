@@ -13,6 +13,7 @@ import {
   ChevronLeftIcon,
   SparklesIcon,
   ArrowUturnLeftIcon,
+  ClockIcon,
 } from '@heroicons/react/24/outline'
 import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore, useSettingsStore } from '@/stores'
 import type { ContextMenuState, Folder } from '@/types'
@@ -191,6 +192,15 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
     onClose()
   }
 
+  const handleViewHistory = () => {
+    useUIStore.getState().openModal({ type: 'file-history', data: { noteId: contextMenu.id } })
+    onClose()
+  }
+  // Only pushed notes have a meaningful history surface — guard the
+  // menu item to keep the UI honest when the note has never reached
+  // GitHub.
+  const canViewHistory = isNote && !!(item as { gitPath?: string | null }).gitPath
+
   const handleNewNoteInFolder = () => {
     if (!isNote) {
       const note = addNote({ folderId: contextMenu.id })
@@ -283,6 +293,13 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
             label="Duplicate"
             onClick={handleDuplicate}
           />
+          {canViewHistory && (
+            <MenuButton
+              icon={ClockIcon}
+              label="View history"
+              onClick={handleViewHistory}
+            />
+          )}
 
           {!movePanelOpen && (
             <button

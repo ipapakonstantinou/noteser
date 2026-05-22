@@ -15,7 +15,7 @@ function ensureFolderPath(segments: string[]): string | null {
 
 // Tags from frontmatter are merged into the body as `#tag` so they survive
 // in the derived-tags model.
-function bodyWithInlineTags(body: string, frontmatterTags: string[]): string {
+export function bodyWithInlineTags(body: string, frontmatterTags: string[]): string {
   if (frontmatterTags.length === 0) return body
   const prefix = frontmatterTags.map(t => `#${t}`).join(' ')
   // Don't add a duplicate prefix if the body already starts with it (rare,

@@ -1,7 +1,7 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
+import { useEffect, useMemo, useState } from 'react'
+import { ChevronDownIcon, ChevronRightIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline'
 import { useNoteStore, useGitHubStore, useWorkspaceStore } from '@/stores'
 import {
   classifyPendingChanges,
@@ -9,6 +9,8 @@ import {
   type ChangeKind,
   type SyncChange,
 } from '@/utils/syncChanges'
+import { listRecentCommits, formatRelativeAuthorDate, type FileCommitEntry } from '@/utils/githubHistory'
+import { GitHubAPIError } from '@/utils/github'
 
 // VS Code-style source-control panel. Groups pending changes by their
 // gitPath folder hierarchy: each directory is a collapsible row, each
@@ -105,6 +107,90 @@ export function SourceControlPanel() {
           depth={0}
           onOpen={(id) => openNote(id, { preview: false })}
         />
+      )}
+
+      <RecentCommits />
+    </div>
+  )
+}
+
+// Last-N commits on the connected branch. Sits below the pending tree
+// so the user can see "what was just pushed" without leaving the app.
+// Fetches once on mount + after each successful sync (signalled by the
+// store's lastCommitSha changing). Skips entirely when no repo is
+// connected.
+const RecentCommits = () => {
+  const token = useGitHubStore(s => s.token)
+  const repo = useGitHubStore(s => s.syncRepo)
+  const lastCommitSha = useGitHubStore(s => s.lastCommitSha)
+  const [open, setOpen] = useState(true)
+  const [commits, setCommits] = useState<FileCommitEntry[] | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Refetch keyed on (repo + lastCommitSha). lastCommitSha is updated
+  // by useGitHubSync.runSync on success, so any local-driven push
+  // surfaces a fresh list automatically. Manual remote-driven pushes
+  // (e.g. another device synced something) also propagate once the
+  // user runs sync, since the pull updates lastCommitSha too.
+  useEffect(() => {
+    if (!token || !repo) {
+      setCommits(null)
+      return
+    }
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    listRecentCommits(token, repo.owner, repo.name, repo.branch, { perPage: 15 })
+      .then(list => { if (!cancelled) setCommits(list) })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        const msg = err instanceof GitHubAPIError
+          ? (err.isRateLimit ? 'GitHub rate-limited — recent commits unavailable' : err.message)
+          : (err as Error).message
+        setError(msg)
+        setCommits(null)
+      })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [token, repo, lastCommitSha])
+
+  if (!token || !repo) return null
+
+  return (
+    <div className="mt-3 pt-2 border-t border-obsidianBorder" data-testid="source-control-recent-commits">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center gap-1 px-1 py-0.5 text-[11px] uppercase tracking-wide text-obsidianSecondaryText hover:text-obsidianText"
+      >
+        {open ? <ChevronDownIcon className="w-3 h-3" /> : <ChevronRightIcon className="w-3 h-3" />}
+        Recent commits
+      </button>
+      {open && (
+        <div className="mt-1 space-y-0.5">
+          {loading && <div className="px-2 py-1 text-xs text-obsidianSecondaryText italic">Loading…</div>}
+          {error && <div className="px-2 py-1 text-xs text-red-400">{error}</div>}
+          {!loading && !error && commits && commits.length === 0 && (
+            <div className="px-2 py-1 text-xs text-obsidianSecondaryText italic">No commits yet on this branch.</div>
+          )}
+          {commits && commits.map(c => (
+            <a
+              key={c.sha}
+              href={c.htmlUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-1 py-0.5 text-xs text-obsidianText hover:bg-obsidianHighlight/40 rounded group"
+              title={c.message}
+              data-testid="recent-commit-row"
+            >
+              <code className="flex-none text-[10px] text-obsidianAccentPurple font-mono">{c.shortSha}</code>
+              <span className="flex-1 truncate text-obsidianSecondaryText">{c.message || '(no message)'}</span>
+              <span className="flex-none text-[10px] text-obsidianSecondaryText">{formatRelativeAuthorDate(c.authorDate)}</span>
+              <ArrowTopRightOnSquareIcon className="w-3 h-3 flex-none text-obsidianSecondaryText opacity-0 group-hover:opacity-100 transition-opacity" />
+            </a>
+          ))}
+        </div>
       )}
     </div>
   )
