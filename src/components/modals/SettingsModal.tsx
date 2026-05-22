@@ -785,6 +785,18 @@ function AboutPanel() {
         </p>
         <p>
           <a
+            href="https://github.com/ipapakonstantinou/noteser#readme"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-obsidianAccentPurple hover:underline"
+            data-testid="settings-help-link"
+          >
+            Help &amp; docs →
+          </a>
+          <span className="text-obsidianSecondaryText"> (README on GitHub — covers GitHub sync, pinning panels, shortcuts, and getting started)</span>
+        </p>
+        <p>
+          <a
             href="https://github.com/ipapakonstantinou/noteser"
             target="_blank"
             rel="noopener noreferrer"
