@@ -149,14 +149,14 @@ describe('Ribbon — dragstart primary-button guard', () => {
 
   test('button=0: dragstart on ribbon item sets MIME data', () => {
     render(<Ribbon />)
-    const item = screen.getByTestId('ribbon-item-notes')
+    const item = screen.getByTestId('ribbon-item-new-note')
     fireDragStartWithButton(item, 0)
     expect(setDataCalls.length).toBeGreaterThan(0)
   })
 
   test('button=2: dragstart on ribbon item does NOT set MIME data', () => {
     render(<Ribbon />)
-    const item = screen.getByTestId('ribbon-item-notes')
+    const item = screen.getByTestId('ribbon-item-new-note')
     fireDragStartWithButton(item, 2)
     expect(setDataCalls.length).toBe(0)
   })
@@ -210,8 +210,9 @@ describe('TabSwitcher — dragstart primary-button guard', () => {
       <TabSwitcher
         pinnedIds={[]}
         tabOrderSaved={TABS}
+        hiddenIds={new Set()}
         onRightClick={jest.fn()}
-        onPinPanel={jest.fn()}
+        onTabContextMenu={jest.fn()}
         onUnpinPanel={jest.fn()}
       />
     )
@@ -226,8 +227,9 @@ describe('TabSwitcher — dragstart primary-button guard', () => {
       <TabSwitcher
         pinnedIds={[]}
         tabOrderSaved={TABS}
+        hiddenIds={new Set()}
         onRightClick={jest.fn()}
-        onPinPanel={jest.fn()}
+        onTabContextMenu={jest.fn()}
         onUnpinPanel={jest.fn()}
       />
     )

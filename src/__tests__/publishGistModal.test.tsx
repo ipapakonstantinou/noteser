@@ -73,14 +73,17 @@ function seedNote(overrides: Partial<{ isDeleted: boolean; title: string; conten
 }
 
 function seedToken(token: string | null = GITHUB_TOKEN) {
-  useGitHubStore.setState({ token, user: null })
+  // Seed with `repo gist` so the publish button renders by default.
+  // Individual tests that need the "needs scope upgrade" flow can
+  // override tokenScopes afterwards.
+  useGitHubStore.setState({ token, user: null, tokenScopes: token ? ['repo', 'gist'] : null })
 }
 
 beforeEach(() => {
   mockPublishGist.mockReset()
   useUIStore.setState({ modal: { type: null } })
   useNoteStore.setState({ notes: [], selectedNoteId: null })
-  useGitHubStore.setState({ token: null, user: null })
+  useGitHubStore.setState({ token: null, user: null, tokenScopes: null })
 })
 
 // ── empty-state tests ─────────────────────────────────────────────────────────
@@ -222,15 +225,22 @@ describe('PublishGistModal — GistScopeError', () => {
     openModal()
   })
 
-  test('shows the "Disconnect and reconnect" hint when publishGist throws GistScopeError', async () => {
+  test('shows the "Authorize gist publishing" hint when publishGist throws GistScopeError', async () => {
     const underlying = new GitHubAPIError(404, 'createGist', 'Not Found', null, null)
     mockPublishGist.mockRejectedValueOnce(new GistScopeError(underlying))
     const user = userEvent.setup()
     render(<PublishGistModal />)
     await user.click(screen.getByTestId('publish-gist-submit'))
+    // After the incremental-gist-scope rebuild the hint points the user
+    // at the in-modal "Authorize gist publishing" button instead of a
+    // disconnect-and-reconnect dance. The button itself appears too —
+    // assert on the testid (unambiguous) instead of the visible text
+    // (which now duplicates between the button label and the inline
+    // explanation, breaking getByText's single-match semantics).
     await waitFor(() =>
-      expect(screen.getByText(/Disconnect and reconnect GitHub/i)).toBeInTheDocument()
+      expect(screen.getByTestId('publish-gist-authorize')).toBeInTheDocument()
     )
+    expect(screen.getByText(/grant the gist scope/i)).toBeInTheDocument()
   })
 
   test('shows a generic error message for non-scope errors', async () => {
@@ -240,7 +250,7 @@ describe('PublishGistModal — GistScopeError', () => {
     await user.click(screen.getByTestId('publish-gist-submit'))
     await waitFor(() => expect(screen.getByText('network down')).toBeInTheDocument())
     // The scope-reconnect hint must NOT appear for generic errors.
-    expect(screen.queryByText(/Disconnect and reconnect GitHub/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/grant the gist scope/i)).not.toBeInTheDocument()
   })
 })
 

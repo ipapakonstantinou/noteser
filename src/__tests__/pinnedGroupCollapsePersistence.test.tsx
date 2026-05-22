@@ -55,6 +55,7 @@ function renderPinnedGroup() {
   const onAddToThisGroup = jest.fn()
   const onReorder = jest.fn()
   const onRightClick = jest.fn()
+  const onTabContextMenu = jest.fn()
   const utils = render(
     <PinnedGroup
       group={GROUP}
@@ -62,6 +63,7 @@ function renderPinnedGroup() {
       onAddToThisGroup={onAddToThisGroup}
       onReorder={onReorder}
       onRightClick={onRightClick}
+      onTabContextMenu={onTabContextMenu}
     />
   )
   return utils

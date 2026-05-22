@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ArrowTopRightOnSquareIcon,
   ClipboardDocumentIcon,
@@ -11,7 +11,15 @@ import {
 } from '@heroicons/react/24/outline'
 import { Modal, Button } from '@/components/ui'
 import { useUIStore, useNoteStore, useGitHubStore } from '@/stores'
+import { hasGistScope } from '@/stores/githubStore'
 import { publishGist, GistScopeError, sanitizeGistFilename } from '@/utils/githubGist'
+import {
+  startDeviceFlow,
+  pollForToken,
+  fetchGitHubUserAndScopes,
+  DeviceFlowError,
+  type DeviceFlowStart,
+} from '@/utils/github'
 
 // Publish-as-gist surface for a single note. Open via:
 //   useUIStore.openModal({ type: 'publish-gist', data: { noteId } })
@@ -33,6 +41,8 @@ export const PublishGistModal = () => {
 
   const note = useNoteStore(s => data ? s.notes.find(n => n.id === data.noteId) : undefined)
   const token = useGitHubStore(s => s.token)
+  const tokenScopes = useGitHubStore(s => s.tokenScopes)
+  const setSession = useGitHubStore(s => s.setSession)
 
   const [isPublic, setIsPublic] = useState(false)
   const [description, setDescription] = useState('')
@@ -41,6 +51,23 @@ export const PublishGistModal = () => {
   const [scopeError, setScopeError] = useState(false)
   const [result, setResult] = useState<{ htmlUrl: string; id: string } | null>(null)
   const [copied, setCopied] = useState(false)
+  // Scope-upgrade device-flow state. When the user clicks
+  // "Authorize gist publishing" we run a second, narrowly-scoped
+  // device flow asking GitHub for `repo gist`. The current device
+  // code + verification URL live here so the modal can show them
+  // until the user finishes authorising on github.com.
+  const [scopeFlow, setScopeFlow] = useState<DeviceFlowStart | null>(null)
+  const [authorizing, setAuthorizing] = useState(false)
+  // AbortController for the in-flight scope-upgrade flow. Cancelled
+  // when the modal closes or the user clicks Cancel; otherwise the
+  // poll loop would keep running after the dialog disappears.
+  const scopeAbortRef = useRef<AbortController | null>(null)
+
+  // `null` scopes means "unknown" — older session without recorded
+  // scopes. Treat as needing the upgrade; we'll either confirm the
+  // gist scope from the upgrade flow or learn from a GistScopeError
+  // that publish fails. Both paths funnel through the same UI.
+  const needsScopeUpgrade = !hasGistScope(tokenScopes)
 
   // Reset state every time the modal re-opens for a fresh note.
   useEffect(() => {
@@ -51,7 +78,18 @@ export const PublishGistModal = () => {
     setScopeError(false)
     setResult(null)
     setCopied(false)
+    setScopeFlow(null)
+    setAuthorizing(false)
   }, [isOpen, data?.noteId, note?.title])
+
+  // Abort any in-flight scope-upgrade flow when the modal closes —
+  // otherwise a backgrounded `pollForToken` would keep hitting the
+  // proxy until the device code expires.
+  useEffect(() => {
+    if (isOpen) return
+    scopeAbortRef.current?.abort()
+    scopeAbortRef.current = null
+  }, [isOpen])
 
   // Reset the "copied!" indicator after a short delay.
   useEffect(() => {
@@ -78,25 +116,28 @@ export const PublishGistModal = () => {
     )
   }
 
-  const handlePublish = async () => {
+  // Publish using an explicit token — separated out so the
+  // post-upgrade auto-retry can pass the newly-issued token without
+  // racing the Zustand state update.
+  const runPublishWithToken = async (publishToken: string) => {
     setPublishing(true)
     setError(null)
     setScopeError(false)
     try {
       // Noteser tags are already inline in `note.content` (extracted on
-      // the fly from `#word` patterns), so we don't need to re-stamp
-      // them — uploading the raw body matches what readers see in the
-      // app and avoids the double-tag-line bug from an earlier draft
-      // that called `bodyWithInlineTags` (a pull-side helper).
+      // the fly from `#word` patterns), so we don't re-stamp them —
+      // uploading the raw body matches what readers see in the app and
+      // avoids the double-tag-line bug from an earlier draft that
+      // called `bodyWithInlineTags` (a pull-side helper).
       const content = note.content
-      const result = await publishGist({
-        token,
+      const r = await publishGist({
+        token: publishToken,
         filename: sanitizeGistFilename(note.title || 'note'),
         content,
         description: description.trim(),
         isPublic,
       })
-      setResult({ htmlUrl: result.htmlUrl, id: result.id })
+      setResult({ htmlUrl: r.htmlUrl, id: r.id })
     } catch (err) {
       if (err instanceof GistScopeError) {
         setScopeError(true)
@@ -107,6 +148,68 @@ export const PublishGistModal = () => {
     } finally {
       setPublishing(false)
     }
+  }
+
+  const handlePublish = () => runPublishWithToken(token)
+
+  // Drive a device flow that asks GitHub for the `repo gist` scope
+  // specifically (not just at first sign-in). On success we update
+  // the session with the new token + scopes and auto-retry publish.
+  //
+  // Why this exists: the default OAuth scope at sign-in is `repo` only,
+  // so users who never publish a gist never grant gist read/write/delete.
+  // This narrows the XSS blast radius of the localStorage token — see
+  // security-audit Finding 2.
+  const handleAuthorizeGistScope = async () => {
+    // Cancel any prior in-flight scope flow so the user can re-click
+    // "Authorize" without leaving orphaned polls behind.
+    scopeAbortRef.current?.abort()
+    const controller = new AbortController()
+    scopeAbortRef.current = controller
+
+    setAuthorizing(true)
+    setError(null)
+    setScopeError(false)
+    setScopeFlow(null)
+    try {
+      const device = await startDeviceFlow('repo gist')
+      if (controller.signal.aborted) return
+      setScopeFlow(device)
+      const newToken = await pollForToken({
+        deviceCode: device.device_code,
+        interval: device.interval,
+        expiresIn: device.expires_in,
+        signal: controller.signal,
+      })
+      if (controller.signal.aborted) return
+      const { user, scopes } = await fetchGitHubUserAndScopes(newToken)
+      if (controller.signal.aborted) return
+      setSession(newToken, user, scopes)
+      setScopeFlow(null)
+      // Auto-retry publish with the new token — the user's intent was
+      // "publish my note", the scope prompt was incidental.
+      if (hasGistScope(scopes)) {
+        await runPublishWithToken(newToken)
+      } else {
+        // GitHub returned a token without the `gist` scope despite us
+        // asking for it (rare — e.g. user manually deselected the scope
+        // checkbox). Surface that explicitly so they know to retry.
+        setError('GitHub did not grant the gist scope. Try authorising again and keep the gist checkbox ticked.')
+      }
+    } catch (err) {
+      if (err instanceof DeviceFlowError && err.code === 'aborted') return
+      setError(err instanceof Error ? err.message : 'Authorisation failed')
+      setScopeFlow(null)
+    } finally {
+      if (!controller.signal.aborted) setAuthorizing(false)
+    }
+  }
+
+  const handleCancelScopeFlow = () => {
+    scopeAbortRef.current?.abort()
+    scopeAbortRef.current = null
+    setAuthorizing(false)
+    setScopeFlow(null)
   }
 
   const handleCopy = async () => {
@@ -184,6 +287,28 @@ export const PublishGistModal = () => {
             </div>
           </div>
 
+          {scopeFlow && (
+            <div className="space-y-2 p-3 rounded bg-obsidianDarkGray border border-obsidianAccentPurple/40">
+              <p className="text-xs text-obsidianSecondaryText">
+                Enter this code on GitHub to grant the gist scope. The
+                modal will retry publishing as soon as you authorise.
+              </p>
+              <code className="block text-center text-xl font-mono tracking-[0.25em] text-obsidianText select-all py-1">
+                {scopeFlow.user_code}
+              </code>
+              <a
+                href={scopeFlow.verification_uri}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-obsidianAccentPurple text-white rounded text-sm hover:bg-opacity-90 transition-colors no-underline"
+                data-testid="publish-gist-scope-link"
+              >
+                <ArrowTopRightOnSquareIcon className="w-4 h-4" />
+                Open GitHub to authorise
+              </a>
+            </div>
+          )}
+
           {error && (
             <div className="flex items-start gap-2 p-3 rounded bg-red-900/20 border border-red-900/40 text-xs text-red-300">
               <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
@@ -191,7 +316,7 @@ export const PublishGistModal = () => {
                 <div>{error}</div>
                 {scopeError && (
                   <div className="mt-1 text-obsidianSecondaryText">
-                    Disconnect and reconnect GitHub in Settings → GitHub sync — the new authorisation will include the gist scope.
+                    Click &ldquo;Authorize gist publishing&rdquo; below to grant the gist scope — your existing access stays intact.
                   </div>
                 )}
               </div>
@@ -199,15 +324,32 @@ export const PublishGistModal = () => {
           )}
 
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-obsidianBorder">
-            <Button variant="ghost" onClick={closeModal} disabled={publishing}>Cancel</Button>
-            <Button
-              variant="primary"
-              onClick={handlePublish}
-              disabled={publishing}
-              data-testid="publish-gist-submit"
-            >
-              {publishing ? 'Publishing…' : 'Publish gist'}
-            </Button>
+            {scopeFlow ? (
+              <Button variant="ghost" onClick={handleCancelScopeFlow}>Cancel authorisation</Button>
+            ) : (
+              <Button variant="ghost" onClick={closeModal} disabled={publishing || authorizing}>Cancel</Button>
+            )}
+            {needsScopeUpgrade || scopeError ? (
+              <Button
+                variant="primary"
+                onClick={handleAuthorizeGistScope}
+                disabled={authorizing || publishing}
+                data-testid="publish-gist-authorize"
+              >
+                {authorizing
+                  ? (scopeFlow ? 'Waiting for GitHub…' : 'Requesting code…')
+                  : 'Authorize gist publishing'}
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                onClick={handlePublish}
+                disabled={publishing}
+                data-testid="publish-gist-submit"
+              >
+                {publishing ? 'Publishing…' : 'Publish gist'}
+              </Button>
+            )}
           </div>
         </div>
       ) : (
