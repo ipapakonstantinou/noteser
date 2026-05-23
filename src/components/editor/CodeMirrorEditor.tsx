@@ -15,8 +15,11 @@ import { tasksLivePreview } from './tasksLivePreview'
 import { basesLivePreview } from './basesLivePreview'
 import { imagesLivePreview } from './imagesLivePreview'
 import { getActiveWikilinkQuery } from '@/utils/wikilinks'
+import { getActiveTagQuery } from '@/utils/tagAutocomplete'
+import { collectAllTags } from '@/utils/tags'
 import { findNoteByTitleOrAlias } from '@/utils/aliases'
 import { toggleTaskLineText, UI_TASK_LINE_REGEX } from '@/utils/tasks'
+import { buildTable } from '@/utils/markdownTable'
 import { findFragmentLine } from '@/utils/wikilinkTarget'
 import {
   appendBlockId,
@@ -27,11 +30,18 @@ import {
 import { useNoteStore } from '@/stores/noteStore'
 import { saveAttachment } from '@/utils/attachments'
 import { WikilinkAutocomplete } from './WikilinkAutocomplete'
+import { TagAutocomplete } from './TagAutocomplete'
 import type { Note } from '@/types'
 
 interface WikilinkState {
   query: string
   start: number
+  position: { top: number; left: number }
+}
+
+interface TagState {
+  query: string
+  start: number // position of `#`
   position: { top: number; left: number }
 }
 
@@ -128,6 +138,7 @@ export function CodeMirrorEditor({
 }: CodeMirrorEditorProps) {
   const cmRef = useRef<ReactCodeMirrorRef>(null)
   const [wikilinkState, setWikilinkState] = useState<WikilinkState | null>(null)
+  const [tagState, setTagState] = useState<TagState | null>(null)
 
   // Stable refs so extension callbacks always see the latest values
   const activeNotesRef = useRef(activeNotes)
@@ -316,6 +327,31 @@ export function CodeMirrorEditor({
         return true
       },
     },
+    {
+      // Insert a 2-row × 2-col markdown table at the cursor. Drops the
+      // template on its own block (precedes with a blank line if the
+      // current line isn't empty) and selects "Header 1" so the user
+      // can type to overwrite.
+      key: 'Mod-Alt-t',
+      preventDefault: true,
+      run(view) {
+        const { head } = view.state.selection.main
+        const line = view.state.doc.lineAt(head)
+        const prefix = line.text === '' ? '' : '\n\n'
+        const t = buildTable(2, 2)
+        const insertPos = prefix === '' ? line.from : line.to
+        const insertText = `${prefix}${t.text}`
+        const baseOffset = insertPos + prefix.length
+        view.dispatch({
+          changes: { from: insertPos, to: insertPos, insert: insertText },
+          selection: {
+            anchor: baseOffset + t.selectionFrom,
+            head: baseOffset + t.selectionTo,
+          },
+        })
+        return true
+      },
+    },
     ])),
     EditorView.domEventHandlers({
       dragover(event) {
@@ -428,10 +464,29 @@ export function CodeMirrorEditor({
     })
   }, [])
 
+  const updateTagState = useCallback((content: string) => {
+    const view = cmRef.current?.view
+    if (!view) return
+    // Tags and wikilinks are mutually exclusive: if we just opened the
+    // wikilink popup, don't also fire the tag popup. (e.g. `[[#`)
+    if (wikilinkState) { setTagState(null); return }
+    const cursorPos = view.state.selection.main.head
+    const active = getActiveTagQuery(content, cursorPos)
+    if (!active) { setTagState(null); return }
+    const coords = view.coordsAtPos(cursorPos)
+    if (!coords) return
+    setTagState({
+      query: active.query,
+      start: active.start,
+      position: { top: coords.bottom + 4, left: coords.left },
+    })
+  }, [wikilinkState])
+
   const handleChange = useCallback((value: string) => {
     debouncedSave(value)
     updateWikilinkState(value)
-  }, [debouncedSave, updateWikilinkState])
+    updateTagState(value)
+  }, [debouncedSave, updateWikilinkState, updateTagState])
 
   const handleWikilinkSelect = useCallback((note: Note) => {
     if (!wikilinkState) return
@@ -447,6 +502,33 @@ export function CodeMirrorEditor({
     view.focus()
     navigateRef.current(note)
   }, [wikilinkState])
+
+  const handleTagSelect = useCallback((tagName: string) => {
+    if (!tagState) return
+    const view = cmRef.current?.view
+    if (!view) return
+    const cursorPos = view.state.selection.main.head
+    // Replace from the `#` through the cursor with `#<tag> ` (trailing
+    // space so the user can continue typing immediately).
+    const insertion = `#${tagName} `
+    view.dispatch({
+      changes: { from: tagState.start, to: cursorPos, insert: insertion },
+      selection: { anchor: tagState.start + insertion.length },
+    })
+    setTagState(null)
+    view.focus()
+  }, [tagState])
+
+  // Snapshot of all known tags across the vault. Recomputed once when
+  // the editor mounts (or note switches) — collectAllTags is WeakMap-
+  // cached internally, so the cost stays low at 5k+ notes.
+  const allTags = useMemo(
+    () => collectAllTags(useNoteStore.getState().notes),
+    // `tagState` triggers a re-read so newly-typed tags become available
+    // for the *next* completion. Cheap because of the per-note cache.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tagState?.start, noteId],
+  )
 
   return (
     <div className="flex-1 overflow-hidden h-full relative bg-obsidianBlack">
@@ -496,6 +578,15 @@ export function CodeMirrorEditor({
           position={wikilinkState.position}
           onSelect={handleWikilinkSelect}
           onClose={() => setWikilinkState(null)}
+        />
+      )}
+      {tagState && (
+        <TagAutocomplete
+          query={tagState.query}
+          tags={allTags}
+          position={tagState.position}
+          onSelect={handleTagSelect}
+          onClose={() => setTagState(null)}
         />
       )}
     </div>
