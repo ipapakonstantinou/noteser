@@ -24,6 +24,7 @@ export type ShortcutAction =
   | 'newFolder'
   | 'deleteNote'
   | 'openToday'
+  | 'openRandomNote'
   | 'focusSidebar'
   | 'openCommandPalette'
   | 'closeTab'
@@ -88,6 +89,13 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
     description: "Open (and create if missing) today's daily note.",
     defaultCombo: 'Alt+D',
     action: 'openToday',
+  },
+  {
+    id: 'openRandomNote',
+    label: 'Open a random note',
+    description: "Jump to a random non-deleted note — Wikipedia's \"Random article\" for your vault.",
+    defaultCombo: 'Alt+R',
+    action: 'openRandomNote',
   },
   {
     id: 'focusSidebar',

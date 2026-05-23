@@ -8,6 +8,7 @@ import {
   CommandLineIcon,
   RectangleStackIcon,
   Cog6ToothIcon,
+  SparklesIcon,
 } from '@heroicons/react/24/outline'
 import { useUIStore, useSettingsStore, useWorkspaceStore, useNoteStore } from '@/stores'
 
@@ -35,6 +36,7 @@ type ItemId =
   | 'daily-note'
   | 'command-palette'
   | 'templates'
+  | 'random-note'
 
 interface ItemDef {
   id: ItemId
@@ -80,6 +82,14 @@ const ITEMS: readonly ItemDef[] = [
     Icon: RectangleStackIcon,
     title: 'Templates',
     action: () => useUIStore.getState().openModal({ type: 'template' }),
+  },
+  {
+    id: 'random-note',
+    Icon: SparklesIcon,
+    title: 'Open a random note (Alt+R)',
+    action: () => {
+      void import('@/utils/randomNote').then(({ openRandomNote }) => openRandomNote())
+    },
   },
 ]
 
