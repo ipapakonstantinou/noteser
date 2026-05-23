@@ -415,11 +415,32 @@ export async function pullFromGitHub(input: {
       continue
     }
 
-    const lastPushed = localMatch.gitLastPushedSha ?? null
-    const remoteChanged = lastPushed !== remoteSha
-    const localChanged = lastPushed !== localBlobSha
+    // Two distinct SHAs (the two-SHA split that fixes silent conflict loss):
+    //   - localChanged compares the canonical LOCAL bytes against the local
+    //     baseline (gitLastPushedSha). For a frontmatter note this baseline is
+    //     the SHA of the TRANSFORMED body the app stores, so an untouched note
+    //     hashes back to it → localChanged = false (no phantom drift).
+    //   - remoteChanged compares the current remote blob SHA against the REMOTE
+    //     blob we last synced against (gitRemoteBaseSha). That blob is the raw
+    //     remote file (with frontmatter), which is exactly what the three-way
+    //     ancestor fetch needs.
+    // Un-migrated notes (synced before gitRemoteBaseSha existed) have no remote
+    // base — fall back to gitLastPushedSha to preserve the prior behaviour
+    // until their next sync rewrites both fields.
+    const localBaseline = localMatch.gitLastPushedSha ?? null
+    const remoteBase = localMatch.gitRemoteBaseSha ?? localMatch.gitLastPushedSha ?? null
+    const remoteChanged = remoteBase !== remoteSha
+    const localChanged = localBaseline !== localBlobSha
 
-    if (remoteChanged && !localChanged) {
+    if (!remoteChanged && !localChanged) {
+      // Neither side moved since the last sync. The raw remote blob SHA still
+      // differs from our canonical local SHA (that's normal for a frontmatter
+      // note: we store a transformed body) — but nothing has actually changed,
+      // so this is `unchanged`. Without this branch a frontmatter note would
+      // fall through to "remoteUnchanged + localChanged → push", silently
+      // re-pushing on every sync (the storm) AND never settling to unchanged.
+      out.push({ kind: 'unchanged', noteId: localMatch.id })
+    } else if (remoteChanged && !localChanged) {
       const content = await loadRemote()
       const parsed = parseNote(content)
       out.push({ kind: 'remoteUpdated', noteId: localMatch.id, remoteSha, remoteContent: content, tags: parsed.tags, body: parsed.body })
@@ -429,14 +450,16 @@ export async function pullFromGitHub(input: {
 
       // Try a line-level 3-way merge before bothering the user. If the local
       // and remote edits don't overlap line-wise we can auto-merge and the
-      // user never sees the conflict tab. We need the common ancestor blob —
-      // which is exactly what `gitLastPushedSha` points at. Anything that goes
-      // wrong (no ancestor sha, blob GC'd, network hiccup, overlapping edits)
-      // falls back to the existing manual conflict flow.
+      // user never sees the conflict tab. The common ancestor is the REMOTE
+      // blob we last synced against (`gitRemoteBaseSha`, fetchable via
+      // getBlobContent) — NOT gitLastPushedSha, which is the SHA of the
+      // transformed local bytes and may not exist as a remote blob at all.
+      // Anything that goes wrong (no ancestor sha, blob GC'd, network hiccup,
+      // overlapping edits) falls back to the existing manual conflict flow.
       let autoMerged: string | null = null
-      if (lastPushed) {
+      if (remoteBase) {
         try {
-          const ancestorRaw = await getBlobContent(token, owner, name, lastPushed)
+          const ancestorRaw = await getBlobContent(token, owner, name, remoteBase)
           const ancestor = await maybeDecryptFromPull(ancestorRaw)
           const merged = threeWayMerge(ancestor, localContent, content)
           if (merged.ok) autoMerged = merged.merged
@@ -838,8 +861,14 @@ export type GitPathUpdate = {
   noteId: string
   gitPath: string | null
   // Blob SHA of what we just pushed for this note. Null when the note's file
-  // was deleted in this commit.
+  // was deleted in this commit. After a push the remote file IS
+  // serializeNote(note), so this is BOTH the canonical local baseline and the
+  // remote merge base — gitRemoteBaseSha below is set to the same value.
   gitLastPushedSha: string | null
+  // The remote merge-base SHA to persist alongside gitLastPushedSha. Coincides
+  // with gitLastPushedSha after a push (the pushed blob is the new remote
+  // file). Null when the file was deleted.
+  gitRemoteBaseSha: string | null
 }
 
 export interface SyncOutcome {
@@ -961,8 +990,10 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   for (const plan of noteBlobPlan) {
     const skipped = plan.remoteSha === plan.localSha
     const finalSha = skipped ? plan.remoteSha! : plan.localSha
-    if (skipped && (plan.note.gitPath !== plan.path || plan.note.gitLastPushedSha !== finalSha)) {
-      pathUpdates.push({ noteId: plan.note.id, gitPath: plan.path, gitLastPushedSha: finalSha })
+    if (skipped && (plan.note.gitPath !== plan.path || plan.note.gitLastPushedSha !== finalSha || plan.note.gitRemoteBaseSha !== finalSha)) {
+      // After a push the pushed blob IS the remote file, so the local baseline
+      // and the remote merge base coincide — set both to finalSha.
+      pathUpdates.push({ noteId: plan.note.id, gitPath: plan.path, gitLastPushedSha: finalSha, gitRemoteBaseSha: finalSha })
     }
     // Gutter snapshot uses the plaintext, not the wire form — look it up
     // from `desired` rather than `plan.content` (which is the wire form).
@@ -983,8 +1014,9 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     uploadedShas.add(plan.localSha)
     entries.push({ path: plan.path, mode: '100644', type: 'blob', sha: finalSha })
     if (plan.remoteSha) updated++; else created++
-    if (plan.note.gitPath !== plan.path || plan.note.gitLastPushedSha !== finalSha) {
-      pathUpdates.push({ noteId: plan.note.id, gitPath: plan.path, gitLastPushedSha: finalSha })
+    if (plan.note.gitPath !== plan.path || plan.note.gitLastPushedSha !== finalSha || plan.note.gitRemoteBaseSha !== finalSha) {
+      // Pushed blob == remote file → both SHAs coincide.
+      pathUpdates.push({ noteId: plan.note.id, gitPath: plan.path, gitLastPushedSha: finalSha, gitRemoteBaseSha: finalSha })
     }
     blobsUploaded++
     emitBlobProgress()
@@ -1104,7 +1136,7 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
         entries.push({ path: note.gitPath, mode: '100644', type: 'blob', sha: null })
         deleted++
       }
-      pathUpdates.push({ noteId: note.id, gitPath: null, gitLastPushedSha: null })
+      pathUpdates.push({ noteId: note.id, gitPath: null, gitLastPushedSha: null, gitRemoteBaseSha: null })
     }
   }
 
