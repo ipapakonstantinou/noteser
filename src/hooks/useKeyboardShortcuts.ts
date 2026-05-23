@@ -91,6 +91,12 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers = {}) => {
           // Lazy import keeps the keyboard hook free of a hard daily-notes dep.
           import('@/utils/dailyNotes').then(({ openTodayNote }) => openTodayNote())
           return
+        case 'openRandomNote':
+          event.preventDefault()
+          // Lazy import — keeps the random-note util out of the main bundle
+          // for users who never bind / trigger this shortcut.
+          import('@/utils/randomNote').then(({ openRandomNote }) => openRandomNote())
+          return
         case 'focusSidebar': {
           event.preventDefault()
           // Hand focus to the sidebar folder tree if it's mounted. We
