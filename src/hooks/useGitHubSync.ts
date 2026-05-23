@@ -40,6 +40,69 @@ interface UseGitHubSyncResult {
 // mid-sync) must not wipe an in-flight sync's guard.
 let isSyncingResetThisSession = false
 
+// Watchdog: the hard ceiling on how long a single sync may hold the global
+// isSyncing flag. On mobile a fetch can stall indefinitely (no timeout on
+// fetch itself), and without this the `await` never settles, the `finally`
+// never runs, and isSyncing stays true for the whole session — wedging every
+// button until a page reload. After this many ms we force the UI to recover:
+// clear the flag, abort in-flight fetches where supported, and surface a
+// retryable error. 45s is comfortably longer than a healthy large-vault sync
+// but short enough that a wedged tab self-heals while the user is still there.
+const SYNC_WATCHDOG_MS = 45_000
+
+// Sentinel thrown by the watchdog branch so the caller can tell a genuine
+// failure apart from "we gave up waiting". The catch blocks map it to the
+// timeout message; the surrounding race guarantees isSyncing is already
+// cleared by the time it surfaces.
+class SyncTimeoutError extends Error {
+  constructor() {
+    super('Sync timed out — check your connection and retry.')
+    this.name = 'SyncTimeoutError'
+  }
+}
+
+// Race `work` against the watchdog. If the work settles first, the timer is
+// cleared and its result/rejection passes straight through. If the watchdog
+// wins, we abort the controller (cancelling any abort-aware fetch) and throw
+// SyncTimeoutError. A `settled` flag makes the two outcomes mutually
+// exclusive so a late-resolving `work` can never flip state back after the
+// timeout already recovered the UI.
+async function withSyncWatchdog<T>(
+  controller: AbortController,
+  work: () => Promise<T>,
+): Promise<T> {
+  let settled = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      // Best-effort: cancel any fetch that wired up controller.signal. Fetches
+      // that are not yet abort-aware keep running in the background, but the
+      // race below has already let go of the UI.
+      try { controller.abort() } catch { /* abort is best-effort */ }
+      reject(new SyncTimeoutError())
+    }, SYNC_WATCHDOG_MS)
+  })
+
+  try {
+    const result = await Promise.race([work(), timeout])
+    // Work won the race. Guard against a watchdog that fired in the same tick.
+    if (!settled) {
+      settled = true
+      if (timer) clearTimeout(timer)
+    }
+    return result
+  } catch (err) {
+    if (!settled) {
+      settled = true
+      if (timer) clearTimeout(timer)
+    }
+    throw err
+  }
+}
+
 // ── Step 1: PULL ────────────────────────────────────────────────────────────
 // Fetch classifications from the remote. On a vault that's still empty
 // locally we use the zipball fast path (one archive download instead of N
@@ -232,85 +295,98 @@ export function useGitHubSync(): UseGitHubSyncResult {
     // throw between setIsSyncing(true) and entering the try (e.g. React
     // setState during unmount) would leave the flag wedged true forever,
     // silently breaking every subsequent click.
+    //
+    // The whole sync runs inside withSyncWatchdog: after SYNC_WATCHDOG_MS the
+    // watchdog clears the guard, aborts the controller, and rejects with
+    // SyncTimeoutError — guaranteeing recovery even if a fetch hangs forever.
+    const controller = new AbortController()
     try {
       setIsSyncing(true)
       setSyncState({ kind: 'running' })
-      const { classifications } = await runPull(activeToken, activeRepo)
+      await withSyncWatchdog(controller, async () => {
+        const { classifications } = await runPull(activeToken, activeRepo)
 
-      const conflicts = classifications.filter(
-        c => c.kind === 'conflict' || c.kind === 'conflictDeleted',
-      ) as ConflictTabData[]
-      if (conflicts.length > 0) {
-        // Apply everything that isn't in conflict; leave push for the user
-        // to retry after they resolve the merge tabs.
-        await runApply(classifications)
-        if (conflicts.length >= BATCH_THRESHOLD) {
-          openMergeBatch(conflicts)
-        } else {
-          openMergeConflicts(conflicts)
+        const conflicts = classifications.filter(
+          c => c.kind === 'conflict' || c.kind === 'conflictDeleted',
+        ) as ConflictTabData[]
+        if (conflicts.length > 0) {
+          // Apply everything that isn't in conflict; leave push for the user
+          // to retry after they resolve the merge tabs.
+          await runApply(classifications)
+          if (conflicts.length >= BATCH_THRESHOLD) {
+            openMergeBatch(conflicts)
+          } else {
+            openMergeConflicts(conflicts)
+          }
+          setSyncState({
+            kind: 'err',
+            message: `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} need review`,
+          })
+          return
         }
-        setSyncState({
-          kind: 'err',
-          message: `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} need review`,
-        })
-        return
-      }
 
-      const { notes: pullCounts, attachments: attachCounts } = await runApply(classifications)
+        const { notes: pullCounts, attachments: attachCounts } = await runApply(classifications)
 
-      // AI commit messages: when the user has opted in AND didn't
-      // pass a custom message via the SCM input, ask the model to
-      // draft one from the pending diff. Null result → fall back to
-      // the auto-generated default in syncToGitHub.
-      let effectiveCommitMessage = commitMessage
-      const s = useSettingsStore.getState()
-      if (!effectiveCommitMessage && s.aiCommitMessages && s.aiProvider !== 'off' && s.aiApiKey) {
-        try {
-          const { draftAiCommitMessage } = await import('@/utils/aiCommitMessage')
-          const drafted = await draftAiCommitMessage()
-          if (drafted) effectiveCommitMessage = drafted
-        } catch {
-          // Stay silent on AI failure — never block a sync over it.
-        }
-      }
-
-      const { result, pathUpdates, vaultSettingsHashPushed, vaultGitignorePushed } = await runPush(activeToken, activeRepo, effectiveCommitMessage)
-
-      // Write the per-note gitPath / gitLastPushedSha back so the next pull
-      // classifies us as `unchanged` instead of detecting a phantom remote
-      // change.
-      const { updateNote } = useNoteStore.getState()
-      for (const u of pathUpdates) {
-        updateNote(u.noteId, { gitPath: u.gitPath, gitLastPushedSha: u.gitLastPushedSha })
-      }
-      // Remember the vault settings hash so the next push knows to skip
-      // when nothing has changed locally since.
-      if (vaultSettingsHashPushed) {
-        useSettingsStore.getState().setVaultSettingsLastPushedHash(vaultSettingsHashPushed)
-      }
-      // gi9n: if we just pushed the `.gitignore` draft, clear it and
-      // snapshot the pushed content as the new remote baseline so the
-      // editor stops showing a dirty marker and the next sync skips.
-      if (vaultGitignorePushed) {
+        // AI commit messages: when the user has opted in AND didn't
+        // pass a custom message via the SCM input, ask the model to
+        // draft one from the pending diff. Null result → fall back to
+        // the auto-generated default in syncToGitHub.
+        let effectiveCommitMessage = commitMessage
         const s = useSettingsStore.getState()
-        const pushed = s.vaultGitignoreDraft
-        s.setVaultGitignoreRemoteSnapshot(pushed)
-        s.setVaultGitignoreDraft(null)
-      }
-      recordSync(result.commitSha)
+        if (!effectiveCommitMessage && s.aiCommitMessages && s.aiProvider !== 'off' && s.aiApiKey) {
+          try {
+            const { draftAiCommitMessage } = await import('@/utils/aiCommitMessage')
+            const drafted = await draftAiCommitMessage()
+            if (drafted) effectiveCommitMessage = drafted
+          } catch {
+            // Stay silent on AI failure — never block a sync over it.
+          }
+        }
 
-      setSyncState({
-        kind: 'ok',
-        message: formatSyncMessage(pullCounts, attachCounts, result),
-        url: result.commitUrl,
+        const { result, pathUpdates, vaultSettingsHashPushed, vaultGitignorePushed } = await runPush(activeToken, activeRepo, effectiveCommitMessage)
+
+        // Write the per-note gitPath / gitLastPushedSha back so the next pull
+        // classifies us as `unchanged` instead of detecting a phantom remote
+        // change.
+        const { updateNote } = useNoteStore.getState()
+        for (const u of pathUpdates) {
+          updateNote(u.noteId, { gitPath: u.gitPath, gitLastPushedSha: u.gitLastPushedSha })
+        }
+        // Remember the vault settings hash so the next push knows to skip
+        // when nothing has changed locally since.
+        if (vaultSettingsHashPushed) {
+          useSettingsStore.getState().setVaultSettingsLastPushedHash(vaultSettingsHashPushed)
+        }
+        // gi9n: if we just pushed the `.gitignore` draft, clear it and
+        // snapshot the pushed content as the new remote baseline so the
+        // editor stops showing a dirty marker and the next sync skips.
+        if (vaultGitignorePushed) {
+          const s2 = useSettingsStore.getState()
+          const pushed = s2.vaultGitignoreDraft
+          s2.setVaultGitignoreRemoteSnapshot(pushed)
+          s2.setVaultGitignoreDraft(null)
+        }
+        recordSync(result.commitSha)
+
+        setSyncState({
+          kind: 'ok',
+          message: formatSyncMessage(pullCounts, attachCounts, result),
+          url: result.commitUrl,
+        })
+        setTimeout(() => setSyncState({ kind: 'idle' }), 5000)
       })
-      setTimeout(() => setSyncState({ kind: 'idle' }), 5000)
     } catch (err) {
-      // Vault encryption is on but locked — the sync layer throws
-      // VaultLockedError before any HTTP traffic. Surface as an
-      // unlock prompt rather than a generic "Sync failed" message so
-      // the user has a one-click path back to working sync.
-      if (err instanceof VaultLockedError) {
+      // Watchdog tripped — the sync ran past SYNC_WATCHDOG_MS. The guard is
+      // released in finally; surface a retryable error rather than a stuck
+      // spinner. The hung fetch (if any) keeps running in the background but
+      // no longer holds the UI.
+      if (err instanceof SyncTimeoutError) {
+        setSyncState({ kind: 'err', message: err.message })
+      } else if (err instanceof VaultLockedError) {
+        // Vault encryption is on but locked — the sync layer throws
+        // VaultLockedError before any HTTP traffic. Surface as an
+        // unlock prompt rather than a generic "Sync failed" message so
+        // the user has a one-click path back to working sync.
         useUIStore.getState().openModal({ type: 'vault-encryption', data: { mode: 'unlock' } })
         setSyncState({ kind: 'err', message: 'Vault is locked — unlock to sync.' })
       } else {
@@ -318,8 +394,8 @@ export function useGitHubSync(): UseGitHubSyncResult {
       }
     } finally {
       // Always release the global guard, even on errors / early returns from
-      // the conflict branch — otherwise a failed sync wedges every future
-      // sync attempt forever.
+      // the conflict branch, AND on a watchdog timeout — otherwise a failed
+      // or hung sync wedges every future sync attempt forever.
       useGitHubStore.getState().setIsSyncing(false)
     }
     // token + syncRepo are read from useGitHubStore.getState() inside the
@@ -347,49 +423,56 @@ export function useGitHubSync(): UseGitHubSyncResult {
     }
 
     // Set the guard INSIDE the try block. See runSync above for the
-    // wedged-flag failure mode this avoids.
+    // wedged-flag failure mode this avoids. Same watchdog guarantee: after
+    // SYNC_WATCHDOG_MS the flag is cleared and a retryable error is shown,
+    // even if the remote fetch never settles (the mobile-stall bug).
+    const controller = new AbortController()
     try {
       setIsSyncing(true)
       setSyncState({ kind: 'running' })
-      const { classifications, latestCommitSha } = await runPull(activeToken, activeRepo)
+      await withSyncWatchdog(controller, async () => {
+        const { classifications, latestCommitSha } = await runPull(activeToken, activeRepo)
 
-      const conflicts = classifications.filter(
-        c => c.kind === 'conflict' || c.kind === 'conflictDeleted',
-      ) as ConflictTabData[]
-      if (conflicts.length > 0) {
-        // Same conflict-handling branch as runSync: apply everything that
-        // isn't in conflict, open merge tabs (batch view above
-        // BATCH_THRESHOLD) for the user to resolve.
-        await runApply(classifications)
-        if (conflicts.length >= BATCH_THRESHOLD) {
-          openMergeBatch(conflicts)
-        } else {
-          openMergeConflicts(conflicts)
+        const conflicts = classifications.filter(
+          c => c.kind === 'conflict' || c.kind === 'conflictDeleted',
+        ) as ConflictTabData[]
+        if (conflicts.length > 0) {
+          // Same conflict-handling branch as runSync: apply everything that
+          // isn't in conflict, open merge tabs (batch view above
+          // BATCH_THRESHOLD) for the user to resolve.
+          await runApply(classifications)
+          if (conflicts.length >= BATCH_THRESHOLD) {
+            openMergeBatch(conflicts)
+          } else {
+            openMergeConflicts(conflicts)
+          }
+          setSyncState({
+            kind: 'err',
+            message: `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} need review`,
+          })
+          return
         }
+
+        const { notes: pullCounts, attachments: attachCounts } = await runApply(classifications)
+
+        // Record the pulled HEAD as the new baseline so lastCommitSha tracks
+        // the remote after a pull-only too. Previously only runSync called
+        // recordSync (with the push commit sha), so a pull-only left
+        // lastCommitSha stale — the footer commit link and RecentCommits
+        // refetch both key off it.
+        recordSync(latestCommitSha)
+
         setSyncState({
-          kind: 'err',
-          message: `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} need review`,
+          kind: 'ok',
+          message: formatPullMessage(pullCounts, attachCounts),
+          url: null,
         })
-        return
-      }
-
-      const { notes: pullCounts, attachments: attachCounts } = await runApply(classifications)
-
-      // Record the pulled HEAD as the new baseline so lastCommitSha tracks
-      // the remote after a pull-only too. Previously only runSync called
-      // recordSync (with the push commit sha), so a pull-only left
-      // lastCommitSha stale — the footer commit link and RecentCommits
-      // refetch both key off it.
-      recordSync(latestCommitSha)
-
-      setSyncState({
-        kind: 'ok',
-        message: formatPullMessage(pullCounts, attachCounts),
-        url: null,
+        setTimeout(() => setSyncState({ kind: 'idle' }), 5000)
       })
-      setTimeout(() => setSyncState({ kind: 'idle' }), 5000)
     } catch (err) {
-      if (err instanceof VaultLockedError) {
+      if (err instanceof SyncTimeoutError) {
+        setSyncState({ kind: 'err', message: err.message })
+      } else if (err instanceof VaultLockedError) {
         useUIStore.getState().openModal({ type: 'vault-encryption', data: { mode: 'unlock' } })
         setSyncState({ kind: 'err', message: 'Vault is locked — unlock to pull.' })
       } else {

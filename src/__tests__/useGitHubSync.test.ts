@@ -300,3 +300,75 @@ describe('useGitHubSync — runPullOnly', () => {
     }
   })
 })
+
+describe('useGitHubSync — watchdog timeout', () => {
+  // These tests simulate the mobile-stall bug: a fetch that hangs forever.
+  // Without the watchdog the global isSyncing flag would stay true for the
+  // whole session (the `finally` that clears it never runs). With it, the
+  // flag self-heals after SYNC_WATCHDOG_MS and the UI shows a retryable error.
+  beforeEach(() => {
+    jest.useFakeTimers()
+  })
+
+  afterEach(() => {
+    // Drain any pending timers (e.g. the success-path idle reset) then hand
+    // control back to real timers so later suites aren't affected.
+    jest.clearAllTimers()
+    jest.useRealTimers()
+  })
+
+  test('runPullOnly: a hung pull clears isSyncing and shows a retryable error', async () => {
+    // Pull never resolves — mimics a stalled mobile connection with no fetch
+    // timeout.
+    pullFromGitHubMock.mockImplementation(() => new Promise(() => {}))
+
+    const { result } = renderHook(() => useGitHubSync())
+
+    let call!: Promise<void>
+    act(() => {
+      call = result.current.runPullOnly()
+    })
+
+    // Guard is held while the pull is "in flight".
+    expect(useGitHubStore.getState().isSyncing).toBe(true)
+
+    // Advance past the watchdog ceiling — the timeout branch fires.
+    await act(async () => {
+      jest.advanceTimersByTime(45_000)
+      await call
+    })
+
+    // The non-negotiable invariant: flag cleared, UI shows a retryable error.
+    expect(useGitHubStore.getState().isSyncing).toBe(false)
+    expect(result.current.syncState.kind).toBe('err')
+    if (result.current.syncState.kind === 'err') {
+      expect(result.current.syncState.message).toMatch(/timed out/i)
+    }
+    // A pull-only never pushes, even on timeout.
+    expect(syncToGitHubMock).not.toHaveBeenCalled()
+  })
+
+  test('runSync: a hung sync clears isSyncing and shows a retryable error', async () => {
+    pullFromGitHubMock.mockImplementation(() => new Promise(() => {}))
+
+    const { result } = renderHook(() => useGitHubSync())
+
+    let call!: Promise<void>
+    act(() => {
+      call = result.current.runSync()
+    })
+
+    expect(useGitHubStore.getState().isSyncing).toBe(true)
+
+    await act(async () => {
+      jest.advanceTimersByTime(45_000)
+      await call
+    })
+
+    expect(useGitHubStore.getState().isSyncing).toBe(false)
+    expect(result.current.syncState.kind).toBe('err')
+    if (result.current.syncState.kind === 'err') {
+      expect(result.current.syncState.message).toMatch(/timed out/i)
+    }
+  })
+})
