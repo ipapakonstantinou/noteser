@@ -18,7 +18,10 @@ import {
 
 export type SyncState =
   | { kind: 'idle' }
-  | { kind: 'running' }
+  // Optional message: shown while a sync is genuinely in flight, but also
+  // reused as a transient "already in progress" notice when a click hits
+  // the global in-flight guard (so the guard no longer fails silently).
+  | { kind: 'running'; message?: string }
   | { kind: 'ok'; message: string; url: string | null }
   | { kind: 'err'; message: string }
 
@@ -42,7 +45,13 @@ let isSyncingResetThisSession = false
 // locally we use the zipball fast path (one archive download instead of N
 // blob fetches). After this step we have a complete list of changes to
 // classify and apply.
-async function runPull(token: string, repo: SyncRepo): Promise<PullClassification[]> {
+// Returns both the classifications AND the remote HEAD sha. runPullOnly
+// needs the sha so a successful pull-only can update lastCommitSha via
+// recordSync — matching what runSync does with the push commit sha.
+async function runPull(
+  token: string,
+  repo: SyncRepo,
+): Promise<{ classifications: PullClassification[]; latestCommitSha: string }> {
   const localNotes = useNoteStore.getState().notes
   const localFolders = useFolderStore.getState().folders
   const excludedFolderPaths = useFolderStore.getState().deletedFolderPaths
@@ -51,7 +60,7 @@ async function runPull(token: string, repo: SyncRepo): Promise<PullClassificatio
   const isFirstClone = !localNotes.some(n => !n.isDeleted)
     && !localFolders.some(f => !f.isDeleted)
 
-  const { classifications } = isFirstClone
+  const { classifications, latestCommitSha } = isFirstClone
     ? await pullFromZipball({ token, repo })
     : await pullFromGitHub({
         token, repo,
@@ -61,7 +70,7 @@ async function runPull(token: string, repo: SyncRepo): Promise<PullClassificatio
         vaultSettingsLocalUpdatedAt: settings.vaultSettingsUpdatedAt,
       })
 
-  return classifications
+  return { classifications, latestCommitSha }
 }
 
 // ── Step 2: APPLY ───────────────────────────────────────────────────────────
@@ -209,7 +218,15 @@ export function useGitHubSync(): UseGitHubSyncResult {
     // without this check the sidebar button, the GitHub view, and the
     // auto-sync timer could each fire concurrent syncs (visible in the
     // network panel as a flood of duplicate /blobs POSTs).
-    if (isSyncing) return
+    if (isSyncing) {
+      // Surface the guard trip instead of failing silently. Another sync
+      // (e.g. the startup auto-pull from a different hook instance) holds
+      // the global flag, so this click would otherwise do nothing visible.
+      // The store flag already keeps the buttons disabled; this is the
+      // belt-and-braces feedback for any click that still lands.
+      setSyncState({ kind: 'running', message: 'Sync already in progress' })
+      return
+    }
 
     // Set the global guard INSIDE the try block. Doing it earlier meant a
     // throw between setIsSyncing(true) and entering the try (e.g. React
@@ -218,7 +235,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
     try {
       setIsSyncing(true)
       setSyncState({ kind: 'running' })
-      const classifications = await runPull(activeToken, activeRepo)
+      const { classifications } = await runPull(activeToken, activeRepo)
 
       const conflicts = classifications.filter(
         c => c.kind === 'conflict' || c.kind === 'conflictDeleted',
@@ -321,14 +338,20 @@ export function useGitHubSync(): UseGitHubSyncResult {
     if (!activeToken || !activeRepo) return
     // Share the same global guard as runSync — a pull-only and a full sync
     // touch the same noteStore, so we can't let them race.
-    if (isSyncing) return
+    if (isSyncing) {
+      // Same feedback as runSync: a click that hits the guard (most often
+      // during the startup auto-pull, which holds the global flag from a
+      // different hook instance) gets a visible notice rather than silence.
+      setSyncState({ kind: 'running', message: 'Sync already in progress' })
+      return
+    }
 
     // Set the guard INSIDE the try block. See runSync above for the
     // wedged-flag failure mode this avoids.
     try {
       setIsSyncing(true)
       setSyncState({ kind: 'running' })
-      const classifications = await runPull(activeToken, activeRepo)
+      const { classifications, latestCommitSha } = await runPull(activeToken, activeRepo)
 
       const conflicts = classifications.filter(
         c => c.kind === 'conflict' || c.kind === 'conflictDeleted',
@@ -352,6 +375,13 @@ export function useGitHubSync(): UseGitHubSyncResult {
 
       const { notes: pullCounts, attachments: attachCounts } = await runApply(classifications)
 
+      // Record the pulled HEAD as the new baseline so lastCommitSha tracks
+      // the remote after a pull-only too. Previously only runSync called
+      // recordSync (with the push commit sha), so a pull-only left
+      // lastCommitSha stale — the footer commit link and RecentCommits
+      // refetch both key off it.
+      recordSync(latestCommitSha)
+
       setSyncState({
         kind: 'ok',
         message: formatPullMessage(pullCounts, attachCounts),
@@ -370,7 +400,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
     }
     // See note above re: token + syncRepo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, syncRepo, openMergeConflicts, openMergeBatch])
+  }, [token, syncRepo, recordSync, openMergeConflicts, openMergeBatch])
 
   return { syncState, runSync, runPullOnly, isConnected: !!(token && syncRepo) }
 }
