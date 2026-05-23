@@ -19,7 +19,12 @@ module.exports = {
         obsidianBorder: 'var(--obsidian-border, #444444)',
         obsidianText: 'var(--obsidian-text, #dadada)',
         obsidianSecondaryText: 'var(--obsidian-secondary-text, #bababa)',
-        obsidianAccentPurple: 'var(--obsidian-accent-purple, hsl(254, 80%, 68%))',
+        // Historical name kept for back-compat — value is now noteser
+        // blue, not Obsidian purple. New code can use `noteserAccent`
+        // (alias of the same CSS variable). Both resolve to the same
+        // value at runtime so an in-flight rename is non-breaking.
+        obsidianAccentPurple: 'var(--obsidian-accent-purple, hsl(217, 88%, 50%))',
+        noteserAccent: 'var(--obsidian-accent-purple, hsl(217, 88%, 50%))',
       },
       boxShadow: {
         obsidian: '0 2px 8px rgba(0, 0, 0, 0.3)'
