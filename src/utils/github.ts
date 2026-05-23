@@ -317,6 +317,10 @@ export async function getTreeMap(token: string, owner: string, repo: string, tre
   const res = await githubFetch(
     `https://api.github.com/repos/${owner}/${repo}/git/trees/${treeSha}?recursive=1`,
     { headers: GH_HEADERS(token) },
+    // Recursive tree of a large vault can be a sizeable payload that takes a
+    // while to serialise/transfer — give it a generous 90s bound so it is
+    // never aborted by the default per-request timeout mid-fetch.
+    { timeoutMs: 90_000 },
   )
   await ensureOk(res, 'Read tree')
   const data = await res.json()
@@ -416,7 +420,14 @@ export async function fetchZipball(token: string, owner: string, repo: string, r
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ owner, repo, ref }),
-  })
+  },
+  // The full-repo archive is the single biggest download in the whole sync —
+  // on a large vault it can legitimately take minutes. This was the regression
+  // the 20s default introduced: the initial clone exceeded it and the timeout
+  // aborted the download. Give it a 3-minute bound so it is never cut off
+  // mid-transfer; the whole-sync watchdog (in useGitHubSync) is the real upper
+  // bound for a stalled connection here.
+  { timeoutMs: 180_000 })
   await ensureOk(res, 'Download zipball')
   return res.arrayBuffer()
 }

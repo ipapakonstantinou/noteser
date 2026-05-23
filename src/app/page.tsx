@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Sidebar, RightSidebar, Ribbon, MobileTopBar, DrawerHandle } from '@/components/sidebar'
 import { Editor } from '@/components/editor'
+import { Toaster } from '@/components/ui'
 import {
   SearchModal,
   DeleteConfirmModal,
@@ -372,6 +373,9 @@ export default function Home() {
         onFullWipe={handleFullWipe}
         onCancel={() => setShowResetModal(false)}
       />
+      {/* Toast host — rendered once for both layouts. Fixed bottom-center,
+          safe-area aware, above the modals/nav. */}
+      <Toaster />
     </>
   )
 

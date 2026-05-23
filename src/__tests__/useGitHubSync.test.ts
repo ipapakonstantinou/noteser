@@ -301,6 +301,43 @@ describe('useGitHubSync — runPullOnly', () => {
   })
 })
 
+describe('useGitHubSync — phase-aware running messages', () => {
+  test('runPullOnly on a first clone surfaces "Downloading vault…" while the zipball downloads', async () => {
+    // First clone: no local notes/folders → runPull takes the zipball branch.
+    useNoteStore.setState({ notes: [], selectedNoteId: null })
+    useFolderStore.setState({ folders: [], activeFolderId: null, expandedFolders: {} })
+
+    // Block the zipball pull so we can observe the running message mid-flight.
+    let resolvePull!: (v: { classifications: unknown[]; latestCommitSha: string }) => void
+    pullFromZipballMock.mockImplementation(
+      () => new Promise(res => { resolvePull = res as typeof resolvePull }),
+    )
+
+    const { result } = renderHook(() => useGitHubSync())
+
+    let call!: Promise<void>
+    act(() => {
+      call = result.current.runPullOnly()
+    })
+
+    // The first-clone branch was taken (zipball, not incremental) and the
+    // status line announces the slow download phase.
+    expect(pullFromZipballMock).toHaveBeenCalledTimes(1)
+    expect(pullFromGitHubMock).not.toHaveBeenCalled()
+    expect(result.current.syncState.kind).toBe('running')
+    if (result.current.syncState.kind === 'running') {
+      expect(result.current.syncState.message).toMatch(/Downloading vault/i)
+    }
+
+    // Finish the pull so the hook cleans up and the guard releases.
+    await act(async () => {
+      resolvePull({ classifications: [], latestCommitSha: 'head-sha' })
+      await call
+    })
+    expect(useGitHubStore.getState().isSyncing).toBe(false)
+  })
+})
+
 describe('useGitHubSync — watchdog timeout', () => {
   // These tests simulate the mobile-stall bug: a fetch that hangs forever.
   // Without the watchdog the global isSyncing flag would stay true for the
