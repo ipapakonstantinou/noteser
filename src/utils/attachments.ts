@@ -66,46 +66,6 @@ const TOMBSTONE_KEY = STORAGE_KEYS.attachmentTombstones
 
 const urlCache = new Map<string, string>()
 
-// Bound an IDB op so a stalled IndexedDB (seen on mobile Safari) degrades
-// gracefully instead of wedging the sync. On timeout we resolve to `fallback`
-// and warn once. Attachment comparison during pull is best-effort: degrading
-// lets notes sync even if IDB stalls. The happy path is untouched — the promise
-// resolves normally well before the timeout and the timer is cleared.
-const IDB_TIMEOUT_MS = 8_000
-let idbTimeoutWarned = false
-
-function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  return new Promise<T>(resolve => {
-    let settled = false
-    const timer = setTimeout(() => {
-      if (settled) return
-      settled = true
-      if (!idbTimeoutWarned) {
-        idbTimeoutWarned = true
-        console.warn(
-          `[attachments] IndexedDB op exceeded ${ms}ms — degrading gracefully (sync continues).`,
-        )
-      }
-      resolve(fallback)
-    }, ms)
-    promise.then(
-      value => {
-        if (settled) return
-        settled = true
-        clearTimeout(timer)
-        resolve(value)
-      },
-      () => {
-        // An IDB rejection is also best-effort: degrade rather than reject.
-        if (settled) return
-        settled = true
-        clearTimeout(timer)
-        resolve(fallback)
-      },
-    )
-  })
-}
-
 export interface StoredAttachment {
   blob: Blob
   mime: string
@@ -302,14 +262,7 @@ export function _clearAttachmentUrlCache(): void {
 // Enumerate every attachment path currently in IDB. Filters by the
 // `noteser-attachment:` prefix because idb-keyval shares its database with
 // the Zustand persist adapter, so other keys live in the same KV store.
-export function listAttachmentPaths(): Promise<string[]> {
-  // Bounded so a stalled `keys()` degrades to "no local attachments" (the pull
-  // then treats all remote attachments as creates — still correct, just less
-  // efficient) instead of hanging the whole sync.
-  return withTimeout(listAttachmentPathsUnbounded(), IDB_TIMEOUT_MS, [])
-}
-
-async function listAttachmentPathsUnbounded(): Promise<string[]> {
+export async function listAttachmentPaths(): Promise<string[]> {
   const allKeys = await keys()
   const out: string[] = []
   for (const k of allKeys) {
@@ -348,14 +301,7 @@ export async function listAttachmentMeta(): Promise<AttachmentMeta[]> {
 
 // Compute the git blob SHA for a stored attachment, so the sync layer can
 // decide whether to upload it. Returns null if the path is unknown.
-export function getAttachmentGitSha(path: string): Promise<string | null> {
-  // Bounded so a stalled `get()` / `arrayBuffer()` degrades to null. The caller
-  // (pull's attachment comparison) skips the update when the SHA is null, so a
-  // stall means "don't re-download" rather than wedging the sync.
-  return withTimeout(getAttachmentGitShaUnbounded(path), IDB_TIMEOUT_MS, null)
-}
-
-async function getAttachmentGitShaUnbounded(path: string): Promise<string | null> {
+export async function getAttachmentGitSha(path: string): Promise<string | null> {
   const record = await get<StoredAttachment>(PREFIX + path)
   if (!record) return null
   const bytes = new Uint8Array(await record.blob.arrayBuffer())
