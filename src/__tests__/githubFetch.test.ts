@@ -19,6 +19,7 @@ import {
   computeWait,
   getLastRateLimit,
   onRateLimit,
+  GitHubTimeoutError,
   _resetRateLimitTelemetry,
 } from '../utils/githubFetch'
 
@@ -129,6 +130,92 @@ describe('githubFetch — retry behaviour', () => {
       delayMs: async () => {},
     })
     expect(res.status).toBe(200)
+  })
+})
+
+describe('githubFetch — per-request timeout', () => {
+  beforeEach(() => {
+    _resetRateLimitTelemetry()
+    jest.useFakeTimers()
+  })
+  afterEach(() => {
+    jest.clearAllTimers()
+    jest.useRealTimers()
+  })
+
+  test('rejects with a timeout error when fetch never resolves', async () => {
+    // fetch hangs forever but honours its abort signal (like the real one):
+    // when githubFetch aborts the per-request controller, reject with AbortError.
+    const fetchMock = jest.fn((_url: string, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal
+        if (signal) {
+          signal.addEventListener('abort', () => {
+            reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+          })
+        }
+      })
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    // Real delay between retries so the backoff timers run under fake timers.
+    const promise = githubFetch('https://example.com', undefined, { maxRetries: 2 })
+    const assertion = expect(promise).rejects.toBeInstanceOf(GitHubTimeoutError)
+
+    // Drive the per-request timeout + the retry backoffs to completion. Running
+    // all pending timers repeatedly advances through each attempt's 20s timeout
+    // and the inter-attempt backoff.
+    for (let i = 0; i < 12; i++) {
+      await Promise.resolve()
+      jest.runOnlyPendingTimers()
+    }
+    await assertion
+    // 1 initial + 2 retries = 3 attempts, each timing out.
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('githubFetch — caller abort (init.signal)', () => {
+  beforeEach(() => { _resetRateLimitTelemetry() })
+
+  test('a caller signal that aborts rejects immediately without retrying', async () => {
+    const controller = new AbortController()
+    const fetchMock = jest.fn((_url: string, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal
+        if (signal) {
+          signal.addEventListener('abort', () => {
+            reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+          })
+        }
+      })
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const delays: number[] = []
+    const promise = githubFetch('https://example.com', { signal: controller.signal }, {
+      delayMs: async (ms) => { delays.push(ms) },
+      maxRetries: 3,
+    })
+    // Abort the caller signal — the watchdog / user cancel path.
+    controller.abort()
+
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
+    // Not retried: a single fetch attempt, no backoff delays.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(delays).toEqual([])
+  })
+
+  test('a pre-aborted caller signal bails before calling fetch', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const fetchMock = jest.fn()
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(
+      githubFetch('https://example.com', { signal: controller.signal }, { delayMs: async () => {} })
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
 
