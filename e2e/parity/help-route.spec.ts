@@ -159,5 +159,5 @@ test('6: "Back to noteser" link returns to /', async ({ page }) => {
   }
 
   await page.waitForURL(`${BASE}/`, { timeout: 10_000 })
-  expect(page.url()).toMatch(/thetechjon\.com\/?$/)
+  expect(page.url()).toMatch(/noteser\.app\/?$/)
 })
