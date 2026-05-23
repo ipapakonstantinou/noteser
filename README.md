@@ -4,7 +4,7 @@
 ![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)
 ![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)
 
-**Live:** [noteser.thetechjon.com](https://noteser.thetechjon.com)
+**Live:** [noteser.app](https://noteser.app)
 
 <!-- TODO: drop a hero screenshot or GIF here.
      Suggested path: `public/screenshot.png` (or `.gif`), then:
@@ -63,7 +63,7 @@ NEXT_PUBLIC_YJS_WS_URL=wss://your-server.example.com
 
 ## Deploying
 
-Production runs at **[noteser.thetechjon.com](https://noteser.thetechjon.com)**.
+Production runs at **[noteser.app](https://noteser.app)**.
 The app is a standard Next.js project — any platform that supports Next.js
 server routes will work (Vercel, Netlify, Cloudflare Pages with the
 adapter, your own VPS). The two `/api/github/*` routes are required (they
@@ -74,7 +74,7 @@ pure-static export won't work.
 
 | Branch | Auto-deploys to | Purpose |
 |---|---|---|
-| `main` | noteser.thetechjon.com | Production. Only PR-merge from `dev` or hotfixes |
+| `main` | noteser.app | Production. Only PR-merge from `dev` or hotfixes |
 | `dev` | `noteser-git-dev-*.vercel.app` (auto) | Integration / preview |
 | `feat/*` · `fix/*` | per-branch preview URLs | Feature work |
 | `hotfix/*` | per-branch preview URL | Prod emergencies, PR straight to `main` |
