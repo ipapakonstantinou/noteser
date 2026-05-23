@@ -15,7 +15,7 @@ import {
   CodeBracketIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  TrashIcon,
+  ArrowUturnLeftIcon,
 } from '@heroicons/react/24/outline'
 import { useGitHubStore, useUIStore, useWorkspaceStore, useSettingsStore } from '@/stores'
 import { useGitHubSync, useHydration } from '@/hooks'
@@ -168,7 +168,7 @@ export const GitHubView = () => {
             title="Discard local changes (reset to remote)"
             testId="scm-discard"
           >
-            <TrashIcon className="w-4 h-4 text-red-300" />
+            <ArrowUturnLeftIcon className="w-4 h-4" />
           </ToolbarButton>
           <a
             href={`https://github.com/${repo.owner}/${repo.name}/tree/${repo.branch}`}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ExclamationTriangleIcon, TrashIcon, CheckCircleIcon } from '@heroicons/react/24/outline'
+import { ExclamationTriangleIcon, ArrowUturnLeftIcon, CheckCircleIcon } from '@heroicons/react/24/outline'
 import { Modal, Button } from '@/components/ui'
 import { useUIStore, useNoteStore } from '@/stores'
 import { useGitHubSync } from '@/hooks/useGitHubSync'
@@ -107,7 +107,7 @@ export const DiscardLocalChangesModal = () => {
               disabled={busy}
               data-testid="discard-confirm"
             >
-              <TrashIcon className="w-4 h-4" />
+              <ArrowUturnLeftIcon className="w-4 h-4" />
               {busy ? 'Discarding…' : 'Discard + sync'}
             </Button>
           </div>
