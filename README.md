@@ -116,6 +116,9 @@ For a custom domain:
 | `Ctrl + Shift + T` | Insert todo item (editor) |
 | `Alt + L` | Editor: convert line to/from task. Preview: check/uncheck task at cursor |
 | `Alt + Shift + L` | Editor: check/uncheck task at cursor (stamps ✅ date). Preview: strip `- [ ]` prefix |
+| `Ctrl + F` | Find in current note |
+| `Ctrl + H` | Find and replace in current note |
+| `Ctrl + Alt + T` | Insert a markdown table at the cursor |
 | `Escape` | Close modal / search |
 
 Right-click any note or folder for rename / move / delete / new-subfolder.
