@@ -82,7 +82,9 @@ const obsidianTheme = EditorView.theme({
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#dadada' },
   '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: '#4d4d4d' },
   '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,0.025)' },
-  '.cm-gutters': { display: 'none' },
+  // No display:none on .cm-gutters — basicSetup disables line-numbers
+  // and fold-gutter (see <CodeMirror basicSetup={...} />), so the only
+  // gutter mounted is our diff gutter, which needs to render.
   '.cm-placeholder': { color: '#6b7280' },
 })
 

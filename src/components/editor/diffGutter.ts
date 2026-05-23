@@ -112,11 +112,22 @@ const diffGutter = gutter({
       if (!state.markers.has(lineNum)) return false
       const revert = computeHunkRevert(view.state.doc.toString(), state.lastPushed, lineNum)
       if (!revert) return false
-      const fromLine = view.state.doc.line(revert.fromLine)
-      const toLine = view.state.doc.line(revert.toLine)
-      view.dispatch({
-        changes: { from: fromLine.from, to: toLine.to, insert: revert.insert },
-      })
+      const doc = view.state.doc
+      const fromLine = doc.line(revert.fromLine)
+      const toLine = doc.line(revert.toLine)
+      let from = fromLine.from
+      let to = toLine.to
+      // Pure-deletion hunk: also consume the newline that would otherwise
+      // leave an empty line behind. Prefer eating the trailing \n; fall
+      // back to the leading \n only when we're at the very last line.
+      if (revert.insert === '') {
+        if (toLine.number < doc.lines) {
+          to = toLine.to + 1
+        } else if (fromLine.number > 1) {
+          from = fromLine.from - 1
+        }
+      }
+      view.dispatch({ changes: { from, to, insert: revert.insert } })
       return true
     },
   },
