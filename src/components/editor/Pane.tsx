@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { DocumentTextIcon } from '@heroicons/react/24/outline'
+import { DocumentTextIcon, CalendarDaysIcon, PlusIcon } from '@heroicons/react/24/outline'
 import { useNoteStore, useUIStore, useWorkspaceStore } from '@/stores'
+import { Button } from '@/components/ui'
 import { useTabDragActive, TAB_DRAG_MIME, useViewport } from '@/hooks'
 import { EditorHeader } from './EditorHeader'
 import { EditorFooter } from './EditorFooter'
@@ -59,12 +60,43 @@ export const Pane = ({ pane, allowSplitDropZone }: Props) => {
 
   let body: React.ReactNode
   if (!activeTab) {
+    const handleOpenDaily = () => {
+      // Dynamic import — matches the keyboard-shortcut handler so the
+      // dailyNotes util isn't pulled into the editor entry chunk.
+      import('@/utils/dailyNotes').then(({ openTodayNote }) => openTodayNote())
+    }
+    const handleNewNote = () => {
+      const note = useNoteStore.getState().addNote({ title: 'Untitled', content: '' })
+      useWorkspaceStore.getState().openNote(note.id, { preview: false })
+    }
     body = (
       <div className="flex-1 flex items-center justify-center">
         <EmptyState
           icon={<DocumentTextIcon className="w-16 h-16" />}
           title="No note selected"
-          description="Select a note from the sidebar or create a new one to get started"
+          description="Pick a note from the sidebar, jump to today's daily note, or start a fresh one."
+          action={
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button
+                variant="primary"
+                onClick={handleOpenDaily}
+                data-testid="empty-state-daily-note"
+                className="gap-1.5"
+              >
+                <CalendarDaysIcon className="w-4 h-4" />
+                Open today&apos;s daily note
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={handleNewNote}
+                data-testid="empty-state-new-note"
+                className="gap-1.5"
+              >
+                <PlusIcon className="w-4 h-4" />
+                New note
+              </Button>
+            </div>
+          }
         />
       </div>
     )
