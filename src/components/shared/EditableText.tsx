@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { sanitizeTitleInput } from '@/utils/export'
+import { sanitizeTitleInput } from '@/utils/sanitizeFilename'
 
 interface EditableTextProps {
   value: string

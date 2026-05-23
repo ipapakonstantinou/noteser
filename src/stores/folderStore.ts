@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware'
 import { v4 as uuidv4 } from 'uuid'
 import type { Folder } from '@/types'
 import { idbStorage } from '@/utils/idbStorage'
-import { sanitizeFilename } from '@/utils/export'
+import { sanitizeFilename } from '@/utils/sanitizeFilename'
 import { softDelete, restoreSoftDeleted, permanentlyDelete } from '@/utils/softDelete'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
 // folderStore doesn't read settings directly today — the trash-mode

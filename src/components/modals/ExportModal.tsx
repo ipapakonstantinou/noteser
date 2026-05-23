@@ -3,15 +3,12 @@
 import { useState } from 'react'
 import { useUIStore, useNoteStore, useFolderStore, useTagStore } from '@/stores'
 import { Modal, Button } from '@/components/ui'
-import {
-  exportAllNotes,
-  exportAllNotesAsPdf,
-  exportNoteAsHTML,
-  exportNoteAsJSON,
-  exportNoteAsMarkdown,
-  exportNoteAsPdf,
-} from '@/utils/export'
 import type { ExportOptions } from '@/types'
+
+// `@/utils/export` pulls in jszip (~140kB) and file-saver. Both are
+// only needed when the user actually clicks Export, so we dynamic-
+// import the module inside the click handler. The modal itself
+// remains in the main bundle — only the heavy zip/saver code splits.
 
 export const ExportModal = () => {
   const { modal, closeModal } = useUIStore()
@@ -33,25 +30,28 @@ export const ExportModal = () => {
   const handleExport = async () => {
     setIsExporting(true)
     try {
+      // Lazy-load — jszip + file-saver get split into their own chunk
+      // and only load when the user actually clicks Export.
+      const exp = await import('@/utils/export')
       if (exportType === 'current' && currentNote) {
         // Single-note path routes by format. The HTML and PDF cases
         // were previously silently downgrading to markdown — now each
         // has its own helper.
         if (options.format === 'json') {
-          exportNoteAsJSON(currentNote)
+          exp.exportNoteAsJSON(currentNote)
         } else if (options.format === 'html') {
-          exportNoteAsHTML(currentNote, options.includeTags)
+          exp.exportNoteAsHTML(currentNote, options.includeTags)
         } else if (options.format === 'pdf') {
-          exportNoteAsPdf(currentNote)
+          exp.exportNoteAsPdf(currentNote)
         } else {
-          exportNoteAsMarkdown(currentNote, tags)
+          exp.exportNoteAsMarkdown(currentNote, tags)
         }
       } else if (options.format === 'pdf') {
         // PDF all-notes path opens a print window rather than producing
         // a zip; bypass exportAllNotes.
-        exportAllNotesAsPdf(getActiveNotes(), options)
+        exp.exportAllNotesAsPdf(getActiveNotes(), options)
       } else {
-        await exportAllNotes(
+        await exp.exportAllNotes(
           getActiveNotes(),
           getActiveFolders(),
           tags,
