@@ -16,7 +16,10 @@
   --obsidian-border: #444444;
   --obsidian-text: #dadada;
   --obsidian-secondary-text: #bababa;
-  --obsidian-accent-purple: hsl(254, 80%, 68%);
+  /* Historical name (--obsidian-accent-purple) kept so existing
+   * Settings → Appearance overrides continue to apply, but the
+   * default value is now noteser blue, not Obsidian purple. */
+  --obsidian-accent-purple: hsl(217, 88%, 50%);
 }
 
 /* Base styles */
