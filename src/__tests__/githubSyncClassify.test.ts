@@ -643,3 +643,121 @@ test('pull applies the default OS-junk preset when no .gitignore exists', async 
   expect(paths).toContain('attachments/diagram.png')
   expect(paths).not.toContain('attachments/.DS_Store')
 })
+
+// ── pull-conflict probes ────────────────────────────────────────────────────
+// Tests prompted by a user report ("If I pull it doesn't give me a conflict")
+// where repro steps weren't available. These cover edge cases the existing
+// tests didn't yet exercise.
+
+test('PROBE: local DELETES a line that remote MODIFIED → must be conflict', async () => {
+  const ancestor = 'line1\ntargetline\nline3'
+  const localContent = 'line1\nline3' // deleted "targetline"
+  const remoteContent = 'line1\ntargetline (remote)\nline3' // modified it
+
+  mockGetTreeMap.mockResolvedValue(new Map([['Foo.md', 'sha-remote']]))
+  mockGitBlobSha.mockResolvedValue('sha-local')
+  mockGetBlobContent
+    .mockResolvedValueOnce(remoteContent)
+    .mockResolvedValueOnce(ancestor)
+
+  const local: Note[] = [
+    note({ id: '1', title: 'Foo', content: localContent, gitPath: 'Foo.md', gitLastPushedSha: 'sha-ancestor' }),
+  ]
+  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  expect(classifications[0].kind).toBe('conflict')
+})
+
+test('PROBE: local MODIFIES a line that remote DELETED → must be conflict', async () => {
+  const ancestor = 'line1\ntargetline\nline3'
+  const localContent = 'line1\ntargetline (local)\nline3'
+  const remoteContent = 'line1\nline3'
+
+  mockGetTreeMap.mockResolvedValue(new Map([['Foo.md', 'sha-remote']]))
+  mockGitBlobSha.mockResolvedValue('sha-local')
+  mockGetBlobContent
+    .mockResolvedValueOnce(remoteContent)
+    .mockResolvedValueOnce(ancestor)
+
+  const local: Note[] = [
+    note({ id: '1', title: 'Foo', content: localContent, gitPath: 'Foo.md', gitLastPushedSha: 'sha-ancestor' }),
+  ]
+  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  expect(classifications[0].kind).toBe('conflict')
+})
+
+test('PROBE: edits on CONSECUTIVE lines (no overlap) auto-merge — they should not conflict', async () => {
+  const ancestor = 'line1\nline2\nline3\nline4'
+  const localContent = 'line1\nLINE2-LOCAL\nline3\nline4'
+  const remoteContent = 'line1\nline2\nLINE3-REMOTE\nline4'
+
+  mockGetTreeMap.mockResolvedValue(new Map([['Foo.md', 'sha-remote']]))
+  mockGitBlobSha.mockResolvedValue('sha-local')
+  mockGetBlobContent
+    .mockResolvedValueOnce(remoteContent)
+    .mockResolvedValueOnce(ancestor)
+
+  const local: Note[] = [
+    note({ id: '1', title: 'Foo', content: localContent, gitPath: 'Foo.md', gitLastPushedSha: 'sha-ancestor' }),
+  ]
+  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  expect(classifications[0].kind).toBe('autoMerged')
+})
+
+test('PROBE: local + remote add DIFFERENT lines at the same position → conflict', async () => {
+  // Ancestor has 2 lines. Both sides insert a new line BETWEEN them, but
+  // different content. The threeWayMerge "inserts at same boundary" branch
+  // should detect non-identical inserts and conflict.
+  const ancestor = 'top\nbottom'
+  const localContent = 'top\nMIDDLE-LOCAL\nbottom'
+  const remoteContent = 'top\nMIDDLE-REMOTE\nbottom'
+
+  mockGetTreeMap.mockResolvedValue(new Map([['Foo.md', 'sha-remote']]))
+  mockGitBlobSha.mockResolvedValue('sha-local')
+  mockGetBlobContent
+    .mockResolvedValueOnce(remoteContent)
+    .mockResolvedValueOnce(ancestor)
+
+  const local: Note[] = [
+    note({ id: '1', title: 'Foo', content: localContent, gitPath: 'Foo.md', gitLastPushedSha: 'sha-ancestor' }),
+  ]
+  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  expect(classifications[0].kind).toBe('conflict')
+})
+
+test('PROBE: ancestor blob fetch FAILS → falls through to manual conflict (not silent merge)', async () => {
+  // When `getBlobContent(ancestorSha)` throws (blob GC'd, network drop),
+  // the orchestrator catches and falls through to the conflict path. This
+  // protects against the "auto-merged silently because we couldn't load
+  // the ancestor" footgun.
+  const localContent = 'whatever local'
+  const remoteContent = 'whatever remote'
+
+  mockGetTreeMap.mockResolvedValue(new Map([['Foo.md', 'sha-remote']]))
+  mockGitBlobSha.mockResolvedValue('sha-local')
+  mockGetBlobContent
+    .mockResolvedValueOnce(remoteContent) // remote loads OK
+    .mockRejectedValueOnce(new Error('ancestor blob GC\'d')) // ancestor fails
+
+  const local: Note[] = [
+    note({ id: '1', title: 'Foo', content: localContent, gitPath: 'Foo.md', gitLastPushedSha: 'sha-ancestor' }),
+  ]
+  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  expect(classifications[0].kind).toBe('conflict')
+})
+
+test('PROBE: identical local + remote content despite drifted ancestor → unchanged (early return)', async () => {
+  // Tricky case: both sides happened to converge to the same content
+  // independently. localBlobSha === remoteSha → caught by the early
+  // `if (localBlobSha === remoteSha)` branch as `unchanged`, regardless
+  // of lastPushed. This is correct: there's nothing to merge or conflict
+  // about, the file is already in sync.
+  mockGetTreeMap.mockResolvedValue(new Map([['Foo.md', 'sha-same']]))
+  mockGitBlobSha.mockResolvedValue('sha-same')
+  // No getBlobContent calls expected — early-return short-circuits.
+
+  const local: Note[] = [
+    note({ id: '1', title: 'Foo', content: 'same content', gitPath: 'Foo.md', gitLastPushedSha: 'sha-ancestor' }),
+  ]
+  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  expect(classifications[0].kind).toBe('unchanged')
+})
