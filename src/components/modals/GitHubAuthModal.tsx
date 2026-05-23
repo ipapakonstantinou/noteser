@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { ArrowTopRightOnSquareIcon, CheckCircleIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline'
-import { Modal, Button } from '@/components/ui'
+import { Modal, Button, Input } from '@/components/ui'
 import { useUIStore, useGitHubStore } from '@/stores'
 import { startDeviceFlow, pollForToken, fetchGitHubUserAndScopes, DeviceFlowError, type DeviceFlowStart } from '@/utils/github'
 
@@ -11,6 +11,8 @@ type Status =
   | { kind: 'waiting'; device: DeviceFlowStart }
   | { kind: 'success'; login: string }
   | { kind: 'error'; message: string }
+
+const PAT_DOCS_URL = 'https://github.com/settings/personal-access-tokens'
 
 export const GitHubAuthModal = () => {
   const { modal, closeModal, openModal } = useUIStore()
@@ -22,9 +24,24 @@ export const GitHubAuthModal = () => {
   const [copied, setCopied] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
 
+  // Alternative sign-in path: a user can paste a fine-grained PAT scoped to
+  // just their vault repo (Contents: read+write) instead of running the broad
+  // `repo`-scoped device flow. Default stays the one-click device flow; this
+  // is revealed only when `usePat` is toggled on.
+  const [usePat, setUsePat] = useState(false)
+  const [patValue, setPatValue] = useState('')
+  const [patError, setPatError] = useState<string | null>(null)
+  const [patSubmitting, setPatSubmitting] = useState(false)
+
   // Run the device flow whenever the modal opens; cancel on close.
   useEffect(() => {
     if (!isOpen) return
+    // Reset the PAT sub-form to its default (hidden) state each open so the
+    // device flow remains the default experience.
+    setUsePat(false)
+    setPatValue('')
+    setPatError(null)
+    setPatSubmitting(false)
     const controller = new AbortController()
     abortRef.current = controller
     setStatus({ kind: 'requesting' })
@@ -109,6 +126,53 @@ export const GitHubAuthModal = () => {
     })()
   }
 
+  // Reveal the PAT sub-form. Abort the in-flight device-flow polling so the
+  // two paths can't both resolve and race on setSession.
+  const handleShowPat = () => {
+    abortRef.current?.abort()
+    setUsePat(true)
+    setPatError(null)
+  }
+
+  // Return to the default device flow, restarting it (the poll we aborted in
+  // handleShowPat is gone).
+  const handleHidePat = () => {
+    setUsePat(false)
+    setPatError(null)
+    handleRetry()
+  }
+
+  // Validate a pasted fine-grained PAT by fetching the user with it, exactly
+  // like the device flow does after polling. On success we route the token
+  // through the SAME setSession path, so the rest of the app is identical
+  // whether the token came from OAuth or a pasted PAT.
+  //
+  // SECURITY NOTE: a pasted PAT is persisted in localStorage exactly like the
+  // OAuth token (see githubStore). Same trust model — this is expected.
+  const handlePatSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const token = patValue.trim()
+    if (!token || patSubmitting) return
+    setPatSubmitting(true)
+    setPatError(null)
+    try {
+      // Fine-grained PATs don't carry X-OAuth-Scopes (scopes come back null),
+      // which setSession already handles as "unknown" — the gist-publish path
+      // falls back to its best-effort attempt. That's correct here.
+      const { user, scopes } = await fetchGitHubUserAndScopes(token)
+      setSession(token, user, scopes)
+      setStatus({ kind: 'success', login: user.login })
+      setTimeout(() => {
+        if (syncRepo) closeModal()
+        else openModal({ type: 'github-repo' })
+      }, 1200)
+    } catch {
+      setPatError('That token did not work — check it has Contents access to your vault repo.')
+    } finally {
+      setPatSubmitting(false)
+    }
+  }
+
   // Anchor's default click opens the new tab without tripping popup blockers.
   // We piggyback on the same click to copy synchronously (no await before the
   // browser sees the navigation intent).
@@ -127,16 +191,23 @@ export const GitHubAuthModal = () => {
     }
   }
 
+  // When the PAT sub-form is open it replaces the device-flow views (but not
+  // the terminal success/error views, which the PAT path drives too).
+  const showDeviceViews = !usePat
+
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title="Connect to GitHub" size="md">
-      {status.kind === 'requesting' && (
-        <div className="flex flex-col items-center gap-3 py-6">
-          <div className="animate-spin h-8 w-8 border-2 border-obsidianAccentPurple border-t-transparent rounded-full" />
-          <p className="text-sm text-obsidianSecondaryText">Requesting a device code from GitHub…</p>
+      {showDeviceViews && status.kind === 'requesting' && (
+        <div className="space-y-4">
+          <div className="flex flex-col items-center gap-3 py-6">
+            <div className="animate-spin h-8 w-8 border-2 border-obsidianAccentPurple border-t-transparent rounded-full" />
+            <p className="text-sm text-obsidianSecondaryText">Requesting a device code from GitHub…</p>
+          </div>
+          <PatToggleLink onClick={handleShowPat} />
         </div>
       )}
 
-      {status.kind === 'waiting' && (
+      {showDeviceViews && status.kind === 'waiting' && (
         <div className="space-y-4">
           <p className="text-sm text-obsidianSecondaryText">
             Copy the code and paste it on GitHub to authorize Noteser. This window will update automatically.
@@ -163,7 +234,55 @@ export const GitHubAuthModal = () => {
             <div className="animate-pulse h-2 w-2 bg-obsidianAccentPurple rounded-full" />
             Waiting for authorization…
           </div>
+
+          <PatToggleLink onClick={handleShowPat} />
         </div>
+      )}
+
+      {usePat && status.kind !== 'success' && (
+        <form className="space-y-4" onSubmit={handlePatSubmit}>
+          <p className="text-sm text-obsidianSecondaryText">
+            Create a fine-grained token in GitHub → Settings → Developer settings, scoped to your vault
+            repo with Contents: read and write, then paste it here.
+          </p>
+
+          <a
+            href={PAT_DOCS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-obsidianAccentPurple hover:underline"
+          >
+            <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5" />
+            Open GitHub token settings
+          </a>
+
+          <Input
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="github_pat_…"
+            value={patValue}
+            onChange={(e) => { setPatValue(e.target.value); setPatError(null) }}
+            error={patError ?? undefined}
+            data-testid="github-pat-input"
+            autoFocus
+          />
+
+          <div className="flex justify-between gap-2">
+            <Button type="button" variant="ghost" onClick={handleHidePat}>
+              Back
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              isLoading={patSubmitting}
+              disabled={!patValue.trim()}
+              data-testid="github-pat-submit"
+            >
+              Connect with token
+            </Button>
+          </div>
+        </form>
       )}
 
       {status.kind === 'success' && (
@@ -173,7 +292,7 @@ export const GitHubAuthModal = () => {
         </div>
       )}
 
-      {status.kind === 'error' && (
+      {showDeviceViews && status.kind === 'error' && (
         <div className="space-y-4">
           <div className="flex items-start gap-2 p-3 bg-red-900/20 border border-red-900/40 rounded">
             <ExclamationCircleIcon className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
@@ -183,10 +302,26 @@ export const GitHubAuthModal = () => {
             <Button variant="ghost" onClick={handleClose}>Cancel</Button>
             <Button variant="primary" onClick={handleRetry}>Try again</Button>
           </div>
+          <PatToggleLink onClick={handleShowPat} />
         </div>
       )}
     </Modal>
   )
 }
+
+// Secondary sign-in affordance: reveals the fine-grained PAT sub-form. Kept as
+// a small subcomponent so it can sit under each device-flow view identically.
+const PatToggleLink = ({ onClick }: { onClick: () => void }) => (
+  <div className="pt-2 border-t border-obsidianBorder text-center">
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-xs text-obsidianSecondaryText hover:text-obsidianText underline mt-2"
+      data-testid="github-pat-toggle"
+    >
+      Use a personal access token instead
+    </button>
+  </div>
+)
 
 export default GitHubAuthModal
