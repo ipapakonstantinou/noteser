@@ -1,6 +1,6 @@
 /**
  * Playwright config for running against the deployed production app at
- * https://noteser.thetechjon.com. Drops the `webServer` block so no dev
+ * https://noteser.app. Drops the `webServer` block so no dev
  * server is spawned — tests use absolute URLs instead of `baseURL`.
  *
  * Run with:
