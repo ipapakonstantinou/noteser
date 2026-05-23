@@ -14,6 +14,7 @@ import { findNoteByTitleOrAlias } from '@/utils/aliases'
 import { toggleTaskLineText, removeTaskPrefixFromLine } from '@/utils/tasks'
 import { SCROLL_TO_LINE_EVENT } from '@/utils/events'
 import { CodeMirrorEditor } from './CodeMirrorEditor'
+import { MobileFormattingToolbar } from './MobileFormattingToolbar'
 import { FrontmatterPanel } from './FrontmatterPanel'
 import { TaskQueryBlock } from './TaskQueryBlock'
 import { BasesBlock } from './BasesBlock'
@@ -513,6 +514,7 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
         onWikilinkNavigate={(n) => openNote(n.id)}
         viewRef={cmViewRef}
       />
+      {!isPreviewMode && <MobileFormattingToolbar viewRef={cmViewRef} />}
       {isPreviewMode && (
         <div
           ref={previewContainerRef}

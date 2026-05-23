@@ -275,8 +275,10 @@ export const GitHubView = () => {
         {repo && (
           <div className="pt-2 mt-2 border-t border-obsidianBorder space-y-1 text-[11px] text-obsidianSecondaryText">
             <div className="flex items-center gap-1.5">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={user.avatar_url} alt={user.login} className="w-3.5 h-3.5 rounded-full flex-shrink-0" />
+              {user.avatar_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={user.avatar_url} alt={user.login} className="w-3.5 h-3.5 rounded-full flex-shrink-0" />
+              )}
               <span className="truncate">@{user.login}</span>
             </div>
             <div className="truncate">
