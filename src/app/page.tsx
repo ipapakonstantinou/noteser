@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Sidebar, RightSidebar, Ribbon, MobileTopBar } from '@/components/sidebar'
+import { Sidebar, RightSidebar, Ribbon, MobileTopBar, DrawerHandle } from '@/components/sidebar'
 import { Editor } from '@/components/editor'
 import {
   SearchModal,
@@ -385,6 +385,13 @@ export default function Home() {
     return (
       <div className="flex flex-col h-dvh w-screen bg-obsidianBlack text-obsidianText overflow-hidden">
         <MobileTopBar />
+
+        {/* Visible left-edge handle to open the drawer. The edge-swipe
+            (above) is unreliable on iOS WebKit because the browser claims
+            the outermost-edge swipe for back-navigation, so this handle is
+            the dependable, discoverable path. Shown only while the drawer
+            is closed; the backdrop handles closing once it's open. */}
+        {!drawerOpen && <DrawerHandle />}
 
         {drawerOpen && (
           <div
