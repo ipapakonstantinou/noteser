@@ -103,6 +103,17 @@ export function getAllCommands(): Command[] {
     run: () => ui.openModal({ type: 'export' }),
   })
 
+  out.push({
+    id: 'app.openRandomNote',
+    label: 'Open a random note',
+    description: "Jump to a random note in your vault — Wikipedia's \"Random article\" for your own knowledge.",
+    keywords: ['random', 'shuffle', 'lucky', 'browse', 'rediscover'],
+    group: 'Commands',
+    run: () => {
+      void import('@/utils/randomNote').then(({ openRandomNote }) => openRandomNote())
+    },
+  })
+
   // Share — generate a self-contained URL for the currently-open note.
   // Available whenever the workspace has an active note.
   const ws = useWorkspaceStore.getState()
