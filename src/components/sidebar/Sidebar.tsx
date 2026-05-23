@@ -142,12 +142,14 @@ export const Sidebar = () => {
                     : `Connected as @${githubUser.login} — click to pick a vault repo`
                 }
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={githubUser.avatar_url}
-                  alt={githubUser.login}
-                  className="w-4 h-4 rounded-full flex-shrink-0"
-                />
+                {githubUser.avatar_url && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={githubUser.avatar_url}
+                    alt={githubUser.login}
+                    className="w-4 h-4 rounded-full flex-shrink-0"
+                  />
+                )}
                 <span className="truncate">
                   {githubSyncRepo
                     ? `${githubSyncRepo.owner}/${githubSyncRepo.name}`
