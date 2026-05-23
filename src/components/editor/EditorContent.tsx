@@ -3,8 +3,17 @@
 import { useState, useEffect, useRef, useCallback, createElement } from 'react'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism'
+import dynamic from 'next/dynamic'
+
+// Lazy-loaded — react-syntax-highlighter + the oneDark theme ship ~300kB
+// of Prism language grammars. Only mounts when the user actually renders
+// a fenced code block in preview mode, keeping the main editor chunk
+// lean. SSR off because the host page is client-only anyway.
+const PrismHighlighter = dynamic(() => import('./PrismHighlighter'), {
+  ssr: false,
+  // Minimal placeholder while the chunk loads (typically <100ms on a warm cache).
+  loading: () => null,
+})
 import type { EditorView } from '@codemirror/view'
 import { useUIStore, useNoteStore, useWorkspaceStore } from '@/stores'
 import { renderWikilinks } from '@/utils/wikilinks'
@@ -392,15 +401,12 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
     }
     if (!inline && language) {
       return (
-        <SyntaxHighlighter
-          style={oneDark}
+        <PrismHighlighter
           language={language}
-          PreTag="div"
           className="rounded-lg !bg-obsidianDarkGray !mt-2 !mb-2"
-          {...props}
         >
           {String(children).replace(/\n$/, '')}
-        </SyntaxHighlighter>
+        </PrismHighlighter>
       )
     }
     return (
