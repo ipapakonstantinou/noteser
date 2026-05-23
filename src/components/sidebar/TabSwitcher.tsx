@@ -163,13 +163,13 @@ export const TabSwitcher = ({
                 aria-label={def.title}
                 aria-pressed={active}
                 data-testid={`sidebar-tab-${id}`}
-                className={`w-full flex items-center justify-center py-1.5 rounded transition-colors ${
+                className={`w-full flex items-center justify-center py-1.5 max-md:py-2.5 rounded transition-colors ${
                   active
                     ? 'bg-obsidianHighlight text-obsidianText'
                     : 'text-obsidianSecondaryText hover:bg-obsidianHighlight/40 hover:text-obsidianText'
                 }`}
               >
-                <Icon className="w-4 h-4" />
+                <Icon className="w-4 h-4 max-md:w-5 max-md:h-5" />
               </button>
             </div>
           )
