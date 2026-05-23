@@ -15,6 +15,7 @@ import {
   CodeBracketIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline'
 import { useGitHubStore, useUIStore, useWorkspaceStore, useSettingsStore } from '@/stores'
 import { useGitHubSync, useHydration } from '@/hooks'
@@ -160,6 +161,14 @@ export const GitHubView = () => {
             testId="scm-refresh"
           >
             <ArrowPathIcon className="w-4 h-4" />
+          </ToolbarButton>
+          <ToolbarButton
+            onClick={() => openModal({ type: 'discard-local-changes' })}
+            disabled={isSyncing}
+            title="Discard local changes (reset to remote)"
+            testId="scm-discard"
+          >
+            <TrashIcon className="w-4 h-4 text-red-300" />
           </ToolbarButton>
           <a
             href={`https://github.com/${repo.owner}/${repo.name}/tree/${repo.branch}`}
