@@ -224,6 +224,61 @@ describe('setVaultKey (passphrase rotation)', () => {
   })
 })
 
+describe('enable flow uses setVaultKey (no double derivation)', () => {
+  // The enable path in VaultEncryptionModal.handleEnable now reuses the
+  // key it already derived (for makeCanary) by handing it to setVaultKey,
+  // instead of calling the legacy unlockVault which derived a second key
+  // from the same passphrase + salt. These tests model that order of
+  // operations and assert the resulting cached key is usable.
+  //
+  //   1. deriveKey(passphrase, freshSalt)  → key
+  //   2. makeCanary(key)                   → canary (persisted to settings)
+  //   3. setVaultKey(key, freshSaltStr)    → cache the SAME key
+  //   4. getVaultKey() === key, canary verifies, content round-trips
+
+  it('caches the exact key that produced the canary (single derivation)', async () => {
+    const salt = generateSalt()
+    const saltStr = saltToString(salt)
+    const key = await deriveKey('enable passphrase value', salt)
+    const canary = await makeCanary(key)
+
+    expect(isVaultUnlocked()).toBe(false)
+    setVaultKey(key, saltStr)
+
+    expect(isVaultUnlocked()).toBe(true)
+    // The cached reference is the very key we derived, not a fresh one.
+    expect(getVaultKey()).toBe(key)
+    // The stored canary verifies against the cached key.
+    expect(await verifyCanary(canary, getVaultKey()!)).toBe(true)
+  })
+
+  it('the enable-cached key matches a freshly derived key from the same passphrase + salt', async () => {
+    // Behavioural parity with the old unlockVault path: a second
+    // derivation from the same inputs yields a functionally identical key
+    // (it decrypts content the cached key encrypted). This is what made
+    // the double-derivation safe to drop.
+    const salt = generateSalt()
+    const saltStr = saltToString(salt)
+    const key = await deriveKey('enable passphrase value', salt)
+    setVaultKey(key, saltStr)
+
+    const ciphertext = await encryptNoteContent('enabled note body', getVaultKey()!)
+    const reDerived = await deriveKey('enable passphrase value', salt)
+    expect(await decryptNoteContent(ciphertext, reDerived)).toBe('enabled note body')
+  })
+
+  it('content encrypted right after enable round-trips with the cached key', async () => {
+    const salt = generateSalt()
+    const saltStr = saltToString(salt)
+    const key = await deriveKey('enable passphrase value', salt)
+    setVaultKey(key, saltStr)
+
+    const ciphertext = await encryptNoteContent('first encrypted push', getVaultKey()!)
+    const plaintext = await decryptNoteContent(ciphertext, getVaultKey()!)
+    expect(plaintext).toBe('first encrypted push')
+  })
+})
+
 describe('legacy unlockVault still works (no canary verification)', () => {
   // Older call sites that don't have a canary go through `unlockVault`
   // directly. It must keep its semantics: derive the key and stash it,

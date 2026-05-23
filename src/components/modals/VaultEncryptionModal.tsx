@@ -18,7 +18,6 @@ import {
   deriveKey,
 } from '@/utils/vaultCrypto'
 import {
-  unlockVault,
   verifyAndUnlockVault,
   lockVault,
   setVaultKey,
@@ -128,9 +127,11 @@ export const VaultEncryptionModal = () => {
         // part that can fail), we don't end up with enabled=true
         // and canary=null.
         setVaultEncryption(true, saltStr, newCanary)
-        // Cache the key in memory so the next sync push works
-        // without prompting again.
-        await unlockVault(passphrase, saltStr)
+        // Cache the key in memory so the next sync push works without
+        // prompting again. Reuse the already-derived key via setVaultKey
+        // so the enable and rotate paths share one cache-swap helper and
+        // we never derive the key twice.
+        setVaultKey(key, saltStr)
         dismiss()
       } catch (err) {
         setError(`Couldn't enable encryption: ${(err as Error).message}`)
