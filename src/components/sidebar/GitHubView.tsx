@@ -84,6 +84,12 @@ export const GitHubView = () => {
   const focusTab = useWorkspaceStore(s => s.focusTab)
 
   const { runSync, runPullOnly, syncState } = useGitHubSync()
+  // Single source of truth for "is a sync in flight": the GLOBAL store flag
+  // (set by ANY useGitHubSync instance, including the startup auto-pull)
+  // OR this hook instance's local running state. Without the store flag the
+  // buttons stayed enabled during an auto-pull and every click silently hit
+  // the in-flight guard.
+  const storeSyncing = useGitHubStore(s => s.isSyncing)
   // Default commit-message template — vault-synced via settingsStore.
   // Users edit it in Settings → GitHub sync. Supports {{date}} →
   // today's YYYY-MM-DD via `expandCommitMessage` below.
@@ -117,7 +123,7 @@ export const GitHubView = () => {
     )
   }
 
-  const isSyncing = syncState.kind === 'running'
+  const isSyncing = syncState.kind === 'running' || storeSyncing
 
   const onSyncClick = () => {
     const msg = expandCommitMessage(commitMsg.trim())

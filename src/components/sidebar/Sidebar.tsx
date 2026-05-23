@@ -36,7 +36,13 @@ export const Sidebar = () => {
   const githubUser = useGitHubStore((s) => s.user)
   const githubSyncRepo = useGitHubStore((s) => s.syncRepo)
   const githubLastSyncedAt = useGitHubStore((s) => s.lastSyncedAt)
+  // Global in-flight flag — set by ANY useGitHubSync instance (sidebar,
+  // GitHubView, the startup auto-pull). Combine with the local running
+  // state so this button disables during an auto-pull too, instead of
+  // looking clickable while every click hits the global guard.
+  const githubIsSyncing = useGitHubStore((s) => s.isSyncing)
   const { syncState, runSync } = useGitHubSync()
+  const syncRunning = syncState.kind === 'running' || githubIsSyncing
   const { isMobile } = useViewport()
 
   // On the first mount in a mobile viewport, collapse the sidebar by
@@ -159,11 +165,11 @@ export const Sidebar = () => {
               {githubSyncRepo && (
                 <button
                   onClick={() => runSync()}
-                  disabled={syncState.kind === 'running'}
+                  disabled={syncRunning}
                   className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-obsidianSecondaryText hover:bg-obsidianDarkGray transition-colors disabled:opacity-60"
                   title={syncState.kind === 'err' ? syncState.message : 'Commit and push current notes'}
                 >
-                  {syncState.kind === 'running' ? (
+                  {syncRunning ? (
                     <div className="w-4 h-4 border-2 border-obsidianAccentPurple border-t-transparent rounded-full animate-spin" />
                   ) : syncState.kind === 'ok' ? (
                     <CheckCircleIcon className="w-4 h-4 text-green-500" />
@@ -173,10 +179,10 @@ export const Sidebar = () => {
                     <CloudArrowUpIcon className="w-4 h-4" />
                   )}
                   <span className="truncate">
-                    {syncState.kind === 'running' && 'Syncing…'}
-                    {syncState.kind === 'ok' && syncState.message}
-                    {syncState.kind === 'err' && syncState.message}
-                    {syncState.kind === 'idle' && (
+                    {syncRunning && 'Syncing…'}
+                    {!syncRunning && syncState.kind === 'ok' && syncState.message}
+                    {!syncRunning && syncState.kind === 'err' && syncState.message}
+                    {!syncRunning && syncState.kind === 'idle' && (
                       githubLastSyncedAt
                         ? `Sync · ${relativeTime(githubLastSyncedAt)}`
                         : 'Commit & Sync'

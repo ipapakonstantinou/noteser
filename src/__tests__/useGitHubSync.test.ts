@@ -221,6 +221,57 @@ describe('useGitHubSync — runPullOnly', () => {
     expect(useGitHubStore.getState().isSyncing).toBe(false)
   })
 
+  test('records lastCommitSha after a successful pull-only', async () => {
+    // Regression: runPullOnly previously never called recordSync, so a
+    // pull-only left lastCommitSha stale (only runSync updated it). The
+    // pulled HEAD sha must now become the new baseline.
+    pullFromGitHubMock.mockResolvedValue({
+      classifications: [
+        { kind: 'remoteCreated', path: 'a.md', remoteSha: 'sha1', remoteContent: '', tags: [], body: 'hi' },
+      ],
+      latestCommitSha: 'pulled-head-sha',
+    })
+    applyNonConflictsMock.mockReturnValue({ created: 1, updated: 0, deleted: 0, autoMerged: 0 })
+
+    expect(useGitHubStore.getState().lastCommitSha).toBeNull()
+
+    const { result } = renderHook(() => useGitHubSync())
+    await act(async () => {
+      await result.current.runPullOnly()
+    })
+
+    expect(useGitHubStore.getState().lastCommitSha).toBe('pulled-head-sha')
+    expect(useGitHubStore.getState().lastSyncedAt).not.toBeNull()
+  })
+
+  test('guard trip surfaces feedback instead of silent no-op', async () => {
+    // Reproduces the reported bug: the startup auto-pull (a different
+    // useGitHubSync instance) holds the GLOBAL isSyncing flag while this
+    // hook's local syncState is still idle. A click that lands must NOT
+    // proceed to apply (guard holds) but MUST give the user feedback.
+    useGitHubStore.setState({ isSyncing: true })
+
+    const { result } = renderHook(() => useGitHubSync())
+    // Local state starts idle — the button (in real UI) is only disabled
+    // via the global flag now; verify the guard still bails AND speaks up.
+    expect(result.current.syncState.kind).toBe('idle')
+
+    await act(async () => {
+      await result.current.runPullOnly()
+    })
+
+    // Guard held: never pulled, never applied, never pushed.
+    expect(pullFromGitHubMock).not.toHaveBeenCalled()
+    expect(applyNonConflictsMock).not.toHaveBeenCalled()
+    expect(syncToGitHubMock).not.toHaveBeenCalled()
+
+    // But the user got feedback rather than silence.
+    expect(result.current.syncState.kind).toBe('running')
+    if (result.current.syncState.kind === 'running') {
+      expect(result.current.syncState.message).toMatch(/already in progress/i)
+    }
+  })
+
   test('no-op when not connected (no token or no repo)', async () => {
     useGitHubStore.setState({ token: null })
 
