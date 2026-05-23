@@ -22,6 +22,7 @@ import {
   VaultEncryptionModal,
   RevertToCommitModal,
   LocalFolderImportModal,
+  DiscardLocalChangesModal,
 } from '@/components/modals'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useKeyboardShortcuts, useHydration, useAutoSync, useAutoEmbedNotes, useApplyTheme, useViewport } from '@/hooks'
@@ -327,6 +328,7 @@ export default function Home() {
       <VaultEncryptionModal />
       <RevertToCommitModal />
       <LocalFolderImportModal />
+      <DiscardLocalChangesModal />
       <ResetConfirmModal
         isOpen={showResetModal}
         hasUnsynced={resetHasUnsynced}
