@@ -17,6 +17,7 @@ import { imagesLivePreview } from './imagesLivePreview'
 import { getActiveWikilinkQuery } from '@/utils/wikilinks'
 import { findNoteByTitleOrAlias } from '@/utils/aliases'
 import { toggleTaskLineText, UI_TASK_LINE_REGEX } from '@/utils/tasks'
+import { buildTable } from '@/utils/markdownTable'
 import { findFragmentLine } from '@/utils/wikilinkTarget'
 import {
   appendBlockId,
@@ -312,6 +313,31 @@ export function CodeMirrorEditor({
         useUIStore.getState().openModal({
           type: 'task-edit',
           data: { noteId: noteIdRef.current, line: line.number - 1 },
+        })
+        return true
+      },
+    },
+    {
+      // Insert a 2-row × 2-col markdown table at the cursor. Drops the
+      // template on its own block (precedes with a blank line if the
+      // current line isn't empty) and selects "Header 1" so the user
+      // can type to overwrite.
+      key: 'Mod-Alt-t',
+      preventDefault: true,
+      run(view) {
+        const { head } = view.state.selection.main
+        const line = view.state.doc.lineAt(head)
+        const prefix = line.text === '' ? '' : '\n\n'
+        const t = buildTable(2, 2)
+        const insertPos = prefix === '' ? line.from : line.to
+        const insertText = `${prefix}${t.text}`
+        const baseOffset = insertPos + prefix.length
+        view.dispatch({
+          changes: { from: insertPos, to: insertPos, insert: insertText },
+          selection: {
+            anchor: baseOffset + t.selectionFrom,
+            head: baseOffset + t.selectionTo,
+          },
         })
         return true
       },
