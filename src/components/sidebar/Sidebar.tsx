@@ -22,7 +22,6 @@ function relativeTime(ts: number): string {
 }
 import { useHydration, useViewport } from '@/hooks'
 import { SidebarStack } from './SidebarStack'
-import { FolderTree } from './FolderTree'
 import { ContextMenu } from './ContextMenu'
 import type { ContextMenuState } from '@/types'
 
@@ -118,17 +117,16 @@ export const Sidebar = () => {
         </button>
       </div>
 
-      {/* Content. Desktop gets the full SidebarStack (files tree +
-          collapsible mini-panels for outline / source-control /
-          search / bookmarks / related). Mobile gets just the file
-          tree — the panel strip on a phone is noise the user can't
-          read, and the MobileTopBar's overflow menu already covers
-          the nav actions (All notes / Recent / Tags). */}
-      {isExpanded && (
-        isMobile
-          ? <div className="flex-1 min-h-0 overflow-y-auto p-1"><FolderTree onRightClick={handleRightClick} /></div>
-          : <SidebarStack onRightClick={handleRightClick} />
-      )}
+      {/* Content. Both mobile + desktop render the full SidebarStack
+          now. Phase B originally simplified the mobile drawer to a
+          files-only tree to save touch real estate, but that hid
+          Calendar / Source Control / etc. behind the top-bar
+          overflow menu — which the drawer overlay covers, making
+          them effectively unreachable while the drawer is open.
+          Surfacing the tab strip inside the drawer is the bridge.
+          The icons are 4×4 with py-1.5 padding so the touch targets
+          are still ≥36px tall on phone widths. */}
+      {isExpanded && <SidebarStack onRightClick={handleRightClick} />}
 
       {/* Footer */}
       {isExpanded && (
