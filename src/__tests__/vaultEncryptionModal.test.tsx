@@ -25,9 +25,12 @@ import {
   unlockVault,
   verifyAndUnlockVault,
   lockVault,
+  setVaultKey,
   isVaultUnlocked,
+  getVaultKey,
   _resetVaultKeyForTests,
 } from '../utils/vaultKey'
+import { encryptNoteContent, decryptNoteContent } from '../utils/vaultCrypto'
 
 beforeEach(() => {
   _resetVaultKeyForTests()
@@ -115,6 +118,109 @@ describe('lockVault clears the in-memory key', () => {
     expect(isVaultUnlocked()).toBe(true)
     lockVault()
     expect(isVaultUnlocked()).toBe(false)
+  })
+})
+
+describe('setVaultKey (passphrase rotation)', () => {
+  // The change-passphrase flow in VaultEncryptionModal derives a new key
+  // from a fresh salt + new passphrase, builds a new canary, persists
+  // both, then calls setVaultKey to swap the cached key without firing
+  // a lock transition. These tests cover the rotate semantics that the
+  // UI relies on.
+
+  it('swaps the cached key without locking the vault', async () => {
+    const oldSalt = generateSalt()
+    const oldSaltStr = saltToString(oldSalt)
+    const oldKey = await deriveKey('first first first', oldSalt)
+    const oldCanary = await makeCanary(oldKey)
+    await verifyAndUnlockVault('first first first', oldSaltStr, oldCanary)
+    expect(isVaultUnlocked()).toBe(true)
+    const before = getVaultKey()
+
+    const newSalt = generateSalt()
+    const newSaltStr = saltToString(newSalt)
+    const newKey = await deriveKey('second second second', newSalt)
+    setVaultKey(newKey, newSaltStr)
+
+    expect(isVaultUnlocked()).toBe(true)
+    const after = getVaultKey()
+    expect(after).not.toBe(before)
+    expect(after).toBe(newKey)
+  })
+
+  it('after a rotation, the OLD canary no longer verifies against the cached key', async () => {
+    const oldSalt = generateSalt()
+    const oldKey = await deriveKey('first first first', oldSalt)
+    const oldCanary = await makeCanary(oldKey)
+
+    const newSalt = generateSalt()
+    const newKey = await deriveKey('second second second', newSalt)
+    setVaultKey(newKey, saltToString(newSalt))
+
+    expect(await verifyCanary(oldCanary, getVaultKey()!)).toBe(false)
+  })
+
+  it('after a rotation, the NEW canary verifies against the cached key', async () => {
+    const newSalt = generateSalt()
+    const newKey = await deriveKey('second second second', newSalt)
+    const newCanary = await makeCanary(newKey)
+    setVaultKey(newKey, saltToString(newSalt))
+
+    expect(await verifyCanary(newCanary, getVaultKey()!)).toBe(true)
+  })
+
+  it('content encrypted before the rotation cannot be decrypted with the new key', async () => {
+    const oldSalt = generateSalt()
+    const oldKey = await deriveKey('first first first', oldSalt)
+    const ciphertext = await encryptNoteContent('hello world', oldKey)
+
+    const newSalt = generateSalt()
+    const newKey = await deriveKey('second second second', newSalt)
+    setVaultKey(newKey, saltToString(newSalt))
+
+    // AES-GCM auth-tag failure throws OperationError.
+    await expect(decryptNoteContent(ciphertext, getVaultKey()!)).rejects.toThrow()
+  })
+
+  it('content encrypted after the rotation round-trips with the new key', async () => {
+    const newSalt = generateSalt()
+    const newKey = await deriveKey('second second second', newSalt)
+    setVaultKey(newKey, saltToString(newSalt))
+
+    const ciphertext = await encryptNoteContent('post-rotation note', getVaultKey()!)
+    const plaintext = await decryptNoteContent(ciphertext, getVaultKey()!)
+    expect(plaintext).toBe('post-rotation note')
+  })
+
+  it('rotation simulation end-to-end: verify old, swap, verify new', async () => {
+    // Stand in for the UI's handleChange path. Verifies the order of
+    // operations the modal does:
+    //   1. verifyCanary(canary, deriveKey(oldPass, oldSalt))  → true
+    //   2. deriveKey(newPass, freshSalt) → newKey
+    //   3. makeCanary(newKey) → newCanary
+    //   4. setVaultKey(newKey, freshSalt)
+    //   5. verifyCanary(newCanary, getVaultKey()) → true
+    const oldSalt = generateSalt()
+    const oldSaltStr = saltToString(oldSalt)
+    const oldKey = await deriveKey('correct old passphrase', oldSalt)
+    const oldCanary = await makeCanary(oldKey)
+    await verifyAndUnlockVault('correct old passphrase', oldSaltStr, oldCanary)
+
+    // 1. confirm old passphrase verifies the stored canary
+    const oldVerifier = await deriveKey('correct old passphrase', oldSalt)
+    expect(await verifyCanary(oldCanary, oldVerifier)).toBe(true)
+
+    // 2 + 3 + 4 + 5
+    const freshSalt = generateSalt()
+    const freshSaltStr = saltToString(freshSalt)
+    const newKey = await deriveKey('brand new passphrase value', freshSalt)
+    const newCanary = await makeCanary(newKey)
+    setVaultKey(newKey, freshSaltStr)
+    expect(await verifyCanary(newCanary, getVaultKey()!)).toBe(true)
+
+    // A wrong old passphrase NOW also fails (the cache holds the new key).
+    const wrongOld = await deriveKey('correct old passphrase', oldSalt)
+    expect(await verifyCanary(newCanary, wrongOld)).toBe(false)
   })
 })
 

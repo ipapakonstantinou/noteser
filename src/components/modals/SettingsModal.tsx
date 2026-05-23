@@ -1121,6 +1121,20 @@ function VaultEncryptionField() {
                 Unlock…
               </button>
             )}
+            {/* Change-passphrase entry. Only meaningful once the vault is
+                unlocked: the modal verifies the OLD passphrase before
+                deriving the new key, so we never end up with a salt
+                rotation the user can't undo. */}
+            {unlocked && (
+              <button
+                type="button"
+                onClick={() => openModal({ type: 'vault-encryption', data: { mode: 'change', returnTo: 'settings' } })}
+                className="px-3 py-1.5 text-sm border border-obsidianBorder text-obsidianText rounded hover:bg-obsidianHighlight transition-colors"
+                data-testid="settings-encryption-change"
+              >
+                Change passphrase…
+              </button>
+            )}
             <button
               type="button"
               onClick={() => openModal({ type: 'vault-encryption', data: { mode: 'confirm-disable', returnTo: 'settings' } })}
