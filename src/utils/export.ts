@@ -1,6 +1,11 @@
 import { saveAs } from 'file-saver'
 import JSZip from 'jszip'
 import { extractTags } from './tags'
+import {
+  INVALID_FILENAME_CHARS,
+  sanitizeTitleInput,
+  sanitizeFilename,
+} from './sanitizeFilename'
 import type { Note, Folder, Tag, ExportOptions, ImportResult } from '@/types'
 
 // Export a single note as markdown
@@ -401,23 +406,14 @@ const parseMarkdownNote = (content: string, filename: string): Note => {
   }
 }
 
-// Allowlist for note / folder names. Anything outside Unicode letters, digits,
-// space, and - _ . ( ) is stripped — keeps titles safe across Windows, macOS,
-// Linux, URLs and git paths without surprising punctuation in filenames.
-export const INVALID_FILENAME_CHARS = /[^\p{L}\p{N} \-_.()]/gu
-
-// Live-input sanitizer: drops disallowed chars but PRESERVES spaces
-// (unlike sanitizeFilename which is destination-side).
-export const sanitizeTitleInput = (s: string): string => s.replace(INVALID_FILENAME_CHARS, '')
-
-// Destination-side: aggressive — also collapses whitespace to dashes and
-// truncates. Use for the actual filename written to disk / git.
-export const sanitizeFilename = (name: string): string => {
-  return name
-    .replace(INVALID_FILENAME_CHARS, '')
-    .replace(/\s+/g, '-')
-    .slice(0, 100)
-}
+// Sanitisers moved to `./sanitizeFilename` so light consumers
+// (EditableText, EditorHeader, folderStore) don't drag jszip +
+// file-saver into the main bundle via the import graph. Re-exported
+// here for backward compatibility — old callers keep working.
+//
+// Re-import not just re-export so other functions in this file can
+// continue to call `sanitizeFilename()` directly.
+export { INVALID_FILENAME_CHARS, sanitizeTitleInput, sanitizeFilename }
 
 // Utility: Escape HTML
 const escapeHTML = (str: string): string => {
