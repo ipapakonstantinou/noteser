@@ -53,6 +53,8 @@ Noteser renders standard markdown plus a few extensions:
 A few essentials — full list under **Settings → Shortcuts**:
 
 - \`Ctrl+K\` — open search
+- \`Ctrl+F\` — find in current note (\`Ctrl+H\` for find-and-replace)
+- \`Ctrl+Alt+T\` — insert a markdown table at the cursor
 - \`Alt+N\` — new note
 - \`Ctrl+Shift+N\` — new folder
 - \`Ctrl+E\` — toggle preview mode
@@ -60,7 +62,8 @@ A few essentials — full list under **Settings → Shortcuts**:
 - \`Ctrl+,\` — open settings
 - \`Ctrl+W\` — close current tab
 
-Press \`Ctrl+/\` any time to see the shortcuts modal.
+Press \`Ctrl+/\` any time to see the shortcuts modal. For deeper dives on
+each editor power feature see [Editor power features](/help/editor).
 `,
 }
 
@@ -213,6 +216,10 @@ Open the shortcuts cheatsheet with \`Ctrl+/\`. Some highlights:
 | Open settings | \`Ctrl+,\` |
 | Toggle task at cursor | \`Alt+L\` |
 | Remove task prefix | \`Alt+Shift+L\` |
+| Find in note | \`Ctrl+F\` |
+| Find & replace | \`Ctrl+H\` |
+| Insert markdown table | \`Ctrl+Alt+T\` |
+| Open today's daily note | (via ribbon button or empty-state CTA) |
 
 Shortcut conflicts? **Settings → Shortcuts** lets you remap any of them.
 `,
@@ -268,8 +275,150 @@ You're trying to publish a gist for the first time. The token was issued before 
 `,
 }
 
+const EDITOR_POWER: HelpPage = {
+  slug: 'editor',
+  title: 'Editor power features',
+  summary: 'Per-line revert, find/replace, tag and wikilink autocomplete, markdown table insert.',
+  body: `
+# Editor power features
+
+These tools live inside the note editor and turn it from "a textarea" into
+something closer to VS Code or Obsidian.
+
+## Per-line revert (after sync)
+
+When you've synced a note to GitHub, the editor paints a thin colored
+bar in the left gutter next to lines that differ from the version you
+last pushed:
+
+- **green** = added line
+- **yellow** = modified line
+
+**Click any bar** to revert that hunk to the last-pushed version. The
+revert is a single edit, so \`Ctrl+Z\` restores it instantly. Multi-line
+hunks revert as one unit — click anywhere in the hunk.
+
+Useful when you've been tinkering and want to drop just one paragraph
+without losing the rest of your edits.
+
+## Find / replace (Ctrl+F, Ctrl+H)
+
+\`Ctrl+F\` opens an inline find panel at the top of the editor. Type to
+highlight every match in yellow. \`Enter\` jumps to the next match,
+\`Shift+Enter\` to the previous. \`Esc\` closes the panel.
+
+The panel always has a **Replace** field too — \`Ctrl+H\` opens the same
+panel (Obsidian convention) and focuses the find input. Options for
+**Match case**, **Regex**, and **Match whole word** are on the right.
+
+## Tag autocomplete on \`#\`
+
+Type \`#\` after whitespace or punctuation. A dropdown appears with every
+existing tag in your vault, ranked by usage count. Filter by typing more
+characters. \`↑/↓\` to navigate, \`Enter\` or \`Tab\` to insert,
+\`Esc\` to dismiss.
+
+Mid-word \`#\` (e.g. \`color#fff\`) is **not** a tag start — the dropdown
+won't open and the parser won't index it.
+
+## Wikilink autocomplete on \`[[\`
+
+Same idea for notes: type \`[[\` and a dropdown lists your notes with
+fuzzy match on title and aliases. \`Enter\` inserts \`[[Note Title]]\`.
+
+If the typed query matches an **alias**, the row shows
+\`(alias: <name>)\` so you know why it surfaced.
+
+## Markdown table insert (Ctrl+Alt+T)
+
+Drops a 2-row × 2-col GFM table at the cursor:
+
+\`\`\`
+| Header 1 | Header 2 |
+| --- | --- |
+| Cell 1 | Cell 2 |
+| Cell 3 | Cell 4 |
+\`\`\`
+
+\`Header 1\` is pre-selected so you can immediately type to overwrite the
+first column heading. On a non-empty line, the table is inserted on its
+own block (preceded by a blank line).
+
+## AI actions on the active note
+
+Right-click any note in the sidebar → **AI actions**, or open the
+command palette (\`Ctrl+Shift+P\`) and type "AI:". Five actions ship:
+
+- **Summarize note** — 3–5 sentence summary
+- **Extract tasks** — pulls actionable items into a checklist
+- **Suggest tags** — proposes 3–7 \`#tags\` from the body
+- **Rewrite for clarity** — polishes the prose without changing meaning
+- **Translate…** — into a target language you specify
+
+Requires a BYO Anthropic or OpenAI API key in **Settings → AI**.
+`,
+}
+
+const MOBILE_HELP: HelpPage = {
+  slug: 'mobile',
+  title: 'Mobile / touch shortcuts',
+  summary: 'Edge-swipe drawer, formatting toolbar, and the layout changes that kick in below 768px.',
+  body: `
+# Mobile / touch shortcuts
+
+Below 768px the layout switches to a single-pane mobile mode with an
+off-canvas drawer for the sidebar.
+
+## Edge-swipe drawer
+
+- **Right-swipe** from within ~24px of the left edge → opens the sidebar drawer.
+- **Left-swipe** anywhere with the drawer open → closes it.
+
+Short swipes (<50px) or mostly-vertical motion (regular scrolling) are
+ignored — the gesture has to be deliberately horizontal.
+
+## Mobile formatting toolbar
+
+A 5-button strip sits below the editor on mobile (phones lack the
+keyboard shortcuts):
+
+- **B** — wrap selection in \`**...**\` (bold). Tap again on the same
+  selection to strip the markers.
+- **I** — same, with \`_..._\` (italic).
+- **H** — cycle the current line's heading: \`none → # → ## → ### → none\`.
+- **• (Bullet)** — toggle \`- \` prefix on every selected line.
+- **☑ (Task)** — toggle \`- [ ] \` prefix on every selected line.
+
+The toolbar hides in preview mode.
+
+## Empty-state CTAs
+
+When no note is open, the editor pane shows two big buttons:
+
+- **Open today's daily note** — same as the ribbon's daily-note icon.
+- **New note** — adds a fresh "Untitled" and opens it.
+
+Useful first-launch landing surface.
+
+## What's NOT on mobile
+
+- The split-pane drag affordance (right-edge drop zone for tabs). One
+  pane only on phones.
+- The keyboard-shortcut bar in the editor header. Use the mobile
+  formatting toolbar instead.
+
+## Tips
+
+- Tap the hamburger in the top-left to toggle the drawer manually.
+- Most modals (Settings, Search, Templates) are full-screen on phones
+  so they don't get clipped.
+`,
+}
+
 export const HELP_PAGES: ReadonlyArray<HelpPage> = [
   GETTING_STARTED,
+  EDITOR_POWER,
+  MOBILE_HELP,
   GITHUB_SYNC,
   LOCAL_FOLDER,
   SHORTCUTS_PINS,

@@ -5,9 +5,9 @@
  *
  * Scope:
  *   1. /help redirects to /help/getting-started
- *   2. Each of the five pages renders content (getting-started, github-sync,
+ *   2. Each of the seven pages renders content (getting-started, github-sync,
  *      local-folder, sidebar, faq)
- *   3. TOC sidebar contains all 5 entries on every page
+ *   3. TOC sidebar contains all 7 entries on every page
  *   4. The currently active page is highlighted in the TOC
  *   5. Internal TOC links navigate to the correct page
  *   6. "Back to noteser" link returns to /
@@ -18,10 +18,12 @@
 
 import { test, expect } from '@playwright/test'
 
-const BASE = 'https://noteser.thetechjon.com'
+const BASE = 'https://noteser.app'
 
 const HELP_PAGES = [
   { slug: 'getting-started', label: 'Getting Started' },
+  { slug: 'editor',          label: 'Editor power' },
+  { slug: 'mobile',          label: 'Mobile' },
   { slug: 'github-sync',     label: 'GitHub Sync' },
   { slug: 'local-folder',    label: 'Local Folder' },
   { slug: 'sidebar',         label: 'Sidebar' },
@@ -36,10 +38,10 @@ test('1: /help redirects to /help/getting-started', async ({ page }) => {
   expect(page.url()).toContain('/help/getting-started')
 })
 
-// ── 2 + 3 + 4. Each page renders and has a TOC with all 5 entries ─────────
+// ── 2 + 3 + 4. Each page renders and has a TOC with all 7 entries ─────────
 
 for (const { slug, label } of HELP_PAGES) {
-  test(`2-4: /help/${slug} — page renders, TOC has all 5 entries, active page highlighted`, async ({ page }) => {
+  test(`2-4: /help/${slug} — page renders, TOC has all 7 entries, active page highlighted`, async ({ page }) => {
     await page.goto(`${BASE}/help/${slug}`)
     await page.waitForLoadState('networkidle', { timeout: 20_000 })
 
@@ -63,7 +65,7 @@ for (const { slug, label } of HELP_PAGES) {
     await expect(page.locator('body')).not.toContainText('404')
     await expect(page.locator('body')).not.toContainText('Page not found')
 
-    // TOC sidebar: check all 5 page labels appear somewhere on the page.
+    // TOC sidebar: check all 7 page labels appear somewhere on the page.
     // The TOC is expected to be a nav or aside element.
     const pageText = await page.locator('body').innerText()
     for (const p of HELP_PAGES) {
@@ -157,5 +159,5 @@ test('6: "Back to noteser" link returns to /', async ({ page }) => {
   }
 
   await page.waitForURL(`${BASE}/`, { timeout: 10_000 })
-  expect(page.url()).toMatch(/thetechjon\.com\/?$/)
+  expect(page.url()).toMatch(/noteser\.app\/?$/)
 })

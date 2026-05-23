@@ -5,68 +5,119 @@ Loosely prioritized — top section is what's being picked up next, bottom is
 (`.claude/orchestrator/queue.json`) holds the *active* work; this file is the
 wider backlog.
 
-Last refresh: 2026-05-21 (post-batch).
+Last refresh: 2026-05-23 (mid-day).
 
-> 14 PRs opened in a single batch on 2026-05-21. Every roadmap item in
-> the "Next" and "Later" sections got a Phase A shipped or fully closed.
-> See "In review" below for the open PRs and "Recently shipped" for the
-> earlier work. The user feedback in Telegram added one new item
-> (Reset to remote, PR #23, shipped same batch).
+> The 2026-05-21 batch + 2026-05-22 → 23 stretch are all in prod. Domain
+> migrated to **noteser.app** (308 redirect from the old URL). See
+> "Recently shipped (2026-05-22 → 2026-05-23)" for the latest tranche.
 
 ## In flight
 
-_Nothing right now — promote from In review once the batch lands._
+_Nothing right now._
 
-## In review (open PRs from the 2026-05-21 batch)
+## Next (genuinely upcoming)
 
-Mobile / responsive layout — closed:
-- **PR #11** Mobile responsive (dvh heights, single-pane mode, ≥44px touch targets, sidebar drawer, parity smoke at 375×667 + 414×896).
-
-Sync robustness — all four sub-items closed:
-- **PR #12** `feat/sync-rate-limit` — typed `GitHubAPIError`, 403 + `x-ratelimit-remaining=0` retries, telemetry layer.
-- **PR #17** `feat/sync-partial-failure` — push progress events, per-repo in-tab upload cache so a retry skips re-uploaded blobs.
-- **PR #21** `feat/sync-large-vault-perf` — per-note tag WeakMap cache + memoised `getActiveNotes/getDeletedNotes`. Bench: 5k notes warm in <1ms.
-- **PR #22** `feat/sync-bulk-drift-ux` — `merge-batch` summary tab (≥3 conflicts) with per-row Mine/Theirs/Merge actions + bulk apply.
-- **PR #23** `feat/sync-reset-to-remote` — user-requested "Reset to remote" escape hatch (Settings → GitHub sync). Preserves unpushed local notes by default.
-
-Backup encryption:
-- **PR #16** `feat/vault-crypto-module` — PBKDF2-SHA256 → AES-GCM, envelope format with `noteser-encrypted: 1` banner, 18 tests.
-- **PR #20** `feat/backup-encryption-integration` — wired into push (maybeEncryptForPush before gitBlobSha) and pull (maybeDecryptFromPull after getBlobContent). `vaultKey.ts` in-memory key holder. **UI is a follow-up.**
-
-Security hardening — audit + 3 fixes:
-- **PR #13** `feat/security-audit-2026-05-21` — read-only audit doc (1 high, 3 medium, 4 low).
-- **PR #14** `feat/security-html-export-escape` — Finding 1 (high): ZIP HTML export now escapes note bodies. Static-source guard test locks the call shape.
-- **PR #18** `feat/security-csp-websocket-scope` — Finding 5 (medium): `wss:/ws:` no longer wildcards; derives origin from `NEXT_PUBLIC_YJS_WS_URL` or omits entirely.
-- **PR #19** `feat/security-share-burn-hash` — Finding 8 (low): FNV-1a → SHA-256 truncated to 128 bits.
-
-Live collaboration:
-- **PR #24** `feat/collab-presence` — Phase A: WebSocket connectivity probe + EditorFooter "Live" pill. Real Y.Doc + remote cursors are Phase B/C.
-
-Native apple-touch-icon:
-- **PR #15** `feat/apple-touch-icon` — 180×180 PNG rasterised from `icon.svg`; Next.js 15 auto-discovers.
-
-## Next (post-merge follow-ups from the batch)
-
-- **Backup encryption — Phase B (UI).** Settings → Sync section: enable toggle, passphrase modal, lock-on-startup prompt, wrong-passphrase recovery. Builds on PR #20.
-- **Live collaboration — Phase B/C.** Add yjs + y-websocket deps; bind a `Y.Doc` per note; integrate y-codemirror.next for remote cursors. Builds on PR #24.
-- **Security audit follow-ups** still open (medium severity, deferred this batch):
-  - Finding 2: OAuth scope — needs user input on `repo` → `public_repo` / fine-grained PAT trade-off.
-  - Finding 3: in-memory rate limiter on serverless — needs Vercel KV or Upstash dep.
-  - Finding 4: XFF spoofing on non-Vercel deployments — env-var-controlled trust depth.
-  - Finding 6: nonce-based `script-src` — Next.js middleware investigation.
+- **Live collaboration — Phase B/C.** Add yjs + y-websocket deps; bind
+  a `Y.Doc` per note; integrate y-codemirror.next for remote cursors.
+  Phase A (presence + WebSocket probe) is already in prod.
+- **Security audit follow-ups** still open (medium severity):
+  - Finding 2: OAuth scope — needs user input on `repo` →
+    `public_repo` / fine-grained PAT trade-off.
+  - Finding 3: in-memory rate limiter on serverless — needs Vercel KV
+    or Upstash dep.
+  - Finding 4: XFF spoofing on non-Vercel deployments — env-var-
+    controlled trust depth.
+  - Finding 6: nonce-based `script-src` — Next.js middleware
+    investigation.
+- **Email signup** (#16 in task list) — blocked on you picking a
+  provider (Buttondown vs Resend) + creating the account.
+- **Sponsor / tip-jar links** (#24) — blocked on you creating GitHub
+  Sponsors + Ko-fi accounts.
+- **Native desktop (Tauri)** (#26) — multi-week scope, not started.
 
 ## User feedback pending clarification
 
 - **"Weird icon-click behavior"** — reported via Telegram, needs a
-  screenshot or screen recording to reproduce. Suspected: top mini-strip
-  icon click causes layout shift or activates wrong panel.
-- **"Hide/show panels"** — proposed feature: collapse a pinned panel
-  to just its mini-strip header (icon stays visible, content hides),
-  click again to expand. Awaiting interpretation confirmation.
+  screenshot or screen recording to reproduce.
+- **"Pull doesn't give a conflict"** — reported 2026-05-23. Classifier
+  probes (6 edge-case tests) all pass; need a repro scenario to dig
+  into the apply step.
 
 ## Later
 
-- **Real-time editing (collab Phase B-D)** as a single sustained track once Phase A lands and a Yjs server is available.
+- **Real-time editing (collab Phase B-D)** once Phase A lands and a
+  Yjs server is available.
+- **Tab navigation inside markdown tables** (insert helper shipped
+  2026-05-23; navigation between cells is the follow-up).
+
+## Recently shipped (2026-05-22 → 2026-05-23)
+
+Two-day stretch of small features + polish, plus the domain migration.
+
+### Domain + infra (2026-05-23)
+- **noteser.app domain** — added to Vercel, SSL issued, prod traffic
+  serving. Old `noteser.thetechjon.com` 308-redirects to it (will be
+  removed in the near future). Code refs updated across README +
+  playwright configs.
+- **uuid 10 → 11.1.1 bump** — closes Dependabot #77
+  (GHSA-w5hq-g745-h8pq). No call-site changes needed.
+
+### Editor power features (2026-05-23)
+- **Per-line revert in editor gutter** — click a green ("added") or
+  yellow ("modified") gutter bar to revert that hunk to the last-
+  pushed remote. Single transaction → Ctrl+Z restores. Also surfaced
+  a latent bug: a leftover `.cm-gutters: display: none` rule was
+  hiding the gutter entirely.
+- **Find / replace panel** — wires `@codemirror/search` with Ctrl+F
+  (find) + Ctrl+H (replace, Obsidian convention). Panel themed to
+  the Obsidian palette.
+- **Tag autocomplete on `#`** — typing `#` opens a usage-ranked
+  dropdown of every tag in the vault. ↑↓/Enter/Tab/Esc behave like
+  the existing wikilink popup. Mid-word `#` (e.g. `foo#bar`) is
+  correctly suppressed.
+- **Markdown table insert** — `Ctrl+Alt+T` drops a 2×2 GFM table
+  with "Header 1" pre-selected for immediate overtype.
+
+### Mobile (2026-05-23)
+- **Edge-swipe drawer** — right-swipe from the left 24px opens the
+  sidebar; left-swipe ≥50px closes. Mostly-vertical motion (scroll
+  gesture) is ignored. Pure decision logic in `src/utils/edgeSwipe.ts`.
+- **Mobile formatting toolbar** — 5-button strip below the editor:
+  Bold / Italic / Heading / Bullet / Task. Each toggles its
+  formatting on the current selection or line. Hidden in preview mode.
+- **Mobile drawer panel switcher** (2026-05-23) — drawer now renders
+  the full SidebarStack so Calendar / Source Control / etc. are
+  reachable on phones.
+
+### UX polish (2026-05-22 → 23)
+- **Discard local changes** — toolbar button in the Source Control
+  panel; two-step modal with "also drop unpushed" toggle. Uses the
+  existing `resetToRemote` util.
+- **Empty-state CTAs** — pane with no active tab shows "Open today's
+  daily note" + "New note" buttons.
+- **Avatar `<img>` empty-src guard** — Sidebar + GitHubView now skip
+  the avatar when `avatar_url` is empty, eliminating a React warning
+  that fired during the revert-to-commit modal lifecycle.
+
+### Docs (2026-05-23)
+- **/help expanded** — two new pages (`/help/editor`, `/help/mobile`)
+  covering every feature shipped in this stretch. Existing pages got
+  shortcut rows for Ctrl+F / Ctrl+H / Ctrl+Alt+T. README's keyboard
+  table mirrors.
+- **Help-route parity spec** updated for 7 pages + noteser.app URL.
+
+### Test infrastructure (2026-05-23)
+- **8 new parity specs** for the overnight batch + this stretch:
+  per-line revert, mobile swipe, search/replace, mobile formatting
+  toolbar, empty-state CTAs, tag autocomplete, markdown table insert,
+  console-error monitor.
+- **6 pull-conflict probe tests** added to `githubSyncClassify.test.ts`
+  covering delete-vs-modify, modify-vs-delete, consecutive non-
+  overlapping edits, different-content same-position inserts,
+  ancestor-fetch failure, identical-content with drifted ancestor.
+  All pass — classifier is sound.
+- **1418 jest tests passing** across 109 suites (was 1380 before
+  this stretch).
 
 ## Recently shipped (2026-05-19 → 2026-05-21)
 
