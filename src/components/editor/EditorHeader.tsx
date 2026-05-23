@@ -4,7 +4,7 @@ import { EyeIcon, PencilIcon, StarIcon } from '@heroicons/react/24/outline'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
 import { useUIStore, useNoteStore, useFolderStore } from '@/stores'
 import { useViewport } from '@/hooks'
-import { sanitizeTitleInput } from '@/utils/export'
+import { sanitizeTitleInput } from '@/utils/sanitizeFilename'
 import type { Note } from '@/types'
 
 interface EditorHeaderProps {

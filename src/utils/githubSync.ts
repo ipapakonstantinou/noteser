@@ -1,4 +1,4 @@
-import JSZip from 'jszip'
+import type JSZip from 'jszip'
 import type { Note, Folder, SyncRepo } from '@/types'
 import { sanitizeFilename } from './export'
 import {
@@ -686,6 +686,10 @@ export async function pullFromZipball(input: {
     fetchZipball(token, owner, name, branch),
   ])
 
+  // Lazy-load jszip — only callers of pullFromZipball pay the
+  // ~140kB cost. The rest of the sync flow (push, regular pull via
+  // Git Data API) never touches it.
+  const { default: JSZip } = await import('jszip')
   const zip = await JSZip.loadAsync(zipBuffer)
   const classifications: PullClassification[] = []
 
