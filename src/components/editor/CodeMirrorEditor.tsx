@@ -19,7 +19,15 @@ import { getActiveTagQuery } from '@/utils/tagAutocomplete'
 import { collectAllTags } from '@/utils/tags'
 import { findNoteByTitleOrAlias } from '@/utils/aliases'
 import { toggleTaskLineText, UI_TASK_LINE_REGEX } from '@/utils/tasks'
-import { buildTable } from '@/utils/markdownTable'
+import {
+  buildEmptyRow,
+  buildTable,
+  findCellIndexAtPos,
+  findCellRanges,
+  findTableBounds,
+  nextCellTarget,
+  prevCellTarget,
+} from '@/utils/markdownTable'
 import { findFragmentLine } from '@/utils/wikilinkTarget'
 import {
   appendBlockId,
@@ -348,6 +356,137 @@ export function CodeMirrorEditor({
             anchor: baseOffset + t.selectionFrom,
             head: baseOffset + t.selectionTo,
           },
+        })
+        return true
+      },
+    },
+    {
+      // Tab inside a markdown table jumps to the next cell. Past the
+      // last cell of the last body row a fresh row is appended. Returns
+      // false (so the default Tab indentation runs) when the cursor is
+      // not inside a table.
+      key: 'Tab',
+      preventDefault: false,
+      run(view) {
+        const { state } = view
+        const { head } = state.selection.main
+        const docLine = state.doc.lineAt(head)
+        const lineIdx = docLine.number - 1
+        const col = head - docLine.from
+        const lines = state.doc.toString().split('\n')
+
+        const bounds = findTableBounds(lines, lineIdx)
+        if (!bounds) return false
+
+        const cellIdx = findCellIndexAtPos(docLine.text, col)
+        // Cursor on the divider row → drop into the first body cell.
+        if (cellIdx == null && lineIdx !== bounds.dividerIdx) return false
+
+        // Effective starting position when on the divider: treat it as
+        // the last cell of the divider row so nextCellTarget wraps to
+        // the first body row.
+        let fromCellIdx = cellIdx ?? 0
+        let fromLineIdx = lineIdx
+        if (lineIdx === bounds.dividerIdx) {
+          const divCells = findCellRanges(docLine.text).length
+          fromCellIdx = Math.max(0, divCells - 1)
+          fromLineIdx = bounds.dividerIdx
+        }
+
+        const target = nextCellTarget(lines, fromLineIdx, fromCellIdx, bounds)
+        if (!target) return false
+
+        if (target.appendRow) {
+          // Column count for the new row: take it from the divider
+          // (canonical for the table). Numbering: if every existing
+          // body cell follows the `Cell N` pattern with a contiguous
+          // sequence, continue it; otherwise insert an empty row.
+          const cols = findCellRanges(lines[bounds.dividerIdx]).length
+          const cellPattern = /^Cell (\d+)$/
+          let maxN = 0
+          let allMatch = true
+          for (let r = bounds.bodyStartIdx; r <= bounds.bodyEndIdx; r++) {
+            const ranges = findCellRanges(lines[r])
+            for (const range of ranges) {
+              const txt = lines[r].slice(range.contentStart, range.contentEnd)
+              const m = txt.match(cellPattern)
+              if (!m) { allMatch = false; break }
+              const n = parseInt(m[1], 10)
+              if (n > maxN) maxN = n
+            }
+            if (!allMatch) break
+          }
+          const hasBody = bounds.bodyEndIdx >= bounds.bodyStartIdx
+          const newRow = buildEmptyRow(
+            cols,
+            allMatch && hasBody ? maxN + 1 : undefined,
+          )
+          // Append after the last body row (or after the divider when
+          // body is empty). bodyEndIdx is already the right anchor in
+          // both cases.
+          const anchorLine = state.doc.line(bounds.bodyEndIdx + 1)
+          const insertAt = anchorLine.to
+          const insertText = `\n${newRow}`
+          // Compute caret position: start of content of cell 0 in the
+          // new row. The new row starts at insertAt + 1 (the newline).
+          const newRowStart = insertAt + 1
+          const newRanges = findCellRanges(newRow)
+          const contentStart = newRowStart + (newRanges[0]?.contentStart ?? 2)
+          view.dispatch({
+            changes: { from: insertAt, to: insertAt, insert: insertText },
+            selection: { anchor: contentStart },
+            scrollIntoView: true,
+          })
+          return true
+        }
+
+        const targetLineDoc = state.doc.line(target.lineIdx + 1)
+        const targetLineText = targetLineDoc.text
+        const ranges = findCellRanges(targetLineText)
+        const range = ranges[Math.min(target.cellIdx, ranges.length - 1)]
+        if (!range) return false
+        const anchor = targetLineDoc.from + range.contentStart
+        view.dispatch({
+          selection: { anchor },
+          scrollIntoView: true,
+        })
+        return true
+      },
+      shift(view) {
+        const { state } = view
+        const { head } = state.selection.main
+        const docLine = state.doc.lineAt(head)
+        const lineIdx = docLine.number - 1
+        const col = head - docLine.from
+        const lines = state.doc.toString().split('\n')
+
+        const bounds = findTableBounds(lines, lineIdx)
+        if (!bounds) return false
+
+        const cellIdx = findCellIndexAtPos(docLine.text, col)
+        if (cellIdx == null && lineIdx !== bounds.dividerIdx) return false
+
+        // Cursor on the divider → treat as first cell so prev wraps to
+        // the last cell of the header row.
+        let fromCellIdx = cellIdx ?? 0
+        let fromLineIdx = lineIdx
+        if (lineIdx === bounds.dividerIdx) {
+          fromCellIdx = 0
+          fromLineIdx = bounds.dividerIdx
+        }
+
+        const target = prevCellTarget(lines, fromLineIdx, fromCellIdx, bounds)
+        if (!target) return false
+
+        const targetLineDoc = state.doc.line(target.lineIdx + 1)
+        const targetLineText = targetLineDoc.text
+        const ranges = findCellRanges(targetLineText)
+        const range = ranges[Math.min(target.cellIdx, ranges.length - 1)]
+        if (!range) return false
+        const anchor = targetLineDoc.from + range.contentStart
+        view.dispatch({
+          selection: { anchor },
+          scrollIntoView: true,
         })
         return true
       },
