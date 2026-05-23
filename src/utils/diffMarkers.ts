@@ -12,7 +12,7 @@
 // We do NOT mark deleted lines here; the gutter can't render between
 // rows easily and the user wants the simple "this line changed" cue.
 
-import { diffByLine, type DiffHunk } from './lineDiff'
+import { diffByLine, type DiffHunk, joinLines } from './lineDiff'
 
 export type MarkerKind = 'added' | 'modified'
 
@@ -37,6 +37,55 @@ export function computeDiffMarkers(local: string, lastPushed: string): Map<numbe
     }
   }
   return markers
+}
+
+// Result of computing a per-hunk revert. `fromLine` / `toLine` are
+// 1-indexed and inclusive on both ends — the caller converts to
+// character offsets via CodeMirror's `doc.line(fromLine).from` and
+// `doc.line(toLine).to`. `insert` is the baseline content for those
+// lines (joined with `\n`, no trailing newline). For pure-insertion
+// hunks (every local line was added, nothing in baseline), `insert`
+// is empty and the caller deletes the lines outright.
+export interface HunkRevert {
+  fromLine: number
+  toLine: number
+  insert: string
+}
+
+// Given the current document, the baseline, and a 1-indexed target
+// line, find the change hunk that contains that line and return the
+// range + content to revert it to the baseline version. Returns null
+// when the line isn't part of a change hunk (the gutter wouldn't have
+// painted a marker on it).
+export function computeHunkRevert(
+  local: string,
+  lastPushed: string,
+  targetLine: number,
+): HunkRevert | null {
+  if (!lastPushed) return null
+  const hunks = diffByLine(local, lastPushed)
+  let lineCursor = 1
+  for (const hunk of hunks) {
+    if (hunk.type === 'equal') {
+      lineCursor += hunk.lines.length
+      continue
+    }
+    const start = lineCursor
+    const length = hunk.localLines.length
+    const end = start + length - 1
+    if (length > 0 && targetLine >= start && targetLine <= end) {
+      return {
+        fromLine: start,
+        toLine: end,
+        // Baseline ("remote") lines as a multi-line string. For a
+        // pure-insertion hunk this is '' and the caller's text
+        // replacement deletes the range.
+        insert: joinLines(hunk.remoteLines),
+      }
+    }
+    lineCursor += length
+  }
+  return null
 }
 
 // A change hunk paired with its starting line in `local`. Decide

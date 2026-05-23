@@ -13,7 +13,7 @@
 
 import { StateField, StateEffect, type Extension } from '@codemirror/state'
 import { gutter, GutterMarker, EditorView } from '@codemirror/view'
-import { computeDiffMarkers, type MarkerKind } from '@/utils/diffMarkers'
+import { computeDiffMarkers, computeHunkRevert, type MarkerKind } from '@/utils/diffMarkers'
 
 interface DiffState {
   lastPushed: string
@@ -62,7 +62,13 @@ class DiffGutterMarker extends GutterMarker {
     el.style.height = '100%'
     el.style.minHeight = '1em'
     el.style.display = 'block'
+    el.style.cursor = 'pointer'
     el.style.backgroundColor = this.kind === 'added' ? '#22c55e' : '#facc15'
+    // VS-Code style: hovering a per-line change reveals the revert
+    // affordance. The marker itself is the click target — keep it
+    // narrow (3px) but widen its hit area to 6px so the cursor catches
+    // on the marker even if you're a hair off.
+    el.title = 'Click to revert this change to the last-pushed version'
     return el
   }
   eq(other: GutterMarker) {
@@ -92,6 +98,27 @@ const diffGutter = gutter({
     const prev = update.startState.field(diffStateField, false)
     const next = update.state.field(diffStateField, false)
     return prev !== next
+  },
+  // Per-line revert. Clicking a marker re-computes the hunk that
+  // contains that line and replaces it with the baseline content.
+  // The replacement is a single transaction so undo/redo works the
+  // same as any other edit. Pure-insertion hunks collapse to a
+  // delete (insert: '' over the line range).
+  domEventHandlers: {
+    click(view, line) {
+      const state = view.state.field(diffStateField, false)
+      if (!state || state.markers.size === 0) return false
+      const lineNum = view.state.doc.lineAt(line.from).number
+      if (!state.markers.has(lineNum)) return false
+      const revert = computeHunkRevert(view.state.doc.toString(), state.lastPushed, lineNum)
+      if (!revert) return false
+      const fromLine = view.state.doc.line(revert.fromLine)
+      const toLine = view.state.doc.line(revert.toLine)
+      view.dispatch({
+        changes: { from: fromLine.from, to: toLine.to, insert: revert.insert },
+      })
+      return true
+    },
   },
 })
 
