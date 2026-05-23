@@ -32,6 +32,7 @@ import { notesKey } from '@/utils/repoStorage'
 import { useNoteStore } from '@/stores/noteStore'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
 import { installTestHooks } from '@/utils/testHooks'
+import { shouldTrackSwipe, detectSwipeAction } from '@/utils/edgeSwipe'
 import {
   wipeNoteserState,
   isResetRequestedFromURL,
@@ -305,6 +306,40 @@ export default function Home() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [drawerOpen])
+
+  // Mobile edge-swipe: right-swipe from the left edge opens the
+  // drawer; left-swipe anywhere closes it. Matches the iOS/Android
+  // "swipe from edge to reveal sidebar" idiom. Desktop is unaffected
+  // because mobileLayout gates it. Decision logic lives in
+  // `src/utils/edgeSwipe.ts` so it's unit-testable.
+  useEffect(() => {
+    if (!mobileLayout) return
+    let startX = 0
+    let startY = 0
+    let tracking = false
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return
+      const t = e.touches[0]
+      if (!shouldTrackSwipe(drawerOpen, t.clientX)) return
+      startX = t.clientX
+      startY = t.clientY
+      tracking = true
+    }
+    const onEnd = (e: TouchEvent) => {
+      if (!tracking) return
+      tracking = false
+      const t = e.changedTouches[0]
+      if (!t) return
+      const action = detectSwipeAction(drawerOpen, t.clientX - startX, t.clientY - startY)
+      if (action) useUIStore.getState().toggleSidebar()
+    }
+    window.addEventListener('touchstart', onStart, { passive: true })
+    window.addEventListener('touchend', onEnd, { passive: true })
+    return () => {
+      window.removeEventListener('touchstart', onStart)
+      window.removeEventListener('touchend', onEnd)
+    }
+  }, [mobileLayout, drawerOpen])
 
   // Modals are identical between mobile and desktop branches. Extracted
   // into a helper so the two render trees below don't drift.
