@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useGitHubStore, useNoteStore, useFolderStore, useSettingsStore, useWorkspaceStore, useUIStore } from '@/stores'
+import { useToastStore } from '@/stores/toastStore'
 import { VaultLockedError } from '@/utils/vaultKey'
 import { syncToGitHub, pullFromGitHub, pullFromZipball } from '@/utils/githubSync'
 import type { PullClassification, SyncResult, GitPathUpdate } from '@/utils/githubSync'
@@ -114,6 +115,10 @@ async function withSyncWatchdog<T>(
 async function runPull(
   token: string,
   repo: SyncRepo,
+  // Phase callback so the caller (which owns setSyncState) can surface a
+  // running message for the branch we actually take. runPull itself is a module
+  // function with no store access, so it just announces which path it runs.
+  onPhase?: (msg: string) => void,
 ): Promise<{ classifications: PullClassification[]; latestCommitSha: string }> {
   const localNotes = useNoteStore.getState().notes
   const localFolders = useFolderStore.getState().folders
@@ -122,6 +127,11 @@ async function runPull(
   const vaultSettingsPath = vaultSettingsRepoPath(settings.settingsFolderPath)
   const isFirstClone = !localNotes.some(n => !n.isDeleted)
     && !localFolders.some(f => !f.isDeleted)
+
+  // First clone downloads the whole repo as one archive (the slow step on a
+  // large vault); an incremental pull just diffs the tree. Tell the two apart
+  // so the status line is honest about what's taking time.
+  onPhase?.(isFirstClone ? 'Downloading vault…' : 'Checking for changes…')
 
   const { classifications, latestCommitSha } = isFirstClone
     ? await pullFromZipball({ token, repo })
@@ -304,7 +314,9 @@ export function useGitHubSync(): UseGitHubSyncResult {
       setIsSyncing(true)
       setSyncState({ kind: 'running' })
       await withSyncWatchdog(controller, async () => {
-        const { classifications } = await runPull(activeToken, activeRepo)
+        const { classifications } = await runPull(activeToken, activeRepo, (msg) =>
+          setSyncState({ kind: 'running', message: msg }),
+        )
 
         const conflicts = classifications.filter(
           c => c.kind === 'conflict' || c.kind === 'conflictDeleted',
@@ -312,19 +324,20 @@ export function useGitHubSync(): UseGitHubSyncResult {
         if (conflicts.length > 0) {
           // Apply everything that isn't in conflict; leave push for the user
           // to retry after they resolve the merge tabs.
+          setSyncState({ kind: 'running', message: 'Applying changes…' })
           await runApply(classifications)
           if (conflicts.length >= BATCH_THRESHOLD) {
             openMergeBatch(conflicts)
           } else {
             openMergeConflicts(conflicts)
           }
-          setSyncState({
-            kind: 'err',
-            message: `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} need review`,
-          })
+          const conflictMsg = `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} need review`
+          setSyncState({ kind: 'err', message: conflictMsg })
+          useToastStore.getState().addToast({ kind: 'info', message: conflictMsg })
           return
         }
 
+        setSyncState({ kind: 'running', message: 'Applying changes…' })
         const { notes: pullCounts, attachments: attachCounts } = await runApply(classifications)
 
         // AI commit messages: when the user has opted in AND didn't
@@ -343,6 +356,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
           }
         }
 
+        setSyncState({ kind: 'running', message: 'Pushing…' })
         const { result, pathUpdates, vaultSettingsHashPushed, vaultGitignorePushed } = await runPush(activeToken, activeRepo, effectiveCommitMessage)
 
         // Write the per-note gitPath / gitLastPushedSha back so the next pull
@@ -368,11 +382,13 @@ export function useGitHubSync(): UseGitHubSyncResult {
         }
         recordSync(result.commitSha)
 
+        const okMessage = formatSyncMessage(pullCounts, attachCounts, result)
         setSyncState({
           kind: 'ok',
-          message: formatSyncMessage(pullCounts, attachCounts, result),
+          message: okMessage,
           url: result.commitUrl,
         })
+        useToastStore.getState().addToast({ kind: 'success', message: okMessage })
         setTimeout(() => setSyncState({ kind: 'idle' }), 5000)
       })
     } catch (err) {
@@ -382,6 +398,10 @@ export function useGitHubSync(): UseGitHubSyncResult {
       // no longer holds the UI.
       if (err instanceof SyncTimeoutError) {
         setSyncState({ kind: 'err', message: err.message })
+        useToastStore.getState().addToast({
+          kind: 'error', message: err.message,
+          actionLabel: 'Retry', onAction: () => { void runSync(commitMessage) },
+        })
       } else if (err instanceof VaultLockedError) {
         // Vault encryption is on but locked — the sync layer throws
         // VaultLockedError before any HTTP traffic. Surface as an
@@ -390,7 +410,12 @@ export function useGitHubSync(): UseGitHubSyncResult {
         useUIStore.getState().openModal({ type: 'vault-encryption', data: { mode: 'unlock' } })
         setSyncState({ kind: 'err', message: 'Vault is locked — unlock to sync.' })
       } else {
-        setSyncState({ kind: 'err', message: err instanceof Error ? err.message : 'Sync failed' })
+        const message = err instanceof Error ? err.message : 'Sync failed'
+        setSyncState({ kind: 'err', message })
+        useToastStore.getState().addToast({
+          kind: 'error', message,
+          actionLabel: 'Retry', onAction: () => { void runSync(commitMessage) },
+        })
       }
     } finally {
       // Always release the global guard, even on errors / early returns from
@@ -431,7 +456,9 @@ export function useGitHubSync(): UseGitHubSyncResult {
       setIsSyncing(true)
       setSyncState({ kind: 'running' })
       await withSyncWatchdog(controller, async () => {
-        const { classifications, latestCommitSha } = await runPull(activeToken, activeRepo)
+        const { classifications, latestCommitSha } = await runPull(activeToken, activeRepo, (msg) =>
+          setSyncState({ kind: 'running', message: msg }),
+        )
 
         const conflicts = classifications.filter(
           c => c.kind === 'conflict' || c.kind === 'conflictDeleted',
@@ -440,19 +467,20 @@ export function useGitHubSync(): UseGitHubSyncResult {
           // Same conflict-handling branch as runSync: apply everything that
           // isn't in conflict, open merge tabs (batch view above
           // BATCH_THRESHOLD) for the user to resolve.
+          setSyncState({ kind: 'running', message: 'Applying changes…' })
           await runApply(classifications)
           if (conflicts.length >= BATCH_THRESHOLD) {
             openMergeBatch(conflicts)
           } else {
             openMergeConflicts(conflicts)
           }
-          setSyncState({
-            kind: 'err',
-            message: `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} need review`,
-          })
+          const conflictMsg = `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} need review`
+          setSyncState({ kind: 'err', message: conflictMsg })
+          useToastStore.getState().addToast({ kind: 'info', message: conflictMsg })
           return
         }
 
+        setSyncState({ kind: 'running', message: 'Applying changes…' })
         const { notes: pullCounts, attachments: attachCounts } = await runApply(classifications)
 
         // Record the pulled HEAD as the new baseline so lastCommitSha tracks
@@ -462,21 +490,32 @@ export function useGitHubSync(): UseGitHubSyncResult {
         // refetch both key off it.
         recordSync(latestCommitSha)
 
+        const okMessage = formatPullMessage(pullCounts, attachCounts)
         setSyncState({
           kind: 'ok',
-          message: formatPullMessage(pullCounts, attachCounts),
+          message: okMessage,
           url: null,
         })
+        useToastStore.getState().addToast({ kind: 'success', message: okMessage })
         setTimeout(() => setSyncState({ kind: 'idle' }), 5000)
       })
     } catch (err) {
       if (err instanceof SyncTimeoutError) {
         setSyncState({ kind: 'err', message: err.message })
+        useToastStore.getState().addToast({
+          kind: 'error', message: err.message,
+          actionLabel: 'Retry', onAction: () => { void runPullOnly() },
+        })
       } else if (err instanceof VaultLockedError) {
         useUIStore.getState().openModal({ type: 'vault-encryption', data: { mode: 'unlock' } })
         setSyncState({ kind: 'err', message: 'Vault is locked — unlock to pull.' })
       } else {
-        setSyncState({ kind: 'err', message: err instanceof Error ? err.message : 'Pull failed' })
+        const message = err instanceof Error ? err.message : 'Pull failed'
+        setSyncState({ kind: 'err', message })
+        useToastStore.getState().addToast({
+          kind: 'error', message,
+          actionLabel: 'Retry', onAction: () => { void runPullOnly() },
+        })
       }
     } finally {
       useGitHubStore.getState().setIsSyncing(false)

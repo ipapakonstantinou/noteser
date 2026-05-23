@@ -11,7 +11,26 @@ const MAX_RETRIES = 4
 const BASE_DELAY_MS = 500
 const MAX_DELAY_MS = 30_000
 
+// Default per-request timeout. A bare `fetch` has no timeout: on mobile (Safari,
+// flaky networks) a connection can open but never respond, so the promise
+// neither resolves nor rejects and the whole sync wedges (isSyncing stuck true).
+// 30s is comfortably longer than a healthy small API call yet shorter than the
+// 45s whole-sync watchdog, so a stall fails fast and the retry/backoff machinery
+// can react. Large transfers (the full-repo zipball, the recursive tree) pass a
+// much larger `timeoutMs` so a big-vault download is never aborted mid-flight.
+const DEFAULT_TIMEOUT_MS = 30_000
+
 const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504])
+
+// Thrown after a fetch attempt exceeds its timeout and the retries are
+// exhausted. Distinct type so callers can special-case a timeout vs a generic
+// network error if they want to.
+export class GitHubTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`GitHub request timed out after ${Math.round(timeoutMs / 1000)}s`)
+    this.name = 'GitHubTimeoutError'
+  }
+}
 
 // GitHub's *primary* rate limit returns 403 (not 429!) with
 // `x-ratelimit-remaining: 0` plus an `x-ratelimit-reset` epoch. The
@@ -35,9 +54,99 @@ interface GithubFetchOpts {
   maxRetries?: number
   /** Hook for tests to bypass the real setTimeout. */
   delayMs?: (ms: number) => Promise<void>
+  /**
+   * Per-request timeout in ms. Defaults to DEFAULT_TIMEOUT_MS (30s) for normal
+   * small API calls. Large transfers (zipball, recursive tree) pass a generous
+   * value so a big-vault download is never aborted mid-flight.
+   */
+  timeoutMs?: number
 }
 
 const realDelay = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
+
+// We need to tell two kinds of abort apart, because they surface from `fetch`
+// as the same generic AbortError:
+//   • a TIMEOUT abort (our internal timeout timer) → retryable, and ultimately
+//     a GitHubTimeoutError;
+//   • a CALLER abort (init.signal — the watchdog or a user cancel) → must
+//     propagate immediately, never retried.
+// `fetchWithTimeout` tags the error it throws so the retry loop can branch.
+const CALLER_ABORT = Symbol('githubFetch.callerAbort')
+
+interface TaggedAbort {
+  [CALLER_ABORT]?: true
+}
+
+function isCallerAbort(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as TaggedAbort)[CALLER_ABORT] === true
+}
+
+function callerAbortError(signal: AbortSignal): Error {
+  const reason = (signal as AbortSignal & { reason?: unknown }).reason
+  const err = reason instanceof Error
+    ? reason
+    : Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
+  Object.assign(err, { [CALLER_ABORT]: true })
+  return err
+}
+
+// Run a single fetch attempt bounded by `timeoutMs`. The fetch is aborted when
+// EITHER our internal timeout fires OR the caller's signal aborts.
+//
+// We use a manual AbortController + setTimeout rather than AbortSignal.timeout /
+// AbortSignal.any because the target is mobile Safari and we need broad version
+// compatibility. A fresh controller is created per attempt; the timer is always
+// cleared and the caller-signal listener always removed when the fetch settles,
+// to avoid leaks.
+async function fetchWithTimeout(
+  url: string | URL,
+  init: RequestInit,
+  callerSignal: AbortSignal | null,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController()
+  // Track which source aborted. Both surface from `fetch` as the same generic
+  // AbortError, so we record the cause in the callback that fired:
+  //   timedOut       — our internal timer (retryable → GitHubTimeoutError);
+  //   callerAborted  — the caller's signal (propagate immediately, no retry).
+  let timedOut = false
+  let callerAborted = false
+
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
+
+  const onCallerAbort = () => {
+    callerAborted = true
+    controller.abort()
+  }
+  if (callerSignal) callerSignal.addEventListener('abort', onCallerAbort, { once: true })
+
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } catch (err) {
+    // fetch rejected. If our controller did the aborting, classify the source.
+    if (controller.signal.aborted) {
+      // Caller cancellation wins over a timeout in the rare both-fired race:
+      // the caller explicitly asked to stop, so honour it (propagate, no retry).
+      if (callerAborted) {
+        throw callerAbortError(callerSignal!)
+      }
+      if (timedOut) {
+        throw new GitHubTimeoutError(timeoutMs)
+      }
+      // Aborted but neither flag set — shouldn't happen, but be safe.
+      throw new GitHubTimeoutError(timeoutMs)
+    }
+    // Some other network error (DNS, connection reset, …). Bubble up untagged
+    // so the retry loop treats it as transient.
+    throw err
+  } finally {
+    clearTimeout(timer)
+    if (callerSignal) callerSignal.removeEventListener('abort', onCallerAbort)
+  }
+}
 
 export async function githubFetch(
   url: string | URL,
@@ -46,14 +155,27 @@ export async function githubFetch(
 ): Promise<Response> {
   const maxRetries = opts.maxRetries ?? MAX_RETRIES
   const delay = opts.delayMs ?? realDelay
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
+
+  const callerSignal = init.signal ?? null
+  // If the caller already cancelled before we even start, honour it. This is a
+  // caller abort (not a timeout), so propagate immediately without retrying.
+  if (callerSignal?.aborted) {
+    throw callerAbortError(callerSignal)
+  }
 
   let attempt = 0
   for (;;) {
     let res: Response
     try {
-      res = await fetch(url, init)
+      res = await fetchWithTimeout(url, init, callerSignal, timeoutMs)
     } catch (err) {
-      // Network error (no Response object). Retry up to maxRetries.
+      // A caller abort (init.signal — the watchdog or a user cancel) must NOT
+      // be retried: rethrow so the cancellation is honoured immediately.
+      if (isCallerAbort(err)) throw err
+      // A timeout abort (our internal timer) or any other network error has no
+      // Response object — treat it like a transient failure and retry up to
+      // maxRetries, then surface a clear timeout/network error.
       if (attempt >= maxRetries) throw err
       await delay(backoff(attempt))
       attempt += 1

@@ -19,6 +19,7 @@ import {
   computeWait,
   getLastRateLimit,
   onRateLimit,
+  GitHubTimeoutError,
   _resetRateLimitTelemetry,
 } from '../utils/githubFetch'
 
@@ -241,6 +242,109 @@ describe('githubFetch — rate-limit telemetry', () => {
     onRateLimit(() => { throw new Error('boom') })
     const res = await githubFetch('https://example.com', undefined, { delayMs: async () => {} })
     expect(res.status).toBe(200)
+  })
+})
+
+describe('githubFetch — per-request timeout', () => {
+  beforeEach(() => {
+    _resetRateLimitTelemetry()
+    jest.useFakeTimers()
+  })
+  afterEach(() => {
+    jest.clearAllTimers()
+    jest.useRealTimers()
+  })
+
+  // A fetch that hangs forever but honours its abort signal (like the real one):
+  // when githubFetch aborts the per-request controller, reject with AbortError.
+  function hangingFetch() {
+    return jest.fn((_url: string, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal
+        if (signal) {
+          signal.addEventListener('abort', () => {
+            reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+          })
+        }
+      })
+    )
+  }
+
+  test('uses the 30s default timeout and surfaces a GitHubTimeoutError', async () => {
+    const fetchMock = hangingFetch()
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const promise = githubFetch('https://example.com', undefined, { maxRetries: 2 })
+    const assertion = expect(promise).rejects.toBeInstanceOf(GitHubTimeoutError)
+    // Drive each attempt's 30s timeout + the inter-attempt backoffs to
+    // completion. Running pending timers repeatedly advances through them.
+    for (let i = 0; i < 12; i++) {
+      await Promise.resolve()
+      jest.runOnlyPendingTimers()
+    }
+    await assertion
+    // 1 initial + 2 retries = 3 attempts, each timing out.
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  test('a large timeoutMs does NOT abort the fetch before that deadline', async () => {
+    // fetch resolves only after we advance well past the default 30s but still
+    // under the large 180s timeout — proving the large bound is honoured and the
+    // request was not cut off at the default deadline.
+    let resolveFetch: ((r: Response) => void) | undefined
+    const fetchMock = jest.fn((_url: string, init?: RequestInit) =>
+      new Promise<Response>((resolve, reject) => {
+        resolveFetch = resolve
+        init?.signal?.addEventListener('abort', () => {
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+        })
+      })
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const promise = githubFetch('https://example.com', undefined, {
+      maxRetries: 0,
+      timeoutMs: 180_000,
+    })
+
+    // Advance past the OLD default (30s) — the fetch must still be in flight.
+    jest.advanceTimersByTime(60_000)
+    await Promise.resolve()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    // Now let the underlying fetch resolve before the 180s deadline.
+    resolveFetch!(makeRes(200))
+    await expect(promise).resolves.toMatchObject({ status: 200 })
+  })
+
+  test('a caller signal that aborts rejects immediately without retrying', async () => {
+    const controller = new AbortController()
+    const fetchMock = hangingFetch()
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const delays: number[] = []
+    const promise = githubFetch('https://example.com', { signal: controller.signal }, {
+      delayMs: async (ms) => { delays.push(ms) },
+      maxRetries: 3,
+    })
+    controller.abort()
+
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
+    // Not retried: a single fetch attempt, no backoff delays.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(delays).toEqual([])
+  })
+
+  test('a pre-aborted caller signal bails before calling fetch', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const fetchMock = jest.fn()
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(
+      githubFetch('https://example.com', { signal: controller.signal }, { delayMs: async () => {} })
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
 

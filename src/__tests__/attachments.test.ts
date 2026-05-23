@@ -360,3 +360,40 @@ describe('getAttachmentGitSha', () => {
     expect(await getAttachmentGitSha(path)).toBe('e69de29bb2d1d6434b8b29ae775ad8c2e48c5391')
   })
 })
+
+// ── IDB timeout degradation ───────────────────────────────────────────────────
+// On mobile Safari an IndexedDB op can stall indefinitely. The pull's attachment
+// comparison is best-effort, so a stalled op must degrade gracefully (empty /
+// null) rather than wedge the whole sync.
+
+describe('IDB stall degrades gracefully', () => {
+  const idbModule = jest.requireMock('idb-keyval') as {
+    get: jest.Mock
+    keys: jest.Mock
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers()
+  })
+  afterEach(() => {
+    jest.clearAllTimers()
+    jest.useRealTimers()
+    // Restore the default in-memory mock implementations for other tests.
+    idbModule.keys.mockImplementation(() => Promise.resolve([...idb.keys()]))
+    idbModule.get.mockImplementation((key: string) => Promise.resolve(idb.get(key)))
+  })
+
+  test('listAttachmentPaths resolves to [] when keys() never resolves', async () => {
+    idbModule.keys.mockImplementation(() => new Promise<IDBValidKey[]>(() => {}))
+    const promise = listAttachmentPaths()
+    jest.runOnlyPendingTimers()
+    await expect(promise).resolves.toEqual([])
+  })
+
+  test('getAttachmentGitSha resolves to null when get() never resolves', async () => {
+    idbModule.get.mockImplementation(() => new Promise(() => {}))
+    const promise = getAttachmentGitSha('attachments/whatever.png')
+    jest.runOnlyPendingTimers()
+    await expect(promise).resolves.toBeNull()
+  })
+})
