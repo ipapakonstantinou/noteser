@@ -5,6 +5,7 @@ import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { EditorView, keymap } from '@codemirror/view'
 import { Prec } from '@codemirror/state'
+import { search, searchKeymap, openSearchPanel } from '@codemirror/search'
 import { diffGutterExtension, setDiffBaseline } from './diffGutter'
 import { getLastPushedContent } from '@/utils/lastPushedContent'
 import { useDebouncedCallback } from '@/hooks/useDebounce'
@@ -86,6 +87,35 @@ const obsidianTheme = EditorView.theme({
   // and fold-gutter (see <CodeMirror basicSetup={...} />), so the only
   // gutter mounted is our diff gutter, which needs to render.
   '.cm-placeholder': { color: '#6b7280' },
+  // Search / replace panel — repaint it in the Obsidian palette so it
+  // doesn't look like a stray native form on top of the editor.
+  '.cm-panels': { backgroundColor: '#1e1e1e', color: '#dadada', borderColor: '#3a3a3a' },
+  '.cm-panel.cm-search': {
+    backgroundColor: '#1e1e1e',
+    padding: '6px 8px',
+    borderBottom: '1px solid #3a3a3a',
+  },
+  '.cm-panel.cm-search input, .cm-panel.cm-search button, .cm-panel.cm-search label': {
+    fontSize: '12px',
+  },
+  '.cm-panel.cm-search input[type=text]': {
+    backgroundColor: '#2a2a2a',
+    color: '#dadada',
+    border: '1px solid #3a3a3a',
+    borderRadius: '3px',
+    padding: '2px 6px',
+  },
+  '.cm-panel.cm-search button': {
+    backgroundColor: '#2a2a2a',
+    color: '#dadada',
+    border: '1px solid #3a3a3a',
+    borderRadius: '3px',
+    padding: '2px 8px',
+    cursor: 'pointer',
+  },
+  '.cm-panel.cm-search button:hover': { backgroundColor: '#3a3a3a' },
+  '.cm-searchMatch': { backgroundColor: 'rgba(250, 204, 21, 0.25)' },
+  '.cm-searchMatch.cm-searchMatch-selected': { backgroundColor: 'rgba(250, 204, 21, 0.55)' },
 })
 
 export function CodeMirrorEditor({
@@ -197,6 +227,18 @@ export function CodeMirrorEditor({
     basesLivePreview,
     imagesLivePreview,
     diffGutterExtension,
+    // Built-in find / replace panel. `top: true` opens it above the
+    // editor — matches VS Code / Obsidian placement. Keymap includes
+    // Ctrl+F (find), Ctrl+H (replace), F3/Shift+F3 (next/prev), Esc
+    // (close). High precedence so noteser's own keymap doesn't shadow.
+    search({ top: true }),
+    Prec.highest(keymap.of([
+      ...searchKeymap,
+      // Obsidian binds Ctrl+H to find-and-replace. The CodeMirror panel
+      // shows both find + replace inputs, so this just opens the same
+      // panel as Ctrl+F.
+      { key: 'Ctrl-h', preventDefault: true, run: openSearchPanel },
+    ])),
     obsidianTheme,
     EditorView.lineWrapping,
     // Prec.highest ensures our bindings win over any conflicting default keymap.
