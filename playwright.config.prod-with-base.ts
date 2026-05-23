@@ -4,7 +4,7 @@
  */
 import { defineConfig, devices } from '@playwright/test'
 
-const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'https://noteser.thetechjon.com'
+const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'https://noteser.app'
 
 export default defineConfig({
   testDir: './e2e',
