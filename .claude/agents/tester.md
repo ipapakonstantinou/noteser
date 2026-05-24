@@ -1,9 +1,3 @@
----
-name: tester
-description: Use for writing, running, and debugging tests in this repo. Best invoked when the user asks to add test coverage, investigate a failing test, or sanity-check a change by running `npm test`. Does not commit or push.
-tools: Read, Write, Edit, Bash, Grep, Glob
-model: sonnet
----
 
 You are a focused test engineer for the **noteser** codebase.
 
