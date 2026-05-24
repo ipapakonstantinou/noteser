@@ -12,7 +12,12 @@
 //      previous vault's notes would linger in memory.
 //   4. Prune workspace tabs that referenced notes which no longer exist in
 //      the new vault.
-import { get as idbGet, set as idbSet } from 'idb-keyval'
+//
+// The `freshClone` option short-circuits this: it deletes the target's
+// per-repo keys and resets memory to empty so the caller can re-clone from
+// the remote (used for user-initiated repo-to-repo switches only — never on
+// reload/startup, which must load the cache).
+import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval'
 import { useNoteStore } from '@/stores/noteStore'
 import { useFolderStore } from '@/stores/folderStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -24,11 +29,21 @@ interface SwitchOptions {
   // isn't there yet. Used on first connection to a repo, so local notes
   // become the seed of the new vault rather than getting orphaned.
   carryOver?: boolean
+  // When true, DISCARD the target repo's cached per-repo vault: delete its
+  // IDB keys and reset the in-memory stores to empty, so the next sync clones
+  // it FRESH from the remote. Used only for an actual user-initiated
+  // repo-to-repo SWITCH in GitHubRepoModal — the product decision is that we
+  // do not keep repos cached in the browser, and a stale cache (from an older
+  // duplication bug) could otherwise break sync. Mutually exclusive with
+  // carryOver: when freshClone is true, carryOver is ignored (we never copy
+  // data in). NOTE: the reload/startup paths (runPull guard, page.tsx
+  // migration) must NOT set this — they rely on loading the cache.
+  freshClone?: boolean
 }
 
 export async function switchVault(
   toRepo: SyncRepo | null,
-  { carryOver = false }: SwitchOptions = {},
+  { carryOver = false, freshClone = false }: SwitchOptions = {},
 ): Promise<void> {
   const currentNotesName = useNoteStore.persist.getOptions().name as string
   const currentFoldersName = useFolderStore.persist.getOptions().name as string
@@ -36,6 +51,23 @@ export async function switchVault(
   const targetFoldersName = foldersKey(toRepo)
 
   if (currentNotesName === targetNotesName && currentFoldersName === targetFoldersName) {
+    return
+  }
+
+  // Fresh-clone path: discard the target's cached vault and reset memory to
+  // empty so the caller's auto-sync re-clones it from the remote. This is an
+  // early return — none of the carryOver / cache-load logic below runs.
+  if (freshClone) {
+    await idbDel(targetNotesName)
+    await idbDel(targetFoldersName)
+
+    useNoteStore.persist.setOptions({ name: targetNotesName })
+    useFolderStore.persist.setOptions({ name: targetFoldersName })
+
+    useNoteStore.setState({ notes: [], selectedNoteId: null })
+    useFolderStore.setState({ folders: [], activeFolderId: null, expandedFolders: {} })
+
+    useWorkspaceStore.getState().pruneStaleTabs()
     return
   }
 
