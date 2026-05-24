@@ -88,6 +88,34 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
           </p>
         </div>
 
+        {/* Coming from Obsidian — the migration path is "point at your repo
+            and go", so it sits right under the hero where an Obsidian user
+            sees it first. Opens the GitHub connect flow. */}
+        <section aria-labelledby="welcome-obsidian">
+          <button
+            type="button"
+            onClick={() => openModal({ type: 'github-auth' })}
+            data-testid="welcome-obsidian-migrate"
+            className="w-full text-left p-4 rounded-lg border border-obsidianAccentPurple/40 bg-obsidianAccentPurple/10 hover:bg-obsidianAccentPurple/20 hover:border-obsidianAccentPurple transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <CloudArrowUpIcon className="w-6 h-6 text-obsidianAccentPurple flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div id="welcome-obsidian" className="text-base font-semibold text-obsidianText">
+                  Coming from Obsidian?
+                </div>
+                <div className="text-xs text-obsidianSecondaryText mt-0.5 leading-snug">
+                  Your vault is already plain markdown files in a folder. If that
+                  folder is a GitHub repo, connect it and every note loads here
+                  as-is. No export, no import step, no lock-in. The same files,
+                  the same folders, and your edits sync back to the same repo.
+                </div>
+              </div>
+              <span className="text-obsidianAccentPurple text-sm">→</span>
+            </div>
+          </button>
+        </section>
+
         {/* Learn — moved to the top so a first-time user lands directly
             on "click here to see what this app can do." The Feature
             tour is the visual centerpiece (full-width call-to-action
