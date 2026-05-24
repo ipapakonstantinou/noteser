@@ -209,9 +209,10 @@ describe('startup pull loads the per-repo vault (switchVault) before classifying
     expect(pullFromZipballMock).not.toHaveBeenCalled()
   })
 
-  test('genuinely empty vault on the per-repo key still takes the first-clone zipball path', async () => {
+  test('genuinely empty vault on the per-repo key still takes the first-clone path', async () => {
     // Already scoped to the per-repo key, but the vault really is empty (a true
-    // first clone). switchVault is a no-op; the zipball fast path is correct.
+    // first clone). switchVault is a no-op. no-vercel-clone: the first clone
+    // now runs through pullFromGitHub with isFirstClone=true, not the zipball.
     useNoteStore.persist.setOptions({ name: notesKey(TEST_REPO) })
     useFolderStore.persist.setOptions({ name: foldersKey(TEST_REPO) })
     useNoteStore.setState({ notes: [], selectedNoteId: null })
@@ -223,7 +224,8 @@ describe('startup pull loads the per-repo vault (switchVault) before classifying
     })
 
     expect(switchVaultMock).not.toHaveBeenCalled()
-    expect(pullFromZipballMock).toHaveBeenCalledTimes(1)
-    expect(pullFromGitHubMock).not.toHaveBeenCalled()
+    expect(pullFromZipballMock).not.toHaveBeenCalled()
+    expect(pullFromGitHubMock).toHaveBeenCalledTimes(1)
+    expect((pullFromGitHubMock.mock.calls[0][0] as { isFirstClone?: boolean }).isFirstClone).toBe(true)
   })
 })

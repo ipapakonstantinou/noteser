@@ -18,6 +18,7 @@ import {
   type GitTreeEntry,
 } from './github'
 import { threeWayMerge } from './lineDiff'
+import { mapWithConcurrency, DEFAULT_CONCURRENCY } from './concurrency'
 import {
   isAttachmentPath,
   listAttachmentPaths,
@@ -326,11 +327,22 @@ export async function pullFromGitHub(input: {
   // localVaultUpdatedAt. Pass null / undefined to skip settings pull.
   vaultSettingsPath?: string | null
   vaultSettingsLocalUpdatedAt?: number
+  // no-vercel-clone: when true the caller has determined this is a first
+  // clone (no local notes/folders to reconcile), so every remote .md will be
+  // `remoteCreated`. We then PRE-FETCH all .md blob contents with bounded
+  // concurrency before the classify loop — that's what replaces the old
+  // zipball fast path. Omit/false for incremental pulls so they don't fetch
+  // any extra blobs beyond what the diff actually needs.
+  isFirstClone?: boolean
+  // Optional progress hook so the UI can surface "Downloading vault (N / M)…"
+  // while the parallel blob prefetch runs. Called as each blob lands.
+  onBlobProgress?: (loaded: number, total: number) => void
 }): Promise<PullOutcome> {
   const { token, repo, notes } = input
   const excluded = input.excludedFolderPaths ?? []
   const vaultSettingsPath = input.vaultSettingsPath ?? null
   const vaultSettingsLocalUpdatedAt = input.vaultSettingsLocalUpdatedAt ?? 0
+  const isFirstClone = input.isFirstClone ?? false
   const { owner, name, branch } = repo
   const headSha = await getBranchRefSha(token, owner, name, branch)
   const treeSha = await getCommitTreeSha(token, owner, name, headSha)
@@ -376,6 +388,39 @@ export async function pullFromGitHub(input: {
   const out: PullClassification[] = []
   const seenLocalIds = new Set<string>()
 
+  // no-vercel-clone: on a first clone we already know every remote .md will be
+  // `remoteCreated`, and the classify loop below fetches blob content
+  // ONE-AT-A-TIME (loadRemote → getBlobContent). On a large vault that
+  // sequential walk is what blew the 45s sync watchdog. So when isFirstClone
+  // holds, pre-fetch ALL .md blob contents up front with bounded concurrency,
+  // keyed by their tree blob SHA. The classify loop's loadRemote() consults
+  // this map first and only hits the network on a miss. We do NOT prefetch for
+  // incremental pulls — those should fetch nothing beyond what the diff needs.
+  //
+  // Decryption still happens per-call inside loadRemote (maybeDecryptFromPull),
+  // so the cache holds RAW blob text and the decrypt path is unchanged.
+  const prefetchedBlobs = new Map<string, string>()
+  if (isFirstClone) {
+    // Unique blob SHAs for all non-ignored .md paths. De-duped because two
+    // identical files share one blob SHA — fetch each blob at most once.
+    const shas = new Set<string>()
+    for (const [path, remoteSha] of remoteTree) {
+      if (!path.endsWith('.md')) continue
+      if (gitignoreMatcher.isIgnored(path)) continue
+      shas.add(remoteSha)
+    }
+    const shaList = Array.from(shas)
+    const total = shaList.length
+    let loaded = 0
+    const contents = await mapWithConcurrency(shaList, DEFAULT_CONCURRENCY, async (sha) => {
+      const raw = await getBlobContent(token, owner, name, sha)
+      loaded++
+      input.onBlobProgress?.(loaded, total)
+      return raw
+    })
+    shaList.forEach((sha, i) => prefetchedBlobs.set(sha, contents[i]))
+  }
+
   // 1. Walk every remote .md file.
   for (const [path, remoteSha] of remoteTree) {
     if (!path.endsWith('.md')) continue
@@ -402,7 +447,10 @@ export async function pullFromGitHub(input: {
     let remoteContent: string | null = null
     const loadRemote = async () => {
       if (remoteContent === null) {
-        const raw = await getBlobContent(token, owner, name, remoteSha)
+        // Prefer the blob we already pulled in the first-clone prefetch; only
+        // hit the network on a miss (incremental pulls, or a blob the prefetch
+        // didn't cover). decrypt runs here either way.
+        const raw = prefetchedBlobs.get(remoteSha) ?? await getBlobContent(token, owner, name, remoteSha)
         remoteContent = await maybeDecryptFromPull(raw)
       }
       return remoteContent

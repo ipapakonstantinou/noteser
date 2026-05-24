@@ -5,7 +5,10 @@ import { useGitHubStore, useNoteStore, useFolderStore, useSettingsStore, useWork
 import { useToastStore } from '@/stores/toastStore'
 import type { Toast } from '@/stores/toastStore'
 import { VaultLockedError } from '@/utils/vaultKey'
-import { syncToGitHub, pullFromGitHub, pullFromZipball } from '@/utils/githubSync'
+// no-vercel-clone: pullFromZipball is intentionally NOT imported here anymore —
+// the first-clone path now goes through pullFromGitHub (parallel blob
+// prefetch). pullFromZipball still lives in githubSync.ts for callers/tests.
+import { syncToGitHub, pullFromGitHub } from '@/utils/githubSync'
 import type { PullClassification, SyncResult, GitPathUpdate } from '@/utils/githubSync'
 import { applyNonConflicts, applyAttachmentClassifications } from '@/utils/syncApply'
 import { pendingStoreHydration } from '@/utils/ensureStoresHydrated'
@@ -173,15 +176,22 @@ async function runPull(
   // so the status line is honest about what's taking time.
   onPhase?.(isFirstClone ? 'Downloading vault…' : 'Checking for changes…')
 
-  const { classifications, latestCommitSha } = isFirstClone
-    ? await pullFromZipball({ token, repo, onPhase })
-    : await pullFromGitHub({
-        token, repo,
-        notes: localNotes, folders: localFolders,
-        excludedFolderPaths,
-        vaultSettingsPath,
-        vaultSettingsLocalUpdatedAt: settings.vaultSettingsUpdatedAt,
-      })
+  // no-vercel-clone: the first clone used to download the whole repo as one
+  // zip via the Vercel proxy route (/api/github/zipball). We now route the
+  // first clone through pullFromGitHub too — it pre-fetches every remote .md
+  // blob with bounded concurrency (see isFirstClone in githubSync.ts), so the
+  // clone runs on the user's own authenticated GitHub API quota instead of
+  // Noteser's Vercel bandwidth. pullFromZipball + fetchZipball + the
+  // /api/github/zipball route are kept in the tree but no longer on this path.
+  const { classifications, latestCommitSha } = await pullFromGitHub({
+    token, repo,
+    notes: localNotes, folders: localFolders,
+    excludedFolderPaths,
+    vaultSettingsPath,
+    vaultSettingsLocalUpdatedAt: settings.vaultSettingsUpdatedAt,
+    isFirstClone,
+    onBlobProgress: (loaded, total) => onPhase?.(`Downloading vault… (${loaded} / ${total})`),
+  })
 
   return { classifications, latestCommitSha }
 }

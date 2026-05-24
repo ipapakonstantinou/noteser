@@ -310,14 +310,16 @@ describe('useGitHubSync — runPullOnly', () => {
 })
 
 describe('useGitHubSync — phase-aware running messages', () => {
-  test('runPullOnly on a first clone surfaces "Downloading vault…" while the zipball downloads', async () => {
-    // First clone: no local notes/folders → runPull takes the zipball branch.
+  test('runPullOnly on a first clone surfaces "Downloading vault…" while the clone downloads', async () => {
+    // First clone: no local notes/folders → runPull takes the first-clone
+    // branch. no-vercel-clone: that branch now calls pullFromGitHub with
+    // isFirstClone=true (parallel blob prefetch), not the zipball proxy.
     useNoteStore.setState({ notes: [], selectedNoteId: null })
     useFolderStore.setState({ folders: [], activeFolderId: null, expandedFolders: {} })
 
-    // Block the zipball pull so we can observe the running message mid-flight.
+    // Block the pull so we can observe the running message mid-flight.
     let resolvePull!: (v: { classifications: unknown[]; latestCommitSha: string }) => void
-    pullFromZipballMock.mockImplementation(
+    pullFromGitHubMock.mockImplementation(
       () => new Promise(res => { resolvePull = res as typeof resolvePull }),
     )
 
@@ -328,10 +330,11 @@ describe('useGitHubSync — phase-aware running messages', () => {
       call = result.current.runPullOnly()
     })
 
-    // The first-clone branch was taken (zipball, not incremental) and the
-    // status line announces the slow download phase.
-    expect(pullFromZipballMock).toHaveBeenCalledTimes(1)
-    expect(pullFromGitHubMock).not.toHaveBeenCalled()
+    // The first-clone branch was taken (pullFromGitHub with isFirstClone=true,
+    // not the zipball) and the status line announces the slow download phase.
+    expect(pullFromZipballMock).not.toHaveBeenCalled()
+    expect(pullFromGitHubMock).toHaveBeenCalledTimes(1)
+    expect((pullFromGitHubMock.mock.calls[0][0] as { isFirstClone?: boolean }).isFirstClone).toBe(true)
     expect(result.current.syncState.kind).toBe('running')
     if (result.current.syncState.kind === 'running') {
       expect(result.current.syncState.message).toMatch(/Downloading vault/i)
