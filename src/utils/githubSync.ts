@@ -736,8 +736,11 @@ export async function pullFromZipball(input: {
     } catch (err) {
       attempt++
       if (attempt >= MAX_ATTEMPTS) throw err
-      // Short backoff before re-downloading, and tell the UI we're retrying.
-      onPhase?.('Downloading vault (retrying)…')
+      // Short backoff before re-downloading, and tell the UI we're retrying —
+      // with the attempt number, so a flaky large-vault download reads as
+      // progress, not a stall. (attempt was just incremented; the next try is
+      // attempt + 1.)
+      onPhase?.(`Vault download incomplete, retrying (${attempt + 1} of ${MAX_ATTEMPTS})…`)
       const delay = BACKOFF_MS[attempt - 1] ?? BACKOFF_MS[BACKOFF_MS.length - 1]
       await new Promise<void>((resolve) => setTimeout(resolve, delay))
     }

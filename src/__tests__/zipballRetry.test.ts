@@ -122,8 +122,8 @@ test('retries a corrupted first attempt and SUCCEEDS without surfacing the error
   expect(outcome.latestCommitSha).toBe('headsha')
   expect(outcome.classifications).toHaveLength(1)
   expect(outcome.classifications[0]).toMatchObject({ kind: 'remoteCreated', path: 'Hello.md' })
-  // The retry surfaced a phase hint.
-  expect(onPhase).toHaveBeenCalledWith('Downloading vault (retrying)…')
+  // The retry surfaced a phase hint with the attempt number.
+  expect(onPhase).toHaveBeenCalledWith('Vault download incomplete, retrying (2 of 3)…')
 })
 
 test('also retries when fetchZipball itself throws (e.g. truncated-length guard)', async () => {
