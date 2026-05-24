@@ -1,27 +1,25 @@
 /**
- * Locks down the connect-src directive in next.config.mjs so the bare
- * `wss: ws:` wildcards can't sneak back in. Finding 5 of the 2026-05-21
- * security audit: the wildcards would let an XSS payload exfiltrate
- * localStorage (GitHub token, AI keys) to any attacker-controlled WS host.
+ * Content-Security-Policy unit tests.
  *
- * The module reads `process.env.NEXT_PUBLIC_YJS_WS_URL` at evaluation time,
- * so for the env-set branches we exercise the exported helper
- * (`deriveCollabWsOrigin`). The default-env directive is also asserted as a
- * snapshot of the loaded module so the bare wildcards can't slip back in.
+ * Finding 6 of the 2026-05-21 security audit: the CSP used to ship as a
+ * STATIC header in next.config.mjs with `script-src 'self' 'unsafe-inline'`,
+ * which let an injected inline <script> run. It is now built PER REQUEST in
+ * `src/middleware.ts` from a fresh nonce, using the pure helpers in
+ * `src/utils/csp.ts`. Those helpers are the source of truth, so we test them
+ * directly (no Next server needed).
+ *
+ * Coverage carried over from the old next.config.mjs test:
+ *   - deriveCollabWsOrigin: locks down the connect-src ws(s) origin so the
+ *     bare `wss: ws:` wildcards (Finding 5) can't sneak back in.
+ *   - connect-src: keeps the HTTPS surfaces, never emits bare ws:/wss:.
+ *   - script-src: no 'unsafe-inline'; nonce + 'strict-dynamic' present;
+ *     'unsafe-eval' only in dev/test, dropped in production.
+ *   - style-src: KEEPS 'unsafe-inline' (Tailwind / styled-jsx / CodeMirror).
  */
+import { buildCsp, deriveCollabWsOrigin } from '@/utils/csp'
 
-// next.config.mjs is the test target; the import is type-only here and
-// resolved by jest at runtime via dynamic import below.
-type ConfigModule = {
-  deriveCollabWsOrigin: (raw: string | undefined) => string | null
-  securityHeaders: Array<{ key: string; value: string }>
-  buildScriptSrc: (productionMode: boolean) => string
-}
-
-function getDirective(headers: ConfigModule['securityHeaders'], name: string): string {
-  const csp = headers.find((h) => h.key === 'Content-Security-Policy')
-  if (!csp) throw new Error('no CSP header')
-  const directive = csp.value
+function getDirective(csp: string, name: string): string {
+  const directive = csp
     .split(';')
     .map((s) => s.trim())
     .find((d) => d.startsWith(`${name} `) || d === name)
@@ -29,143 +27,135 @@ function getDirective(headers: ConfigModule['securityHeaders'], name: string): s
   return directive
 }
 
-function getConnectSrc(headers: ConfigModule['securityHeaders']): string {
-  return getDirective(headers, 'connect-src')
-}
-
-function getScriptSrc(headers: ConfigModule['securityHeaders']): string {
-  return getDirective(headers, 'script-src')
-}
-
-let mod: ConfigModule
-
-beforeAll(async () => {
-  // Ensure the module evaluates with no NEXT_PUBLIC_YJS_WS_URL so the
-  // snapshot below reflects the "WS disabled" branch.
-  delete process.env.NEXT_PUBLIC_YJS_WS_URL
-  // next.config.mjs has no .d.ts and intentionally exports unannotated
-  // helpers; cast through unknown to keep typecheck happy.
-  mod = (await import('../../next.config.mjs' as string)) as unknown as ConfigModule
-})
+const NONCE = 'dGVzdC1ub25jZS12YWx1ZQ=='
 
 describe('deriveCollabWsOrigin', () => {
   it('returns null for unset/empty input', () => {
-    expect(mod.deriveCollabWsOrigin(undefined)).toBeNull()
-    expect(mod.deriveCollabWsOrigin('')).toBeNull()
+    expect(deriveCollabWsOrigin(undefined)).toBeNull()
+    expect(deriveCollabWsOrigin('')).toBeNull()
   })
 
   it('returns the origin for a valid wss:// URL', () => {
-    expect(mod.deriveCollabWsOrigin('wss://collab.noteser.dev/room/foo')).toBe(
+    expect(deriveCollabWsOrigin('wss://collab.noteser.dev/room/foo')).toBe(
       'wss://collab.noteser.dev'
     )
   })
 
   it('returns the origin for a valid wss:// URL with a port', () => {
-    expect(mod.deriveCollabWsOrigin('wss://collab.noteser.dev:8443/room')).toBe(
+    expect(deriveCollabWsOrigin('wss://collab.noteser.dev:8443/room')).toBe(
       'wss://collab.noteser.dev:8443'
     )
   })
 
   it('returns the origin for a valid ws:// URL', () => {
-    expect(mod.deriveCollabWsOrigin('ws://localhost:1234/yjs')).toBe('ws://localhost:1234')
+    expect(deriveCollabWsOrigin('ws://localhost:1234/yjs')).toBe('ws://localhost:1234')
   })
 
   it('rejects non-ws schemes (no http/https/javascript/etc.)', () => {
-    expect(mod.deriveCollabWsOrigin('https://collab.noteser.dev')).toBeNull()
-    expect(mod.deriveCollabWsOrigin('http://collab.noteser.dev')).toBeNull()
-    expect(mod.deriveCollabWsOrigin('javascript:alert(1)')).toBeNull()
-    expect(mod.deriveCollabWsOrigin('data:text/plain,foo')).toBeNull()
+    expect(deriveCollabWsOrigin('https://collab.noteser.dev')).toBeNull()
+    expect(deriveCollabWsOrigin('http://collab.noteser.dev')).toBeNull()
+    expect(deriveCollabWsOrigin('javascript:alert(1)')).toBeNull()
+    expect(deriveCollabWsOrigin('data:text/plain,foo')).toBeNull()
   })
 
   it('rejects malformed URLs', () => {
-    expect(mod.deriveCollabWsOrigin('not a url')).toBeNull()
-    expect(mod.deriveCollabWsOrigin('wss://')).toBeNull()
+    expect(deriveCollabWsOrigin('not a url')).toBeNull()
+    expect(deriveCollabWsOrigin('wss://')).toBeNull()
   })
 })
 
-describe('connect-src CSP directive (default, no NEXT_PUBLIC_YJS_WS_URL)', () => {
+describe('connect-src CSP directive (no ws origin)', () => {
+  const csp = buildCsp(NONCE, { isDev: false, wsOrigin: null })
+
   it('omits ws:/wss: entirely', () => {
-    const directive = getConnectSrc(mod.securityHeaders)
-    // No bare scheme wildcards anywhere in the directive.
+    const directive = getDirective(csp, 'connect-src')
     expect(directive).not.toContain('wss:')
     expect(directive).not.toContain('ws:')
   })
 
   it('keeps the originally-scoped HTTPS surfaces', () => {
-    const directive = getConnectSrc(mod.securityHeaders)
+    const directive = getDirective(csp, 'connect-src')
     expect(directive).toContain("'self'")
     expect(directive).toContain('https://api.github.com')
     expect(directive).toContain('https://github.com')
     expect(directive).toContain('https://api.anthropic.com')
     expect(directive).toContain('https://api.openai.com')
   })
-
-  it('exposes the directive at the start of the value', () => {
-    const directive = getConnectSrc(mod.securityHeaders)
-    expect(directive.startsWith('connect-src ')).toBe(true)
-  })
 })
 
-describe('connect-src CSP directive (with NEXT_PUBLIC_YJS_WS_URL)', () => {
-  // The module-level env was read once at import. For the env-set branch we
-  // rely on the helper (which is the only branching logic) plus the fact
-  // that the connect-src list interpolates exactly its return value.
-  it('would add the exact origin (and nothing else) for a valid wss URL', () => {
-    const origin = mod.deriveCollabWsOrigin('wss://collab.noteser.dev/room/x')
+describe('connect-src CSP directive (with a derived ws origin)', () => {
+  it('adds exactly the derived origin and no bare wildcard', () => {
+    const origin = deriveCollabWsOrigin('wss://collab.noteser.dev/room/x')
     expect(origin).toBe('wss://collab.noteser.dev')
-    // The directive composition: `connect-src <fixed list> <origin>`.
-    // Confirms no bare wildcard appears.
-    expect(origin).not.toContain('*')
-    expect(origin).not.toMatch(/^wss:\s*$/)
-    expect(origin).not.toMatch(/^ws:\s*$/)
-  })
-
-  it('falls back to null (= no WS in directive) when malformed', () => {
-    expect(mod.deriveCollabWsOrigin('https://not-a-ws-url.example')).toBeNull()
-    expect(mod.deriveCollabWsOrigin('totally bogus')).toBeNull()
+    const csp = buildCsp(NONCE, { isDev: false, wsOrigin: origin })
+    const directive = getDirective(csp, 'connect-src')
+    expect(directive).toContain('wss://collab.noteser.dev')
+    expect(directive).not.toContain('*')
+    // No bare scheme wildcard slipped in alongside the scoped origin.
+    expect(directive.split(/\s+/)).not.toContain('wss:')
+    expect(directive.split(/\s+/)).not.toContain('ws:')
   })
 })
 
 /**
- * script-src — Audit finding 6 follow-up. 'unsafe-eval' is *only* allowed
- * in non-production environments (dev / test) where Next.js HMR + Jest
- * need it. Production builds drop it so eval-based XSS payloads stop
- * working even if an inline injection somehow slips past 'unsafe-inline'.
- *
- * The module-level constant `scriptSrc` is computed once with the
- * `NODE_ENV` Jest is running under (typically 'test'), so the snapshot
- * directive we read off `securityHeaders` reflects the non-production
- * branch. We exercise both branches via the exported `buildScriptSrc`
- * helper to make the contract explicit and resilient to env shifts.
+ * script-src — the heart of Finding 6. No 'unsafe-inline'; a per-request
+ * nonce + 'strict-dynamic'. 'unsafe-eval' is added ONLY in dev/test (Next
+ * HMR / React Refresh) and dropped in production.
  */
 describe('script-src CSP directive', () => {
-  it('keeps the "self" and "unsafe-inline" sources in both branches', () => {
-    expect(mod.buildScriptSrc(true)).toContain("'self'")
-    expect(mod.buildScriptSrc(true)).toContain("'unsafe-inline'")
-    expect(mod.buildScriptSrc(false)).toContain("'self'")
-    expect(mod.buildScriptSrc(false)).toContain("'unsafe-inline'")
+  it("never contains 'unsafe-inline' (the whole point of the nonce)", () => {
+    expect(getDirective(buildCsp(NONCE, { isDev: false, wsOrigin: null }), 'script-src')).not.toContain(
+      "'unsafe-inline'"
+    )
+    expect(getDirective(buildCsp(NONCE, { isDev: true, wsOrigin: null }), 'script-src')).not.toContain(
+      "'unsafe-inline'"
+    )
   })
 
-  it("drops 'unsafe-eval' in production mode", () => {
-    const prod = mod.buildScriptSrc(true)
-    expect(prod).not.toContain("'unsafe-eval'")
-    // Strict equality lock — flag any future drift in directive shape.
-    expect(prod).toBe("'self' 'unsafe-inline'")
-  })
-
-  it("keeps 'unsafe-eval' in dev / test mode (Next HMR + Jest need it)", () => {
-    const dev = mod.buildScriptSrc(false)
-    expect(dev).toContain("'unsafe-eval'")
-    expect(dev).toBe("'self' 'unsafe-inline' 'unsafe-eval'")
-  })
-
-  it('emits the directive in the live securityHeaders snapshot', () => {
-    // The Jest env is non-production, so the snapshot directive should
-    // reflect the dev/test branch. This guards against an accidental
-    // hardcoding regression in next.config.mjs.
-    const directive = getScriptSrc(mod.securityHeaders)
-    expect(directive.startsWith('script-src ')).toBe(true)
+  it("carries the per-request nonce and 'strict-dynamic'", () => {
+    const directive = getDirective(buildCsp(NONCE, { isDev: false, wsOrigin: null }), 'script-src')
+    expect(directive).toContain(`'nonce-${NONCE}'`)
+    expect(directive).toContain("'strict-dynamic'")
     expect(directive).toContain("'self'")
-    expect(directive).toContain("'unsafe-inline'")
+  })
+
+  it("drops 'unsafe-eval' in production", () => {
+    const directive = getDirective(buildCsp(NONCE, { isDev: false, wsOrigin: null }), 'script-src')
+    expect(directive).not.toContain("'unsafe-eval'")
+    expect(directive).toBe(`script-src 'self' 'nonce-${NONCE}' 'strict-dynamic'`)
+  })
+
+  it("keeps 'unsafe-eval' in dev/test (Next HMR + React Refresh need it)", () => {
+    const directive = getDirective(buildCsp(NONCE, { isDev: true, wsOrigin: null }), 'script-src')
+    expect(directive).toContain("'unsafe-eval'")
+    expect(directive).toBe(`script-src 'self' 'nonce-${NONCE}' 'strict-dynamic' 'unsafe-eval'`)
+  })
+})
+
+/**
+ * style-src — must KEEP 'unsafe-inline'. Tailwind, styled-jsx and CodeMirror
+ * (EditorView.baseTheme) all inject inline <style>; nonce-ing styles would
+ * break the editor and the theme. Do NOT regress this.
+ */
+describe('style-src CSP directive', () => {
+  it("keeps 'unsafe-inline' in both prod and dev, never a nonce", () => {
+    for (const isDev of [true, false]) {
+      const directive = getDirective(buildCsp(NONCE, { isDev, wsOrigin: null }), 'style-src')
+      expect(directive).toBe("style-src 'self' 'unsafe-inline'")
+      expect(directive).not.toContain('nonce-')
+    }
+  })
+})
+
+describe('other CSP directives are preserved verbatim', () => {
+  const csp = buildCsp(NONCE, { isDev: false, wsOrigin: null })
+  it('keeps the hardening directives carried over from next.config', () => {
+    expect(getDirective(csp, 'default-src')).toBe("default-src 'self'")
+    expect(getDirective(csp, 'img-src')).toBe("img-src 'self' data: blob: https:")
+    expect(getDirective(csp, 'font-src')).toBe("font-src 'self' data:")
+    expect(getDirective(csp, 'frame-ancestors')).toBe("frame-ancestors 'none'")
+    expect(getDirective(csp, 'base-uri')).toBe("base-uri 'self'")
+    expect(getDirective(csp, 'form-action')).toBe("form-action 'self'")
+    expect(getDirective(csp, 'object-src')).toBe("object-src 'none'")
   })
 })
