@@ -39,6 +39,16 @@ export interface Note {
   // notes. Undefined on notes synced before this field existed — the classifier
   // falls back to gitLastPushedSha for them until their next sync rewrites both.
   gitRemoteBaseSha?: string | null
+  // Stable room identity for live collaboration (Phase B). Generated
+  // lazily the first time a note enters a collab session (see
+  // ensureCollabId in noteStore) and used as the y-websocket room name.
+  // Decoupled from `id`/`title`/`gitPath` on purpose so a shared room
+  // survives note renames and folder moves. Optional: notes persisted
+  // before this field existed (and notes that never collaborated) simply
+  // don't carry it — the field rides along the existing v2 persisted shape
+  // with no migration needed. Only meaningful when collaboration is
+  // enabled via NEXT_PUBLIC_YJS_WS_URL.
+  collabId?: string
 }
 
 export interface Folder {

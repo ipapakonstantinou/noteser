@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { EditorView, keymap } from '@codemirror/view'
-import { Prec } from '@codemirror/state'
+import { Prec, Compartment } from '@codemirror/state'
 import { search, searchKeymap, openSearchPanel } from '@codemirror/search'
 import { diffGutterExtension, setDiffBaseline } from './diffGutter'
 import { getLastPushedContent } from '@/utils/lastPushedContent'
@@ -39,6 +39,8 @@ import { useNoteStore } from '@/stores/noteStore'
 import { saveAttachment } from '@/utils/attachments'
 import { WikilinkAutocomplete } from './WikilinkAutocomplete'
 import { TagAutocomplete } from './TagAutocomplete'
+import { getConfiguredUrl } from '@/hooks/useCollaboration'
+import { createCollabBinding, type CollabBinding } from './collabExtension'
 import type { Note } from '@/types'
 
 interface WikilinkState {
@@ -148,6 +150,15 @@ export function CodeMirrorEditor({
   const [wikilinkState, setWikilinkState] = useState<WikilinkState | null>(null)
   const [tagState, setTagState] = useState<TagState | null>(null)
 
+  // Live-collaboration (Phase B). A Compartment lets us swap the yCollab
+  // binding in/out per note without rebuilding the whole (memoized)
+  // extension list. The compartment is created ONCE and stays empty unless
+  // collaboration is enabled — when getConfiguredUrl() is null the effect
+  // below never runs and the compartment never holds anything, so the
+  // editor is byte-for-byte the same as before this phase.
+  const collabCompartmentRef = useRef(new Compartment())
+  const collabBindingRef = useRef<CollabBinding | null>(null)
+
   // Stable refs so extension callbacks always see the latest values
   const activeNotesRef = useRef(activeNotes)
   const navigateRef = useRef(onWikilinkNavigate)
@@ -173,6 +184,81 @@ export function CodeMirrorEditor({
     })()
     return () => { cancelled = true }
   }, [noteId, lastSyncedAt])
+
+  // ── Live collaboration (Phase B) ────────────────────────────────────
+  // Bind a shared Y.Doc to the editor when collab is enabled. DORMANT by
+  // default: getConfiguredUrl() returns null unless NEXT_PUBLIC_YJS_WS_URL
+  // is a valid ws/wss URL, in which case this effect returns immediately —
+  // no Y.Doc, no WebSocket, no awareness, compartment stays empty.
+  //
+  // Keyed on noteId so the provider+doc tear down and re-create on note
+  // change. The room name is the note's STABLE collabId (lazily minted via
+  // the store) so a shared room survives renames / folder moves. Remote
+  // edits arrive as CodeMirror transactions → the existing onChange path
+  // persists them to the note store, and the diff-gutter baseline effect is
+  // independent so the gutter keeps working.
+  const githubUser = useGitHubStore(s => s.user)
+  const githubUserRef = useRef(githubUser)
+  useEffect(() => { githubUserRef.current = githubUser }, [githubUser])
+  useEffect(() => {
+    const url = getConfiguredUrl()
+    if (!url) return // dormant: identical to pre-Phase-B behaviour
+
+    // Mint (or reuse) the stable room id for this note.
+    const room = useNoteStore.getState().ensureCollabId(noteId)
+    if (!room) return
+
+    // Capture the stable compartment locally so the cleanup closure doesn't
+    // reach back through the ref (and so eslint is happy). The view, by
+    // contrast, must be read FRESH at teardown — it can be recreated by the
+    // keyed remount, so we read cmRef.current?.view inside the callbacks.
+    const compartment = collabCompartmentRef.current
+    let binding: CollabBinding | null = null
+    let cancelled = false
+
+    // The CodeMirror view is created during the keyed remount; it may not
+    // exist on the very first effect tick. Poll a couple of microtasks for
+    // it, then bail if it never shows (note closed mid-mount).
+    const attach = (attemptsLeft: number) => {
+      if (cancelled) return
+      const view = cmRef.current?.view
+      if (!view) {
+        if (attemptsLeft <= 0) return
+        queueMicrotask(() => attach(attemptsLeft - 1))
+        return
+      }
+      const note = useNoteStore.getState().notes.find(n => n.id === noteId)
+      binding = createCollabBinding({
+        url,
+        room,
+        initialContent: note?.content ?? '',
+        user: githubUserRef.current,
+      })
+      collabBindingRef.current = binding
+      view.dispatch({ effects: compartment.reconfigure(binding.extension) })
+    }
+    attach(5)
+
+    return () => {
+      cancelled = true
+      // Empty the compartment first (so the editor drops the binding's
+      // plugins) then destroy the provider + doc to release the socket.
+      // Reading cmRef.current FRESH at teardown is intentional: we want the
+      // currently-mounted view, which the keyed remount may have replaced.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      const view = cmRef.current?.view
+      if (view) {
+        try {
+          view.dispatch({ effects: compartment.reconfigure([]) })
+        } catch { /* view may already be torn down */ }
+      }
+      binding?.destroy()
+      if (collabBindingRef.current === binding) collabBindingRef.current = null
+    }
+    // githubUser is intentionally read via ref (not a dep) so a login change
+    // mid-session doesn't tear down the live document; the cursor label
+    // updates on the next note open. Re-key only on noteId.
+  }, [noteId])
 
   // Listen for "scroll to fragment" requests fired by the wikilink click
   // handler. The fragment is either a heading text or a `^block-id`; we
@@ -240,6 +326,10 @@ export function CodeMirrorEditor({
 
   // Extensions are stable (created once) — callbacks reach out to refs for fresh values
   const extensions = useMemo(() => [
+    // Collaboration compartment. Starts empty; the collab effect
+    // reconfigures it with the yCollab binding when collab is enabled.
+    // Empty = zero behavioural change, which is the dormant default.
+    collabCompartmentRef.current.of([]),
     markdown({ base: markdownLanguage }),
     markdownLivePreview,
     tasksLivePreview,
