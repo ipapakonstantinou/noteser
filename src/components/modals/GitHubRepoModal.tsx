@@ -81,10 +81,17 @@ export const GitHubRepoModal = () => {
   // Carry-over makes sense when we're attaching a vault that didn't have a
   // repo before (first connection): pull local notes into the new scoped
   // key. When moving between two existing repos we never carry over.
+  //
+  // freshClone = !carryOver: a repo-to-repo switch (carryOver=false) discards
+  // the target's cached per-repo vault and re-clones it fresh from the remote.
+  // We do not keep repos cached in the browser, and a stale cache (from an
+  // older duplication bug) could otherwise break sync. After the empty reset
+  // vaultIsEmpty() is true, so the runSync() below clones fresh. A first
+  // connection (carryOver=true) seeds from local and must NOT freshClone.
   const commitSwitch = async (target: SyncRepo, carryOver: boolean) => {
     setSwitching(true)
     try {
-      await switchVault(target, { carryOver })
+      await switchVault(target, { carryOver, freshClone: !carryOver })
       setSyncRepo(target)
       const shouldAutoSync = vaultIsEmpty()
       closeModal()
@@ -172,7 +179,10 @@ export const GitHubRepoModal = () => {
         setView({ kind: 'error', message: 'Resolve sync conflicts in the current vault before switching.' })
         return
       }
-      await switchVault(target, { carryOver: false })
+      // Repo-to-repo switch: discard the target's cached vault and re-clone it
+      // fresh from the remote (freshClone), same as commitSwitch's repo-to-repo
+      // path. The empty reset makes vaultIsEmpty() true → runSync clones fresh.
+      await switchVault(target, { carryOver: false, freshClone: true })
       setSyncRepo(target)
       const shouldAutoSync = vaultIsEmpty()
       closeModal()
