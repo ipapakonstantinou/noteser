@@ -295,6 +295,34 @@ export function _clearAttachmentUrlCache(): void {
   urlCache.clear()
 }
 
+// Wipe EVERY attachment in IDB plus the tombstone list and the in-memory URL
+// cache. Used by the fresh-clone repo switch (switchVault) so no binary from
+// the previous vault leaks into the new repo — attachments are stored under a
+// GLOBAL prefix, not per-repo, so a plain notes/folders reset would leave the
+// old files behind (the "Files (165)" ghost folder + sync timeouts).
+//
+// Resilient by design: an IndexedDB stall or rejection must NOT block the
+// switch. We swallow errors (best-effort) so the caller can proceed to
+// re-clone — a leftover blob is far less bad than a wedged switch.
+export async function clearAllAttachments(): Promise<void> {
+  try {
+    const allKeys = await keys()
+    for (const k of allKeys) {
+      if (typeof k !== 'string') continue
+      if (k.startsWith(PREFIX)) {
+        await del(k)
+      }
+    }
+    await del(TOMBSTONE_KEY)
+  } catch (err) {
+    console.warn('[attachments] clearAllAttachments failed (continuing):', err)
+  } finally {
+    // Always drop the in-memory URL cache: even if the IDB wipe partly
+    // failed, the stale blob: URLs point at the old vault's content.
+    _clearAttachmentUrlCache()
+  }
+}
+
 // ── Bulk + sync helpers ─────────────────────────────────────────────────────
 // These power the Settings panel ("show me everything in the store") and the
 // GitHub binary sync flow ("which files changed since the last push?").

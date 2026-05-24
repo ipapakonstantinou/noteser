@@ -13,14 +13,20 @@
 //   4. Prune workspace tabs that referenced notes which no longer exist in
 //      the new vault.
 //
-// The `freshClone` option short-circuits this: it deletes the target's
-// per-repo keys and resets memory to empty so the caller can re-clone from
-// the remote (used for user-initiated repo-to-repo switches only — never on
-// reload/startup, which must load the cache).
+// The `freshClone` option short-circuits this: it discards ALL local vault
+// data for a true clean slate — the target's per-repo notes/folders keys, the
+// globally-keyed attachments + tombstones, and the global per-sync bookkeeping
+// (githubStore last-sync pointers + settingsStore per-vault sync/gitignore/
+// encryption state) — then resets memory to empty so the caller can re-clone
+// from the remote. Used for user-initiated repo-to-repo switches only — never
+// on reload/startup, which must load the cache and keep attachments.
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval'
 import { useNoteStore } from '@/stores/noteStore'
 import { useFolderStore } from '@/stores/folderStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { useGitHubStore } from '@/stores/githubStore'
+import { useSettingsStore } from '@/stores/settingsStore'
+import { clearAllAttachments } from './attachments'
 import { notesKey, foldersKey } from './repoStorage'
 import type { SyncRepo } from '@/types'
 
@@ -61,11 +67,41 @@ export async function switchVault(
     await idbDel(targetNotesName)
     await idbDel(targetFoldersName)
 
+    // Attachments live under a GLOBAL prefix (noteser-attachment:<path>), not
+    // per-repo, so deleting the notes/folders keys above leaves them behind.
+    // Wipe them (plus tombstones + URL cache) so the previous vault's binaries
+    // don't bleed into the new repo. Awaited; best-effort (never throws).
+    await clearAllAttachments()
+
     useNoteStore.persist.setOptions({ name: targetNotesName })
     useFolderStore.persist.setOptions({ name: targetFoldersName })
 
     useNoteStore.setState({ notes: [], selectedNoteId: null })
     useFolderStore.setState({ folders: [], activeFolderId: null, expandedFolders: {} })
+
+    // Per-sync bookkeeping is also global (not per-repo). Reset it so the new
+    // repo starts from a clean slate and the subsequent runSync() clones fresh
+    // instead of reconciling against the previous repo's commit/settings state.
+    //
+    // githubStore: clear the last-sync pointers ONLY. Token / user / syncRepo
+    // (the GitHub connection itself) are deliberately untouched.
+    useGitHubStore.setState({ lastCommitSha: null, lastSyncedAt: null })
+
+    // settingsStore: reset ONLY the per-vault sync state — the gitignore
+    // overlay/draft/snapshot, the vault-settings push bookkeeping, and the
+    // per-vault encryption salt/canary/flag. User preferences (theme,
+    // shortcuts, aiProvider, sync cadence, ribbon/sidebar layout, etc.) are
+    // device/user-scoped and MUST survive a repo switch — they are left alone.
+    useSettingsStore.setState({
+      vaultSettingsUpdatedAt: 0,
+      vaultSettingsLastPushedHash: '',
+      vaultGitignoreDraft: null,
+      vaultGitignoreRemoteSnapshot: null,
+      localGitignoreOverlay: '',
+      vaultEncryptionEnabled: false,
+      vaultEncryptionSalt: null,
+      vaultEncryptionCanary: null,
+    })
 
     useWorkspaceStore.getState().pruneStaleTabs()
     return
