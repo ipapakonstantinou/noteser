@@ -159,3 +159,19 @@ describe('other CSP directives are preserved verbatim', () => {
     expect(getDirective(csp, 'object-src')).toBe("object-src 'none'")
   })
 })
+
+/**
+ * PWA directives — the installable-PWA work adds a same-origin service
+ * worker (public/sw.js) and a web app manifest. Without these, the strict
+ * nonce-based CSP would block worker registration and the manifest fetch.
+ * Same-origin only ('self'); no host allowlist, no wildcards.
+ */
+describe('PWA CSP directives (service worker + manifest)', () => {
+  it("scopes worker-src and manifest-src to 'self' in both prod and dev", () => {
+    for (const isDev of [true, false]) {
+      const csp = buildCsp(NONCE, { isDev, wsOrigin: null })
+      expect(getDirective(csp, 'worker-src')).toBe("worker-src 'self'")
+      expect(getDirective(csp, 'manifest-src')).toBe("manifest-src 'self'")
+    }
+  })
+})

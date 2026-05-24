@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { headers } from 'next/headers'
+import { PwaProvider } from '@/components/pwa/PwaProvider'
 import '@/styles/globals.css'
 
 export const metadata: Metadata = {
@@ -7,17 +8,30 @@ export const metadata: Metadata = {
   description: 'A modern, collaborative note-taking app with real-time sync, markdown support, and offline capabilities.',
   keywords: ['notes', 'markdown', 'collaborative', 'productivity', 'writing'],
   authors: [{ name: 'Noteser' }],
+  applicationName: 'Noteser',
   manifest: '/manifest.json',
   // No manual `icons` block — Next.js 15 auto-discovers
-  // src/app/icon.svg + src/app/apple-icon.svg and emits the right
-  // <link> tags automatically.
+  // src/app/icon.svg + src/app/apple-icon.png and emits the right
+  // <link rel="icon"> / <link rel="apple-touch-icon"> tags automatically.
   // https://nextjs.org/docs/app/api-reference/file-conventions/metadata/app-icons
+  // iOS "Add to Home Screen": these emit the apple-mobile-web-app-* meta
+  // tags Safari reads to launch the PWA standalone (no Safari chrome). The
+  // black-translucent status bar lets our dark UI extend under the notch
+  // (paired with viewportFit: 'cover' below).
+  appleWebApp: {
+    capable: true,
+    title: 'Noteser',
+    statusBarStyle: 'black-translucent',
+  },
 }
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
+  // Draw under the iPhone notch / home indicator so the dark shell is
+  // edge-to-edge in standalone mode.
+  viewportFit: 'cover',
   themeColor: '#1b1b1b'
 }
 
@@ -46,6 +60,7 @@ export default async function RootLayout({
         suppressHydrationWarning
       >
         {children}
+        <PwaProvider />
       </body>
     </html>
   )

@@ -86,6 +86,11 @@ export function buildCsp(nonce: string, options: BuildCspOptions): string {
     // The optional Yjs collab server is added only when
     // NEXT_PUBLIC_YJS_WS_URL is a valid ws:// or wss:// URL.
     `connect-src ${connectSrc}`,
+    // PWA: the service worker (public/sw.js) is same-origin, so 'self' is
+    // enough; the register() call itself is nonced app JS. The web app
+    // manifest is also same-origin.
+    "worker-src 'self'",
+    "manifest-src 'self'",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
