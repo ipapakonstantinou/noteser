@@ -62,6 +62,8 @@ pids
 # Local Claude session secrets — never commit. Stores e.g. the Vercel
 # API token used to fetch preview URLs.
 .claude/*.env
+# Per-machine Claude Code permission settings — local only, not shared.
+.claude/settings.local.json
 
 
 # typescript
