@@ -216,14 +216,21 @@ export function parseNote(raw: string): ParsedNote {
 
 // ── Pull (Phase 4) ──────────────────────────────────────────────────────────
 
+// `adoptPath` (pull-dedupe-by-path): present only when this classification
+// is the result of the fallback reconciliation that matched a remote file to
+// an UNLINKED local note (gitPath null/empty, or a stale gitPath no longer in
+// the remote tree). The adopted note had no gitPath pointing at this file, so
+// apply must SET note.gitPath = adoptPath. For a normal gitPath-keyed match
+// the field is absent and apply leaves gitPath untouched.
 export type PullClassification =
-  // Local & remote agree, nothing to do.
-  | { kind: 'unchanged'; noteId: string }
+  // Local & remote agree, nothing to do. `adoptPath` is set when the match was
+  // a reconciled unlinked note that still needs its gitPath linked on apply.
+  | { kind: 'unchanged'; noteId: string; adoptPath?: string }
   // Remote has a file with no matching local note yet — create one.
   | { kind: 'remoteCreated'; path: string; remoteSha: string; remoteContent: string; tags: string[]; body: string }
   // Local exists, remote changed since our last push, local has NOT changed
   // since last sync — accept the remote version.
-  | { kind: 'remoteUpdated'; noteId: string; remoteSha: string; remoteContent: string; tags: string[]; body: string }
+  | { kind: 'remoteUpdated'; noteId: string; remoteSha: string; remoteContent: string; tags: string[]; body: string; adoptPath?: string }
   // We previously pushed this note, but the file is gone from the repo and
   // we haven't edited it locally since — soft-delete it locally.
   | { kind: 'remoteDeleted'; noteId: string }
@@ -237,6 +244,7 @@ export type PullClassification =
       remoteContent: string
       remoteTags: string[]
       remoteBody: string
+      adoptPath?: string
     }
   // Both sides changed but the line-level edits don't overlap, so we 3-way
   // merged automatically. Apply writes the merged content + pins
@@ -246,6 +254,7 @@ export type PullClassification =
       noteId: string
       remoteSha: string
       mergedContent: string
+      adoptPath?: string
     }
   // Remote deleted the file but we edited it locally — degenerate conflict
   // that's still asking the user a question, treat it as a conflict variant.
@@ -376,7 +385,7 @@ export async function pullFromGitHub(input: {
     // wants this gone — we MUST NOT treat the remote file as a new
     // creation and resurrect it. Push step 4 will emit the
     // `sha: null` tree entry to actually delete it.
-    const localMatch = notes.find(n => n.gitPath === path)
+    let localMatch = notes.find(n => n.gitPath === path)
 
     if (localMatch && localMatch.isDeleted) {
       // Pending deletion — skip the fetch + classification entirely.
@@ -399,6 +408,51 @@ export async function pullFromGitHub(input: {
       return remoteContent
     }
 
+    // pull-dedupe-by-path: no gitPath-keyed match. Before declaring this a
+    // brand-new remote file (which apply would materialise as a NEW note), try
+    // a fallback reconciliation: is there an UNLINKED local note that logically
+    // IS this file? "Unlinked" = gitPath null/empty, OR a stale gitPath that is
+    // no longer present in this pull's remote tree. We match by the note's
+    // computed repo path (notePath) === this remote path. Adopting prevents the
+    // duplicate (the "two Temp notes" twin) for an unpushed local note or one
+    // whose gitPath was cleared (e.g. a conflictDeleted respawn).
+    //
+    // `adoptPath` is the path we'll thread onto the resulting classification so
+    // the apply layer links the adopted note's gitPath. Left undefined for a
+    // normal gitPath-keyed match.
+    let adoptPath: string | undefined
+    if (!localMatch) {
+      const candidates = notes.filter(n => {
+        if (n.isDeleted) return false
+        if (seenLocalIds.has(n.id)) return false
+        if (notePath(n, input.folders) !== path) return false
+        // Unlinked: never pushed (no/empty gitPath) OR a stale gitPath that the
+        // current remote tree doesn't contain (a rename/respawn left it behind).
+        const gp = n.gitPath
+        if (!gp) return true
+        return !remoteTree.has(gp)
+      })
+
+      if (candidates.length === 1) {
+        localMatch = candidates[0]
+        adoptPath = path
+      } else if (candidates.length > 1) {
+        // Ambiguous — be conservative. Only adopt if EXACTLY ONE candidate's
+        // serialized blob SHA equals the remote SHA (a clean, identical adopt
+        // we can make with confidence). Otherwise we refuse to guess and fall
+        // through to remoteCreated rather than risk merging the wrong note.
+        const shaMatches: Note[] = []
+        for (const c of candidates) {
+          const sha = await gitBlobSha(serializeNote(c))
+          if (sha === remoteSha) shaMatches.push(c)
+        }
+        if (shaMatches.length === 1) {
+          localMatch = shaMatches[0]
+          adoptPath = path
+        }
+      }
+    }
+
     if (!localMatch) {
       const content = await loadRemote()
       const parsed = parseNote(content)
@@ -411,7 +465,9 @@ export async function pullFromGitHub(input: {
     const localBlobSha = await gitBlobSha(localContent)
 
     if (localBlobSha === remoteSha) {
-      out.push({ kind: 'unchanged', noteId: localMatch.id })
+      // Even for a clean `unchanged`, an adopted note still needs its gitPath
+      // linked on apply — thread adoptPath through.
+      out.push({ kind: 'unchanged', noteId: localMatch.id, ...(adoptPath ? { adoptPath } : {}) })
       continue
     }
 
@@ -439,11 +495,11 @@ export async function pullFromGitHub(input: {
       // so this is `unchanged`. Without this branch a frontmatter note would
       // fall through to "remoteUnchanged + localChanged → push", silently
       // re-pushing on every sync (the storm) AND never settling to unchanged.
-      out.push({ kind: 'unchanged', noteId: localMatch.id })
+      out.push({ kind: 'unchanged', noteId: localMatch.id, ...(adoptPath ? { adoptPath } : {}) })
     } else if (remoteChanged && !localChanged) {
       const content = await loadRemote()
       const parsed = parseNote(content)
-      out.push({ kind: 'remoteUpdated', noteId: localMatch.id, remoteSha, remoteContent: content, tags: parsed.tags, body: parsed.body })
+      out.push({ kind: 'remoteUpdated', noteId: localMatch.id, remoteSha, remoteContent: content, tags: parsed.tags, body: parsed.body, ...(adoptPath ? { adoptPath } : {}) })
     } else if (remoteChanged && localChanged) {
       const content = await loadRemote()
       const parsed = parseNote(content)
@@ -474,6 +530,7 @@ export async function pullFromGitHub(input: {
           noteId: localMatch.id,
           remoteSha,
           mergedContent: autoMerged,
+          ...(adoptPath ? { adoptPath } : {}),
         })
       } else {
         out.push({
@@ -485,6 +542,7 @@ export async function pullFromGitHub(input: {
           remoteContent: content,
           remoteTags: parsed.tags,
           remoteBody: parsed.body,
+          ...(adoptPath ? { adoptPath } : {}),
         })
       }
     }

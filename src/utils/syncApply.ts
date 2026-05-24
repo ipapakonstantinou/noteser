@@ -73,7 +73,22 @@ export async function applyNonConflicts(classifications: PullClassification[]): 
   let lastCreatedId: string | null = null
 
   for (const c of classifications) {
-    if (c.kind === 'unchanged' || c.kind === 'conflict' || c.kind === 'conflictDeleted') continue
+    // pull-dedupe-by-path: an `unchanged` classification carrying `adoptPath`
+    // is a reconciled UNLINKED local note — the content matched the remote
+    // byte-for-byte, but the note had no gitPath pointing at this file yet.
+    // Link the gitPath here so the next pull keys it normally (and so push
+    // doesn't re-create the file). This is the only `unchanged` case that
+    // mutates a note; everything else is a genuine no-op.
+    if (c.kind === 'unchanged') {
+      if (c.adoptPath) {
+        const existing = byId.get(c.noteId)
+        if (existing && existing.gitPath !== c.adoptPath) {
+          byId.set(c.noteId, { ...existing, gitPath: c.adoptPath })
+        }
+      }
+      continue
+    }
+    if (c.kind === 'conflict' || c.kind === 'conflictDeleted') continue
     // Attachment classifications are handled asynchronously by
     // applyAttachmentClassifications — the binary fetch + IDB write doesn't
     // belong in this synchronous note-store loop. Skip here.
@@ -160,6 +175,8 @@ export async function applyNonConflicts(classifications: PullClassification[]): 
         content,
         gitLastPushedSha: await canonicalLocalSha(content),
         gitRemoteBaseSha: c.remoteSha,
+        // pull-dedupe-by-path: link gitPath for a reconciled unlinked note.
+        ...(c.adoptPath ? { gitPath: c.adoptPath } : {}),
         updatedAt: now,
       })
       counts.updated++
@@ -178,6 +195,8 @@ export async function applyNonConflicts(classifications: PullClassification[]): 
         // the two SHAs.
         gitLastPushedSha: await canonicalLocalSha(c.mergedContent),
         gitRemoteBaseSha: c.remoteSha,
+        // pull-dedupe-by-path: link gitPath for a reconciled unlinked note.
+        ...(c.adoptPath ? { gitPath: c.adoptPath } : {}),
         updatedAt: now,
       })
       counts.updated++
@@ -236,6 +255,9 @@ export function applyMergedConflict(
     content: bodyWithInlineTags(parsed.body, parsed.tags),
     gitLastPushedSha: c.remoteSha,
     gitRemoteBaseSha: c.remoteSha,
+    // pull-dedupe-by-path: link gitPath for a reconciled unlinked note that
+    // routed through the conflict (merge-tab) path. No-op for normal matches.
+    ...(c.adoptPath ? { gitPath: c.adoptPath } : {}),
   })
 }
 
@@ -258,14 +280,18 @@ export function applyConflictResolution(
 ): void {
   const { updateNote, deleteNote } = useNoteStore.getState()
   if (c.kind === 'conflict') {
+    // pull-dedupe-by-path: a reconciled unlinked note carries adoptPath; link
+    // its gitPath on resolution regardless of which side the user picks.
+    const adopt = c.adoptPath ? { gitPath: c.adoptPath } : {}
     if (choice === 'remote') {
       updateNote(c.noteId, {
         content: bodyWithInlineTags(c.remoteBody, c.remoteTags),
         gitLastPushedSha: c.remoteSha,
         gitRemoteBaseSha: c.remoteSha,
+        ...adopt,
       })
     } else {
-      updateNote(c.noteId, { gitLastPushedSha: c.remoteSha, gitRemoteBaseSha: c.remoteSha })
+      updateNote(c.noteId, { gitLastPushedSha: c.remoteSha, gitRemoteBaseSha: c.remoteSha, ...adopt })
     }
   } else {
     // conflictDeleted: remote file is gone, but local has unsynced edits.
