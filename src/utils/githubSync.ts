@@ -698,22 +698,53 @@ export async function pullFromGitHub(input: {
 export async function pullFromZipball(input: {
   token: string
   repo: SyncRepo
+  // Phase hint so the caller can surface "Downloading vault (retrying)…" when
+  // a corrupted/truncated archive triggers a re-download. Optional — the retry
+  // loop works regardless.
+  onPhase?: (msg: string) => void
 }): Promise<PullOutcome> {
-  const { token, repo } = input
+  const { token, repo, onPhase } = input
   const { owner, name, branch } = repo
 
-  // Fetch the ref + the zipball in parallel; the ref is cheap and we need
-  // it for `latestCommitSha` regardless.
-  const [headSha, zipBuffer] = await Promise.all([
-    getBranchRefSha(token, owner, name, branch),
-    fetchZipball(token, owner, name, branch),
-  ])
+  // The ref is cheap and we need it for `latestCommitSha` regardless — fetch
+  // it once up front, independent of the archive retry loop below.
+  const headSha = await getBranchRefSha(token, owner, name, branch)
 
   // Lazy-load jszip — only callers of pullFromZipball pay the
   // ~140kB cost. The rest of the sync flow (push, regular pull via
   // Git Data API) never touches it.
   const { default: JSZip } = await import('jszip')
-  const zip = await JSZip.loadAsync(zipBuffer)
+
+  // Download + parse the archive with a short retry loop. On a large vault
+  // over a flaky mobile connection the single big zip download sometimes
+  // arrives truncated, so JSZip throws "Corrupted zip: can't find end of
+  // central directory" (or fetchZipball's own Content-Length guard fires).
+  // Both are transient — re-downloading usually succeeds within a couple of
+  // tries, so we do that automatically instead of making the user tap Retry.
+  // Only after exhausting the attempts do we surface the error (→ existing
+  // toast with Retry). The per-request 180s timeout inside fetchZipball is
+  // unchanged; this loop wraps whole-download attempts, not single requests.
+  const MAX_ATTEMPTS = 3
+  const BACKOFF_MS = [500, 1_000]
+  let zip: JSZip
+  let attempt = 0
+  for (;;) {
+    try {
+      const zipBuffer = await fetchZipball(token, owner, name, branch)
+      zip = await JSZip.loadAsync(zipBuffer)
+      break
+    } catch (err) {
+      attempt++
+      if (attempt >= MAX_ATTEMPTS) throw err
+      // Short backoff before re-downloading, and tell the UI we're retrying —
+      // with the attempt number, so a flaky large-vault download reads as
+      // progress, not a stall. (attempt was just incremented; the next try is
+      // attempt + 1.)
+      onPhase?.(`Vault download incomplete, retrying (${attempt + 1} of ${MAX_ATTEMPTS})…`)
+      const delay = BACKOFF_MS[attempt - 1] ?? BACKOFF_MS[BACKOFF_MS.length - 1]
+      await new Promise<void>((resolve) => setTimeout(resolve, delay))
+    }
+  }
   const classifications: PullClassification[] = []
 
   // The zipball wraps every entry in a top-level directory named

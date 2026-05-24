@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useGitHubStore, useNoteStore, useFolderStore, useSettingsStore, useWorkspaceStore, useUIStore } from '@/stores'
 import { useToastStore } from '@/stores/toastStore'
+import type { Toast } from '@/stores/toastStore'
 import { VaultLockedError } from '@/utils/vaultKey'
 import { syncToGitHub, pullFromGitHub, pullFromZipball } from '@/utils/githubSync'
 import type { PullClassification, SyncResult, GitPathUpdate } from '@/utils/githubSync'
@@ -134,7 +135,7 @@ async function runPull(
   onPhase?.(isFirstClone ? 'Downloading vault…' : 'Checking for changes…')
 
   const { classifications, latestCommitSha } = isFirstClone
-    ? await pullFromZipball({ token, repo })
+    ? await pullFromZipball({ token, repo, onPhase })
     : await pullFromGitHub({
         token, repo,
         notes: localNotes, folders: localFolders,
@@ -223,6 +224,19 @@ function formatSyncMessage(
   // skipped on their behalf.
   if (pulled.autoMerged) parts.push(`auto-merged ${pulled.autoMerged}`)
   return parts.join(' · ') || 'Synced'
+}
+
+// All sync-lifecycle toasts share the source `'sync'` so only ONE is ever on
+// screen: a fresh terminal toast (success / error / conflict) supersedes the
+// prior one. Without this a green "↓692 new" success toast would sit next to a
+// stale red "Sync timed out…" error (errors don't auto-dismiss), confusing the
+// user about whether the sync actually recovered. We dismiss the previous
+// 'sync' toast, then add the new one tagged with the same source.
+const SYNC_TOAST_SOURCE = 'sync'
+function addSyncToast(toast: Omit<Toast, 'id' | 'source'>): void {
+  const store = useToastStore.getState()
+  store.dismissBySource(SYNC_TOAST_SOURCE)
+  store.addToast({ ...toast, source: SYNC_TOAST_SOURCE })
 }
 
 // Pull-only counterpart to formatSyncMessage — no push counts to report.
@@ -333,7 +347,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
           }
           const conflictMsg = `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} need review`
           setSyncState({ kind: 'err', message: conflictMsg })
-          useToastStore.getState().addToast({ kind: 'info', message: conflictMsg })
+          addSyncToast({ kind: 'info', message: conflictMsg })
           return
         }
 
@@ -388,7 +402,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
           message: okMessage,
           url: result.commitUrl,
         })
-        useToastStore.getState().addToast({ kind: 'success', message: okMessage })
+        addSyncToast({ kind: 'success', message: okMessage })
         setTimeout(() => setSyncState({ kind: 'idle' }), 5000)
       })
     } catch (err) {
@@ -398,7 +412,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
       // no longer holds the UI.
       if (err instanceof SyncTimeoutError) {
         setSyncState({ kind: 'err', message: err.message })
-        useToastStore.getState().addToast({
+        addSyncToast({
           kind: 'error', message: err.message,
           actionLabel: 'Retry', onAction: () => { void runSync(commitMessage) },
         })
@@ -412,7 +426,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
       } else {
         const message = err instanceof Error ? err.message : 'Sync failed'
         setSyncState({ kind: 'err', message })
-        useToastStore.getState().addToast({
+        addSyncToast({
           kind: 'error', message,
           actionLabel: 'Retry', onAction: () => { void runSync(commitMessage) },
         })
@@ -476,7 +490,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
           }
           const conflictMsg = `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} need review`
           setSyncState({ kind: 'err', message: conflictMsg })
-          useToastStore.getState().addToast({ kind: 'info', message: conflictMsg })
+          addSyncToast({ kind: 'info', message: conflictMsg })
           return
         }
 
@@ -496,13 +510,13 @@ export function useGitHubSync(): UseGitHubSyncResult {
           message: okMessage,
           url: null,
         })
-        useToastStore.getState().addToast({ kind: 'success', message: okMessage })
+        addSyncToast({ kind: 'success', message: okMessage })
         setTimeout(() => setSyncState({ kind: 'idle' }), 5000)
       })
     } catch (err) {
       if (err instanceof SyncTimeoutError) {
         setSyncState({ kind: 'err', message: err.message })
-        useToastStore.getState().addToast({
+        addSyncToast({
           kind: 'error', message: err.message,
           actionLabel: 'Retry', onAction: () => { void runPullOnly() },
         })
@@ -512,7 +526,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
       } else {
         const message = err instanceof Error ? err.message : 'Pull failed'
         setSyncState({ kind: 'err', message })
-        useToastStore.getState().addToast({
+        addSyncToast({
           kind: 'error', message,
           actionLabel: 'Retry', onAction: () => { void runPullOnly() },
         })

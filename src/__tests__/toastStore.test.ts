@@ -66,4 +66,60 @@ describe('toastStore', () => {
     useToastStore.getState().dismissToast('does-not-exist')
     expect(useToastStore.getState().toasts).toHaveLength(1)
   })
+
+  // ── source-tagged toasts supersede one another ─────────────────────────────
+  // A successful sync must clear the earlier "Sync timed out…" error toast
+  // (which, being an error, never auto-dismisses). dismissBySource is the
+  // mechanism: tag both with source 'sync', drop the prior before adding next.
+
+  test('dismissBySource removes every toast with that source', () => {
+    useToastStore.getState().addToast({ kind: 'error', message: 'old', source: 'sync' })
+    useToastStore.getState().addToast({ kind: 'info', message: 'other', source: 'other' })
+    useToastStore.getState().dismissBySource('sync')
+    const toasts = useToastStore.getState().toasts
+    expect(toasts).toHaveLength(1)
+    expect(toasts[0].message).toBe('other')
+  })
+
+  test('a sync success toast supersedes a prior sync error toast', () => {
+    // The error toast persists (no auto-dismiss).
+    useToastStore.getState().addToast({
+      kind: 'error', message: 'Sync timed out — check your connection and retry.', source: 'sync',
+    })
+    expect(useToastStore.getState().toasts).toHaveLength(1)
+
+    // Adding the next sync toast = dismiss prior source 'sync', then add.
+    useToastStore.getState().dismissBySource('sync')
+    useToastStore.getState().addToast({ kind: 'success', message: '↓692 new · ↓173 images', source: 'sync' })
+
+    const toasts = useToastStore.getState().toasts
+    expect(toasts).toHaveLength(1)
+    expect(toasts[0]).toMatchObject({ kind: 'success', message: '↓692 new · ↓173 images', source: 'sync' })
+  })
+
+  test('a sync error toast supersedes a prior sync success toast', () => {
+    useToastStore.getState().addToast({ kind: 'success', message: 'Up to date', source: 'sync' })
+    useToastStore.getState().dismissBySource('sync')
+    useToastStore.getState().addToast({ kind: 'error', message: 'Sync failed', source: 'sync' })
+
+    const toasts = useToastStore.getState().toasts
+    expect(toasts).toHaveLength(1)
+    expect(toasts[0]).toMatchObject({ kind: 'error', message: 'Sync failed' })
+  })
+
+  test('dismissBySource leaves non-matching (untagged + other-source) toasts untouched', () => {
+    useToastStore.getState().addToast({ kind: 'info', message: 'no source' })
+    useToastStore.getState().addToast({ kind: 'info', message: 'export done', source: 'export' })
+    useToastStore.getState().addToast({ kind: 'error', message: 'sync boom', source: 'sync' })
+
+    useToastStore.getState().dismissBySource('sync')
+    const messages = useToastStore.getState().toasts.map((t) => t.message).sort()
+    expect(messages).toEqual(['export done', 'no source'])
+  })
+
+  test('dismissBySource on an unused source is a no-op', () => {
+    useToastStore.getState().addToast({ kind: 'info', message: 'keep' })
+    useToastStore.getState().dismissBySource('nope')
+    expect(useToastStore.getState().toasts).toHaveLength(1)
+  })
 })
