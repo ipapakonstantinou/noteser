@@ -196,3 +196,119 @@ test('REPRO (b): untouched local + remote-only edit must be `remoteUpdated`, nev
     remoteSha: remoteNewSha,
   })
 })
+
+// ── (c) pull-dedupe-by-path: unlinked local note is ADOPTED on apply ────────
+//
+// Regression guard for the "two Temp notes" twin. A local UNPUSHED note (no
+// gitPath) whose notePath matches a remote `.md` must be reconciled against
+// that remote file rather than spawning a second note. After apply, the
+// existing note carries the now-linked gitPath; the note count stays at 1.
+test('REPRO (c): unlinked local note matching a remote path is adopted on apply (no duplicate, gitPath linked)', async () => {
+  // Seed a local note that has NEVER been pushed (gitPath null) but whose
+  // title resolves to "Temp.md" — exactly the remote file we are about to pull.
+  useNoteStore.setState({
+    notes: [
+      {
+        id: 'local-temp',
+        title: 'Temp',
+        content: 'identical body\n',
+        folderId: null,
+        createdAt: 1,
+        updatedAt: 1,
+        isDeleted: false,
+        deletedAt: null,
+        isPinned: false,
+        templateId: null,
+        gitPath: null,
+        gitLastPushedSha: null,
+        gitRemoteBaseSha: null,
+      },
+    ],
+    selectedNoteId: null,
+  })
+
+  // Remote Temp.md whose bytes are byte-identical to the local note's
+  // serialized form → the reconcile adopts it as `unchanged` and just links
+  // the gitPath.
+  const rawRemote = 'identical body\n'
+  const remoteSha = await gitBlobSha(rawRemote)
+  mockGetTreeMap.mockResolvedValue(new Map([['Temp.md', remoteSha]]))
+  mockGetBlobContent.mockResolvedValue(rawRemote)
+
+  const pull = await pullFromGitHub({
+    token: 't', repo: REPO,
+    notes: useNoteStore.getState().notes,
+    folders: [],
+  })
+
+  // Classified as a reconcile against the existing note — NOT remoteCreated.
+  expect(pull.classifications.find(c => c.kind === 'remoteCreated')).toBeUndefined()
+  expect(pull.classifications[0]).toMatchObject({ kind: 'unchanged', noteId: 'local-temp', adoptPath: 'Temp.md' })
+
+  await applyNonConflicts(pull.classifications)
+
+  const stored = useNoteStore.getState().notes
+  // Exactly ONE note — no twin.
+  expect(stored).toHaveLength(1)
+  expect(stored[0].id).toBe('local-temp')
+  // Its gitPath is now linked to the remote file.
+  expect(stored[0].gitPath).toBe('Temp.md')
+})
+
+test('REPRO (c2): non-identical unlinked local note adopts via remoteUpdated and links gitPath on apply', async () => {
+  // Same setup, but the local note differs from remote AND has a remote base
+  // SHA that lets the three-way classify it as a clean remoteUpdated (so we
+  // exercise the remoteUpdated adopt-apply path, which must also set gitPath).
+  const transformedBase = 'base body\n'
+  const baseSha = await gitBlobSha(transformedBase)
+
+  useNoteStore.setState({
+    notes: [
+      {
+        id: 'local-temp',
+        title: 'Temp',
+        content: transformedBase, // local serializes to baseSha → localChanged=false
+        folderId: null,
+        createdAt: 1,
+        updatedAt: 1,
+        isDeleted: false,
+        deletedAt: null,
+        isPinned: false,
+        templateId: null,
+        // Stale gitPath not in the remote tree, but a remote base that matches
+        // the local content → localChanged=false, remoteChanged=true → clean
+        // remoteUpdated.
+        gitPath: 'Old.md',
+        gitLastPushedSha: baseSha,
+        gitRemoteBaseSha: baseSha,
+      },
+    ],
+    selectedNoteId: null,
+  })
+
+  const rawRemoteNew = 'updated remote body\n'
+  const remoteNewSha = await gitBlobSha(rawRemoteNew)
+  mockGetTreeMap.mockResolvedValue(new Map([['Temp.md', remoteNewSha]]))
+  mockGetBlobContent.mockResolvedValue(rawRemoteNew)
+
+  const pull = await pullFromGitHub({
+    token: 't', repo: REPO,
+    notes: useNoteStore.getState().notes,
+    folders: [],
+  })
+
+  expect(pull.classifications.find(c => c.kind === 'remoteCreated')).toBeUndefined()
+  expect(pull.classifications[0]).toMatchObject({
+    kind: 'remoteUpdated',
+    noteId: 'local-temp',
+    adoptPath: 'Temp.md',
+  })
+
+  await applyNonConflicts(pull.classifications)
+
+  const stored = useNoteStore.getState().notes
+  expect(stored).toHaveLength(1)
+  expect(stored[0].id).toBe('local-temp')
+  expect(stored[0].gitPath).toBe('Temp.md')
+  expect(stored[0].content).toBe('updated remote body\n')
+})
