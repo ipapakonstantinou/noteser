@@ -143,8 +143,16 @@ async function runPull(
   // the per-repo data that loads a moment later. So make the per-repo vault the
   // active, loaded store BEFORE we classify. switchVault is idempotent (returns
   // early when already on the target key), so this is a no-op on the hot path.
+  // carryOver:false — this is a sync-time guard, NOT a first-connection seed.
+  // It must load THIS repo's own per-repo vault (or reset to empty so the
+  // remote clones fresh), and must never copy the previously-active repo's
+  // notes into this repo's key. carryOver:true here would, when switching to a
+  // not-yet-synced repo, seed it with the prior repo's vault and then try to
+  // reconcile that big mismatched pile against the new remote (mass conflicts →
+  // the sync times out). First-connection seeding is handled separately by the
+  // startup migration in page.tsx and by GitHubRepoModal.
   if (useNoteStore.persist.getOptions().name !== notesKey(repo)) {
-    await switchVault(repo, { carryOver: true })
+    await switchVault(repo, { carryOver: false })
   }
 
   // Belt-and-braces: even on the correct per-repo key, idbStorage rehydration

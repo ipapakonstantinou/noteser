@@ -19,7 +19,7 @@
  * per-repo vault the active, loaded store:
  *
  *   if (useNoteStore.persist.getOptions().name !== notesKey(repo)) {
- *     await switchVault(repo, { carryOver: true })
+ *     await switchVault(repo, { carryOver: false })
  *   }
  *
  * switchVault is idempotent (no-op when already on the target key), so this is
@@ -176,7 +176,7 @@ describe('startup pull loads the per-repo vault (switchVault) before classifying
 
     // The per-repo vault was made active before classification.
     expect(switchVaultMock).toHaveBeenCalledTimes(1)
-    expect(switchVaultMock).toHaveBeenCalledWith(TEST_REPO, { carryOver: true })
+    expect(switchVaultMock).toHaveBeenCalledWith(TEST_REPO, { carryOver: false })
 
     // Because the real vault has a note, this is NOT a first clone: the
     // incremental path is taken, NOT the whole-vault zipball re-import.
