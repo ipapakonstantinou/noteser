@@ -103,6 +103,10 @@ beforeEach(() => {
     folders: [makeFolder('fa1')],
     activeFolderId: 'fa1',
     expandedFolders: { fa1: true },
+    // Repo A's deleted-folder tombstones. These are per-repo but live in the
+    // in-memory folder store, so a switch must clear them — otherwise they
+    // suppress the same directories on the NEXT repo's first pull.
+    deletedFolderPaths: ['.obsidian', 'Archive'],
   })
   // REPO_A's per-sync bookkeeping is global (not per-repo). Seed stale values
   // so we can assert the freshClone path zeroes them out — and that the
@@ -155,6 +159,8 @@ describe('switchVault freshClone', () => {
     expect(useFolderStore.getState().folders).toEqual([])
     expect(useFolderStore.getState().activeFolderId).toBeNull()
     expect(useFolderStore.getState().expandedFolders).toEqual({})
+    // Repo A's deleted-folder tombstones must NOT leak into repo B.
+    expect(useFolderStore.getState().deletedFolderPaths).toEqual([])
 
     // githubStore last-sync pointers reset; connection (token/user/syncRepo) untouched.
     expect(useGitHubStore.getState().lastCommitSha).toBeNull()
@@ -206,5 +212,25 @@ describe('switchVault freshClone', () => {
 
     // No carry-over copy when the destination already has data.
     expect(idbSetMock).not.toHaveBeenCalled()
+  })
+
+  test('carryOver:false with EMPTY target → resets memory incl. deletedFolderPaths (no tombstone leak)', async () => {
+    // REPO_B has no cached data, so switchVault takes the explicit reset branch
+    // (rehydrate alone can't clear in-memory state when storage is empty). The
+    // reset must zero deletedFolderPaths too, or repo A's tombstones would
+    // silently suppress directories on repo B's first pull.
+    // (idbStore has no REPO_B keys staged → idbGet returns undefined.)
+
+    await switchVault(REPO_B, { carryOver: false })
+
+    expect(useNoteStore.getState().notes).toEqual([])
+    expect(useFolderStore.getState().folders).toEqual([])
+    expect(useFolderStore.getState().activeFolderId).toBeNull()
+    expect(useFolderStore.getState().expandedFolders).toEqual({})
+    expect(useFolderStore.getState().deletedFolderPaths).toEqual([])
+
+    // Persist names still point at the target.
+    expect(useNoteStore.persist.getOptions().name).toBe(notesKey(REPO_B))
+    expect(useFolderStore.persist.getOptions().name).toBe(foldersKey(REPO_B))
   })
 })

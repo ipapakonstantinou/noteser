@@ -77,7 +77,12 @@ export async function switchVault(
     useFolderStore.persist.setOptions({ name: targetFoldersName })
 
     useNoteStore.setState({ notes: [], selectedNoteId: null })
-    useFolderStore.setState({ folders: [], activeFolderId: null, expandedFolders: {} })
+    // deletedFolderPaths is a per-repo tombstone list (folders the user
+    // deleted, so the pull's dir-walk skips re-deriving them). It lives in
+    // the folders store but the setState reset must clear it explicitly —
+    // otherwise repo A's deleted-folder tombstones leak into repo B and
+    // silently suppress those directories on B's first pull.
+    useFolderStore.setState({ folders: [], activeFolderId: null, expandedFolders: {}, deletedFolderPaths: [] })
 
     // Per-sync bookkeeping is also global (not per-repo). Reset it so the new
     // repo starts from a clean slate and the subsequent runSync() clones fresh
@@ -139,7 +144,7 @@ export async function switchVault(
   if (foldersData !== undefined) {
     await useFolderStore.persist.rehydrate()
   } else {
-    useFolderStore.setState({ folders: [], activeFolderId: null, expandedFolders: {} })
+    useFolderStore.setState({ folders: [], activeFolderId: null, expandedFolders: {}, deletedFolderPaths: [] })
   }
 
   useWorkspaceStore.getState().pruneStaleTabs()
