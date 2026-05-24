@@ -72,6 +72,7 @@ function note(input: Partial<Note> & { id: string; title: string }): Note {
     templateId: null,
     gitPath: input.gitPath ?? null,
     gitLastPushedSha: input.gitLastPushedSha ?? null,
+    gitRemoteBaseSha: input.gitRemoteBaseSha ?? null,
   } as Note
 }
 
@@ -743,6 +744,154 @@ test('PROBE: ancestor blob fetch FAILS → falls through to manual conflict (not
   ]
   const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
   expect(classifications[0].kind).toBe('conflict')
+})
+
+// ── pull-dedupe-by-path: reconcile UNLINKED local notes ─────────────────────
+// Bug: a remote `.md` whose path matches an UNLINKED local note (gitPath
+// null, or stale gitPath not in the remote tree) used to be classified
+// `remoteCreated` because the only match test was `n.gitPath === path`.
+// apply then created a SECOND note for the same logical file (the "two Temp
+// notes" twin). The fallback reconciliation below adopts the unlinked local
+// note instead, routing it through the normal three-way classification and
+// carrying `adoptPath` so apply can set its gitPath.
+
+test('REGRESSION GUARD: unpushed local note whose notePath matches a remote file is adopted, NOT remoteCreated', async () => {
+  // Remote has Temp.md; local has an UNPUSHED "Temp" note (gitPath null) that
+  // serializes to DIFFERENT bytes than the remote (so it is not an identical
+  // adopt — it exercises the three-way path). Pre-fix this is remoteCreated
+  // (a duplicate). Post-fix it adopts note id '1'.
+  mockGetTreeMap.mockResolvedValue(new Map([['Temp.md', 'sha-remote']]))
+  mockGitBlobSha.mockResolvedValue('sha-local')   // local content hashes here
+  mockGetBlobContent.mockResolvedValue('remote body')
+
+  const local: Note[] = [
+    note({ id: '1', title: 'Temp', content: 'local body', gitPath: null, gitLastPushedSha: null }),
+  ]
+  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+
+  expect(classifications).toHaveLength(1)
+  // Must NOT be remoteCreated (that would create a duplicate note).
+  expect(classifications[0].kind).not.toBe('remoteCreated')
+  // Adopted note '1' — unpushed + non-identical → routed to conflict (both
+  // sides carry content, no known ancestor) and tagged with adoptPath so apply
+  // links its gitPath.
+  expect(classifications[0]).toMatchObject({
+    kind: 'conflict',
+    noteId: '1',
+    adoptPath: 'Temp.md',
+  })
+})
+
+test('reconcile adopt: byte-identical unpushed local note → unchanged + adoptPath (no duplicate)', async () => {
+  // Local content serializes to EXACTLY the remote blob SHA → the early
+  // identical-content branch fires → unchanged, but carries adoptPath so apply
+  // still links gitPath = Temp.md to the existing note.
+  mockGetTreeMap.mockResolvedValue(new Map([['Temp.md', 'sha-remote']]))
+  mockGitBlobSha.mockResolvedValue('sha-remote') // local hashes identical to remote
+
+  const local: Note[] = [
+    note({ id: '1', title: 'Temp', content: 'same body', gitPath: null, gitLastPushedSha: null }),
+  ]
+  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+
+  expect(classifications).toHaveLength(1)
+  expect(classifications[0]).toMatchObject({ kind: 'unchanged', noteId: '1', adoptPath: 'Temp.md' })
+})
+
+test('genuinely new remote file with NO local counterpart is still remoteCreated', async () => {
+  mockGetTreeMap.mockResolvedValue(new Map([['Temp.md', 'sha-remote']]))
+  mockGetBlobContent.mockResolvedValue('hello world')
+
+  // A local note with a DIFFERENT title (notePath = "Other.md") must not be
+  // adopted for Temp.md.
+  const local: Note[] = [
+    note({ id: '9', title: 'Other', content: 'unrelated', gitPath: null }),
+  ]
+  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+
+  const created = classifications.filter(c => c.kind === 'remoteCreated')
+  expect(created).toHaveLength(1)
+  expect(created[0]).toMatchObject({ kind: 'remoteCreated', path: 'Temp.md' })
+  // The unrelated local note becomes a remoteDeleted/orphan but is NEVER
+  // adopted for Temp.md.
+  expect(classifications.find(c => c.kind === 'remoteCreated' && (c as { adoptPath?: string }).adoptPath)).toBeUndefined()
+})
+
+test('reconcile adopt: STALE gitPath (not in remote tree) but notePath matches remote → adopt, not duplicate', async () => {
+  // Note carries gitPath "Old.md" which is NOT present in the remote tree (a
+  // rename happened, or a conflictDeleted respawn left a stale path). Its
+  // notePath now resolves to "Temp.md", which IS the remote file. We adopt it.
+  mockGetTreeMap.mockResolvedValue(new Map([['Temp.md', 'sha-remote']]))
+  mockGitBlobSha.mockResolvedValue('sha-local')
+  mockGetBlobContent.mockResolvedValue('remote body')
+
+  const local: Note[] = [
+    note({ id: '1', title: 'Temp', content: 'local body', gitPath: 'Old.md', gitLastPushedSha: 'sha-old', gitRemoteBaseSha: 'sha-old' }),
+  ]
+  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+
+  // No remoteCreated for Temp.md (no twin).
+  expect(classifications.find(c => c.kind === 'remoteCreated')).toBeUndefined()
+  // The Temp.md walk adopts note '1' (remoteChanged: remoteBase 'sha-old' !=
+  // 'sha-remote'; localChanged: 'sha-old' != 'sha-local'; no real ancestor blob
+  // → conflict) and tags it with adoptPath.
+  const adopted = classifications.find(c => (c as { adoptPath?: string }).adoptPath === 'Temp.md')
+  expect(adopted).toBeDefined()
+  expect((adopted as { noteId: string }).noteId).toBe('1')
+  // The note is claimed (seenLocalIds), so the orphan pass does NOT also emit a
+  // remoteDeleted for its stale Old.md path.
+  expect(classifications.filter(c => c.kind === 'remoteDeleted')).toHaveLength(0)
+  expect(classifications.filter(c => c.kind === 'conflictDeleted')).toHaveLength(0)
+})
+
+test('reconcile adopt is conservative when AMBIGUOUS: two unlinked notes map to the same path', async () => {
+  // Two unpushed local notes both titled "Temp" → both notePath = "Temp.md".
+  // Neither serializes to the remote SHA, so there is no clean SHA-based
+  // tiebreak. We must NOT guess — fall back to remoteCreated.
+  mockGetTreeMap.mockResolvedValue(new Map([['Temp.md', 'sha-remote']]))
+  mockGitBlobSha.mockResolvedValue('sha-local') // neither matches sha-remote
+  mockGetBlobContent.mockResolvedValue('remote body')
+
+  const local: Note[] = [
+    note({ id: '1', title: 'Temp', content: 'one', gitPath: null }),
+    note({ id: '2', title: 'Temp', content: 'two', gitPath: null }),
+  ]
+  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+
+  // Ambiguous + no clean SHA match → remoteCreated (conservative). Neither
+  // local note is adopted; they fall to the orphan pass as never-synced
+  // (remoteDeleted, which just clears their stale state — here they had no
+  // gitPath so they aren't touched at all).
+  const created = classifications.filter(c => c.kind === 'remoteCreated')
+  expect(created).toHaveLength(1)
+  expect(created[0]).toMatchObject({ path: 'Temp.md' })
+  // No crash, no adopt.
+  expect(classifications.find(c => (c as { adoptPath?: string }).adoptPath)).toBeUndefined()
+})
+
+test('reconcile adopt resolves AMBIGUITY via clean blob-SHA match', async () => {
+  // Two candidates map to Temp.md, but EXACTLY ONE serializes to the remote
+  // SHA — that one is a clean identical adopt, so we take it (and skip the
+  // other). This is the documented SHA-based tiebreak.
+  mockGetTreeMap.mockResolvedValue(new Map([['Temp.md', 'sha-remote']]))
+  // Route the SHA by content: note '2' hashes to the remote blob, note '1' does not.
+  mockGitBlobSha.mockImplementation(async (content: string) => {
+    if (content.includes('identical')) return 'sha-remote'
+    return 'sha-other'
+  })
+
+  const local: Note[] = [
+    note({ id: '1', title: 'Temp', content: 'different', gitPath: null }),
+    note({ id: '2', title: 'Temp', content: 'identical', gitPath: null }),
+  ]
+  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+
+  // No duplicate created.
+  expect(classifications.find(c => c.kind === 'remoteCreated')).toBeUndefined()
+  // The SHA-matching note '2' is adopted as unchanged (identical content).
+  const adopted = classifications.find(c => (c as { adoptPath?: string }).adoptPath === 'Temp.md')
+  expect(adopted).toBeDefined()
+  expect(adopted).toMatchObject({ kind: 'unchanged', noteId: '2', adoptPath: 'Temp.md' })
 })
 
 test('PROBE: identical local + remote content despite drifted ancestor → unchanged (early return)', async () => {
