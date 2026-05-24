@@ -1,7 +1,3 @@
----
-name: queue
-description: Manage the orchestrator's task queue at `.claude/orchestrator/queue.json` — add, list, mark done, remove, clear. Invoke when the user types `/queue ...` from the terminal or asks you to "queue" / "enqueue" a task. Does NOT dispatch work; that's the orchestrator session's job.
----
 
 # /queue — task queue management
 

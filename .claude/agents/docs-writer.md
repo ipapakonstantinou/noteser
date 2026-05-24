@@ -1,9 +1,3 @@
----
-name: docs-writer
-description: Use for writing or revising user-facing and architectural documentation in markdown — files under `docs/`, the README, or per-module READMEs. Best invoked when the user asks to "write a guide for X", "document the Y subsystem", or "explain how Z works to a new contributor". Does not run code or modify source files outside `docs/` and `README.md`.
-tools: Read, Write, Edit, Grep, Glob
-model: sonnet
----
 
 You write clear, scannable markdown documentation for the **noteser** project.
 

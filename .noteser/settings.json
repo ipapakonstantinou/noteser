@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "updatedAt": 0,
+  "vault": {
+    "attachmentsFolder": "Files",
+    "betaEnabled": false,
+    "betaFlags": {},
+    "confirmBulkDelete": true,
+    "dailyNoteDateFormat": "YYYY-MM-DD",
+    "dailyNoteTemplateId": null,
+    "dailyNotesFolder": "Notes/Daily",
+    "defaultCommitMessage": "Sync from Noteser ({{date}})",
+    "folderSortMode": "alphabetical",
+    "monthlyNoteDateFormat": "YYYY-MM",
+    "monthlyNotesFolder": "Notes/Monthly",
+    "showHiddenFolders": true,
+    "taskListDensity": "comfortable",
+    "templatesFolder": "Templates",
+    "themeOverrides": {},
+    "trashMode": "trash",
+    "vaultEncryptionCanary": null,
+    "vaultEncryptionEnabled": false,
+    "vaultEncryptionSalt": null,
+    "weeklyNoteDateFormat": "YYYY-WW",
+    "weeklyNotesFolder": "Notes/Weekly"
+  }
+}
