@@ -9,6 +9,8 @@ import { syncToGitHub, pullFromGitHub, pullFromZipball } from '@/utils/githubSyn
 import type { PullClassification, SyncResult, GitPathUpdate } from '@/utils/githubSync'
 import { applyNonConflicts, applyAttachmentClassifications } from '@/utils/syncApply'
 import { pendingStoreHydration } from '@/utils/ensureStoresHydrated'
+import { switchVault } from '@/utils/switchVault'
+import { notesKey } from '@/utils/repoStorage'
 import type { ApplyCounts, AttachmentApplyCounts } from '@/utils/syncApply'
 import type { ConflictTabData } from '@/stores/workspaceStore'
 import type { SyncRepo } from '@/types'
@@ -131,6 +133,22 @@ async function runPull(
   // A genuinely empty (hydrated) vault still reads empty → first-clone intact.
   // Only awaits when a store is actually unhydrated — already-hydrated callers
   // (the common case) proceed without an extra microtask hop.
+  // HARD SAFETY GUARD (the real fix for the mass-duplicate bug): each repo's
+  // vault persists under a PER-REPO IDB key — notesKey(repo) =
+  // "noteser-notes:<owner>/<name>". On startup the stores boot pointed at the
+  // UNSCOPED base key ("noteser-notes", empty), and the switch to the per-repo
+  // key (switchVault, fired fire-and-forget from page.tsx) can land AFTER this
+  // pull. If we read the store now it is empty → isFirstClone wrongly true →
+  // the whole vault is re-imported via the zipball, and then doubles on top of
+  // the per-repo data that loads a moment later. So make the per-repo vault the
+  // active, loaded store BEFORE we classify. switchVault is idempotent (returns
+  // early when already on the target key), so this is a no-op on the hot path.
+  if (useNoteStore.persist.getOptions().name !== notesKey(repo)) {
+    await switchVault(repo, { carryOver: true })
+  }
+
+  // Belt-and-braces: even on the correct per-repo key, idbStorage rehydration
+  // is async — wait for it so the read below reflects real persisted state.
   const hydration = pendingStoreHydration()
   if (hydration) await hydration
 

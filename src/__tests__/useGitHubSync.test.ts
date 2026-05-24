@@ -48,11 +48,19 @@ import { useGitHubStore } from '../stores/githubStore'
 import { useNoteStore } from '../stores/noteStore'
 import { useFolderStore } from '../stores/folderStore'
 import { useWorkspaceStore } from '../stores/workspaceStore'
+import { notesKey, foldersKey } from '../utils/repoStorage'
 import type { SyncRepo } from '../types'
 
 const TEST_REPO: SyncRepo = { owner: 'octocat', name: 'vault', branch: 'main', isPrivate: false }
 
 function resetStores() {
+  // These tests exercise the steady state: a connected repo whose per-repo
+  // vault is already the active, loaded store. runPull now makes the per-repo
+  // vault active (via switchVault) before classifying, so the store must boot
+  // on the per-repo key here — otherwise the guard would fire the real
+  // switchVault (idb-keyval mocked empty) and reset the seeded note away.
+  useNoteStore.persist.setOptions({ name: notesKey(TEST_REPO) })
+  useFolderStore.persist.setOptions({ name: foldersKey(TEST_REPO) })
   // Pre-set a non-empty note so isFirstClone === false and runPull dispatches
   // to pullFromGitHub instead of pullFromZipball.
   useNoteStore.setState({
