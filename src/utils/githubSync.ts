@@ -1246,6 +1246,24 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   // a failure happened.
   onProgress?.({ phase: 'creating-tree' })
   const newTreeSha = await createTree(token, owner, name, baseTreeSha, entries)
+  // Some "changed" entries can resolve to a blob byte-identical to what the
+  // base tree already holds (e.g. a freshly-cloned note that round-trips to
+  // the same bytes on the first sync). GitHub then returns a tree equal to the
+  // base, so committing it would create an EMPTY "Sync from Noteser (1 change)"
+  // commit — "No files changed" — cluttering the history on every initial sync
+  // (and, with discard-on-switch re-cloning, on every repo switch). Skip the
+  // commit entirely when the tree did not actually change.
+  if (newTreeSha === baseTreeSha) {
+    if (consumedTombstones.length > 0) await clearAttachmentTombstones(consumedTombstones)
+    uploadedShas.clear()
+    onProgress?.({ phase: 'done' })
+    return {
+      result: { unchanged: true, created: 0, updated: 0, deleted: 0, commitSha: parentCommitSha, commitUrl: null },
+      pathUpdates,
+      vaultSettingsHashPushed,
+      vaultGitignorePushed,
+    }
+  }
   const total = created + updated + deleted
   const autoMessage = `Sync from Noteser (${total} change${total === 1 ? '' : 's'})`
   const message = commitMessage && commitMessage.length > 0 ? commitMessage : autoMessage
