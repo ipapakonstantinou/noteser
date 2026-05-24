@@ -21,7 +21,7 @@ test.describe('Publish as gist — context menu visibility', () => {
     await expect(page.getByTestId('folder-tree')).toBeVisible()
 
     // Create a note so we have something to right-click.
-    await page.getByTitle('New note (Alt+N)').click()
+    await page.getByTestId('ribbon-item-new-note').click()
     await page.waitForTimeout(500)
 
     // Right-click the first note row in the sidebar.
@@ -75,7 +75,7 @@ test.describe('Publish as gist — context menu visibility', () => {
     await expect(page.getByTestId('folder-tree')).toBeVisible()
 
     // Create a note so we have something to right-click.
-    await page.getByTitle('New note (Alt+N)').click()
+    await page.getByTestId('ribbon-item-new-note').click()
     await page.waitForTimeout(500)
 
     const noteRow = page.getByTestId('note-row').first()

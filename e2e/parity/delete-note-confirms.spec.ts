@@ -24,7 +24,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 async function createOneNote(page: import('@playwright/test').Page) {
-  await page.getByTitle('New note (Alt+N)').click()
+  await page.getByTestId('ribbon-item-new-note').click()
   await expect(page.getByTestId('note-row')).toHaveCount(1)
 }
 

@@ -25,9 +25,14 @@ test('toolbar + button creates an untitled note, opens it, sidebar row appears',
   // Pre-state: empty-state copy is visible on a clean vault.
   await expect(page.getByText('No notes yet')).toBeVisible()
 
-  // Click the toolbar's "+ new note" button. The icon button itself has
-  // no testid but the surrounding button has title="New note (Alt+N)".
-  await page.getByTitle('New note (Alt+N)').click()
+  // Click the toolbar's "+ new note" button. As of the May-2026 ribbon
+  // redesign, "New note (Alt+N)" exists in BOTH the ribbon and the sidebar
+  // tree toolbar, so `getByTitle` alone is a strict-mode violation. Scope
+  // to the toolbar button — the one sitting next to "New folder".
+  const toolbarNewNote = page.locator(
+    'div:has(> button[title="New folder (Ctrl+Shift+N)"]) > button[title="New note (Alt+N)"]',
+  )
+  await toolbarNewNote.click()
 
   // A sidebar note-row appears for the new note.
   await expect(page.getByTestId('note-row')).toHaveCount(1)
@@ -57,7 +62,9 @@ test('clicking + twice creates two distinct notes', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
 
-  const addBtn = page.getByTitle('New note (Alt+N)')
+  const addBtn = page.locator(
+    'div:has(> button[title="New folder (Ctrl+Shift+N)"]) > button[title="New note (Alt+N)"]',
+  )
   await addBtn.click()
   await expect(page.getByTestId('note-row')).toHaveCount(1)
   await addBtn.click()

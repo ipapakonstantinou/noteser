@@ -41,7 +41,8 @@ test('single-click opens a preview (italic) tab', async ({ page }) => {
   // Single-click the note row.
   await page.getByTestId('note-row').first().click()
 
-  // Wait for the editor to open.
+  // Wait for the editor to open. `.cm-editor` mounts underneath the
+  // rendered-preview overlay, so it is visible regardless of preview mode.
   await expect(page.locator('.cm-editor').first()).toBeVisible({ timeout: 10_000 })
 
   // The tab should be a preview tab (isPreview=true).
@@ -130,6 +131,15 @@ test('typing into a preview tab auto-promotes it to pinned', async ({ page }) =>
     return (tab as { isPreview?: boolean })?.isPreview ?? null
   })
   expect(isPreviewBefore).toBe(true)
+
+  // Notes open in rendered preview by default; the preview overlay sits on
+  // top of the CodeMirror surface and intercepts clicks. Flip to edit mode
+  // via the store (deterministic — avoids racing openNote's async
+  // preview-mode default) and wait for the overlay to detach before typing.
+  await page.evaluate(() => {
+    window.__noteser_test!.stores.uiStore.getState().setPreviewMode(false)
+  })
+  await expect(page.locator('.prose')).toHaveCount(0)
 
   // Type a character into the CodeMirror editor.
   await page.locator('.cm-content').first().click()

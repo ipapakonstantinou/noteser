@@ -14,7 +14,7 @@
 // so callers that need the store API should call this instead of (or in
 // addition to) asserting `folder-tree` visible.
 
-import type { Page } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 
 export async function setupCleanVault(page: Page): Promise<void> {
   await page.addInitScript(() => {
@@ -42,4 +42,24 @@ export async function waitForTestHooks(page: Page, timeout = 10_000): Promise<vo
     undefined,
     { timeout },
   )
+}
+
+// Right-clicking a sidebar tab icon used to instantly pin/unpin it. Since
+// 2026-05-22 it opens a context menu (TabContextMenu) with "Pin to top" /
+// "Unpin" / "Hide tab" instead — see src/components/sidebar/TabContextMenu.tsx.
+// These helpers drive that menu so specs read as "pin this tab" / "unpin
+// this tab" without repeating the open-menu-then-click dance.
+
+/** Right-click a bottom-strip tab icon and choose "Pin to top". */
+export async function pinTabViaMenu(page: Page, tabId: string): Promise<void> {
+  await page.getByTestId(`sidebar-tab-${tabId}`).click({ button: 'right' })
+  await expect(page.getByTestId('tab-context-menu')).toBeVisible()
+  await page.getByTestId('tab-context-menu-pin').click()
+}
+
+/** Right-click a pinned mini-strip icon and choose "Unpin". */
+export async function unpinTabViaMenu(page: Page, tabId: string): Promise<void> {
+  await page.getByTestId(`sidebar-pinned-tab-${tabId}`).click({ button: 'right' })
+  await expect(page.getByTestId('tab-context-menu')).toBeVisible()
+  await page.getByTestId('tab-context-menu-unpin').click()
 }

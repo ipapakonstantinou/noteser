@@ -26,6 +26,18 @@ test('dropping an image inserts a markdown ref and the sidebar stays mounted', a
   await page.keyboard.press('Alt+n')
   const editor = page.locator('.cm-editor').first()
   await expect(editor).toBeVisible({ timeout: 10_000 })
+
+  // Notes open in rendered preview by default (notesOpenInPreviewMode =
+  // true). The preview overlay sits on top of .cm-content and intercepts
+  // the focus click + drop, so flip to edit mode first. Drive it through
+  // the store hook (deterministic — avoids racing openNote's async
+  // preview-mode default) and wait for the overlay to detach.
+  await page.waitForFunction(() => typeof window.__noteser_test !== 'undefined', undefined, { timeout: 10_000 })
+  await page.evaluate(() => {
+    window.__noteser_test!.stores.uiStore.getState().setPreviewMode(false)
+  })
+  await expect(page.locator('.prose')).toHaveCount(0)
+
   // Click into the content to focus CodeMirror before the drop.
   await page.locator('.cm-content').first().click()
 
@@ -51,10 +63,11 @@ test('dropping an image inserts a markdown ref and the sidebar stays mounted', a
   await content.dispatchEvent('dragover', { dataTransfer })
   await content.dispatchEvent('drop', { dataTransfer })
 
-  // The drop handler should splice `![cat](attachments/<ts>-cat.png)` into
-  // the editor. That's the strongest cheap assertion: the markdown ref is
-  // in the source. The sidebar must stay mounted throughout (the
-  // no-blank invariant from p8j3).
-  await expect(content).toContainText(/attachments\/[0-9]+-cat\.png/, { timeout: 5000 })
+  // The drop handler should splice `![cat](<attachmentsFolder>/<ts>-cat.png)`
+  // into the editor. The attachments folder defaults to `Files` (see
+  // settingsStore DEFAULTS.attachmentsFolder). That's the strongest cheap
+  // assertion: the markdown ref is in the source. The sidebar must stay
+  // mounted throughout (the no-blank invariant from p8j3).
+  await expect(content).toContainText(/Files\/[0-9]+-cat\.png/, { timeout: 5000 })
   await expect(page.getByTestId('folder-tree')).toBeVisible()
 })

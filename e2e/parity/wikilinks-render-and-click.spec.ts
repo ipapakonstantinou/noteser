@@ -160,16 +160,16 @@ test('[[Note Name]] wikilink in live-edit mode (CodeMirror) does not crash', asy
   await expect(page.getByTestId('folder-tree')).toBeVisible()
   await waitForTestHooks(page)
 
-  await page.getByTitle('New note (Alt+N)').click()
-  await expect(page.locator('.cm-editor').first()).toBeVisible({ timeout: 10_000 })
+  await page.getByTestId('ribbon-item-new-note').click()
 
   // The "open notes in preview mode" default now lands fresh tabs in
-  // preview; the preview overlay intercepts clicks on .cm-content.
-  // Toggle to edit mode for this test (it's explicitly about CM
-  // behaviour, not the renderer).
+  // preview; the preview overlay intercepts clicks on .cm-content and the
+  // CodeMirror surface only mounts in edit mode. Toggle to edit mode
+  // FIRST (this test is explicitly about CM behaviour, not the renderer).
   await page.evaluate(() => {
     window.__noteser_test!.stores.uiStore.getState().setPreviewMode(false)
   })
+  await expect(page.locator('.cm-editor').first()).toBeVisible({ timeout: 10_000 })
 
   const content = page.locator('.cm-content').first()
   await content.click()

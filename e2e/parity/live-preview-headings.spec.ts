@@ -24,6 +24,9 @@ test('typing # styles the current line as h1; ## as h2; ### as h3', async ({ pag
   // Boot a fresh note via the Alt+N shortcut so we land in the editor.
   await page.getByTestId('folder-tree').click()
   await page.keyboard.press('Alt+n')
+  // Notes open in rendered preview by default (notesOpenInPreviewMode =
+  // true); the CodeMirror surface only mounts in edit mode, so flip to it.
+  await page.keyboard.press('Control+e')
   await expect(page.locator('.cm-editor').first()).toBeVisible({ timeout: 10_000 })
 
   // Focus the editor surface and type a multi-level heading sample.
@@ -56,6 +59,7 @@ test('removing # demotes the heading styling', async ({ page }) => {
 
   await page.getByTestId('folder-tree').click()
   await page.keyboard.press('Alt+n')
+  await page.keyboard.press('Control+e')
   await expect(page.locator('.cm-editor').first()).toBeVisible({ timeout: 10_000 })
 
   const content = page.locator('.cm-content').first()

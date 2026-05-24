@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { setupCleanVault, waitForTestHooks } from './_helpers'
+import { setupCleanVault, waitForTestHooks, pinTabViaMenu, unpinTabViaMenu } from './_helpers'
 
 // Obsidian-parity scenario: multi-panel-pinned-group
 //
@@ -20,11 +20,11 @@ test('right-clicking two different icons creates two separate pinned mini-strips
   await expect(page.getByTestId('folder-tree')).toBeVisible()
   await waitForTestHooks(page)
 
-  // Pin two different panels via right-click.
-  await page.getByTestId('sidebar-tab-bookmarks').click({ button: 'right' })
+  // Pin two different panels via right-click → "Pin to top".
+  await pinTabViaMenu(page, 'bookmarks')
   await expect(page.getByTestId('sidebar-pinned-tab-bookmarks')).toBeVisible()
 
-  await page.getByTestId('sidebar-tab-search').click({ button: 'right' })
+  await pinTabViaMenu(page, 'search')
   await expect(page.getByTestId('sidebar-pinned-tab-search')).toBeVisible()
 
   // Both should be visible and in pinned state.
@@ -73,8 +73,8 @@ test('unpinning one from a multi-icon group leaves the other still pinned', asyn
   await expect(page.getByTestId('sidebar-pinned-tab-bookmarks')).toBeVisible()
   await expect(page.getByTestId('sidebar-pinned-tab-search')).toBeVisible()
 
-  // Right-click pinned-bookmarks to unpin it.
-  await page.getByTestId('sidebar-pinned-tab-bookmarks').click({ button: 'right' })
+  // Right-click pinned-bookmarks → "Unpin".
+  await unpinTabViaMenu(page, 'bookmarks')
 
   // Bookmarks should be back in the main strip.
   await expect(page.getByTestId('sidebar-pinned-tab-bookmarks')).toHaveCount(0)

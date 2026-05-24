@@ -19,16 +19,16 @@ test('with many pinned groups the main tab strip stays reachable', async ({ page
   await expect(page.getByTestId('folder-tree')).toBeVisible()
   await waitForTestHooks(page)
 
-  // Pin all available sidebar panels to create many pinned groups.
-  // The panel registry has: notes, search, bookmarks, tags, recent,
-  // calendar, outline, backlinks, scm (and maybe more). Use the store
-  // to set a pile of groups.
+  // Pin a pile of sidebar panels to create many pinned groups. Use real
+  // panel ids from sidebarPanelRegistry.tsx (calendar, files, outline,
+  // source-control, search, bookmarks, related) — the old 'tags'/'recent'
+  // ids were dropped in the May-2026 ribbon redesign.
   await page.evaluate(() => {
     window.__noteser_test!.stores.settingsStore.getState().setPinnedPanels([
       ['search'],
       ['bookmarks'],
-      ['tags'],
-      ['recent'],
+      ['outline'],
+      ['related'],
       ['calendar'],
     ])
   })
@@ -37,9 +37,10 @@ test('with many pinned groups the main tab strip stays reachable', async ({ page
   // off-screen by the pinned area overflow). Panel id is 'files' per
   // sidebarPanelRegistry.tsx — not 'notes'.
   await expect(page.getByTestId('sidebar-tab-files')).toBeVisible()
-  // The pin drop-zone is in the DOM but is h-0/transparent outside drag — just
-  // assert it's attached (count=1) rather than visually visible.
-  await expect(page.getByTestId('sidebar-pin-dropzone')).toHaveCount(1)
+  // The pinned groups render above the main strip. (The visible "pin to
+  // top" drop-zone was removed in 2026-05 — pinning is now via right-click
+  // → "Pin to top" — so there is no longer a sidebar-pin-dropzone element.)
+  await expect(page.getByTestId('sidebar-pinned-tab-search')).toBeVisible()
 })
 
 test('pinned area has overflow-y-auto (internal scroll container)', async ({ page }) => {
