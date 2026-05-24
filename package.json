@@ -20,7 +20,8 @@
     "e2e:headed": "playwright test --headed",
     "e2e:debug": "playwright test --debug",
     "e2e:ui": "playwright test --ui",
-    "e2e:report": "playwright show-report"
+    "e2e:report": "playwright show-report",
+    "e2e:sync": "node scripts/run-e2e-sync.js"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.5.0",
