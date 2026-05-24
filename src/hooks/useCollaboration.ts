@@ -36,7 +36,12 @@ export interface CollabState {
 
 const MAX_ATTEMPTS = 5
 
-function getConfiguredUrl(): string | null {
+// Exported so the Phase-B collaboration binding (collabExtension) shares the
+// exact same gate as the Phase-A connectivity probe: a single source of
+// truth for "is collab enabled, and at what URL". Returns null unless
+// NEXT_PUBLIC_YJS_WS_URL is a valid ws:// / wss:// URL — which is what keeps
+// the whole feature dormant by default.
+export function getConfiguredUrl(): string | null {
   if (typeof process === 'undefined') return null
   const raw = process.env.NEXT_PUBLIC_YJS_WS_URL
   if (!raw) return null

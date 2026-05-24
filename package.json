@@ -45,6 +45,9 @@
     "react-syntax-highlighter": "^15.6.1",
     "remark-gfm": "^4.0.1",
     "uuid": "^11.1.1",
+    "y-codemirror.next": "^0.3.5",
+    "y-websocket": "^3.0.0",
+    "yjs": "^13.6.30",
     "zustand": "^5.0.0"
   },
   "devDependencies": {

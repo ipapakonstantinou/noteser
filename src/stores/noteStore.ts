@@ -39,6 +39,12 @@ interface NoteState {
   togglePinNote: (id: string) => void
   emptyTrash: () => void
   createFromTemplate: (template: Template, folderId?: string | null) => Note
+  /** Lazily assign + return a stable collab room id for a note. Returns
+   *  the existing id if one is already set (idempotent). Used by the
+   *  live-collaboration binding to name the y-websocket room. No-op-ish
+   *  when collab is disabled (callers only invoke it on the collab path),
+   *  so single-user/default behaviour never generates one. */
+  ensureCollabId: (id: string) => string | null
 
   // Getters
   getNoteById: (id: string) => Note | undefined
@@ -218,6 +224,19 @@ export const useNoteStore = create<NoteState>()(
         }))
 
         return newNote
+      },
+
+      ensureCollabId: (id) => {
+        const note = get().notes.find(n => n.id === id)
+        if (!note) return null
+        if (note.collabId) return note.collabId
+        const collabId = uuidv4()
+        set(state => ({
+          notes: state.notes.map(n =>
+            n.id === id ? { ...n, collabId } : n
+          ),
+        }))
+        return collabId
       },
 
       // Getters. Memoised by `notes` array IDENTITY — Zustand replaces
