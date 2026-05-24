@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react'
 import { useSettingsStore } from '@/stores'
 import { useGitHubSync, type SyncState } from './useGitHubSync'
-import { useHydration } from './useHydration'
+import { useStoresHydrated } from './useStoresHydrated'
 
 // Drives the two auto-sync behaviours configurable from Settings:
 //
@@ -22,7 +22,13 @@ import { useHydration } from './useHydration'
 // editor exactly the same way.
 
 export function useAutoSync(): void {
-  const hydrated = useHydration()
+  // Gate on REAL store hydration, not just component mount. The note/folder
+  // stores persist to IndexedDB (idbStorage) and rehydrate asynchronously, so
+  // a mount-only signal (the old useHydration) could fire the startup pull
+  // while the stores were still EMPTY — making runPull mistake an unhydrated
+  // store for a brand-new vault and re-import everything (mass-duplicate bug).
+  // useStoresHydrated stays false until BOTH stores report hasHydrated().
+  const hydrated = useStoresHydrated()
   const { runSync, runPullOnly, isConnected, syncState } = useGitHubSync()
   const autoSyncOnStart = useSettingsStore(s => s.autoSyncOnStart)
   const pullOnlyOnStartup = useSettingsStore(s => s.pullOnlyOnStartup)

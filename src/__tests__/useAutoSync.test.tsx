@@ -28,9 +28,10 @@ jest.mock('../hooks/useGitHubSync', () => ({
   }),
 }))
 
-// useHydration is mocked to return true so the effects fire immediately.
-jest.mock('../hooks/useHydration', () => ({
-  useHydration: () => true,
+// useStoresHydrated is mocked to return true so the startup/interval effects
+// fire immediately (the real hook waits for async IndexedDB rehydration).
+jest.mock('../hooks/useStoresHydrated', () => ({
+  useStoresHydrated: () => true,
 }))
 
 import React from 'react'
