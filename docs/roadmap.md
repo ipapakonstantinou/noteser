@@ -45,6 +45,16 @@ _Nothing right now._
 
 ## Later
 
+- **Reduce Vercel egress on first-clone** (flagged 2026-05-24) — the
+  initial vault clone streams the whole-repo zipball through the
+  `/api/github/zipball` Vercel proxy, which counts against the free
+  tier's "Fast Origin Transfer" (10 GB/mo). Fine for personal use, but
+  it is the main Vercel bandwidth cost as usage grows. Options: let the
+  browser fetch the zipball directly from `codeload.github.com` if CORS
+  allows (drops the proxy hop entirely), or fall back to an incremental
+  tree+blob clone, or cache. Context: a "50% Fast Origin Transfer"
+  warning fired this date, mostly from a since-fixed re-clone-on-every-
+  reload bug, but the proxy egress is the real long-term scaling item.
 - **Real-time editing (collab Phase B-D)** once Phase A lands and a
   Yjs server is available.
 - **Tab navigation inside markdown tables** (insert helper shipped
