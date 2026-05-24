@@ -153,7 +153,7 @@ async function runPull(
 async function runApply(
   classifications: PullClassification[],
 ): Promise<{ notes: ApplyCounts; attachments: AttachmentApplyCounts }> {
-  const notes = applyNonConflicts(classifications)
+  const notes = await applyNonConflicts(classifications)
   const attachments = await applyAttachmentClassifications(classifications)
   return { notes, attachments }
 }
@@ -364,7 +364,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
         // change.
         const { updateNote } = useNoteStore.getState()
         for (const u of pathUpdates) {
-          updateNote(u.noteId, { gitPath: u.gitPath, gitLastPushedSha: u.gitLastPushedSha })
+          updateNote(u.noteId, { gitPath: u.gitPath, gitLastPushedSha: u.gitLastPushedSha, gitRemoteBaseSha: u.gitRemoteBaseSha })
         }
         // Remember the vault settings hash so the next push knows to skip
         // when nothing has changed locally since.

@@ -1,9 +1,10 @@
 import { v4 as uuid } from 'uuid'
 import { useNoteStore, useFolderStore, useGitHubStore, useSettingsStore } from '@/stores'
+import type { Note } from '@/types'
 import type { PullClassification } from './githubSync'
-import { parseNote, takeZipballAttachmentBytes } from './githubSync'
+import { parseNote, serializeNote, takeZipballAttachmentBytes } from './githubSync'
 import { putAttachmentAtPath } from './attachments'
-import { getBlobBytes } from './github'
+import { getBlobBytes, gitBlobSha } from './github'
 
 // ── Folder + tag find-or-create helpers ─────────────────────────────────────
 
@@ -44,7 +45,18 @@ export interface ApplyCounts {
   autoMerged: number
 }
 
-export function applyNonConflicts(classifications: PullClassification[]): ApplyCounts {
+// Local-canonical blob SHA for the bytes we're about to STORE. We pin
+// gitLastPushedSha to this — NOT to the raw remote blob SHA — because a remote
+// `.md` with frontmatter is stored in a transformed form (frontmatter stripped,
+// tags inlined). serializeNote/normalizeForPush is the exact same canonicaliser
+// the push path uses, so the SHA matches what a clean re-push would produce and
+// the next pull classifies the untouched note as `unchanged`. See the
+// two-SHA-split fix in src/types/index.ts (Note.gitRemoteBaseSha).
+function canonicalLocalSha(content: string): Promise<string> {
+  return gitBlobSha(serializeNote({ content } as Note))
+}
+
+export async function applyNonConflicts(classifications: PullClassification[]): Promise<ApplyCounts> {
   const counts: ApplyCounts = { created: 0, updated: 0, deleted: 0, autoMerged: 0 }
 
   // Build the FINAL notes array in memory in a single pass, then write
@@ -112,13 +124,20 @@ export function applyNonConflicts(classifications: PullClassification[]): ApplyC
     if (c.kind === 'remoteCreated') {
       const { segments, title } = splitRepoPath(c.path)
       const folderId = ensureFolderPath(segments)
+      const content = bodyWithInlineTags(c.body, c.tags)
       const newNote = {
         id: uuid(),
         title,
-        content: bodyWithInlineTags(c.body, c.tags),
+        content,
         folderId,
         gitPath: c.path,
-        gitLastPushedSha: c.remoteSha,
+        // localChanged baseline: SHA of the canonical LOCAL bytes we just
+        // stored (transformed body), so an untouched note round-trips to
+        // `unchanged` on the next pull.
+        gitLastPushedSha: await canonicalLocalSha(content),
+        // Merge ancestor: the actual remote blob SHA, fetchable via
+        // getBlobContent. Distinct from gitLastPushedSha for frontmatter notes.
+        gitRemoteBaseSha: c.remoteSha,
         createdAt: now,
         updatedAt: now,
         isDeleted: false,
@@ -135,10 +154,12 @@ export function applyNonConflicts(classifications: PullClassification[]): ApplyC
     if (c.kind === 'remoteUpdated') {
       const existing = byId.get(c.noteId)
       if (!existing) continue
+      const content = bodyWithInlineTags(c.body, c.tags)
       byId.set(c.noteId, {
         ...existing,
-        content: bodyWithInlineTags(c.body, c.tags),
-        gitLastPushedSha: c.remoteSha,
+        content,
+        gitLastPushedSha: await canonicalLocalSha(content),
+        gitRemoteBaseSha: c.remoteSha,
         updatedAt: now,
       })
       counts.updated++
@@ -151,7 +172,12 @@ export function applyNonConflicts(classifications: PullClassification[]): ApplyC
       byId.set(c.noteId, {
         ...existing,
         content: c.mergedContent,
-        gitLastPushedSha: c.remoteSha,
+        // The merged bytes are the new local content; pin the baseline to
+        // their canonical SHA. The remote base stays the remote SHA we merged
+        // against — the next push will upload the union edit and re-coincide
+        // the two SHAs.
+        gitLastPushedSha: await canonicalLocalSha(c.mergedContent),
+        gitRemoteBaseSha: c.remoteSha,
         updatedAt: now,
       })
       counts.updated++
@@ -189,8 +215,15 @@ export function applyNonConflicts(classifications: PullClassification[]): ApplyC
 
 // Used by the new merge-editor flow: the user produced a merged body of the
 // note (line-by-line cherry pick). We store it as the note's content and pin
-// gitLastPushedSha to the remote SHA so pull doesn't see this as a conflict
-// again — push will upload the merged content on the next sync.
+// the SHAs so pull doesn't see this as a conflict again — push will upload the
+// merged content on the next sync.
+//
+// We set gitRemoteBaseSha = c.remoteSha so the next pull sees remoteChanged =
+// false (the remote blob we resolved against is still the latest). We leave
+// gitLastPushedSha = c.remoteSha (the RAW remote SHA) rather than the canonical
+// local SHA: that mismatch is intentional here — it makes localChanged = true
+// so the resolution gets pushed. Next push then re-coincides both SHAs to the
+// pushed blob. (No async hash needed: a deliberate mismatch is all we want.)
 export function applyMergedConflict(
   c: Extract<PullClassification, { kind: 'conflict' }>,
   mergedRawFile: string,
@@ -202,20 +235,23 @@ export function applyMergedConflict(
   updateNote(c.noteId, {
     content: bodyWithInlineTags(parsed.body, parsed.tags),
     gitLastPushedSha: c.remoteSha,
+    gitRemoteBaseSha: c.remoteSha,
   })
 }
 
 // Used by the conflict resolver. Critical invariant: after we apply, the next
 // pull must NOT classify this note as a conflict again.
 //
-// For a regular conflict we pin gitLastPushedSha to the *remote* SHA we saw
-// at conflict time. Pull's three-way merge then evaluates as
-//   lastPushed === remoteSha → remote unchanged
-//   lastPushed !== localBlob → local changed
-// → push-only, no conflict.
+// For a regular conflict we set gitRemoteBaseSha to the *remote* SHA we saw at
+// conflict time (so the next pull computes remoteChanged = false) and keep
+// gitLastPushedSha at that same remote SHA. With the two-SHA classifier the
+// next pull evaluates as:
+//   gitRemoteBaseSha === remoteSha           → remoteChanged = false
+//   gitLastPushedSha !== canonicalLocalSha   → localChanged  = true
+// → push-only, no conflict. The push then re-coincides both SHAs.
 //
-// For a conflictDeleted we clear gitPath + gitLastPushedSha so the note is
-// treated like a fresh local note: push will create the file from scratch.
+// For a conflictDeleted we clear gitPath + both SHAs so the note is treated
+// like a fresh local note: push will create the file from scratch.
 export function applyConflictResolution(
   c: Extract<PullClassification, { kind: 'conflict' } | { kind: 'conflictDeleted' }>,
   choice: 'local' | 'remote',
@@ -226,17 +262,18 @@ export function applyConflictResolution(
       updateNote(c.noteId, {
         content: bodyWithInlineTags(c.remoteBody, c.remoteTags),
         gitLastPushedSha: c.remoteSha,
+        gitRemoteBaseSha: c.remoteSha,
       })
     } else {
-      updateNote(c.noteId, { gitLastPushedSha: c.remoteSha })
+      updateNote(c.noteId, { gitLastPushedSha: c.remoteSha, gitRemoteBaseSha: c.remoteSha })
     }
   } else {
     // conflictDeleted: remote file is gone, but local has unsynced edits.
     if (choice === 'remote') {
       deleteNote(c.noteId)
     } else {
-      // Re-spawn: drop the stale path/SHA so push treats it as a new file.
-      updateNote(c.noteId, { gitPath: null, gitLastPushedSha: null })
+      // Re-spawn: drop the stale path/SHAs so push treats it as a new file.
+      updateNote(c.noteId, { gitPath: null, gitLastPushedSha: null, gitRemoteBaseSha: null })
     }
   }
 }

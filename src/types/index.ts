@@ -17,13 +17,28 @@ export interface Note {
   // GitHub sync tracking — set after a successful push, used to detect
   // renames/moves on the next sync (delete old path, write new).
   gitPath?: string | null
-  // Blob SHA of what we last pushed for this note. Pull compares this to
-  // the current remote SHA to detect three-way state:
-  //   match + local unchanged  → unchanged
-  //   match + local changed    → push (no conflict)
-  //   mismatch + local unchanged → take remote
-  //   mismatch + local changed → conflict, ask the user
+  // Blob SHA of the CANONICAL LOCAL bytes for this note — i.e.
+  // `gitBlobSha(serializeNote(note))`. Pull compares the freshly-computed local
+  // blob SHA against this to decide whether the LOCAL side changed:
+  //   match + remote unchanged  → unchanged
+  //   match + remote changed    → take remote (remoteUpdated)
+  //   mismatch + remote unchanged → push (no conflict)
+  //   mismatch + remote changed → 3-way merge / conflict
+  // IMPORTANT: this must equal `gitBlobSha(serializeNote(note))` for an
+  // untouched, in-sync note. It describes bytes the app can reproduce, NOT the
+  // raw remote file (which may carry frontmatter we strip on apply). See
+  // gitRemoteBaseSha below for the actual remote blob used as a merge ancestor.
   gitLastPushedSha?: string | null
+  // Blob SHA of the actual REMOTE blob this note last synced against — the
+  // three-way merge ANCESTOR, fetchable via getBlobContent. This is distinct
+  // from gitLastPushedSha because a remote `.md` that arrives with YAML
+  // frontmatter is stored locally in a TRANSFORMED form (frontmatter stripped,
+  // tags inlined as `#tag`), so the canonical local bytes hash to a different
+  // SHA than the raw remote file. After a push the two coincide (the remote
+  // file IS serializeNote(note)); after a pull they differ for frontmatter
+  // notes. Undefined on notes synced before this field existed — the classifier
+  // falls back to gitLastPushedSha for them until their next sync rewrites both.
+  gitRemoteBaseSha?: string | null
 }
 
 export interface Folder {
