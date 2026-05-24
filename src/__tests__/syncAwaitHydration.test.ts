@@ -154,7 +154,7 @@ describe('sync waits for IndexedDB store hydration before classifying', () => {
     expect(pullFromZipballMock).not.toHaveBeenCalled()
   })
 
-  test('a genuinely empty (hydrated) vault still triggers a first-clone zipball', async () => {
+  test('a genuinely empty (hydrated) vault still triggers a first clone', async () => {
     // Both stores hydrated, and after hydration there really is nothing.
     jest.spyOn(useNoteStore.persist, 'hasHydrated').mockReturnValue(true)
     jest.spyOn(useFolderStore.persist, 'hasHydrated').mockReturnValue(true)
@@ -168,9 +168,11 @@ describe('sync waits for IndexedDB store hydration before classifying', () => {
       await result.current.runPullOnly()
     })
 
-    // Legitimate first clone: zipball fast path, not the incremental diff.
+    // no-vercel-clone: the first clone now runs through pullFromGitHub with
+    // isFirstClone=true (parallel blob prefetch) instead of the zipball proxy.
     expect(rehydrateSpy).not.toHaveBeenCalled()
-    expect(pullFromZipballMock).toHaveBeenCalledTimes(1)
-    expect(pullFromGitHubMock).not.toHaveBeenCalled()
+    expect(pullFromZipballMock).not.toHaveBeenCalled()
+    expect(pullFromGitHubMock).toHaveBeenCalledTimes(1)
+    expect((pullFromGitHubMock.mock.calls[0][0] as { isFirstClone?: boolean }).isFirstClone).toBe(true)
   })
 })
