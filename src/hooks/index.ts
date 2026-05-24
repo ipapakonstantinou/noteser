@@ -2,6 +2,7 @@
 export { useKeyboardShortcuts } from './useKeyboardShortcuts'
 export { useDebounce, useDebouncedCallback, useThrottledCallback } from './useDebounce'
 export { useHydration } from './useHydration'
+export { useStoresHydrated } from './useStoresHydrated'
 export { useGitHubSync } from './useGitHubSync'
 export { useAutoSync } from './useAutoSync'
 export { useTabDragActive, TAB_DRAG_MIME } from './useTabDragActive'

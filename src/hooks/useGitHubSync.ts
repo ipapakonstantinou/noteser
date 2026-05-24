@@ -8,6 +8,7 @@ import { VaultLockedError } from '@/utils/vaultKey'
 import { syncToGitHub, pullFromGitHub, pullFromZipball } from '@/utils/githubSync'
 import type { PullClassification, SyncResult, GitPathUpdate } from '@/utils/githubSync'
 import { applyNonConflicts, applyAttachmentClassifications } from '@/utils/syncApply'
+import { pendingStoreHydration } from '@/utils/ensureStoresHydrated'
 import type { ApplyCounts, AttachmentApplyCounts } from '@/utils/syncApply'
 import type { ConflictTabData } from '@/stores/workspaceStore'
 import type { SyncRepo } from '@/types'
@@ -121,6 +122,18 @@ async function runPull(
   // function with no store access, so it just announces which path it runs.
   onPhase?: (msg: string) => void,
 ): Promise<{ classifications: PullClassification[]; latestCommitSha: string }> {
+  // HARD SAFETY GUARD: never classify against an unhydrated store. idbStorage
+  // is async, so the in-memory notes/folders may still be EMPTY here even on a
+  // device with a full vault on disk. Reading them now would make isFirstClone
+  // wrongly true → zipball re-imports the whole vault (mass-duplicate bug), and
+  // the incremental path would mis-classify everything as remoteCreated too.
+  // Wait for rehydration FIRST so the read below reflects real persisted state.
+  // A genuinely empty (hydrated) vault still reads empty → first-clone intact.
+  // Only awaits when a store is actually unhydrated — already-hydrated callers
+  // (the common case) proceed without an extra microtask hop.
+  const hydration = pendingStoreHydration()
+  if (hydration) await hydration
+
   const localNotes = useNoteStore.getState().notes
   const localFolders = useFolderStore.getState().folders
   const excludedFolderPaths = useFolderStore.getState().deletedFolderPaths

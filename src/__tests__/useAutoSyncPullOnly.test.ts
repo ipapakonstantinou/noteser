@@ -23,8 +23,8 @@ jest.mock('../hooks/useGitHubSync', () => ({
     syncState: { kind: 'idle' },
   }),
 }))
-jest.mock('../hooks/useHydration', () => ({
-  useHydration: () => true,
+jest.mock('../hooks/useStoresHydrated', () => ({
+  useStoresHydrated: () => true,
 }))
 
 // Mutable settings the hook reads.
