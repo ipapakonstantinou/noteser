@@ -429,7 +429,24 @@ export async function fetchZipball(token: string, owner: string, repo: string, r
   // bound for a stalled connection here.
   { timeoutMs: 180_000 })
   await ensureOk(res, 'Download zipball')
-  return res.arrayBuffer()
+  const buffer = await res.arrayBuffer()
+  // Truncation guard: on a flaky mobile connection the archive sometimes
+  // arrives short, and JSZip then throws "can't find end of central
+  // directory". When the response advertises a Content-Length we can detect
+  // the short read up front and throw so the caller's retry loop re-downloads
+  // instead of failing the whole sync. A missing/0 header means we can't tell
+  // (chunked transfer, proxy stripped it) — fall through and let JSZip be the
+  // judge.
+  const declared = res.headers.get('content-length')
+  if (declared != null) {
+    const expected = parseInt(declared, 10)
+    if (Number.isFinite(expected) && expected > 0 && buffer.byteLength !== expected) {
+      throw new Error(
+        `Truncated zipball download: received ${buffer.byteLength} bytes, expected ${expected}`,
+      )
+    }
+  }
+  return buffer
 }
 
 // Fetch a blob's content by SHA. GitHub returns it base64-encoded.

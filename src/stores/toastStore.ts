@@ -14,6 +14,13 @@ export interface Toast {
   actionLabel?: string
   /** Invoked when the action button is pressed. The toast is dismissed first. */
   onAction?: () => void
+  /**
+   * Optional lifecycle category (e.g. `'sync'`). Toasts that share a source
+   * supersede one another: callers dismiss the prior toast of a source before
+   * adding the next, so at most one is on screen. This is how a successful sync
+   * clears the earlier red "Sync timed out…" error toast.
+   */
+  source?: string
 }
 
 // Auto-dismiss delay for success/info toasts. Errors are sticky — they persist
@@ -27,6 +34,12 @@ interface ToastState {
   addToast: (toast: Omit<Toast, 'id'>) => string
   /** Remove a toast by id (idempotent — unknown ids are a no-op). */
   dismissToast: (id: string) => void
+  /**
+   * Remove every toast tagged with `source` (idempotent). Used to keep a
+   * single-lifecycle category (e.g. `'sync'`) down to one visible toast: the
+   * caller dismisses the prior source toast before adding the next.
+   */
+  dismissBySource: (source: string) => void
 }
 
 // Per-toast auto-dismiss timers, kept outside the store so they don't trigger
@@ -68,5 +81,18 @@ export const useToastStore = create<ToastState>((set, get) => ({
       timers.delete(id)
     }
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }))
+  },
+
+  dismissBySource: (source) => {
+    const doomed = get().toasts.filter((t) => t.source === source)
+    if (doomed.length === 0) return
+    for (const t of doomed) {
+      const timer = timers.get(t.id)
+      if (timer) {
+        clearTimeout(timer)
+        timers.delete(t.id)
+      }
+    }
+    set((s) => ({ toasts: s.toasts.filter((t) => t.source !== source) }))
   },
 }))
