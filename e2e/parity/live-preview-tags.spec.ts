@@ -20,7 +20,11 @@ test('typing #tag in the editor gives the token a cm-lp-tag decoration', async (
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
 
-  await page.getByTitle('New note (Alt+N)').click()
+  await page.getByTestId('ribbon-item-new-note').click()
+  // Notes open in rendered preview mode by default (notesOpenInPreviewMode
+  // = true since 2026-05). Toggle to edit mode so the CodeMirror surface
+  // mounts and the live-preview decorations apply.
+  await page.getByTestId('editor-header-preview-toggle').click()
   await expect(page.locator('.cm-editor').first()).toBeVisible({ timeout: 10_000 })
 
   const content = page.locator('.cm-content').first()
@@ -37,7 +41,8 @@ test('multiple #tags on one line get individual cm-lp-tag decorations', async ({
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
 
-  await page.getByTitle('New note (Alt+N)').click()
+  await page.getByTestId('ribbon-item-new-note').click()
+  await page.getByTestId('editor-header-preview-toggle').click()
   await expect(page.locator('.cm-editor').first()).toBeVisible({ timeout: 10_000 })
 
   const content = page.locator('.cm-content').first()
@@ -78,7 +83,8 @@ test('#fragment-word does NOT get a cm-lp-tag (only standalone # starts tags)', 
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
 
-  await page.getByTitle('New note (Alt+N)').click()
+  await page.getByTestId('ribbon-item-new-note').click()
+  await page.getByTestId('editor-header-preview-toggle').click()
   await expect(page.locator('.cm-editor').first()).toBeVisible({ timeout: 10_000 })
 
   const content = page.locator('.cm-content').first()

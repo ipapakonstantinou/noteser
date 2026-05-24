@@ -12,7 +12,7 @@
  */
 
 import { test, expect } from '@playwright/test'
-import { setupCleanVault } from './_helpers'
+import { setupCleanVault, pinTabViaMenu } from './_helpers'
 
 const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3001'
 
@@ -24,8 +24,8 @@ test.describe('Collapse pinned panel', () => {
   })
 
   test('chevron toggle appears on pinned group mini-strip', async ({ page }) => {
-    // Pin the bookmarks panel via right-click.
-    await page.getByTestId('sidebar-tab-bookmarks').click({ button: 'right' })
+    // Pin the bookmarks panel via right-click → "Pin to top".
+    await pinTabViaMenu(page, 'bookmarks')
     await expect(page.getByTestId('sidebar-pinned-tab-bookmarks')).toBeVisible({ timeout: 3000 })
 
     // The collapse toggle button should now be visible on the pinned strip.
@@ -37,7 +37,7 @@ test.describe('Collapse pinned panel', () => {
 
   test('click chevron collapses and re-expands the panel body', async ({ page }) => {
     // Pin the bookmarks panel.
-    await page.getByTestId('sidebar-tab-bookmarks').click({ button: 'right' })
+    await pinTabViaMenu(page, 'bookmarks')
     await expect(page.getByTestId('sidebar-pinned-tab-bookmarks')).toBeVisible({ timeout: 3000 })
 
     // The pinned group container.
@@ -69,7 +69,7 @@ test.describe('Collapse pinned panel', () => {
 
   test('collapse state persists across page reload', async ({ page }) => {
     // Pin bookmarks.
-    await page.getByTestId('sidebar-tab-bookmarks').click({ button: 'right' })
+    await pinTabViaMenu(page, 'bookmarks')
     await expect(page.getByTestId('sidebar-pinned-tab-bookmarks')).toBeVisible({ timeout: 3000 })
 
     const toggle = page.getByTestId('pinned-group-collapse-toggle').first()

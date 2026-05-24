@@ -34,7 +34,7 @@ test('with all notes deleted, .trash synthetic folder still renders', async ({ p
 
   // Create then soft-delete the only note. Empty-state path used to
   // swallow the trash folder; now it should still appear.
-  await page.getByTitle('New note (Alt+N)').click()
+  await page.getByTestId('ribbon-item-new-note').click()
   await expect(page.getByTestId('note-row')).toHaveCount(1)
 
   await page.getByTestId('note-row').first().click({ button: 'right' })

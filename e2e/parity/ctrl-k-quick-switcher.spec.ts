@@ -19,7 +19,7 @@ test.beforeEach(async ({ page }) => {
 // the title input so the search index has distinct titles to match on.
 async function seedNotes(page: import('@playwright/test').Page, titles: string[]) {
   for (const title of titles) {
-    await page.getByTitle('New note (Alt+N)').click()
+    await page.getByTestId('ribbon-item-new-note').click()
     const input = page.getByPlaceholder('Note title...').first()
     await input.fill(title)
     // Tab out to commit any debounced state.

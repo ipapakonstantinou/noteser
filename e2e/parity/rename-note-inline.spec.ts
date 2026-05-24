@@ -20,7 +20,7 @@ test('context-menu Rename makes the title editable and Enter commits', async ({ 
   await expect(page.getByTestId('folder-tree')).toBeVisible()
 
   // Create a note.
-  await page.getByTitle('New note (Alt+N)').click()
+  await page.getByTestId('ribbon-item-new-note').click()
   await expect(page.getByTestId('note-row')).toHaveCount(1)
 
   // Right-click the note row to open the context menu.
@@ -49,7 +49,7 @@ test('context-menu Rename → Escape cancels, title unchanged', async ({ page })
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
 
-  await page.getByTitle('New note (Alt+N)').click()
+  await page.getByTestId('ribbon-item-new-note').click()
   await expect(page.getByTestId('note-row')).toHaveCount(1)
   const originalTitle = await page.getByTestId('note-row').first().textContent()
 
@@ -72,7 +72,7 @@ test('double-click on a note row triggers inline rename (Obsidian behaviour)', a
   await expect(page.getByTestId('folder-tree')).toBeVisible()
   await waitForTestHooks(page)
 
-  await page.getByTitle('New note (Alt+N)').click()
+  await page.getByTestId('ribbon-item-new-note').click()
   await expect(page.getByTestId('note-row')).toHaveCount(1)
 
   // Double-click → inline rename request lands in the UI store.

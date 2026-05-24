@@ -1,7 +1,13 @@
 import { test, expect } from '@playwright/test'
-import { setupCleanVault } from './_helpers'
+import { setupCleanVault, pinTabViaMenu, unpinTabViaMenu } from './_helpers'
 
 // Bug-repro: right-clicking a sidebar icon should NOT trigger a drag.
+//
+// Since 2026-05-22 right-clicking a sidebar tab icon opens the
+// TabContextMenu (Pin to top / Unpin / Hide) rather than instantly
+// pinning. The drag-guard assertions below are unchanged — right-click
+// must still never start a drag — but the "applies correct action"
+// tests now drive the menu (via pinTabViaMenu / unpinTabViaMenu).
 //
 // User report: "when I right click on the icon is like drag and drop
 // on top automatically". Suspected root cause: the draggable <div>
@@ -116,10 +122,10 @@ test('right-click on bottom-strip icon applies correct action (pin)', async ({ p
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
 
-  const icon = page.getByTestId('sidebar-tab-bookmarks')
-  await icon.click({ button: 'right' })
+  await expect(page.getByTestId('sidebar-tab-bookmarks')).toBeVisible()
+  // Right-click opens the context menu; "Pin to top" pins the panel.
+  await pinTabViaMenu(page, 'bookmarks')
 
-  // The contextMenu handler should have pinned this panel.
   await expect(page.getByTestId('sidebar-pinned-tab-bookmarks')).toBeVisible({ timeout: 2000 })
 })
 
@@ -127,7 +133,7 @@ test('right-click on pinned-strip icon does not start a drag (click)', async ({ 
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
 
-  await page.getByTestId('sidebar-tab-bookmarks').click({ button: 'right' })
+  await pinTabViaMenu(page, 'bookmarks')
   await expect(page.getByTestId('sidebar-pinned-tab-bookmarks')).toBeVisible()
 
   const dragFiredPromise = captureDragFlag(page)
@@ -143,11 +149,11 @@ test('right-click hold+move on pinned-strip icon does not start a drag', async (
   await expect(page.getByTestId('folder-tree')).toBeVisible()
 
   // Pin the bookmarks panel first.
-  await page.getByTestId('sidebar-tab-bookmarks').click({ button: 'right' })
+  await pinTabViaMenu(page, 'bookmarks')
   await expect(page.getByTestId('sidebar-pinned-tab-bookmarks')).toBeVisible()
 
   // Also pin a second panel so there is an inter-group drop zone to check.
-  await page.getByTestId('sidebar-tab-search').click({ button: 'right' })
+  await pinTabViaMenu(page, 'search')
   await expect(page.getByTestId('sidebar-pinned-tab-search')).toBeVisible()
 
   // Simulate right-mousedown + move on the pinned icon.
@@ -171,11 +177,11 @@ test('right-click on pinned-strip icon applies correct action (unpin)', async ({
   await expect(page.getByTestId('folder-tree')).toBeVisible()
 
   // Pin first.
-  await page.getByTestId('sidebar-tab-bookmarks').click({ button: 'right' })
+  await pinTabViaMenu(page, 'bookmarks')
   await expect(page.getByTestId('sidebar-pinned-tab-bookmarks')).toBeVisible()
 
-  // Now right-click the pinned icon — should unpin.
-  await page.getByTestId('sidebar-pinned-tab-bookmarks').click({ button: 'right' })
+  // Now right-click the pinned icon → "Unpin" — should unpin.
+  await unpinTabViaMenu(page, 'bookmarks')
 
   await expect(page.getByTestId('sidebar-pinned-tab-bookmarks')).toHaveCount(0)
   await expect(page.getByTestId('sidebar-tab-bookmarks')).toBeVisible()

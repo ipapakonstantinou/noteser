@@ -39,11 +39,14 @@ async function newNoteInEditMode(page: import('@playwright/test').Page) {
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
   await waitForTestHooks(page)
-  await page.getByTitle('New note (Alt+N)').click()
-  await expect(page.locator('.cm-editor').first()).toBeVisible({ timeout: 10_000 })
+  await page.getByTestId('ribbon-item-new-note').click()
+  // Flip to edit mode BEFORE waiting for the CodeMirror surface — notes
+  // open in rendered preview by default, so `.cm-editor` only mounts once
+  // preview mode is off.
   await page.evaluate(() => {
     window.__noteser_test!.stores.uiStore.getState().setPreviewMode(false)
   })
+  await expect(page.locator('.cm-editor').first()).toBeVisible({ timeout: 10_000 })
 }
 
 test.skip('Alt+Shift+L on a "- [ ]" line toggles to "- [x]"', async () => {
