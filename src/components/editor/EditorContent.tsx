@@ -23,6 +23,7 @@ import { expandEmbeds } from '@/utils/embeds'
 import { resolveAttachmentPath } from '@/utils/attachments'
 import { findNoteByTitleOrAlias } from '@/utils/aliases'
 import { toggleTaskLineText, removeTaskPrefixFromLine } from '@/utils/tasks'
+import { isTaskItemDone, type HastNode } from '@/utils/taskListItem'
 import { SCROLL_TO_LINE_EVENT } from '@/utils/events'
 import { CodeMirrorEditor } from './CodeMirrorEditor'
 import { MobileFormattingToolbar } from './MobileFormattingToolbar'
@@ -482,11 +483,10 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
 
   const ListItem = ({ node, className, children, ...rest }: MdProps) => {
     // react-markdown v10 doesn't pass `checked` — derive it from the HAST node.
-    type HastEl = { type?: string; tagName?: string; properties?: { checked?: boolean } }
-    const checkbox = (node?.children as HastEl[] | undefined)?.find(
-      (c) => c?.type === 'element' && c?.tagName === 'input',
-    )
-    const isChecked = checkbox?.properties?.checked === true
+    // `isTaskItemDone` finds the checkbox belonging to THIS item (skipping
+    // nested sub-lists and looking into a loose-list <p> wrapper), so nested
+    // done tasks get struck and undone subtasks under a done parent do not.
+    const isChecked = isTaskItemDone(node as HastNode | undefined)
     const cls = [
       className,
       isCursorBlock(node) ? 'preview-cursor-block' : '',
