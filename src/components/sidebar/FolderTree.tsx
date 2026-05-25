@@ -28,6 +28,7 @@ import {
 } from '@/utils/attachments'
 import { ATTACHMENTS_CHANGED_EVENT } from '@/utils/events'
 import { TRASH_FOLDER_ID } from '@/utils/systemFolder'
+import { buildTrashTree, type TrashFolderNode } from '@/utils/trashTree'
 import { revealNote } from '@/utils/revealNote'
 
 interface FolderTreeProps {
@@ -70,7 +71,8 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     toggleFolderExpanded,
     updateFolder,
     getRootFolders,
-    getChildFolders
+    getChildFolders,
+    getDeletedFolders
   } = useFolderStore()
 
   // Use empty arrays during SSR to avoid hydration mismatch. `folders`/
@@ -80,8 +82,18 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   const rootFolders = useMemo(() => hydrated ? getRootFolders() : [], [folders, hydrated])
   const activeNotes = useMemo(() => hydrated ? getActiveNotes() : [], [notes, hydrated])
   const deletedNotes = useMemo(() => hydrated ? getDeletedNotes() : [], [notes, hydrated])
+  const deletedFolders = useMemo(() => hydrated ? getDeletedFolders() : [], [folders, hydrated])
   const recentNotes = useMemo(() => hydrated ? getRecentNotes(10) : [], [notes, hydrated])
   /* eslint-enable react-hooks/exhaustive-deps */
+
+  // Reconstruct the deleted-folder hierarchy for the synthetic ".trash"
+  // view. buildTrashTree nests deleted notes under their (deleted) parent
+  // folders and surfaces loose notes (no deleted parent) at the trash
+  // root — see src/utils/trashTree.ts. Read-only: it never mutates state.
+  const trashTree = useMemo(
+    () => buildTrashTree(deletedNotes, deletedFolders),
+    [deletedNotes, deletedFolders],
+  )
 
   // Tags are derived from #word patterns in note bodies — recomputed when
   // notes change. No more entity store.
@@ -851,10 +863,14 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
           come from there, not from the row). */}
       {deletedNotes.length > 0 && (
         <TrashSyntheticFolder
-          deletedNotes={deletedNotes}
+          trashTree={trashTree}
+          deletedCount={deletedNotes.length}
           expanded={!!expandedFolders[TRASH_FOLDER_ID]}
           onToggle={() => toggleFolderExpanded(TRASH_FOLDER_ID)}
           onContextMenu={e => onRightClick(e, 'folder', TRASH_FOLDER_ID)}
+          expandedFolders={expandedFolders}
+          toggleFolderExpanded={toggleFolderExpanded}
+          onFolderRightClick={(e, id) => onRightClick(e, 'folder', id)}
           renderNote={(note) => <NoteItem key={note.id} note={note} />}
         />
       )}
@@ -871,29 +887,104 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   )
 }
 
+// One deleted FOLDER inside the .trash view, rendered recursively so the
+// pre-deletion shape is preserved: deleted child folders nest under it and
+// its deleted notes sit at the bottom. Expansion piggy-backs on
+// folderStore.expandedFolders keyed by the folder's REAL id, so the row
+// behaves like a normal folder. Right-click routes through the shared
+// ContextMenu with the real folder id, where the trashed-folder branch
+// offers Restore / Permanently Delete.
+interface TrashFolderRowProps {
+  node: TrashFolderNode
+  depth: number
+  expandedFolders: Record<string, boolean>
+  toggleFolderExpanded: (id: string) => void
+  onFolderRightClick: (e: React.MouseEvent, id: string) => void
+  renderNote: (note: Note) => React.ReactNode
+}
+
+const TrashFolderRow = ({
+  node, depth, expandedFolders, toggleFolderExpanded, onFolderRightClick, renderNote,
+}: TrashFolderRowProps) => {
+  const expanded = !!expandedFolders[node.folder.id]
+  const childCount = node.childFolders.length + node.notes.length
+  return (
+    <div className="mb-0.5" data-testid="trash-folder-row" data-folder-id={node.folder.id}>
+      <div
+        className="obsidian-folder-item"
+        style={{ paddingLeft: `${depth * 12 + 8}px` }}
+        onClick={() => toggleFolderExpanded(node.folder.id)}
+        onContextMenu={e => onFolderRightClick(e, node.folder.id)}
+        data-folder-name={node.folder.name}
+      >
+        <button
+          type="button"
+          className="mr-1 focus:outline-none"
+          onClick={e => { e.stopPropagation(); toggleFolderExpanded(node.folder.id) }}
+          aria-label={expanded ? `Collapse ${node.folder.name}` : `Expand ${node.folder.name}`}
+        >
+          {expanded ? (
+            <ChevronDownIcon className="w-3.5 h-3.5" />
+          ) : (
+            <ChevronRightIcon className="w-3.5 h-3.5" />
+          )}
+        </button>
+        <FolderIcon className="w-4 h-4 mr-1.5 flex-shrink-0 text-obsidianSecondaryText" />
+        <span className="flex-1 truncate">{node.folder.name}</span>
+        {childCount > 0 && (
+          <span className="text-[10px] text-obsidianSecondaryText ml-1">{childCount}</span>
+        )}
+      </div>
+      {expanded && (
+        <div>
+          {node.childFolders.map(child => (
+            <TrashFolderRow
+              key={child.folder.id}
+              node={child}
+              depth={depth + 1}
+              expandedFolders={expandedFolders}
+              toggleFolderExpanded={toggleFolderExpanded}
+              onFolderRightClick={onFolderRightClick}
+              renderNote={renderNote}
+            />
+          ))}
+          <div style={{ paddingLeft: `${(depth + 1) * 12 + 8}px` }}>
+            {node.notes.map(note => renderNote(note))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Pseudo-folder rendered at the top of the file tree when there are
-// soft-deleted notes. By design it LOOKS and behaves like any other
-// folder: chevron + folder icon + name + count, expandable, and its
-// children are normal NoteItem rows. Restore / delete-forever live
-// in the right-click context menu like any other note — the user
-// explicitly asked for no special inline UI. The expand-state piggy-
-// backs on folderStore.expandedFolders under the reserved id
-// "__trash__" so the existing keyboard nav (arrows / Home / End)
-// treats it like a regular folder.
+// soft-deleted notes. It LOOKS like any other folder: chevron + folder
+// icon + name + count, expandable. Its children now reconstruct the
+// pre-deletion hierarchy — deleted folders nest (via TrashFolderRow) with
+// their deleted notes inside, while loose deleted notes (no deleted
+// parent) render flat at the top, matching the old behaviour. Restore /
+// delete-forever live in the right-click context menu, never inline. The
+// .trash expand-state piggy-backs on folderStore.expandedFolders under the
+// reserved id "__trash__".
 interface TrashSyntheticFolderProps {
-  deletedNotes: Note[]
+  trashTree: ReturnType<typeof buildTrashTree>
+  deletedCount: number
   expanded: boolean
   onToggle: () => void
-  // Right-click handler — wires the trash row into the same ContextMenu
-  // real folders use, so the BROWSER menu never shows. The handler
-  // preventDefaults; the menu it opens special-cases TRASH_FOLDER_ID to
+  // Right-click handler for the .trash row — wires it into the same
+  // ContextMenu real folders use, so the BROWSER menu never shows. The
+  // handler preventDefaults; the menu special-cases TRASH_FOLDER_ID to
   // show only "Empty Trash".
   onContextMenu: (e: React.MouseEvent) => void
+  expandedFolders: Record<string, boolean>
+  toggleFolderExpanded: (id: string) => void
+  onFolderRightClick: (e: React.MouseEvent, id: string) => void
   renderNote: (note: Note) => React.ReactNode
 }
 
 const TrashSyntheticFolder = ({
-  deletedNotes, expanded, onToggle, onContextMenu, renderNote,
+  trashTree, deletedCount, expanded, onToggle, onContextMenu,
+  expandedFolders, toggleFolderExpanded, onFolderRightClick, renderNote,
 }: TrashSyntheticFolderProps) => {
   return (
     <div className="mb-0.5" data-testid="trash-synthetic-folder">
@@ -919,11 +1010,26 @@ const TrashSyntheticFolder = ({
         <FolderIcon className="w-4 h-4 mr-1.5 flex-shrink-0" />
         <span className="flex-1 truncate">.trash</span>
         <span className="text-[10px] text-obsidianSecondaryText ml-1">
-          {deletedNotes.length}
+          {deletedCount}
         </span>
       </div>
       {expanded && (
-        <div>{deletedNotes.map(note => renderNote(note))}</div>
+        <div>
+          {/* Deleted folders, nested with their deleted contents. */}
+          {trashTree.rootFolders.map(node => (
+            <TrashFolderRow
+              key={node.folder.id}
+              node={node}
+              depth={1}
+              expandedFolders={expandedFolders}
+              toggleFolderExpanded={toggleFolderExpanded}
+              onFolderRightClick={onFolderRightClick}
+              renderNote={renderNote}
+            />
+          ))}
+          {/* Loose deleted notes (no deleted parent folder) — flat. */}
+          {trashTree.looseNotes.map(note => renderNote(note))}
+        </div>
       )}
     </div>
   )

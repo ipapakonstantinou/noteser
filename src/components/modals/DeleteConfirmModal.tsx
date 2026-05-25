@@ -6,11 +6,12 @@ import { Modal, Button } from '@/components/ui'
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline'
 import { cascadeDeleteFolder } from '@/utils/cascadeDelete'
 import { TRASH_FOLDER_ID } from '@/utils/systemFolder'
+import { buildTrashTree, collectTrashFolderIds, collectTrashNoteIds } from '@/utils/trashTree'
 
 export const DeleteConfirmModal = () => {
   const { modal, closeModal } = useUIStore()
-  const { deleteNote, permanentlyDeleteNote, getNoteById, emptyTrash, getDeletedNotes } = useNoteStore()
-  const { permanentlyDeleteFolder, getFolderById } = useFolderStore()
+  const { deleteNote, permanentlyDeleteNote, permanentlyDeleteNotes, getNoteById, emptyTrash, getDeletedNotes } = useNoteStore()
+  const { permanentlyDeleteFolder, permanentlyDeleteFolders, getFolderById, getDeletedFolders } = useFolderStore()
   const { notes } = useNoteStore()
   const trashMode = useSettingsStore(s => s.trashMode)
 
@@ -18,7 +19,7 @@ export const DeleteConfirmModal = () => {
   // Two payload shapes:
   //   - single: { type: 'note'|'folder', id, permanent? }
   //   - bulk:   { type: 'bulk', ids: string[] }
-  type Single = { type: 'note' | 'folder'; id: string; permanent?: boolean }
+  type Single = { type: 'note' | 'folder'; id: string; permanent?: boolean; trashed?: boolean }
   type Bulk = { type: 'bulk'; ids: string[] }
   const data = modal.data as Single | Bulk | undefined
 
@@ -45,6 +46,27 @@ export const DeleteConfirmModal = () => {
       // emptying it: hard-delete every soft-deleted note. Never touch
       // deletedFolderPaths.
       emptyTrash()
+    } else if ((data as Single).trashed) {
+      // Permanently deleting a folder that's ALREADY in the trash. The
+      // folder + its notes are all soft-deleted, so cascadeDeleteFolder
+      // (which only walks NON-deleted descendants) wouldn't touch them.
+      // Reconstruct the trash subtree and hard-delete the whole thing —
+      // folders + notes — in two bulk writes.
+      const tree = buildTrashTree(getDeletedNotes(), getDeletedFolders())
+      const stack = [...tree.rootFolders]
+      let target = null as ReturnType<typeof buildTrashTree>['rootFolders'][number] | null
+      while (stack.length > 0) {
+        const node = stack.pop()!
+        if (node.folder.id === data.id) { target = node; break }
+        stack.push(...node.childFolders)
+      }
+      if (target) {
+        permanentlyDeleteNotes(collectTrashNoteIds(target))
+        permanentlyDeleteFolders(collectTrashFolderIds(target))
+      } else {
+        // Shell folder with no trashed contents — just drop the entity.
+        permanentlyDeleteFolder(data.id)
+      }
     } else {
       // For folders, hardDelete and "soft" both cascade attachment
       // tombstones + relocate notes to root. The only difference is
