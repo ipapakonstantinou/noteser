@@ -1114,7 +1114,24 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   // has this SHA, or our in-tab cache says we uploaded it) vs "needs
   // upload". Keeping the pre-pass separate lets us emit a stable
   // `total` to the progress callback.
-  interface NoteBlobPlan { path: string; content: string; note: Note; localSha: string; remoteSha: string | undefined }
+  //
+  // push-only-real-edits: the upload decision must reflect a GENUINE local
+  // edit, not just a wire-form mismatch against the remote blob. The remote
+  // blob can be in a NON-CANONICAL shape (e.g. an imported Obsidian vault with
+  // no trailing newline, or frontmatter we strip on store), so `remoteSha`
+  // routinely differs from our canonical `localSha` even when the user never
+  // touched the note. Uploading on that mismatch rewrites the user's vault into
+  // noteser's canonical form on every sync (the churn bug).
+  //
+  // The authoritative "did the user edit this?" signal is the PLAINTEXT
+  // canonical SHA (`plainSha = gitBlobSha(serializeNote(note))`) vs the note's
+  // `gitLastPushedSha` baseline (set by syncApply/backgroundFill to the
+  // canonical SHA as of the last sync). When they match the body is byte-equal
+  // to what we last synced → NO genuine edit. A null baseline means a
+  // new/never-synced note → MUST push. We use `plainSha` (NOT the wire/encrypted
+  // sha) ONLY for this change decision; `localSha` (wire) is still what we
+  // hash, upload and dedupe against `uploadedShas`/`remoteSha`.
+  interface NoteBlobPlan { path: string; content: string; note: Note; localSha: string; remoteSha: string | undefined; locallyChanged: boolean }
   const noteBlobPlan: NoteBlobPlan[] = []
   for (const [path, { content, note }] of desired) {
     if (pushMatcher.isIgnored(path)) continue
@@ -1123,11 +1140,25 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     // snapshot (it compares against the unencrypted body).
     const wireContent = await maybeEncryptForPush(content)
     const localSha = await gitBlobSha(wireContent)
+    // Plaintext canonical SHA for the genuine-edit decision. `content` here is
+    // the canonical plaintext (serializeNote output) BEFORE encryption.
+    const plainSha = await gitBlobSha(content)
+    const baseline = note.gitLastPushedSha ?? null
+    const locallyChanged = baseline === null || plainSha !== baseline
     const remoteSha = remoteTree.get(path)
-    noteBlobPlan.push({ path, content: wireContent, note, localSha, remoteSha })
+    noteBlobPlan.push({ path, content: wireContent, note, localSha, remoteSha, locallyChanged })
   }
-  const noteBlobsToUpload = noteBlobPlan.filter(p => p.remoteSha !== p.localSha && !uploadedShas.has(p.localSha))
-  const noteBlobsCached   = noteBlobPlan.filter(p => p.remoteSha !== p.localSha &&  uploadedShas.has(p.localSha))
+  // push-only-real-edits: SUPPRESS the upload for a note that is NOT locally
+  // changed AND already has a remote blob at this path. We emit NO tree entry
+  // for it, so the base tree's existing (user's original, possibly
+  // non-canonical) blob is preserved untouched — zero rewrite. We STILL push
+  // when the note is locally changed (a real edit) OR has no remote blob yet
+  // (`remoteSha === undefined`: a brand-new note, or a note moved to a new path
+  // — the move's old-path deletion is handled by the deletion loop in step 4).
+  const noteBlobsSuppressed = noteBlobPlan.filter(p => !p.locallyChanged && p.remoteSha !== undefined && p.remoteSha !== p.localSha)
+  const suppressedNoteIds = new Set(noteBlobsSuppressed.map(p => p.note.id))
+  const noteBlobsToUpload = noteBlobPlan.filter(p => !suppressedNoteIds.has(p.note.id) && p.remoteSha !== p.localSha && !uploadedShas.has(p.localSha))
+  const noteBlobsCached   = noteBlobPlan.filter(p => !suppressedNoteIds.has(p.note.id) && p.remoteSha !== p.localSha &&  uploadedShas.has(p.localSha))
 
   let blobsUploaded = 0
   let blobsSkipped = noteBlobsCached.length
@@ -1148,13 +1179,26 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   // Pure-skip entries (remote has this SHA): no entry, no upload, but the
   // note's path metadata may still need an update. The lastPushedSnapshot
   // gets the PLAINTEXT body (gutter compares against unencrypted text).
+  //
+  // push-only-real-edits: a SUPPRESSED note (unchanged but its canonical wire
+  // SHA differs from the non-canonical remote blob) is left ENTIRELY untouched:
+  // no tree entry (handled by the filters above) AND no pathUpdate. Emitting a
+  // pathUpdate here would rewrite gitLastPushedSha to `finalSha` (the wire SHA),
+  // overwriting the canonical baseline syncApply pinned — which would make the
+  // NEXT pull misclassify the note (localChanged would flip on every sync). The
+  // note did not change, so we leave gitPath / gitLastPushedSha / gitRemoteBaseSha
+  // exactly as they are. We still take a gutter snapshot (body is unchanged, so
+  // the plaintext is correct).
   for (const plan of noteBlobPlan) {
+    const suppressed = suppressedNoteIds.has(plan.note.id)
     const skipped = plan.remoteSha === plan.localSha
-    const finalSha = skipped ? plan.remoteSha! : plan.localSha
-    if (skipped && (plan.note.gitPath !== plan.path || plan.note.gitLastPushedSha !== finalSha || plan.note.gitRemoteBaseSha !== finalSha)) {
+    if (!suppressed && skipped) {
       // After a push the pushed blob IS the remote file, so the local baseline
       // and the remote merge base coincide — set both to finalSha.
-      pathUpdates.push({ noteId: plan.note.id, gitPath: plan.path, gitLastPushedSha: finalSha, gitRemoteBaseSha: finalSha })
+      const finalSha = plan.remoteSha!
+      if (plan.note.gitPath !== plan.path || plan.note.gitLastPushedSha !== finalSha || plan.note.gitRemoteBaseSha !== finalSha) {
+        pathUpdates.push({ noteId: plan.note.id, gitPath: plan.path, gitLastPushedSha: finalSha, gitRemoteBaseSha: finalSha })
+      }
     }
     // Gutter snapshot uses the plaintext, not the wire form — look it up
     // from `desired` rather than `plan.content` (which is the wire form).

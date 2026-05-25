@@ -39,6 +39,13 @@
  *   4. Empty-commit guard: re-push unchanged notes → unchanged === true
  *      AND branch head sha is byte-identical before/after (no empty commit).
  *   5. Update one note → updated === 1 + a new commit exists.
+ *   6. PUSH-ONLY-REAL-EDITS (churn fix): plant a NON-CANONICAL remote blob
+ *      (body with NO trailing newline) via the Git Data API, clone it so the
+ *      local note's gitLastPushedSha = canonical / gitRemoteBaseSha = raw
+ *      non-canonical sha, then assert syncToGitHub with the note UNCHANGED does
+ *      NOTHING (unchanged === true, branch head sha byte-identical, no blob, no
+ *      commit). Then edit the body and assert it DOES push (updated === 1, new
+ *      commit). Proves a non-canonical clone never churns yet real edits sync.
  */
 
 // ── Mocks (mirror githubSyncRoundtrip.test.ts) ──────────────────────────────
@@ -91,8 +98,16 @@ if (typeof g.TextDecoder === 'undefined') {
   g.TextDecoder = TextDecoder
 }
 
-import { pullFromGitHub, syncToGitHub } from '../utils/githubSync'
-import { getBranchRefSha } from '../utils/github'
+import { pullFromGitHub, syncToGitHub, serializeNote, parseNote } from '../utils/githubSync'
+import {
+  getBranchRefSha,
+  getCommitTreeSha,
+  createBlob,
+  createTree,
+  createCommit,
+  updateBranchRef,
+  gitBlobSha,
+} from '../utils/github'
 import { githubFetch } from '../utils/githubFetch'
 import type { Note, SyncRepo } from '@/types'
 
@@ -178,6 +193,30 @@ function applyPathUpdates(notes: Note[], updates: { noteId: string; gitPath: str
     if (!u) return n
     return { ...n, gitPath: u.gitPath, gitLastPushedSha: u.gitLastPushedSha, gitRemoteBaseSha: u.gitRemoteBaseSha }
   })
+}
+
+// Write `content` to `path` on the harness branch via the Git Data API
+// directly (NOT through syncToGitHub), so we can plant a NON-CANONICAL remote
+// blob (e.g. a body with no trailing newline) that noteser itself would never
+// produce. Returns the raw remote blob SHA GitHub stored.
+async function writeRemoteFileRaw(path: string, content: string): Promise<string> {
+  const parentCommit = await getBranchRefSha(TOKEN!, OWNER, REPO_NAME, HARNESS_BRANCH)
+  const baseTreeSha = await getCommitTreeSha(TOKEN!, OWNER, REPO_NAME, parentCommit)
+  const blobSha = await createBlob(TOKEN!, OWNER, REPO_NAME, content)
+  const treeSha = await createTree(TOKEN!, OWNER, REPO_NAME, baseTreeSha, [
+    { path, mode: '100644', type: 'blob', sha: blobSha },
+  ])
+  const { sha: commitSha } = await createCommit(
+    TOKEN!, OWNER, REPO_NAME, `harness: plant non-canonical ${path}`, treeSha, parentCommit,
+  )
+  await updateBranchRef(TOKEN!, OWNER, REPO_NAME, HARNESS_BRANCH, commitSha)
+  return blobSha
+}
+
+// Mirror syncApply.canonicalLocalSha — the SHA of the canonical serialization
+// of the stored body. This is what gitLastPushedSha is pinned to on clone.
+function canonicalLocalSha(content: string): Promise<string> {
+  return gitBlobSha(serializeNote({ content } as Note))
 }
 
 const log = (msg: string) => console.log(`  ${msg}`)
@@ -463,5 +502,68 @@ maybe('e2e GitHub sync (live)', () => {
 
     notes = applyPathUpdates(notes, outcome.pathUpdates)
     log(`[scenario 5] updated 1 note: updated=${outcome.result.updated} new commit=${outcome.result.commitSha.slice(0, 8)} (head ${before.slice(0, 8)} → ${after.slice(0, 8)})`)
+  })
+
+  // push-only-real-edits: THE CHURN FIX. A remote file in a NON-CANONICAL shape
+  // (body with NO trailing newline — exactly what a freshly-imported Obsidian
+  // vault looks like) must NOT be re-uploaded just because its raw blob SHA
+  // differs from our canonical serialization. Only a GENUINE local edit pushes.
+  test('scenario 6: non-canonical remote clone causes ZERO pushes; a real edit still pushes', async () => {
+    const nonCanonPath = `harness ${stamp} noncanon.md`
+    // (1) Plant a NON-CANONICAL remote blob: body with NO trailing newline.
+    const nonCanonicalBody = `Non-canonical body for ${stamp} (no trailing newline)`
+    const remoteSha = await writeRemoteFileRaw(nonCanonPath, nonCanonicalBody)
+    expect(remoteSha).toMatch(/^[0-9a-f]{40}$/)
+
+    // (2) Clone it: pull (incremental, fetches the body) → build the local note
+    //     the way applyNonConflicts would. gitLastPushedSha = CANONICAL sha,
+    //     gitRemoteBaseSha = the RAW non-canonical remote sha. Critically the
+    //     canonical sha differs from the remote sha (the churn trigger).
+    const pull = await pullFromGitHub({ token: TOKEN!, repo, notes: [], folders: [] })
+    const created = pull.classifications.find(
+      (c): c is Extract<typeof c, { kind: 'remoteCreated' }> =>
+        c.kind === 'remoteCreated' && (c as { path: string }).path === nonCanonPath,
+    )
+    expect(created).toBeDefined()
+    expect(created!.remoteSha).toBe(remoteSha)
+    const body = parseNote(created!.remoteContent).body
+    const canonicalSha = await canonicalLocalSha(body)
+    expect(canonicalSha).not.toBe(remoteSha) // the non-canonical mismatch is real
+
+    let cloned: Note = {
+      ...makeNote(nonCanonPath.slice(0, -3), body),
+      id: `noncanon-${stamp}`,
+      gitPath: nonCanonPath,
+      gitLastPushedSha: canonicalSha,
+      gitRemoteBaseSha: remoteSha,
+    }
+
+    // (3) syncToGitHub with the note UNCHANGED → NO push, NO commit, NO blob.
+    //     This is the churn fix: a non-canonical clone produces zero rewrites.
+    const headBefore = await getRefSha(HARNESS_BRANCH)
+    const dry = await syncToGitHub({ token: TOKEN!, repo, notes: [cloned], folders: [] })
+    expect(dry.result.unchanged).toBe(true)
+    expect(dry.result.created).toBe(0)
+    expect(dry.result.updated).toBe(0)
+    expect(dry.result.deleted).toBe(0)
+    // No spurious pathUpdate that would rewrite the baseline on the next pull.
+    expect(dry.pathUpdates.find(u => u.noteId === cloned.id)).toBeUndefined()
+    const headAfterDry = await getRefSha(HARNESS_BRANCH)
+    expect(headAfterDry).toBe(headBefore) // branch head UNCHANGED — no commit
+    log(`[scenario 6a] non-canonical clone: syncToGitHub made NO push (head ${headBefore.slice(0, 8)} unchanged, remoteSha ${remoteSha.slice(0, 8)} !== canonical ${canonicalSha.slice(0, 8)})`)
+
+    // (4) Now make a REAL edit → it MUST push (updated === 1, new commit).
+    cloned = { ...cloned, content: `${body}\nedited at ${Date.now()}\n`, updatedAt: Date.now() }
+    const wet = await syncToGitHub({ token: TOKEN!, repo, notes: [cloned], folders: [] })
+    expect(wet.result.unchanged).toBe(false)
+    expect(wet.result.updated).toBe(1)
+    expect(wet.result.created).toBe(0)
+    expect(wet.result.deleted).toBe(0)
+    expect(wet.result.commitSha).toMatch(/^[0-9a-f]{40}$/)
+    expect(wet.result.commitSha).not.toBe(headBefore)
+    const headAfterEdit = await getRefSha(HARNESS_BRANCH)
+    expect(headAfterEdit).toBe(wet.result.commitSha)
+    expect(headAfterEdit).not.toBe(headBefore)
+    log(`[scenario 6b] real edit: pushed updated=${wet.result.updated} new commit=${wet.result.commitSha.slice(0, 8)} (head ${headBefore.slice(0, 8)} → ${headAfterEdit.slice(0, 8)})`)
   })
 })
