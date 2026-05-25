@@ -326,8 +326,13 @@ describe('useGitHubSync — phase-aware running messages', () => {
     const { result } = renderHook(() => useGitHubSync())
 
     let call!: Promise<void>
-    act(() => {
+    // The sync now passes through the token-refresh layer first
+    // (getValidGitHubToken), which awaits a microtask before runPull fires.
+    // Flush pending microtasks inside act so pullFromGitHub has been invoked
+    // before we assert.
+    await act(async () => {
       call = result.current.runPullOnly()
+      await Promise.resolve()
     })
 
     // The first-clone branch was taken (pullFromGitHub with isFirstClone=true,

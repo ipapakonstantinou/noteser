@@ -51,7 +51,7 @@ export const GitHubAuthModal = () => {
         const device = await startDeviceFlow()
         if (controller.signal.aborted) return
         setStatus({ kind: 'waiting', device })
-        const token = await pollForToken({
+        const tokenSet = await pollForToken({
           deviceCode: device.device_code,
           interval: device.interval,
           expiresIn: device.expires_in,
@@ -62,9 +62,13 @@ export const GitHubAuthModal = () => {
         // gist-publish path can tell whether the user has already
         // authorised `gist` (avoids a redundant scope-upgrade prompt
         // for users who happen to have a wider token from elsewhere).
-        const { user, scopes } = await fetchGitHubUserAndScopes(token)
+        const { user, scopes } = await fetchGitHubUserAndScopes(tokenSet.accessToken)
         if (controller.signal.aborted) return
-        setSession(token, user, scopes)
+        // Persist the FULL token set (access + refresh + expiries) so the
+        // renewal layer can silently refresh an expiring token. For a
+        // non-expiring token the extra fields are null and behaviour is
+        // unchanged.
+        setSession(tokenSet.accessToken, user, scopes, tokenSet)
         setStatus({ kind: 'success', login: user.login })
         // Brief success view, then chain into the repo picker (or just close
         // if the user already has a sync repo from a previous session).
@@ -107,15 +111,15 @@ export const GitHubAuthModal = () => {
         const device = await startDeviceFlow()
         if (controller.signal.aborted) return
         setStatus({ kind: 'waiting', device })
-        const token = await pollForToken({
+        const tokenSet = await pollForToken({
           deviceCode: device.device_code,
           interval: device.interval,
           expiresIn: device.expires_in,
           signal: controller.signal,
         })
         if (controller.signal.aborted) return
-        const { user, scopes } = await fetchGitHubUserAndScopes(token)
-        setSession(token, user, scopes)
+        const { user, scopes } = await fetchGitHubUserAndScopes(tokenSet.accessToken)
+        setSession(tokenSet.accessToken, user, scopes, tokenSet)
         setStatus({ kind: 'success', login: user.login })
         setTimeout(() => { if (!controller.signal.aborted) closeModal() }, 1200)
       } catch (err) {

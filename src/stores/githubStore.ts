@@ -21,6 +21,25 @@ function repoKey(repo: SyncRepo | null): string | null {
   return repo ? `${repo.owner}/${repo.name}` : null
 }
 
+// Full token bundle as issued by GitHub's OAuth token endpoint. For a GitHub
+// App that issues EXPIRING user tokens this carries `expires_in` +
+// `refresh_token` + `refresh_token_expires_in`; for non-expiring tokens
+// (classic OAuth Apps, fine-grained PATs pasted by hand) only `access_token`
+// is present and the rest are absent. See `refreshToken` handling below.
+export interface GitHubTokenSet {
+  accessToken: string
+  // Absolute epoch-ms at which the access token expires. Null when the token
+  // does not expire (PATs / classic non-expiring OAuth tokens) — in that case
+  // we NEVER attempt a refresh and behave exactly as the pre-refresh build.
+  accessTokenExpiresAt: number | null
+  // The rotating refresh token. GitHub issues a NEW one on every refresh, so
+  // we always persist the latest. Null when none was issued.
+  refreshToken: string | null
+  // Absolute epoch-ms at which the refresh token itself expires (~6 months for
+  // GitHub Apps). Once past this, even a refresh fails → full reconnect.
+  refreshTokenExpiresAt: number | null
+}
+
 interface GitHubState {
   token: string | null
   user: GitHubUser | null
@@ -29,6 +48,18 @@ interface GitHubState {
   lastSyncedAt: number | null
   lastCommitSha: string | null
   repoSyncStates: Record<string, RepoSyncState>
+  // refresh-token handling: when GitHub issued an EXPIRING user access token it
+  // also returned a refresh_token. We persist the absolute expiry of the access
+  // token and the (rotating) refresh token so the app can renew silently
+  // instead of logging the user out every ~8h.
+  //
+  // ALL of these are null for non-expiring tokens (pasted PATs, classic OAuth
+  // tokens). The renewal layer treats "no refreshToken OR no
+  // accessTokenExpiresAt" as "this token never expires" and skips every refresh
+  // path — guaranteeing the PAT/classic flow is unchanged.
+  accessTokenExpiresAt: number | null
+  refreshToken: string | null
+  refreshTokenExpiresAt: number | null
   // OAuth scopes attached to `token`, parsed from the `X-OAuth-Scopes`
   // header when the token was first received. Normalised to trimmed
   // lowercase strings (e.g. `['repo', 'gist']`).
@@ -44,7 +75,11 @@ interface GitHubState {
   // a manual click + an auto-sync tick would fire two concurrent syncs.
   // NOT persisted (resets to false on every reload).
   isSyncing: boolean
-  setSession: (token: string, user: GitHubUser, scopes?: string[] | null) => void
+  setSession: (token: string, user: GitHubUser, scopes?: string[] | null, tokens?: GitHubTokenSet | null) => void
+  // Apply a rotated token bundle after a successful refresh, WITHOUT touching
+  // user/scopes/connectedAt (those are unchanged by a refresh). GitHub rotates
+  // the refresh token on every use, so the new one is persisted here too.
+  applyRefreshedTokens: (tokens: GitHubTokenSet) => void
   setTokenScopes: (scopes: string[] | null) => void
   setSyncRepo: (repo: SyncRepo | null) => void
   recordSync: (commitSha: string) => void
@@ -67,13 +102,29 @@ export const useGitHubStore = create<GitHubState>()(
       lastSyncedAt: null,
       lastCommitSha: null,
       repoSyncStates: {},
+      accessTokenExpiresAt: null,
+      refreshToken: null,
+      refreshTokenExpiresAt: null,
       tokenScopes: null,
       isSyncing: false,
-      setSession: (token, user, scopes = null) => set({
+      setSession: (token, user, scopes = null, tokens = null) => set({
         token,
         user,
         connectedAt: Date.now(),
         tokenScopes: scopes,
+        // When the auth path captured an expiring token bundle, persist it.
+        // When it didn't (PAT paste, classic token, or a caller that doesn't
+        // pass tokens), explicitly clear the refresh fields so a stale bundle
+        // from a previous session can never linger against a new token.
+        accessTokenExpiresAt: tokens?.accessTokenExpiresAt ?? null,
+        refreshToken: tokens?.refreshToken ?? null,
+        refreshTokenExpiresAt: tokens?.refreshTokenExpiresAt ?? null,
+      }),
+      applyRefreshedTokens: (tokens) => set({
+        token: tokens.accessToken,
+        accessTokenExpiresAt: tokens.accessTokenExpiresAt,
+        refreshToken: tokens.refreshToken,
+        refreshTokenExpiresAt: tokens.refreshTokenExpiresAt,
       }),
       setTokenScopes: (scopes) => set({ tokenScopes: scopes }),
       setIsSyncing: (value) => set({ isSyncing: value }),
@@ -109,6 +160,7 @@ export const useGitHubStore = create<GitHubState>()(
         token: null, user: null, connectedAt: null,
         syncRepo: null, lastSyncedAt: null, lastCommitSha: null,
         repoSyncStates: {}, tokenScopes: null,
+        accessTokenExpiresAt: null, refreshToken: null, refreshTokenExpiresAt: null,
       }),
     }),
     {
@@ -122,6 +174,9 @@ export const useGitHubStore = create<GitHubState>()(
         lastCommitSha: state.lastCommitSha,
         repoSyncStates: state.repoSyncStates,
         tokenScopes: state.tokenScopes,
+        accessTokenExpiresAt: state.accessTokenExpiresAt,
+        refreshToken: state.refreshToken,
+        refreshTokenExpiresAt: state.refreshTokenExpiresAt,
       }),
     },
   ),

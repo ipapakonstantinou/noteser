@@ -1,4 +1,5 @@
 import type { GitHubUser, GitHubRepo } from '@/types'
+import type { GitHubTokenSet } from '@/stores/githubStore'
 import { githubFetch } from './githubFetch'
 
 export interface DeviceFlowStart {
@@ -110,8 +111,49 @@ interface PollOptions {
   signal: AbortSignal    // so the caller can cancel the loop
 }
 
+// Raw shape of GitHub's OAuth token-endpoint JSON. `expires_in` /
+// `refresh_token` / `refresh_token_expires_in` are present ONLY when the app
+// issues expiring user tokens; for non-expiring tokens only `access_token`
+// comes back.
+interface RawTokenResponse {
+  access_token?: string
+  token_type?: string
+  scope?: string
+  expires_in?: number
+  refresh_token?: string
+  refresh_token_expires_in?: number
+}
+
+// Normalise a raw OAuth token response into our persisted GitHubTokenSet.
+// `expires_in` is a relative lifetime in seconds; we convert it to an absolute
+// epoch-ms instant against `now` so expiry checks are clock-comparison only.
+// When the response carries NO `expires_in` / `refresh_token` (PATs, classic
+// non-expiring OAuth tokens) the expiry/refresh fields stay null and the
+// renewal layer treats the token as never-expiring.
+export function toTokenSet(raw: RawTokenResponse, now = Date.now()): GitHubTokenSet | null {
+  if (!raw.access_token) return null
+  const accessTokenExpiresAt =
+    typeof raw.expires_in === 'number' && raw.expires_in > 0
+      ? now + raw.expires_in * 1000
+      : null
+  const refreshTokenExpiresAt =
+    typeof raw.refresh_token_expires_in === 'number' && raw.refresh_token_expires_in > 0
+      ? now + raw.refresh_token_expires_in * 1000
+      : null
+  return {
+    accessToken: raw.access_token,
+    accessTokenExpiresAt,
+    refreshToken: typeof raw.refresh_token === 'string' ? raw.refresh_token : null,
+    refreshTokenExpiresAt,
+  }
+}
+
 // ── Step 2: poll the proxy until the user authorizes or the code expires ────
-export async function pollForToken({ deviceCode, interval, expiresIn, signal }: PollOptions): Promise<string> {
+// Returns the FULL token set (not just the access token) so the caller can
+// persist an expiring token's refresh_token + expiry. For a non-expiring token
+// the extra fields come back null (see toTokenSet) and the caller stores a bare
+// access token exactly as before.
+export async function pollForToken({ deviceCode, interval, expiresIn, signal }: PollOptions): Promise<GitHubTokenSet> {
   const deadline = Date.now() + expiresIn * 1000
   let currentInterval = interval
 
@@ -124,9 +166,14 @@ export async function pollForToken({ deviceCode, interval, expiresIn, signal }: 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ device_code: deviceCode }),
     })
-    const json = await res.json().catch(() => ({}))
+    const json = await res.json().catch(() => ({})) as RawTokenResponse & { error?: string; error_description?: string }
 
-    if (json.access_token) return json.access_token as string
+    if (json.access_token) {
+      const tokenSet = toTokenSet(json)
+      // access_token was truthy so toTokenSet cannot return null here, but the
+      // type guard keeps TS honest.
+      if (tokenSet) return tokenSet
+    }
 
     switch (json.error) {
       case 'authorization_pending':
@@ -145,6 +192,58 @@ export async function pollForToken({ deviceCode, interval, expiresIn, signal }: 
     }
   }
   throw new DeviceFlowError('expired', 'Device code expired before authorization completed.')
+}
+
+// ── Refresh-token exchange ──────────────────────────────────────────────────
+// Thrown when a refresh attempt fails terminally (refresh token expired,
+// revoked, or otherwise rejected by GitHub). The caller maps this to the
+// existing reconnect flow — there is no point retrying.
+export class RefreshTokenError extends Error {
+  constructor(public code: 'invalid' | 'config' | 'network' | 'rate_limited', message: string) {
+    super(message)
+    this.name = 'RefreshTokenError'
+  }
+}
+
+// Exchange a refresh_token for a fresh token set via the stateless proxy.
+// GitHub rotates the refresh_token on every use, so the returned set carries a
+// NEW refresh_token the caller must persist (applyRefreshedTokens does this).
+// Throws RefreshTokenError on any terminal failure so the caller can fall back
+// to a full reconnect instead of looping.
+export async function refreshAccessToken(refreshToken: string): Promise<GitHubTokenSet> {
+  let res: Response
+  try {
+    res = await githubFetch('/api/github/refresh-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    })
+  } catch (err) {
+    throw new RefreshTokenError('network', err instanceof Error ? err.message : 'Network error during token refresh')
+  }
+
+  const json = await res.json().catch(() => ({})) as RawTokenResponse & { error?: string; error_description?: string }
+
+  if (json.access_token) {
+    const tokenSet = toTokenSet(json)
+    if (tokenSet) return tokenSet
+  }
+
+  // Map GitHub's documented refresh errors to a typed failure. `bad_refresh_token`
+  // and `bad_verification_code` mean the refresh token is no longer valid →
+  // reconnect. Everything else is surfaced with whatever GitHub said.
+  switch (json.error) {
+    case 'missing_client_id':
+      throw new RefreshTokenError('config', 'GitHub Client ID not configured.')
+    case 'rate_limited':
+      throw new RefreshTokenError('rate_limited', json.error_description ?? 'Refresh rate-limited. Please retry shortly.')
+    case 'bad_refresh_token':
+    case 'bad_verification_code':
+    case 'unauthorized':
+      throw new RefreshTokenError('invalid', json.error_description ?? 'Refresh token is no longer valid. Please reconnect.')
+    default:
+      throw new RefreshTokenError('invalid', json.error_description ?? json.error ?? `Token refresh failed (${res.status})`)
+  }
 }
 
 // ── Step 3: use the token to fetch identifying info ─────────────────────────
