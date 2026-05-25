@@ -250,19 +250,19 @@ export function linksLivePreviewField(deps: LinksLivePreviewDeps): StateField<De
 
 const linksTheme = EditorView.baseTheme({
   '.cm-lp-link': {
-    color: '#8b6dd9',
+    color: 'hsl(217, 88%, 50%)',
     textDecoration: 'underline',
-    textDecorationColor: 'rgba(139, 109, 217, 0.5)',
+    textDecorationColor: 'hsla(217, 88%, 50%, 0.5)',
     cursor: 'pointer',
   },
-  '.cm-lp-link:hover': { textDecorationColor: '#8b6dd9' },
+  '.cm-lp-link:hover': { textDecorationColor: 'hsl(217, 88%, 50%)' },
   '.cm-lp-wikilink': {
-    color: '#8b6dd9',
+    color: 'hsl(217, 88%, 50%)',
     textDecoration: 'underline',
-    textDecorationColor: 'rgba(139, 109, 217, 0.5)',
+    textDecorationColor: 'hsla(217, 88%, 50%, 0.5)',
     cursor: 'pointer',
   },
-  '.cm-lp-wikilink:hover': { textDecorationColor: '#8b6dd9' },
+  '.cm-lp-wikilink:hover': { textDecorationColor: 'hsl(217, 88%, 50%)' },
   '.cm-lp-wikilink-missing': { color: '#f87171' },
 })
 

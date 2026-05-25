@@ -228,7 +228,7 @@
 /* Inline #tag rendering in preview */
 .preview-tag {
   color: theme('colors.obsidianAccentPurple');
-  background: rgba(139, 109, 217, 0.1);
+  background: hsla(217, 88%, 50%, 0.1);
   border-radius: 3px;
   padding: 0 4px;
   font-weight: 500;
