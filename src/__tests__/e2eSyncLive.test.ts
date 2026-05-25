@@ -102,6 +102,7 @@ import { pullFromGitHub, syncToGitHub, serializeNote, parseNote } from '../utils
 import {
   getBranchRefSha,
   getCommitTreeSha,
+  getTreeMap,
   createBlob,
   createTree,
   createCommit,
@@ -211,6 +212,33 @@ async function writeRemoteFileRaw(path: string, content: string): Promise<string
   )
   await updateBranchRef(TOKEN!, OWNER, REPO_NAME, HARNESS_BRANCH, commitSha)
   return blobSha
+}
+
+// rename-not-delete harness helper: RENAME remote files in a SINGLE commit
+// WITHOUT losing content — for each {from,to} the new-path blob reuses the
+// existing blob SHA at `from` (so the content is preserved exactly) and the
+// old path is removed (sha:null). This simulates the dash→space form change
+// the user did when they reverted their remote vault: the same content now
+// lives under a new name. Returns the new commit SHA.
+async function renameRemoteFiles(renames: Array<{ from: string; to: string }>): Promise<string> {
+  const parentCommit = await getBranchRefSha(TOKEN!, OWNER, REPO_NAME, HARNESS_BRANCH)
+  const baseTreeSha = await getCommitTreeSha(TOKEN!, OWNER, REPO_NAME, parentCommit)
+  const tree = await getTreeMap(TOKEN!, OWNER, REPO_NAME, baseTreeSha)
+  const entries: { path: string; mode: '100644'; type: 'blob'; sha: string | null }[] = []
+  for (const { from, to } of renames) {
+    const blobSha = tree.get(from)
+    if (!blobSha) throw new Error(`renameRemoteFiles: source path missing in tree: ${from}`)
+    // Add the content under the NEW path (reusing the exact blob SHA — content
+    // is preserved), and DELETE the old path. Both in the same tree → one commit.
+    entries.push({ path: to, mode: '100644', type: 'blob', sha: blobSha })
+    entries.push({ path: from, mode: '100644', type: 'blob', sha: null })
+  }
+  const treeSha = await createTree(TOKEN!, OWNER, REPO_NAME, baseTreeSha, entries)
+  const { sha: commitSha } = await createCommit(
+    TOKEN!, OWNER, REPO_NAME, 'harness: rename files (content preserved)', treeSha, parentCommit,
+  )
+  await updateBranchRef(TOKEN!, OWNER, REPO_NAME, HARNESS_BRANCH, commitSha)
+  return commitSha
 }
 
 // Mirror syncApply.canonicalLocalSha — the SHA of the canonical serialization
@@ -565,5 +593,151 @@ maybe('e2e GitHub sync (live)', () => {
     expect(headAfterEdit).toBe(wet.result.commitSha)
     expect(headAfterEdit).not.toBe(headBefore)
     log(`[scenario 6b] real edit: pushed updated=${wet.result.updated} new commit=${wet.result.commitSha.slice(0, 8)} (head ${headBefore.slice(0, 8)} → ${headAfterEdit.slice(0, 8)})`)
+  })
+
+  // ── rename-not-delete: THE DATA-LOSS FIX ──────────────────────────────────
+  // Reproduces the catastrophe end-to-end: the user's remote vault was reverted
+  // to a DIFFERENT filename FORM than the notes' stored gitPaths. A pull used to
+  // read each renamed file as "old-path note deleted + new-path note created",
+  // soft-delete the note, then DELETE the real remote file on the next push.
+  //
+  // We push fresh notes, RENAME each remote file (content preserved, old path
+  // removed) directly via the Git Data API, then re-pull with the ORIGINAL local
+  // notes (stale gitPaths). The fix must ADOPT each note to its new path (never
+  // remoteDeleted), and the subsequent push must emit ZERO deletions.
+  test('scenario 7: remote rename (form change) is ADOPTED, never deleted', async () => {
+    // (1) Push a fresh batch so local notes carry gitPath + gitLastPushedSha.
+    const rStamp = Date.now()
+    let renNotes: Note[] = [1, 2, 3].map(i =>
+      makeNote(`rename ${rStamp} note ${i}`, `Rename scenario body ${i} for ${rStamp}\n`),
+    )
+    const pushOut = await syncToGitHub({ token: TOKEN!, repo, notes: renNotes, folders: [] })
+    expect(pushOut.result.created).toBe(3)
+    renNotes = applyPathUpdates(renNotes, pushOut.pathUpdates)
+    expect(renNotes.every(n => n.gitPath && n.gitLastPushedSha)).toBe(true)
+    // Snapshot the original (pre-rename) gitPaths — the SPACE-form paths the
+    // notes were just pushed to. These become STALE after the remote rename.
+    const spaceFormPaths = renNotes.map(n => n.gitPath!) as string[]
+
+    // (2) RENAME each remote file: move the content to a DASH-form name (spaces →
+    //     dashes) and remove the SPACE-form path, in ONE commit. Content is
+    //     preserved (same blob SHA under the new name). This mirrors the real
+    //     catastrophe's precondition: the on-disk filename FORM no longer matches
+    //     what the notes recorded — the only difference being how spaces render.
+    const renames = spaceFormPaths.map(p => ({ from: p, to: p.replace(/ /g, '-') }))
+    const renameCommit = await renameRemoteFiles(renames)
+    expect(renameCommit).toMatch(/^[0-9a-f]{40}$/)
+    log(`[scenario 7] renamed ${renames.length} remote files space→dash (content preserved) @ ${renameCommit.slice(0, 8)}`)
+
+    // (2b) Make the notes match the real bug shape: their stored gitPath is now
+    //      STALE (the space-form file is gone), and their TITLE is the dash-form
+    //      so notePath() resolves to the dash-form remote file (the user reverted
+    //      the on-disk names to a form the title produces). Content is untouched.
+    const byOldPath = new Map(renames.map(r => [r.from, r.to]))
+    renNotes = renNotes.map(n => {
+      const dashPath = byOldPath.get(n.gitPath!)!
+      // Title := dash-form filename (sans .md) so notePath(n) === dashPath, but
+      // the recorded gitPath stays the now-absent SPACE-form path (stale).
+      return { ...n, title: dashPath.slice(0, -3) }
+    })
+
+    // (3) Re-pull with these notes (stale space-form gitPath, dash-form title).
+    //     The fix must ADOPT each note to the dash-form remote file, NEVER
+    //     classify it remoteDeleted (the soft-delete that precedes the wipe).
+    const pull = await pullFromGitHub({ token: TOKEN!, repo, notes: renNotes, folders: [] })
+    const ourIds = new Set(renNotes.map(n => n.id))
+    const ours = pull.classifications.filter(
+      c => 'noteId' in c && ourIds.has((c as { noteId: string }).noteId),
+    )
+    expect(ours).toHaveLength(3)
+    const dashPaths = new Set(renames.map(r => r.to))
+    for (const c of ours) {
+      // NONE may be remoteDeleted / conflictDeleted — that is the data-loss path.
+      expect(c.kind).not.toBe('remoteDeleted')
+      expect(c.kind).not.toBe('conflictDeleted')
+      // Each must be an ADOPT: unchanged (content identical) carrying an
+      // adoptPath pointing at the renamed (dash-form) remote file.
+      expect(c.kind).toBe('unchanged')
+      const adoptPath = (c as { adoptPath?: string }).adoptPath
+      expect(adoptPath).toBeDefined()
+      expect(dashPaths.has(adoptPath!)).toBe(true)
+    }
+    // And NO remoteCreated should appear for the renamed paths — that would be
+    // the "twin note" half of the bug.
+    const stray = pull.classifications.find(
+      c => c.kind === 'remoteCreated' && dashPaths.has((c as { path: string }).path),
+    )
+    expect(stray).toBeUndefined()
+    log(`[scenario 7] re-pull: all 3 notes ADOPTED to renamed paths (unchanged + adoptPath), 0 remoteDeleted, 0 twin remoteCreated`)
+
+    // (3b) Apply the adoption to local notes (gitPath := adoptPath), as syncApply
+    //      would. The notes now point at their renamed (dash-form) remote files.
+    const adoptById = new Map(
+      ours
+        .filter(c => (c as { adoptPath?: string }).adoptPath)
+        .map(c => [(c as { noteId: string }).noteId, (c as { adoptPath: string }).adoptPath]),
+    )
+    renNotes = renNotes.map(n => {
+      const ap = adoptById.get(n.id)
+      return ap ? { ...n, gitPath: ap } : n
+    })
+
+    // (4) syncToGitHub with the adopted notes → ZERO deletions; the renamed
+    //     files survive. Content + path both match the remote now, so this is a
+    //     clean no-op push (head unchanged).
+    const headBefore = await getRefSha(HARNESS_BRANCH)
+    const sync = await syncToGitHub({ token: TOKEN!, repo, notes: renNotes, folders: [] })
+    expect(sync.result.deleted).toBe(0)
+    const headAfter = await getRefSha(HARNESS_BRANCH)
+    expect(headAfter).toBe(headBefore) // no commit at all → certainly no delete
+    // Belt-and-braces: the renamed files still exist in the remote tree, and the
+    // old (space-form) paths stayed gone (renamed, never duplicated).
+    const treeSha = await getCommitTreeSha(TOKEN!, OWNER, REPO_NAME, headAfter)
+    const tree = await getTreeMap(TOKEN!, OWNER, REPO_NAME, treeSha)
+    for (const r of renames) {
+      expect(tree.has(r.to)).toBe(true)    // renamed file present (content preserved)
+      expect(tree.has(r.from)).toBe(false) // old name still gone
+    }
+    log(`[scenario 7] push after adoption: deleted=${sync.result.deleted} (head ${headBefore.slice(0, 8)} unchanged); all renamed files survive`)
+  })
+
+  // rename-not-delete GUARD 2 (push-side safety net) live proof. Even if the
+  // pull classification were WRONG and a note got soft-deleted while an ACTIVE
+  // note's content still maps to that remote file, syncToGitHub must NOT delete
+  // it. We simulate the worst case directly: a soft-deleted note carrying the
+  // old gitPath, alongside a live note whose content IS that remote blob.
+  test('scenario 8: push-side safety net — soft-deleted note never deletes a file a live note still represents', async () => {
+    const sStamp = Date.now()
+    // Plant a note remotely and clone it so we know its exact remote path + sha.
+    let live = makeNote(`safetynet ${sStamp}`, `Safety-net body ${sStamp}\n`)
+    const push = await syncToGitHub({ token: TOKEN!, repo, notes: [live], folders: [] })
+    live = applyPathUpdates([live], push.pathUpdates)[0]
+    const livePath = live.gitPath!
+    expect(livePath).toBeTruthy()
+
+    // Construct the data-loss precondition: a SOFT-DELETED note that still
+    // carries `livePath` as its gitPath (the bug's leftover), PLUS the live note
+    // (same content). The safety net must refuse the delete because a live
+    // note's content equals the remote blob at livePath.
+    const ghost: Note = {
+      ...makeNote(`safetynet ${sStamp}`, live.content),
+      id: `ghost-${sStamp}`,
+      isDeleted: true,
+      deletedAt: Date.now(),
+      gitPath: livePath,
+      gitLastPushedSha: live.gitLastPushedSha,
+      gitRemoteBaseSha: live.gitRemoteBaseSha,
+    }
+
+    const headBefore = await getRefSha(HARNESS_BRANCH)
+    const out = await syncToGitHub({ token: TOKEN!, repo, notes: [live, ghost], folders: [] })
+    expect(out.result.deleted).toBe(0)
+    const headAfter = await getRefSha(HARNESS_BRANCH)
+    expect(headAfter).toBe(headBefore)
+    // The live note's file still exists remotely.
+    const treeSha = await getCommitTreeSha(TOKEN!, OWNER, REPO_NAME, headAfter)
+    const tree = await getTreeMap(TOKEN!, OWNER, REPO_NAME, treeSha)
+    expect(tree.has(livePath)).toBe(true)
+    log(`[scenario 8] safety net: soft-deleted ghost at ${livePath} did NOT delete the live note's file (deleted=0, head unchanged)`)
   })
 })
