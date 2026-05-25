@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { Sidebar, RightSidebar, Ribbon, MobileTopBar, DrawerHandle } from '@/components/sidebar'
+import { Sidebar, RightSidebar, Ribbon, MobileTopBar, DrawerHandle, SidebarResizeHandle } from '@/components/sidebar'
 import { Editor } from '@/components/editor'
 import { Toaster } from '@/components/ui'
 
@@ -34,7 +34,7 @@ const LocalFolderImportModal = dynamic(() => import('@/components/modals/LocalFo
 const DiscardLocalChangesModal = dynamic(() => import('@/components/modals/DiscardLocalChangesModal').then(m => ({ default: m.DiscardLocalChangesModal })), { ssr: false })
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useKeyboardShortcuts, useHydration, useAutoSync, useAutoEmbedNotes, useApplyTheme, useViewport } from '@/hooks'
-import { useUIStore, useWorkspaceStore, useGitHubStore } from '@/stores'
+import { useUIStore, useWorkspaceStore, useGitHubStore, DEFAULT_SIDEBAR_WIDTH } from '@/stores'
 import { switchVault } from '@/utils/switchVault'
 import { notesKey } from '@/utils/repoStorage'
 import { useNoteStore } from '@/stores/noteStore'
@@ -58,7 +58,7 @@ const ResetConfirmModal = dynamic(
 
 export default function Home() {
   const hydrated = useHydration()
-  const { sidebarCollapsed } = useUIStore()
+  const { sidebarCollapsed, sidebarWidth } = useUIStore()
   const pruneStaleTabs = useWorkspaceStore(s => s.pruneStaleTabs)
   const { isMobile } = useViewport()
 
@@ -455,13 +455,25 @@ export default function Home() {
         <Ribbon />
       </div>
 
+      {/* Sidebar column. Collapsed → fixed 50px rail. Expanded → the
+          user-set, drag-resizable width from useUIStore (defaults to
+          256 = the old w-64). We DROP the width transition while
+          expanded so the drag tracks the pointer 1:1 instead of
+          lagging behind a 300ms ease; the collapse toggle keeps its
+          animation. Pre-hydration we render the default width to avoid
+          an SSR/client mismatch (sidebarWidth is persisted). */}
       <div
-        className={`flex-none transition-all duration-300 ${
-          isSidebarCollapsed ? 'w-[50px]' : 'w-64'
+        className={`flex-none ${
+          isSidebarCollapsed ? 'w-[50px] transition-all duration-300' : ''
         }`}
+        style={isSidebarCollapsed ? undefined : { width: hydrated ? sidebarWidth : DEFAULT_SIDEBAR_WIDTH }}
       >
         <Sidebar />
       </div>
+
+      {/* Drag-to-resize handle — sits between the sidebar and the
+          editor. Only meaningful when the sidebar is expanded. */}
+      {!isSidebarCollapsed && <SidebarResizeHandle />}
 
       {/* Editor — width is "fill remaining" rather than the hard
           100vw calc we used before, so the right sidebar can claim

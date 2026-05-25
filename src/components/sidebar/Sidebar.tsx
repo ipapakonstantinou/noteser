@@ -92,9 +92,11 @@ export const Sidebar = () => {
 
   return (
     <div
-      className={`obsidian-sidebar h-full overflow-hidden flex flex-col transition-all duration-300 ${
-        isMobile ? 'w-full' : sidebarCollapsed ? 'w-[50px]' : 'w-64'
-      }`}
+      // Width is driven by the parent column in page.tsx now (fixed
+      // 50px when collapsed, the user's drag-resized width when
+      // expanded). The inner sidebar just fills it, so it's always
+      // w-full regardless of viewport.
+      className="obsidian-sidebar h-full w-full overflow-hidden flex flex-col"
       onClick={closeContextMenu}
     >
       {/* Header */}
