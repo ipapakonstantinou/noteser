@@ -384,7 +384,7 @@ const DEFAULTS = {
   aiEmbeddingsEnabled: false,
   aiCommitMessages: false,
   notesOpenInPreviewMode: false,
-  calendarWeekStartDay: 0 as CalendarWeekStartDay,
+  calendarWeekStartDay: 1 as CalendarWeekStartDay,
   shortcutOverrides: {} as Record<string, string>,
   trashMode: 'trash' as TrashMode,
   confirmBulkDelete: true,
