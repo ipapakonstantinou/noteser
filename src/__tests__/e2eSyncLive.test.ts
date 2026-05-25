@@ -184,7 +184,10 @@ maybe('e2e GitHub sync (live)', () => {
   jest.setTimeout(120_000)
 
   const stamp = Date.now()
-  const titles = [1, 2, 3].map(i => `harness-${stamp}-${i}`)
+  // Titles contain SPACES on purpose, to prove sanitizeFilename preserves them
+  // through the push/pull round-trip (no space-to-dash mangling) and that a
+  // spaced path still classifies `unchanged` (no re-upload churn).
+  const titles = [1, 2, 3].map(i => `harness ${stamp} note ${i}`)
   // Notes carry their git linkage forward across scenarios.
   let notes: Note[] = titles.map((t, i) => makeNote(t, `Note ${i + 1} body for ${t}\n`))
   let baselineHeadSha = ''
@@ -318,7 +321,11 @@ maybe('e2e GitHub sync (live)', () => {
       c => c.kind === 'remoteCreated' && ourPaths.has((c as { path: string }).path),
     )
     expect(stray).toBeUndefined()
-    log(`[scenario 3] re-pull: all 3 notes classified unchanged, no duplicate remoteCreated`)
+    // Spaces in the title survived as spaces in the git path (no space-to-dash
+    // mangling), AND they still classified `unchanged` above — proving the
+    // round-trip is stable for spaced filenames.
+    expect(notes.every(n => n.gitPath?.includes(' '))).toBe(true)
+    log(`[scenario 3] re-pull: all 3 notes (spaced titles) classified unchanged, paths kept spaces, no duplicate remoteCreated`)
   })
 
   test('scenario 4: empty-commit guard — re-push unchanged notes makes no new commit', async () => {
