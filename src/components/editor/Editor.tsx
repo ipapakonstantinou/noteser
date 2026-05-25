@@ -9,6 +9,11 @@ import { Pane } from './Pane'
 // (horizontal split). The divider between them is draggable to resize.
 
 const DEFAULT_LEFT_RATIO = 0.5
+// Smallest fraction of the editor width a single pane may shrink to via
+// the divider drag. Was 0.15 (a hard 15% floor that blocked normal
+// shrinking); lowered to 0.05 so a pane can be made small like the other
+// resizable panels while still leaving a grabbable sliver + the divider.
+const MIN_PANE_RATIO = 0.05
 
 export const Editor = () => {
   const panes = useWorkspaceStore(s => s.panes)
@@ -48,8 +53,11 @@ export const Editor = () => {
       const rect = containerRef.current.getBoundingClientRect()
       const delta = (ev.clientX - dragRef.current.startX) / rect.width
       const next = dragRef.current.startRatio + delta
-      // Clamp so neither pane vanishes.
-      setLeftRatio(Math.min(0.85, Math.max(0.15, next)))
+      // Clamp so neither pane vanishes entirely, but allow panes to be
+      // dragged quite small (like the other resizable panels). A tiny
+      // floor keeps a sliver of each pane grabbable so the divider can't
+      // be lost off-screen.
+      setLeftRatio(Math.min(1 - MIN_PANE_RATIO, Math.max(MIN_PANE_RATIO, next)))
     }
     const handleUp = () => {
       dragRef.current = null

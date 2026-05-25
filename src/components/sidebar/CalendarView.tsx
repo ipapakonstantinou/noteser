@@ -6,8 +6,8 @@ import { useNoteStore, useFolderStore, useWorkspaceStore, useSettingsStore } fro
 import { useHydration } from '@/hooks'
 import { dailyNotesFolder } from '@/utils/systemFolder'
 import { formatDate } from '@/utils/dateFormat'
+import { dayHeadersForWeekStart, leadingBlankCount } from '@/utils/calendarGrid'
 
-const DAY_HEADERS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -25,6 +25,7 @@ export const CalendarView = () => {
   const ensureFolderPath = useFolderStore(s => s.ensureFolderPath)
   const dateFormat = useSettingsStore(s => s.dailyNoteDateFormat)
   const dailyTemplateId = useSettingsStore(s => s.dailyNoteTemplateId)
+  const weekStartDay = useSettingsStore(s => s.calendarWeekStartDay)
 
   const year = viewDate.getFullYear()
   const month = viewDate.getMonth()
@@ -51,13 +52,19 @@ export const CalendarView = () => {
     return set
   }, [activeNotes, year, month, dateFormat])
 
-  const firstDayOfWeek = new Date(year, month, 1).getDay()
+  // Leading blanks before day 1, measured from the configured week-start
+  // day so column 0 of the grid lines up with the rotated headers.
+  const leadingBlanks = leadingBlankCount(
+    new Date(year, month, 1).getDay(),
+    weekStartDay,
+  )
+  const dayHeaders = dayHeadersForWeekStart(weekStartDay)
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const isCurrentMonth =
     year === today.getFullYear() && month === today.getMonth()
 
   const cells: (number | null)[] = [
-    ...Array<null>(firstDayOfWeek).fill(null),
+    ...Array<null>(leadingBlanks).fill(null),
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ]
 
@@ -109,7 +116,7 @@ export const CalendarView = () => {
 
       {/* Day-of-week headers */}
       <div className="grid grid-cols-7 mb-1">
-        {DAY_HEADERS.map(d => (
+        {dayHeaders.map(d => (
           <div
             key={d}
             className="text-center text-[10px] text-obsidianSecondaryText py-1"
