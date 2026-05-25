@@ -35,6 +35,17 @@ const mockSettings: { autoSyncOnStart: boolean; pullOnlyOnStartup: boolean; auto
 }
 jest.mock('../stores', () => ({
   useSettingsStore: (selector: (s: typeof mockSettings) => unknown) => selector(mockSettings),
+  // progressive-clone: the reload-resume effect reads useNoteStore.getState()
+  // to check for outstanding shells. Stub it to an empty vault so the effect
+  // is a no-op in these settings-focused tests.
+  useNoteStore: { getState: () => ({ notes: [] }) },
+}))
+
+// progressive-clone: stub the background fill so the resume effect doesn't try
+// to reach the network from these unit tests.
+const fillShellsInBackground = jest.fn(async () => undefined)
+jest.mock('../utils/backgroundFill', () => ({
+  fillShellsInBackground: () => fillShellsInBackground(),
 }))
 
 import { useAutoSync } from '../hooks/useAutoSync'

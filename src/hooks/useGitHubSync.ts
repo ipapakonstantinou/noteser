@@ -11,6 +11,7 @@ import { VaultLockedError } from '@/utils/vaultKey'
 import { syncToGitHub, pullFromGitHub } from '@/utils/githubSync'
 import type { PullClassification, SyncResult, GitPathUpdate } from '@/utils/githubSync'
 import { applyNonConflicts, applyAttachmentClassifications } from '@/utils/syncApply'
+import { fillShellsInBackground } from '@/utils/backgroundFill'
 import { pendingStoreHydration } from '@/utils/ensureStoresHydrated'
 import { switchVault } from '@/utils/switchVault'
 import { notesKey } from '@/utils/repoStorage'
@@ -403,6 +404,17 @@ export function useGitHubSync(): UseGitHubSyncResult {
         setSyncState({ kind: 'running', message: 'Applying changes…' })
         const { notes: pullCounts, attachments: attachCounts } = await runApply(classifications)
 
+        // progressive-clone: stream shell bodies in the background. Fire AND
+        // FORGET — we don't await, so the push below and the success toast
+        // happen immediately while bodies fill in. The push excludes shells
+        // (syncToGitHub drops contentLoaded===false), so an in-flight fill can
+        // never race the push into an empty-body overwrite. Resumes on reload
+        // via the startup kick-off in useAutoSync.
+        void fillShellsInBackground((msg) => {
+          // Only surface fill progress when nothing more important is showing.
+          setSyncState((prev) => (prev.kind === 'idle' ? { kind: 'running', message: msg } : prev))
+        })
+
         // AI commit messages: when the user has opted in AND didn't
         // pass a custom message via the SCM input, ask the model to
         // draft one from the pending diff. Null result → fall back to
@@ -545,6 +557,13 @@ export function useGitHubSync(): UseGitHubSyncResult {
 
         setSyncState({ kind: 'running', message: 'Applying changes…' })
         const { notes: pullCounts, attachments: attachCounts } = await runApply(classifications)
+
+        // progressive-clone: stream shell bodies in the background (fire and
+        // forget). See runSync for the full rationale — pull-only never pushes,
+        // so there's no race to worry about here at all.
+        void fillShellsInBackground((msg) => {
+          setSyncState((prev) => (prev.kind === 'idle' ? { kind: 'running', message: msg } : prev))
+        })
 
         // Record the pulled HEAD as the new baseline so lastCommitSha tracks
         // the remote after a pull-only too. Previously only runSync called

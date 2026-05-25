@@ -140,6 +140,39 @@ export async function applyNonConflicts(classifications: PullClassification[]): 
     if (c.kind === 'remoteCreated') {
       const { segments, title } = splitRepoPath(c.path)
       const folderId = ensureFolderPath(segments)
+
+      // progressive-clone: a SHELL remoteCreated (first clone) materialises a
+      // placeholder note — title + path from the tree, EMPTY body, contentLoaded
+      // false. CRITICALLY both gitLastPushedSha AND gitRemoteBaseSha are pinned
+      // to the RAW remote blob SHA (c.remoteSha), NOT to a canonical-of-empty
+      // SHA. That is what makes the classifier read the shell as `unchanged`
+      // (remoteBase === remoteSha) and guarantees it can never be pushed as an
+      // empty-body overwrite before its real body loads. The background fill /
+      // on-open path replaces content + re-pins gitLastPushedSha to the
+      // canonical-local SHA and flips contentLoaded true.
+      if (c.shell) {
+        const shell = {
+          id: uuid(),
+          title,
+          content: '',
+          folderId,
+          gitPath: c.path,
+          gitLastPushedSha: c.remoteSha,
+          gitRemoteBaseSha: c.remoteSha,
+          contentLoaded: false,
+          createdAt: now,
+          updatedAt: now,
+          isDeleted: false,
+          deletedAt: null,
+          isPinned: false,
+          templateId: null,
+        }
+        byId.set(shell.id, shell as ReturnType<typeof useNoteStore.getState>['notes'][number])
+        lastCreatedId = shell.id
+        counts.created++
+        continue
+      }
+
       const content = bodyWithInlineTags(c.body, c.tags)
       const newNote = {
         id: uuid(),
@@ -154,6 +187,9 @@ export async function applyNonConflicts(classifications: PullClassification[]): 
         // Merge ancestor: the actual remote blob SHA, fetchable via
         // getBlobContent. Distinct from gitLastPushedSha for frontmatter notes.
         gitRemoteBaseSha: c.remoteSha,
+        // Normal (non-shell) remoteCreated is fully loaded — mark it so so the
+        // classifier guard never mistakes it for a shell.
+        contentLoaded: true,
         createdAt: now,
         updatedAt: now,
         isDeleted: false,

@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { useSettingsStore } from '@/stores'
+import { useSettingsStore, useNoteStore } from '@/stores'
 import { useGitHubSync, type SyncState } from './useGitHubSync'
 import { useStoresHydrated } from './useStoresHydrated'
+import { fillShellsInBackground } from '@/utils/backgroundFill'
 
 // Drives the two auto-sync behaviours configurable from Settings:
 //
@@ -58,6 +59,27 @@ export function useAutoSync(): void {
       void runSync()
     }
   }, [hydrated, isConnected, autoSyncOnStart, pullOnlyOnStartup, runSync, runPullOnly])
+
+  // ── progressive-clone: resume the body fill after a reload ──────────
+  // A first clone that was interrupted (reload, crash, navigate-away) leaves
+  // SHELL notes persisted in IDB with their bodies unfetched. On the next boot
+  // we kick the background fill so the vault finishes populating — INDEPENDENT
+  // of autoSyncOnStart, because a user who disabled auto-sync still wants their
+  // half-cloned vault to finish. fillShellsInBackground is a no-op when there
+  // are no shells (the common case), is self-guarded against running twice, and
+  // never pushes — so this is safe to fire unconditionally once connected.
+  const resumeRanRef = useRef(false)
+  useEffect(() => {
+    if (!hydrated) return
+    if (resumeRanRef.current) return
+    if (!isConnected) return
+    resumeRanRef.current = true
+    const hasShells = useNoteStore.getState().notes.some(
+      n => !n.isDeleted && n.contentLoaded === false,
+    )
+    if (!hasShells) return
+    void fillShellsInBackground()
+  }, [hydrated, isConnected])
 
   // ── Periodic sync ──────────────────────────────────────────────────
   useEffect(() => {
