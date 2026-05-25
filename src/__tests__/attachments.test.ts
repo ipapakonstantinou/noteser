@@ -50,6 +50,9 @@ import {
   getAttachmentTombstones,
   addAttachmentTombstone,
   clearAttachmentTombstones,
+  getKnownAttachmentPaths,
+  isKnownAttachmentPath,
+  resolveAttachmentPath,
   _clearAttachmentUrlCache,
 } from '../utils/attachments'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -397,3 +400,62 @@ describe('IDB stall degrades gracefully', () => {
     await expect(promise).resolves.toBeNull()
   })
 })
+
+// ── Synchronous known-path index (embed/orphan resolution) ───────────────────
+
+describe('attachment path index', () => {
+  test('a synced attachment (putAttachmentAtPath) is resolvable by its bare name', async () => {
+    // Sync apply preserves the remote path/name verbatim — this is how an
+    // Obsidian "Pasted image …" lands locally, so the embed's bare filename
+    // matches the stored basename exactly.
+    const path = 'Files/Pasted image 20260522.png'
+    await putAttachmentAtPath(path, new Blob(['x'], { type: 'image/png' }))
+    expect(resolveAttachmentPath('Pasted image 20260522.png')).toBe(path)
+    expect(isKnownAttachmentPath(path)).toBe(true)
+    expect(getKnownAttachmentPaths()).toContain(path)
+  })
+
+  test('saveAttachment seeds the index under its timestamped path', async () => {
+    // saveAttachment (local drag-drop) prefixes a timestamp, so the bare
+    // original name does NOT match — but the full stored path is indexed.
+    const blob = new Blob(['x'], { type: 'image/png' })
+    const path = await saveAttachment(blob, 'shot.png')
+    expect(isKnownAttachmentPath(path)).toBe(true)
+    expect(resolveAttachmentPath(path)).toBe(path)
+  })
+
+  test('resolveAttachmentPath is case-insensitive on the basename', async () => {
+    const path = await putAttachmentAtPath(
+      'Files/Diagram.PNG',
+      new Blob(['x'], { type: 'image/png' }),
+    ).then(() => 'Files/Diagram.PNG')
+    expect(resolveAttachmentPath('diagram.png')).toBe(path)
+  })
+
+  test('an already-known full path resolves to itself', async () => {
+    await putAttachmentAtPath('Files/foo.png', new Blob(['x'], { type: 'image/png' }))
+    expect(resolveAttachmentPath('Files/foo.png')).toBe('Files/foo.png')
+  })
+
+  test('unknown names resolve to null', () => {
+    expect(resolveAttachmentPath('nope.png')).toBeNull()
+    expect(resolveAttachmentPath('')).toBeNull()
+  })
+
+  test('listAttachmentPaths reindexes from the authoritative IDB scan', async () => {
+    idb.set('noteser-attachment:Files/seeded image.png', { blob: new Blob(['x']) })
+    // Index starts empty (beforeEach cleared it); the scan repopulates it.
+    expect(resolveAttachmentPath('seeded image.png')).toBeNull()
+    await listAttachmentPaths()
+    expect(resolveAttachmentPath('seeded image.png')).toBe('Files/seeded image.png')
+  })
+
+  test('deleteAttachment removes the path from the index', async () => {
+    const path = await saveAttachment(new Blob(['x']), 'gone.png')
+    expect(isKnownAttachmentPath(path)).toBe(true)
+    await deleteAttachment(path)
+    expect(isKnownAttachmentPath(path)).toBe(false)
+    expect(resolveAttachmentPath('gone.png')).toBeNull()
+  })
+})
+

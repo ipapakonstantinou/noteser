@@ -18,6 +18,7 @@ jest.mock('idb-keyval', () => ({
   get: jest.fn().mockResolvedValue(undefined),
   set: jest.fn().mockResolvedValue(undefined),
   del: jest.fn().mockResolvedValue(undefined),
+  keys: jest.fn().mockResolvedValue([]),
 }))
 
 import { EditorState } from '@codemirror/state'
@@ -27,6 +28,10 @@ import {
   imagesLivePreviewField,
   parseInlineImage,
 } from '../components/editor/imagesLivePreview'
+import { keys } from 'idb-keyval'
+import { listAttachmentPaths, _clearAttachmentUrlCache } from '../utils/attachments'
+
+const mockedKeys = keys as jest.MockedFunction<typeof keys>
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -85,6 +90,22 @@ describe('parseInlineImage', () => {
     expect(parseInlineImage('![alt](unterminated')).toBeNull()
     expect(parseInlineImage('[alt](attachments/foo.png)')).toBeNull()
   })
+
+  test('parses a wiki image embed by extension (resolver returns null)', () => {
+    // No index seeded → resolveAttachmentPath returns null; the image
+    // extension alone makes it an image, src falls back to the bare target.
+    expect(parseInlineImage('![[Pasted image 20260522.png]]'))
+      .toEqual({ alt: 'Pasted image 20260522.png', src: 'Pasted image 20260522.png' })
+  })
+
+  test('wiki embed with alias uses the alias as alt text', () => {
+    expect(parseInlineImage('![[diagram.png|My diagram]]'))
+      .toEqual({ alt: 'My diagram', src: 'diagram.png' })
+  })
+
+  test('non-image wiki embed (note transclusion) is rejected', () => {
+    expect(parseInlineImage('![[Some Note]]')).toBeNull()
+  })
 })
 
 // ── imagesLivePreviewField ────────────────────────────────────────────────────
@@ -127,6 +148,25 @@ describe('imagesLivePreviewField StateField', () => {
     const doc2 = 'intro\n\n![logo](https://example.com/logo.png)\n'
     const state2 = makeState(doc2, 0)
     expect(collectDecos(state2)).toHaveLength(0)
+  })
+
+  test('wiki image embed resolved to a stored Files/ path gets a widget', async () => {
+    // Seed the sync attachment index from a mocked IDB scan: the bare embed
+    // name resolves to the stored `Files/...` path even though that folder
+    // isn't the configured attachments folder.
+    _clearAttachmentUrlCache()
+    mockedKeys.mockResolvedValueOnce([
+      'noteser-attachment:Files/Pasted image 20260522.png',
+    ])
+    await listAttachmentPaths()
+
+    const doc = 'intro\n\n![[Pasted image 20260522.png]]\n'
+    const state = makeState(doc, 0) // cursor on line 1
+    const decos = collectDecos(state)
+
+    expect(decos).toHaveLength(1)
+    expect(decos[0].widget?.src).toBe('Files/Pasted image 20260522.png')
+    _clearAttachmentUrlCache()
   })
 
   test('multiple attachments produce one decoration each', () => {

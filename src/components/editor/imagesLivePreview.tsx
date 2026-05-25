@@ -5,7 +5,8 @@ import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemir
 import { StateField, RangeSetBuilder, type EditorState, type Extension } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
 import { AttachmentImage } from './AttachmentImage'
-import { isAttachmentPath } from '@/utils/attachments'
+import { isAttachmentPath, isKnownAttachmentPath, resolveAttachmentPath } from '@/utils/attachments'
+import { isImageEmbedTarget } from '@/utils/embeds'
 
 // Renders ![alt](attachments/...) image references inline inside the
 // CodeMirror editor, swapping the raw markdown for the resolved blob URL.
@@ -47,10 +48,24 @@ class AttachmentImageWidget extends WidgetType {
   }
 }
 
-// Parse an Image node's source range into { alt, src }. Only handles the
-// single-line standard form `![alt](src)` with no whitespace in src.
-// Returns null for anything else so we leave it as-is.
+// Parse an Image node's source range into { alt, src }. Handles two forms:
+//   - standard markdown:  `![alt](src)`            (no whitespace in src)
+//   - Obsidian wiki embed: `![[name.png]]` / `![[name.png|alt]]`
+// For the wiki form the bare name is resolved to its stored attachment path
+// via resolveAttachmentPath (Obsidian writes a bare filename; the blob lives
+// under a folder). Returns null for anything else so we leave it as-is.
 export function parseInlineImage(text: string): { alt: string; src: string } | null {
+  // Wiki image embed: `![[target]]` or `![[target|alias]]`.
+  const wiki = text.match(/^!\[\[([^\]|\n]+?)(?:\|([^\]\n]+?))?\]\]$/)
+  if (wiki) {
+    const target = wiki[1].trim()
+    const resolved = resolveAttachmentPath(target)
+    // Only treat it as an image when it resolves to a stored attachment or
+    // carries an image extension — `![[Some Note]]` is a transclusion, not an
+    // image, and must NOT render here.
+    if (!resolved && !isImageEmbedTarget(target)) return null
+    return { alt: wiki[2]?.trim() || target, src: resolved ?? target }
+  }
   const m = text.match(/^!\[([^\]]*)\]\(([^)\s]+)\)$/)
   if (!m) return null
   return { alt: m[1], src: m[2] }
@@ -75,7 +90,9 @@ function buildDecorations(state: EditorState): DecorationSet {
       if (!parsed) return false
       // Only swap our own attachment refs — leave external URLs (http, data:)
       // and unknown schemes as plain markdown so we don't surprise the user.
-      if (!isAttachmentPath(parsed.src)) return false
+      // A wiki embed resolved to a stored blob under a non-attachments folder
+      // (e.g. `Files/foo.png`) is recognised via isKnownAttachmentPath.
+      if (!isAttachmentPath(parsed.src) && !isKnownAttachmentPath(parsed.src)) return false
 
       builder.add(node.from, node.to, Decoration.replace({
         widget: new AttachmentImageWidget(parsed.src, parsed.alt),

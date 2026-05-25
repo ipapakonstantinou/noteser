@@ -19,6 +19,7 @@ import { useUIStore, useNoteStore, useWorkspaceStore } from '@/stores'
 import { renderWikilinks } from '@/utils/wikilinks'
 import { decodeWikilinkHref, findFragmentLine } from '@/utils/wikilinkTarget'
 import { expandEmbeds } from '@/utils/embeds'
+import { resolveAttachmentPath } from '@/utils/attachments'
 import { findNoteByTitleOrAlias } from '@/utils/aliases'
 import { toggleTaskLineText, removeTaskPrefixFromLine } from '@/utils/tasks'
 import { SCROLL_TO_LINE_EVENT } from '@/utils/events'
@@ -540,7 +541,7 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
                 url.startsWith('wikilink://') ? url : defaultUrlTransform(url)
               }
             >
-              {renderWikilinks(expandEmbeds(previewContent, getActiveNotes())) || '*Start writing...*'}
+              {renderWikilinks(expandEmbeds(previewContent, getActiveNotes(), { resolveAttachment: resolveAttachmentPath })) || '*Start writing...*'}
             </ReactMarkdown>
           </div>
         </div>

@@ -66,6 +66,70 @@ const TOMBSTONE_KEY = STORAGE_KEYS.attachmentTombstones
 
 const urlCache = new Map<string, string>()
 
+// ── Synchronous known-path index ────────────────────────────────────────────
+// The IDB store is async, but the rendered/live preview resolves embeds
+// synchronously. We keep an in-memory mirror of every stored attachment path
+// so callers can map a bare Obsidian filename (`![[Pasted image …png]]`) to
+// the actual stored path (`Files/Pasted image …png`) without awaiting IDB.
+//
+// It is best-effort: seeded by listAttachmentPaths/listAttachmentMeta (which
+// FolderTree runs on mount + on every ATTACHMENTS_CHANGED_EVENT) and kept in
+// sync by the save/put/move/delete mutators below. A bare filename may map to
+// more than one stored path (same name in two folders); we keep the set and
+// resolve to the first match — collisions are rare and the alternative
+// (showing nothing) is worse.
+const knownPaths = new Set<string>()
+
+function indexPath(path: string): void {
+  knownPaths.add(path)
+}
+
+function unindexPath(path: string): void {
+  knownPaths.delete(path)
+}
+
+// Replace the whole index from an authoritative path list (a full IDB scan).
+function reindexPaths(paths: Iterable<string>): void {
+  knownPaths.clear()
+  for (const p of paths) knownPaths.add(p)
+}
+
+// The basename (final path segment) of an attachment path, lower-cased for
+// case-insensitive matching — Obsidian itself matches filenames loosely.
+function basenameKey(pathOrName: string): string {
+  const base = pathOrName.split('/').pop() ?? pathOrName
+  return base.toLowerCase()
+}
+
+// Every stored attachment path currently known (sync). Best-effort mirror of
+// IDB — may be empty until the first listAttachmentPaths/Meta call seeds it.
+export function getKnownAttachmentPaths(): string[] {
+  return [...knownPaths]
+}
+
+// True iff `path` is an exact, currently-known stored attachment path. Unlike
+// isAttachmentPath (which matches the configured attachments FOLDER prefix),
+// this recognises a blob stored under any folder — e.g. Obsidian's `Files/`
+// — as long as the index has been seeded. Used by the image renderer so a
+// `Files/foo.png` embed still resolves to its IDB blob.
+export function isKnownAttachmentPath(path: string): boolean {
+  return knownPaths.has(path)
+}
+
+// Resolve a bare attachment name (or path) to a stored attachment path by
+// matching on basename. Returns null when nothing matches. If the input is
+// already a known full path it is returned as-is. Exact-path matches win over
+// basename matches.
+export function resolveAttachmentPath(nameOrPath: string): string | null {
+  if (!nameOrPath) return null
+  if (knownPaths.has(nameOrPath)) return nameOrPath
+  const wantKey = basenameKey(nameOrPath)
+  for (const p of knownPaths) {
+    if (basenameKey(p) === wantKey) return p
+  }
+  return null
+}
+
 // Bound an IDB op so a stalled IndexedDB (seen on mobile Safari) degrades
 // gracefully instead of wedging the sync. On timeout we resolve to `fallback`
 // and warn once. Attachment comparison during pull is best-effort: degrading
@@ -169,6 +233,7 @@ export async function saveAttachment(
     createdAt: Date.now(),
   }
   await set(PREFIX + path, record)
+  indexPath(path)
   ensureAttachmentParentFolder(path)
   notifyAttachmentsChanged()
   return path
@@ -195,6 +260,7 @@ export async function getAttachmentUrl(path: string): Promise<string | null> {
 
 export async function deleteAttachment(path: string): Promise<void> {
   await del(PREFIX + path)
+  unindexPath(path)
   const url = urlCache.get(path)
   if (url) {
     URL.revokeObjectURL(url)
@@ -246,6 +312,8 @@ export async function moveAttachment(oldPath: string, newPath: string): Promise<
   }
   await set(PREFIX + newPath, record)
   await del(PREFIX + oldPath)
+  unindexPath(oldPath)
+  indexPath(newPath)
   // Drop the cached URL — the new path will mint its own next read.
   const oldUrl = urlCache.get(oldPath)
   if (oldUrl) {
@@ -293,6 +361,7 @@ export async function moveAttachmentAndRewriteRefs(
 export function _clearAttachmentUrlCache(): void {
   for (const url of urlCache.values()) URL.revokeObjectURL(url)
   urlCache.clear()
+  knownPaths.clear()
 }
 
 // Wipe EVERY attachment in IDB plus the tombstone list and the in-memory URL
@@ -313,6 +382,7 @@ export async function clearAllAttachments(): Promise<void> {
         await del(k)
       }
     }
+    knownPaths.clear()
     await del(TOMBSTONE_KEY)
   } catch (err) {
     console.warn('[attachments] clearAllAttachments failed (continuing):', err)
@@ -344,6 +414,9 @@ async function listAttachmentPathsUnbounded(): Promise<string[]> {
     if (typeof k !== 'string') continue
     if (k.startsWith(PREFIX)) out.push(k.slice(PREFIX.length))
   }
+  // Seed the synchronous index from this authoritative scan so embed/orphan
+  // resolution can map bare filenames to stored paths without awaiting IDB.
+  reindexPaths(out)
   return out.sort()
 }
 
@@ -405,6 +478,7 @@ export async function putAttachmentAtPath(
     createdAt: Date.now(),
   }
   await set(PREFIX + path, record)
+  indexPath(path)
   // Invalidate the URL cache so the next read mints a fresh blob: URL for
   // the new content (otherwise editors and preview keep showing the old img).
   const oldUrl = urlCache.get(path)
