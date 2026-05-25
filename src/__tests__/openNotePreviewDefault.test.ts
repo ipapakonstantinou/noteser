@@ -60,7 +60,7 @@ beforeEach(() => {
 
 const settle = () => new Promise(r => setTimeout(r, 20))
 
-test('cold start (no note open) flips isPreviewMode ON when the setting is true (default)', async () => {
+test('cold start (no note open) flips isPreviewMode ON when the setting is true', async () => {
   useSettingsStore.setState({ notesOpenInPreviewMode: true })
   expect(useUIStore.getState().isPreviewMode).toBe(false)
 

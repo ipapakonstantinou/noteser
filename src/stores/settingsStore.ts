@@ -383,7 +383,7 @@ const DEFAULTS = {
   aiModel: DEFAULT_AI_MODEL.anthropic,
   aiEmbeddingsEnabled: false,
   aiCommitMessages: false,
-  notesOpenInPreviewMode: true,
+  notesOpenInPreviewMode: false,
   calendarWeekStartDay: 0 as CalendarWeekStartDay,
   shortcutOverrides: {} as Record<string, string>,
   trashMode: 'trash' as TrashMode,
