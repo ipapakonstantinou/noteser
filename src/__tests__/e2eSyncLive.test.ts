@@ -63,18 +63,58 @@ jest.mock('idb-keyval', () => {
   }
 })
 
-// Attachments: text notes only in this harness — stub the binary surface so
-// listAttachmentPaths()/tombstones resolve to empty and the push/pull paths
-// never reach FileReader (blobToBase64), which has no Node implementation.
-jest.mock('../utils/attachments', () => ({
-  isAttachmentPath: () => false,
-  listAttachmentPaths: async () => [],
-  getAttachmentBlob: async () => null,
-  getAttachmentGitSha: async () => null,
-  getAttachmentTombstones: async () => [],
-  clearAttachmentTombstones: async () => undefined,
-  putAttachmentAtPath: async () => undefined,
-}))
+// Attachments: we keep the REAL attachments module (NOT stubbed) so the
+// realistic-vault describe block below can plant + clone + classify binary
+// files end-to-end and PROVE they are not re-pushed on an unchanged clone.
+// The text-only scenarios (1–8) start with an empty IDB, so the real module's
+// listAttachmentPaths()/tombstones resolve to empty for them exactly as the
+// old stub did — no behaviour change for those scenarios.
+//
+// The real module reaches FileReader / atob / btoa (blobToBase64,
+// base64ToBytes) and URL.createObjectURL, none of which the Node test env
+// provides. Polyfill them below before any import that might touch them.
+const gPoly = globalThis as unknown as {
+  atob?: (s: string) => string
+  btoa?: (s: string) => string
+  FileReader?: unknown
+  URL: { createObjectURL?: (b: unknown) => string; revokeObjectURL?: (u: string) => void }
+}
+if (typeof gPoly.atob === 'undefined') {
+  gPoly.atob = (s: string) => Buffer.from(s, 'base64').toString('binary')
+}
+if (typeof gPoly.btoa === 'undefined') {
+  gPoly.btoa = (s: string) => Buffer.from(s, 'binary').toString('base64')
+}
+if (typeof gPoly.FileReader === 'undefined') {
+  // Minimal FileReader supporting readAsDataURL — the only mode blobToBase64
+  // uses. Builds `data:<mime>;base64,<payload>` from the Blob's bytes.
+  class NodeFileReader {
+    result: string | null = null
+    error: unknown = null
+    onload: (() => void) | null = null
+    onerror: (() => void) | null = null
+    readAsDataURL(blob: { arrayBuffer: () => Promise<ArrayBuffer>; type?: string }): void {
+      blob
+        .arrayBuffer()
+        .then((buf) => {
+          const b64 = Buffer.from(new Uint8Array(buf)).toString('base64')
+          this.result = `data:${blob.type || 'application/octet-stream'};base64,${b64}`
+          this.onload?.()
+        })
+        .catch((err) => {
+          this.error = err
+          this.onerror?.()
+        })
+    }
+  }
+  gPoly.FileReader = NodeFileReader
+}
+if (typeof gPoly.URL.createObjectURL === 'undefined') {
+  // Attachment writes invalidate a URL cache via createObjectURL/revokeObjectURL.
+  // The sync path doesn't read the URL, so a stub handle is enough.
+  gPoly.URL.createObjectURL = () => `blob:node/${Math.random().toString(36).slice(2)}`
+  gPoly.URL.revokeObjectURL = () => undefined
+}
 
 import { webcrypto } from 'node:crypto'
 import { TextEncoder, TextDecoder } from 'node:util'
@@ -104,10 +144,13 @@ import {
   getCommitTreeSha,
   getTreeMap,
   createBlob,
+  createBlobBinary,
   createTree,
   createCommit,
   updateBranchRef,
   gitBlobSha,
+  gitBlobShaBytes,
+  base64ToBytes,
 } from '../utils/github'
 import { githubFetch } from '../utils/githubFetch'
 import type { Note, SyncRepo } from '@/types'
@@ -739,5 +782,486 @@ maybe('e2e GitHub sync (live)', () => {
     const tree = await getTreeMap(TOKEN!, OWNER, REPO_NAME, treeSha)
     expect(tree.has(livePath)).toBe(true)
     log(`[scenario 8] safety net: soft-deleted ghost at ${livePath} did NOT delete the live note's file (deleted=0, head unchanged)`)
+  })
+})
+
+// ════════════════════════════════════════════════════════════════════════════
+// REALISTIC-VAULT harness (rvh). A second, separately-scoped branch
+// (`claude-realistic-harness`) carrying a fixture that MIRRORS a real Obsidian
+// vault written by noteser — settings.json, frontmatter notes, non-canonical
+// notes (no trailing newline), a binary PNG attachment referenced two ways,
+// nested folders, and filenames with spaces. The whole point: a freshly-cloned
+// realistic vault with NO user edits must produce ZERO pushes on sync and ZERO
+// deletes/pushes on discard.
+//
+// Unlike the text-only block above, these scenarios drive the REAL stores
+// (note / folder / settings / github) and the REAL apply layer (applyNonConflicts
+// + applyAttachmentClassifications + fillShellsInBackground), exactly as the
+// production `runSync` / `runPullOnly` paths do. That is what surfaces the
+// class of churn bugs the synthetic harness missed.
+//
+// Scenarios:
+//   A. CLONE: progressive first-clone pull → apply → fill bodies. Asserts notes,
+//      nested folders, spaced filenames, frontmatter notes, AND the binary
+//      attachment all materialise locally.
+//   B. NO-CHURN SYNC (the key one): with NOTHING edited, build the same
+//      `vaultSettings` bundle production would (lastPushedHash = the seeded
+//      clone hash) and call syncToGitHub. Asserts result.unchanged + branch head
+//      SHA byte-identical → settings.json NOT re-pushed, attachments NOT
+//      re-pushed, frontmatter / non-canonical notes NOT re-canonicalised. If
+//      ANY pushes, the scenario fails LOUDLY and logs the exact churn path.
+//   C. DISCARD = pull-only: resetToRemote + a PULL ONLY (mirroring
+//      DiscardLocalChangesModal's runPullOnly). Asserts NO commit (head
+//      unchanged) and the re-clone repopulates.
+//   D. FRONTMATTER ROUND-TRIP: the frontmatter note, cloned then re-serialised
+//      for push, hash-matches its baseline (suppressed) so it never re-pushes.
+const RVH_BRANCH = 'claude-realistic-harness'
+const rvhRepo: SyncRepo = { owner: OWNER, name: REPO_NAME, branch: RVH_BRANCH, isPrivate: false }
+// Settings live under `.noteser/` (the folder noteser writes to). This makes
+// settings sync ACTIVE for the realistic vault (vaultSettingsRepoPath !== null).
+const RVH_SETTINGS_FOLDER = '.noteser'
+
+const rvhMaybe = TOKEN ? describe : describe.skip
+
+rvhMaybe('e2e GitHub sync — REALISTIC VAULT (live)', () => {
+  jest.setTimeout(180_000)
+
+  // ── Branch-ref lifecycle for the realistic branch (scoped to RVH_BRANCH). ──
+  async function deleteRvhRef(): Promise<void> {
+    const res = await githubFetch(
+      `https://api.github.com/repos/${OWNER}/${REPO_NAME}/git/refs/heads/${RVH_BRANCH}`,
+      { method: 'DELETE', headers: GH_HEADERS },
+    )
+    if (res.status !== 204 && res.status !== 422) {
+      throw new Error(`deleteRvhRef failed (${res.status})`)
+    }
+  }
+  async function createRvhRef(sha: string): Promise<void> {
+    const res = await githubFetch(
+      `https://api.github.com/repos/${OWNER}/${REPO_NAME}/git/refs`,
+      {
+        method: 'POST',
+        headers: { ...GH_HEADERS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ref: `refs/heads/${RVH_BRANCH}`, sha }),
+      },
+    )
+    if (!res.ok) throw new Error(`createRvhRef failed (${res.status})`)
+  }
+
+  // A 1x1 transparent PNG (67 bytes). Realistic binary attachment content.
+  const PNG_BASE64 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC'
+  const pngBytes = base64ToBytes(PNG_BASE64)
+
+  // The fixture file set. Paths are repo-relative. Each entry is either text
+  // (committed as a utf-8 blob via createBlob) or binary (the PNG, committed via
+  // createBlobBinary). The traits each path exercises are noted inline.
+  const ATTACHMENT_PATH = 'Files/Pasted image 20260101120000.png'
+  // Frontmatter note (tags + aliases) under a nested folder with spaces.
+  const FRONTMATTER_NOTE_PATH = 'Projects/Cloud/Amazon vs Microsoft.md'
+  const FRONTMATTER_NOTE_RAW =
+    '---\ntags: [cloud, comparison]\naliases: [AWS vs Azure]\n---\n' +
+    'AWS and Azure compared. See ![[Pasted image 20260101120000.png]] for the chart.\n'
+  // Plain note (no frontmatter), non-canonical: NO trailing newline (Obsidian).
+  const PLAIN_NONCANON_PATH = 'Home Server.md'
+  const PLAIN_NONCANON_RAW =
+    'Notes on the home server. Embed via markdown: ![](Files/Pasted image 20260101120000.png)'
+  // Plain canonical note (trailing newline) at the vault root.
+  const PLAIN_CANON_PATH = 'Welcome.md'
+  const PLAIN_CANON_RAW = 'Welcome to the vault. This file is already canonical.\n'
+
+  // settings.json content + its updatedAt. Written EXACTLY as noteser would, via
+  // the app's own serializeVaultSettings over a vault slice — because Jon's real
+  // settings.json WAS written by noteser. We capture the seed/clone hash so
+  // scenario B can assert no re-push.
+  let settingsJsonContent = ''
+  let settingsJsonUpdatedAt = 0
+  const SETTINGS_PATH = `${RVH_SETTINGS_FOLDER}/settings.json`
+
+  let rvhBaseHead = ''
+
+  // Reset the four real stores to a clean, freshly-installed state + clear IDB
+  // (notes/folders/attachments). Mirrors switchVault's freshClone reset set so
+  // each scenario can start from "nothing local".
+  async function resetLocalState(): Promise<void> {
+    const { useNoteStore } = await import('@/stores/noteStore')
+    const { useFolderStore } = await import('@/stores/folderStore')
+    const { useSettingsStore } = await import('@/stores/settingsStore')
+    const { useGitHubStore } = await import('@/stores/githubStore')
+    const { clearAllAttachments } = await import('../utils/attachments')
+
+    useNoteStore.setState({ notes: [], selectedNoteId: null })
+    useFolderStore.setState({ folders: [], activeFolderId: null, expandedFolders: {}, deletedFolderPaths: [] })
+    await clearAllAttachments()
+    // Settings: point settingsFolderPath at `.noteser` (so settings sync is
+    // active) and zero the sync bookkeeping so the cloned remote settings apply.
+    useSettingsStore.setState({
+      settingsFolderPath: RVH_SETTINGS_FOLDER,
+      vaultSettingsUpdatedAt: 0,
+      vaultSettingsLastPushedHash: '',
+      vaultGitignoreDraft: null,
+      vaultGitignoreRemoteSnapshot: null,
+      localGitignoreOverlay: '',
+      vaultEncryptionEnabled: false,
+      vaultEncryptionSalt: null,
+      vaultEncryptionCanary: null,
+    })
+    // applyAttachmentClassifications + backgroundFill read token + repo here.
+    useGitHubStore.setState({ token: TOKEN!, syncRepo: rvhRepo })
+  }
+
+  // Run the production pull → apply → fill cycle against the realistic branch,
+  // exactly as runSync/runPullOnly compose it. Returns the latest commit SHA.
+  async function cloneAndApply(isFirstClone: boolean): Promise<string> {
+    const { useNoteStore } = await import('@/stores/noteStore')
+    const { useFolderStore } = await import('@/stores/folderStore')
+    const { useSettingsStore } = await import('@/stores/settingsStore')
+    const { applyNonConflicts, applyAttachmentClassifications } = await import('../utils/syncApply')
+    const { fillShellsInBackground } = await import('../utils/backgroundFill')
+    const { vaultSettingsRepoPath } = await import('../utils/vaultSettings')
+
+    const settings = useSettingsStore.getState()
+    const vaultSettingsPath = vaultSettingsRepoPath(settings.settingsFolderPath)
+    const pull = await pullFromGitHub({
+      token: TOKEN!,
+      repo: rvhRepo,
+      notes: useNoteStore.getState().notes,
+      folders: useFolderStore.getState().folders,
+      vaultSettingsPath,
+      vaultSettingsLocalUpdatedAt: settings.vaultSettingsUpdatedAt,
+      isFirstClone,
+    })
+    await applyNonConflicts(pull.classifications)
+    await applyAttachmentClassifications(pull.classifications)
+    // Drain shells synchronously (await the fill loop) so the post-clone state
+    // is fully materialised before the assertions / the no-churn push.
+    await fillShellsInBackground(() => {})
+    return pull.latestCommitSha
+  }
+
+  // Build the vaultSettings bundle for a push EXACTLY as useGitHubSync.runPush
+  // does (pickVaultSlice → serializeVaultSettings → hash, lastPushedHash from the
+  // store's seeded value). This is the bundle the app passes to syncToGitHub.
+  async function buildVaultSettingsBundle(): Promise<NonNullable<Parameters<typeof syncToGitHub>[0]['vaultSettings']>> {
+    const { useSettingsStore } = await import('@/stores/settingsStore')
+    const { pickVaultSlice, serializeVaultSettings, vaultSettingsHash, vaultSettingsRepoPath } =
+      await import('../utils/vaultSettings')
+    const settings = useSettingsStore.getState()
+    const path = vaultSettingsRepoPath(settings.settingsFolderPath)!
+    const slice = pickVaultSlice(settings)
+    const content = serializeVaultSettings(slice, settings.vaultSettingsUpdatedAt || 0)
+    const contentHash = vaultSettingsHash(content)
+    return { path, content, contentHash, lastPushedHash: settings.vaultSettingsLastPushedHash }
+  }
+
+  beforeAll(async () => {
+    if (!TOKEN) return
+    // Seed the settings.json content from noteser's OWN serializer over a
+    // realistic vault slice — i.e. exactly the bytes the app writes. We override
+    // a couple of vault keys to non-default values so the file is non-trivial.
+    const { useSettingsStore } = await import('@/stores/settingsStore')
+    const { pickVaultSlice, serializeVaultSettings } = await import('../utils/vaultSettings')
+    // Mutate the store to a representative vault config, capture its slice, then
+    // restore via resetLocalState in each scenario.
+    useSettingsStore.setState({
+      attachmentsFolder: 'Files',
+      folderSortMode: 'modified',
+      dailyNotesFolder: 'Journal',
+      templatesFolder: 'Templates',
+      trashMode: 'hardDelete',
+    })
+    settingsJsonUpdatedAt = 1735_700_000_000 // a fixed past timestamp
+    settingsJsonContent = serializeVaultSettings(pickVaultSlice(useSettingsStore.getState()), settingsJsonUpdatedAt)
+
+    // Recreate the realistic branch from main, then plant the whole fixture in a
+    // single commit (text blobs + the binary PNG blob).
+    const mainSha = await getRefSha(BASE_BRANCH)
+    await deleteRvhRef()
+    await createRvhRef(mainSha)
+
+    const baseTreeSha = await getCommitTreeSha(TOKEN!, OWNER, REPO_NAME, mainSha)
+    const pngSha = await createBlobBinary(TOKEN!, OWNER, REPO_NAME, new Blob([pngBytes.slice()], { type: 'image/png' }))
+    const settingsSha = await createBlob(TOKEN!, OWNER, REPO_NAME, settingsJsonContent)
+    const fmSha = await createBlob(TOKEN!, OWNER, REPO_NAME, FRONTMATTER_NOTE_RAW)
+    const plainNonCanonSha = await createBlob(TOKEN!, OWNER, REPO_NAME, PLAIN_NONCANON_RAW)
+    const plainCanonSha = await createBlob(TOKEN!, OWNER, REPO_NAME, PLAIN_CANON_RAW)
+
+    const treeSha = await createTree(TOKEN!, OWNER, REPO_NAME, baseTreeSha, [
+      { path: ATTACHMENT_PATH, mode: '100644', type: 'blob', sha: pngSha },
+      { path: SETTINGS_PATH, mode: '100644', type: 'blob', sha: settingsSha },
+      { path: FRONTMATTER_NOTE_PATH, mode: '100644', type: 'blob', sha: fmSha },
+      { path: PLAIN_NONCANON_PATH, mode: '100644', type: 'blob', sha: plainNonCanonSha },
+      { path: PLAIN_CANON_PATH, mode: '100644', type: 'blob', sha: plainCanonSha },
+    ])
+    const { sha: commitSha } = await createCommit(
+      TOKEN!, OWNER, REPO_NAME, 'rvh: plant realistic vault fixture', treeSha, mainSha,
+    )
+    await updateBranchRef(TOKEN!, OWNER, REPO_NAME, RVH_BRANCH, commitSha)
+    rvhBaseHead = commitSha
+    log(`[rvh setup] planted realistic vault @ ${commitSha.slice(0, 8)} (settings.json updatedAt=${settingsJsonUpdatedAt})`)
+  })
+
+  afterAll(async () => {
+    if (!TOKEN) return
+    try {
+      await deleteRvhRef()
+      log(`[rvh cleanup] deleted branch ${RVH_BRANCH}`)
+    } catch (err) {
+      log(`[rvh cleanup] branch delete failed (ignored): ${(err as Error).message}`)
+    }
+  })
+
+  test('scenario A: CLONE — progressive clone materialises notes, nested/spaced folders, frontmatter, and the binary attachment', async () => {
+    const { useNoteStore } = await import('@/stores/noteStore')
+    const { useFolderStore } = await import('@/stores/folderStore')
+    const { listAttachmentPaths, getAttachmentBlob } = await import('../utils/attachments')
+
+    await resetLocalState()
+    const head = await cloneAndApply(true)
+    expect(head).toBe(rvhBaseHead)
+
+    const notes = useNoteStore.getState().notes
+    const byPath = new Map(notes.map(n => [n.gitPath, n]))
+
+    // Our 3 fixture notes are present (the binary + settings.json are NOT notes).
+    // The realistic test repo's `main` carries other notes too; we assert our
+    // fixture's traits rather than an exact count (a real vault is never empty).
+    expect(byPath.has(FRONTMATTER_NOTE_PATH)).toBe(true)
+    expect(byPath.has(PLAIN_NONCANON_PATH)).toBe(true)
+    expect(byPath.has(PLAIN_CANON_PATH)).toBe(true)
+    // Spaced filename survived as a space (no dash mangling).
+    expect(FRONTMATTER_NOTE_PATH).toContain(' ')
+
+    // Bodies filled (shells drained). Frontmatter stripped + tags inlined as #tag.
+    const fmNote = byPath.get(FRONTMATTER_NOTE_PATH)!
+    expect(fmNote.contentLoaded).not.toBe(false)
+    expect(fmNote.content).toContain('#cloud')
+    expect(fmNote.content).toContain('#comparison')
+    expect(fmNote.content).not.toMatch(/^---\n/) // frontmatter delimiter gone
+    expect(fmNote.content).toContain('![[Pasted image 20260101120000.png]]')
+
+    const plainNote = byPath.get(PLAIN_NONCANON_PATH)!
+    expect(plainNote.content).toContain('![](Files/Pasted image 20260101120000.png)')
+
+    // Nested folders with spaces materialised: Projects, Projects/Cloud.
+    const folderPaths = useFolderStore.getState().folders.map(f => f.name)
+    expect(folderPaths).toEqual(expect.arrayContaining(['Projects', 'Cloud']))
+
+    // Binary attachment landed in IDB at the same path.
+    const attachPaths = await listAttachmentPaths()
+    expect(attachPaths).toContain(ATTACHMENT_PATH)
+    const blob = await getAttachmentBlob(ATTACHMENT_PATH)
+    expect(blob).not.toBeNull()
+    expect(blob!.size).toBe(pngBytes.length)
+
+    log(`[scenario A] cloned realistic vault: ${notes.length} notes (3 fixture + repo base), folders [${folderPaths.join(', ')}], attachment ${ATTACHMENT_PATH} (${blob!.size}B) @ ${head.slice(0, 8)}`)
+  })
+
+  test('scenario B: NO-CHURN SYNC — unchanged clone pushes NOTHING (settings.json, attachments, frontmatter all stable)', async () => {
+    const { useNoteStore } = await import('@/stores/noteStore')
+    const { useFolderStore } = await import('@/stores/folderStore')
+
+    await resetLocalState()
+    await cloneAndApply(true)
+
+    const notes = useNoteStore.getState().notes
+    const folders = useFolderStore.getState().folders
+    const vaultSettings = await buildVaultSettingsBundle()
+
+    // Count network mutations so we can name the churn path if it happens.
+    const realFetch = globalThis.fetch
+    const mutations: Array<{ method: string; url: string }> = []
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url
+      const method = (init?.method ?? 'GET').toUpperCase()
+      if (method !== 'GET' && method !== 'HEAD') mutations.push({ method, url })
+      return realFetch(input as Parameters<typeof realFetch>[0], init)
+    }) as typeof fetch
+
+    const headBefore = await getRefSha(RVH_BRANCH)
+    let outcome: Awaited<ReturnType<typeof syncToGitHub>>
+    try {
+      outcome = await syncToGitHub({ token: TOKEN!, repo: rvhRepo, notes, folders, vaultSettings })
+    } finally {
+      globalThis.fetch = realFetch
+    }
+    const headAfter = await getRefSha(RVH_BRANCH)
+
+    // Diagnostics FIRST so a failure prints the exact churn before the assert.
+    const blobCreates = mutations.filter(m => /\/git\/blobs$/.test(m.url))
+    const treeCreates = mutations.filter(m => /\/git\/trees$/.test(m.url))
+    const commitCreates = mutations.filter(m => /\/git\/commits$/.test(m.url))
+    const refUpdates = mutations.filter(m => /\/git\/refs\//.test(m.url))
+    const churnSummary =
+      `created=${outcome.result.created} updated=${outcome.result.updated} deleted=${outcome.result.deleted} ` +
+      `unchanged=${outcome.result.unchanged} | blob POSTs=${blobCreates.length} tree POSTs=${treeCreates.length} ` +
+      `commit POSTs=${commitCreates.length} ref PATCH/POSTs=${refUpdates.length}`
+    if (
+      !outcome.result.unchanged ||
+      outcome.result.created + outcome.result.updated + outcome.result.deleted > 0 ||
+      headAfter !== headBefore
+    ) {
+      console.error(
+        `\n[scenario B] CHURN DETECTED on an unchanged realistic clone — a freshly-cloned vault re-pushed.\n` +
+          `  ${churnSummary}\n` +
+          `  head ${headBefore.slice(0, 8)} → ${headAfter.slice(0, 8)}\n` +
+          `  vaultSettings.lastPushedHash=${vaultSettings.lastPushedHash} contentHash=${vaultSettings.contentHash}` +
+          ` (re-push fires when these differ)\n` +
+          `  blob POST count by inference — settings.json churns when the SEEDED clone hash (raw-bytes FNV) != ` +
+          `the canonical re-serialisation hash; attachments churn when local gitSha != remote tree sha.\n`,
+      )
+    }
+
+    // The contract: a freshly-cloned realistic vault with NO edits pushes NOTHING.
+    expect(outcome.result.created).toBe(0)
+    expect(outcome.result.updated).toBe(0)
+    expect(outcome.result.deleted).toBe(0)
+    expect(outcome.result.unchanged).toBe(true)
+    expect(headAfter).toBe(headBefore)
+    log(`[scenario B] no-churn sync: ${churnSummary} (head ${headBefore.slice(0, 8)} unchanged)`)
+  })
+
+  test('scenario B2: NON-CANONICAL settings.json — a clone of a settings file NOT byte-identical to the client serialisation must still not re-push', async () => {
+    // The realistic worry: settings.json on the remote was written by a DIFFERENT
+    // client version (or has legacy formatting / a key the current client now
+    // fills with a default). Then the raw remote bytes differ from this client's
+    // `serializeVaultSettings(pickVaultSlice(state), updatedAt)` — and the seeded
+    // `vaultSettingsLastPushedHash` (hash of the RAW bytes, set by the pull's
+    // applyRemoteVaultSettings) will NOT equal the next push's `contentHash`
+    // (hash of the CANONICAL re-serialisation). If so, settings.json re-pushes on
+    // an unchanged clone. We plant exactly that shape and observe.
+    const { useNoteStore } = await import('@/stores/noteStore')
+    const { useFolderStore } = await import('@/stores/folderStore')
+    const { parseVaultSettings, serializeVaultSettings, pickVaultSlice, vaultSettingsHash } =
+      await import('../utils/vaultSettings')
+    const { useSettingsStore } = await import('@/stores/settingsStore')
+
+    // Plant a NON-CANONICAL settings.json: same logical content + updatedAt as
+    // the canonical file, but re-formatted (4-space indent, no trailing newline)
+    // — a file noteser's serializer would never emit verbatim. Its parse still
+    // yields the same vault slice, so after clone the store holds identical
+    // values; only the BYTES differ.
+    const parsed = parseVaultSettings(settingsJsonContent)!
+    const nonCanonicalSettings = JSON.stringify(
+      { version: 1, updatedAt: parsed.updatedAt, vault: parsed.vault },
+      null,
+      4,
+    ) // note: JSON.stringify(...,4) + NO trailing newline → differs from serializeVaultSettings (2-space + '\n')
+    expect(nonCanonicalSettings).not.toBe(settingsJsonContent)
+
+    // Re-plant settings.json on the RVH branch with the non-canonical bytes.
+    const parent = await getRefSha(RVH_BRANCH)
+    const baseTree = await getCommitTreeSha(TOKEN!, OWNER, REPO_NAME, parent)
+    const blobSha = await createBlob(TOKEN!, OWNER, REPO_NAME, nonCanonicalSettings)
+    const treeSha = await createTree(TOKEN!, OWNER, REPO_NAME, baseTree, [
+      { path: SETTINGS_PATH, mode: '100644', type: 'blob', sha: blobSha },
+    ])
+    const { sha: planted } = await createCommit(
+      TOKEN!, OWNER, REPO_NAME, 'rvh: plant NON-CANONICAL settings.json', treeSha, parent,
+    )
+    await updateBranchRef(TOKEN!, OWNER, REPO_NAME, RVH_BRANCH, planted)
+
+    // Clone fresh + apply (seeds vaultSettingsLastPushedHash from the RAW bytes).
+    await resetLocalState()
+    await cloneAndApply(true)
+
+    // Sanity: the store now holds the same vault values, and the SEEDED hash is
+    // the hash of the RAW (non-canonical) bytes — NOT the canonical hash.
+    const state = useSettingsStore.getState()
+    const seeded = state.vaultSettingsLastPushedHash
+    const rawHash = vaultSettingsHash(nonCanonicalSettings)
+    const canonicalHash = vaultSettingsHash(
+      serializeVaultSettings(pickVaultSlice(state), state.vaultSettingsUpdatedAt || 0),
+    )
+    expect(seeded).toBe(rawHash)
+
+    // Build the bundle + push, counting blob POSTs that target settings.json by
+    // diffing the remote tree's settings.json SHA before/after.
+    const notes = useNoteStore.getState().notes
+    const folders = useFolderStore.getState().folders
+    const vaultSettings = await buildVaultSettingsBundle()
+    const headBefore = await getRefSha(RVH_BRANCH)
+    const outcome = await syncToGitHub({ token: TOKEN!, repo: rvhRepo, notes, folders, vaultSettings })
+    const headAfter = await getRefSha(RVH_BRANCH)
+
+    const settingsWouldRePush = seeded !== canonicalHash
+    if (settingsWouldRePush || headAfter !== headBefore || !outcome.result.unchanged) {
+      console.error(
+        `\n[scenario B2] settings.json CHURN on a non-canonical clone — THE SUSPECTED BUG.\n` +
+          `  seeded lastPushedHash (raw-bytes FNV) = ${seeded}\n` +
+          `  canonical re-serialisation hash       = ${canonicalHash}\n` +
+          `  push fires settings re-upload because lastPushedHash != contentHash (${vaultSettings.lastPushedHash} != ${vaultSettings.contentHash}).\n` +
+          `  ROOT CAUSE: pullFromGitHub seeds vaultSettingsLastPushedHash = vaultSettingsHash(RAW remote bytes)\n` +
+          `  (githubSync.ts ~L729 → settingsStore.applyRemoteVaultSettings), but syncToGitHub compares it against\n` +
+          `  vaultSettingsHash(serializeVaultSettings(...)) (the client's CANONICAL bytes). When the remote file\n` +
+          `  was not byte-identical to this client's serialisation, the two hashes differ → re-push on every clone.\n` +
+          `  PROPOSED FIX: seed the baseline to the CANONICAL hash of the APPLIED slice, not the raw bytes —\n` +
+          `  i.e. in applyRemoteVaultSettings, set vaultSettingsLastPushedHash = vaultSettingsHash(serializeVaultSettings(applied, remoteUpdatedAt)).\n` +
+          `  (Mirrors the note-side fix: gitLastPushedSha is the canonical-local SHA, not the raw remote SHA.)\n` +
+          `  result: created=${outcome.result.created} updated=${outcome.result.updated} unchanged=${outcome.result.unchanged}` +
+          ` head ${headBefore.slice(0, 8)} → ${headAfter.slice(0, 8)}\n`,
+      )
+    }
+
+    // The contract is the SAME as scenario B: an unchanged clone pushes NOTHING.
+    // If this assertion FAILS, the non-canonical settings churn bug is real and
+    // the diagnostic above names the exact fix.
+    expect(outcome.result.unchanged).toBe(true)
+    expect(outcome.result.created + outcome.result.updated + outcome.result.deleted).toBe(0)
+    expect(headAfter).toBe(headBefore)
+    log(`[scenario B2] non-canonical settings clone: seeded=${seeded} canonical=${canonicalHash} match=${seeded === canonicalHash}; push unchanged=${outcome.result.unchanged} (head ${headBefore.slice(0, 8)} unchanged)`)
+  })
+
+  test('scenario C: DISCARD = pull-only — resetToRemote + PULL makes NO commit and repopulates', async () => {
+    const { useNoteStore } = await import('@/stores/noteStore')
+    const { resetToRemote } = await import('../utils/resetToRemote')
+
+    // Start from a fully-cloned state.
+    await resetLocalState()
+    await cloneAndApply(true)
+    const clonedCount = useNoteStore.getState().notes.length
+    expect(clonedCount).toBeGreaterThanOrEqual(3) // our 3 fixture notes + repo base
+
+    // Discard flow: resetToRemote (wipes local), then a PULL ONLY (no push) —
+    // exactly DiscardLocalChangesModal.handleConfirm via runPullOnly.
+    const headBefore = await getRefSha(RVH_BRANCH)
+    await resetToRemote({ preserveUnpushed: true })
+    expect(useNoteStore.getState().notes.length).toBe(0) // local wiped
+
+    // runPullOnly = runPull → runApply, NO syncToGitHub. Drive that here.
+    const head = await cloneAndApply(false)
+    const headAfter = await getRefSha(RVH_BRANCH)
+
+    expect(headAfter).toBe(headBefore) // pull-only made NO commit
+    expect(head).toBe(headBefore)
+    // Repopulated to the same set — our fixture notes are all back.
+    const repaths = new Set(useNoteStore.getState().notes.map(n => n.gitPath))
+    expect(repaths.has(FRONTMATTER_NOTE_PATH)).toBe(true)
+    expect(repaths.has(PLAIN_NONCANON_PATH)).toBe(true)
+    expect(repaths.has(PLAIN_CANON_PATH)).toBe(true)
+    expect(useNoteStore.getState().notes.length).toBe(clonedCount)
+    log(`[scenario C] discard = pull-only: local wiped then re-pulled ${clonedCount} notes, head ${headBefore.slice(0, 8)} unchanged (no commit)`)
+  })
+
+  test('scenario D: FRONTMATTER ROUND-TRIP — the frontmatter note re-serialises to its baseline (suppressed, never re-pushed)', async () => {
+    const { useNoteStore } = await import('@/stores/noteStore')
+
+    await resetLocalState()
+    await cloneAndApply(true)
+
+    const fmNote = useNoteStore.getState().notes.find(n => n.gitPath === FRONTMATTER_NOTE_PATH)!
+    expect(fmNote).toBeDefined()
+    // The push decision hinges on plainSha === gitLastPushedSha. Recompute both
+    // the way syncToGitHub does and prove they match → the note is suppressed.
+    const plainSha = await gitBlobSha(serializeNote(fmNote))
+    expect(fmNote.gitLastPushedSha).toBe(plainSha)
+    // And the raw remote bytes differ from our canonical (frontmatter stripped,
+    // tags inlined) — so this is a genuine non-canonical round-trip, not a
+    // trivially-identical file.
+    const rawRemoteSha = await gitBlobSha(FRONTMATTER_NOTE_RAW)
+    expect(rawRemoteSha).not.toBe(plainSha)
+    expect(fmNote.gitRemoteBaseSha).toBe(rawRemoteSha)
+
+    log(`[scenario D] frontmatter round-trip: canonical baseline ${plainSha.slice(0, 8)} === gitLastPushedSha (raw remote ${rawRemoteSha.slice(0, 8)} differs) → suppressed, no re-push`)
   })
 })
