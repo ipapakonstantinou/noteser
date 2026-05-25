@@ -106,7 +106,26 @@ const obsidianTheme = EditorView.theme({
     minHeight: '100%',
   },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#dadada' },
-  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: '#4d4d4d' },
+  // Selection background. The editor renders selections with drawSelection()
+  // (enabled by default in @uiw basicSetup), which paints a .cm-selectionBackground
+  // layer BEHIND the text. The bug: this editor mounts with the default
+  // theme="light", so CodeMirror's built-in
+  // `&light.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground`
+  // rule (a pale lavender #d7d4f0) won on specificity over our old low-specificity
+  // override — pale background + near-white text = unreadable selection.
+  //
+  // `&light`/`&dark` prefixes only work in EditorView.baseTheme, NOT here, so we
+  // instead match CodeMirror's full child-combinator chain (`&` is this theme's
+  // root class) to outrank the built-in default. We paint the selection with the
+  // theme-aware `--obsidian-highlight` token (the palette's designated highlight
+  // colour) so it stays readable against the editor text in every preset —
+  // dark, light, sepia, solarized — since editor text colour also follows the
+  // preset (globals.css forces `.cm-content { color: inherit }`). The bare
+  // `.cm-selectionBackground` covers the unfocused state.
+  '.cm-selectionBackground': { backgroundColor: 'var(--obsidian-highlight, #4d4d4d)' },
+  '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
+    backgroundColor: 'var(--obsidian-highlight, #4d4d4d)',
+  },
   '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,0.025)' },
   // No display:none on .cm-gutters — basicSetup disables line-numbers
   // and fold-gutter (see <CodeMirror basicSetup={...} />), so the only
