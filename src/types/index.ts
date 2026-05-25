@@ -49,6 +49,22 @@ export interface Note {
   // with no migration needed. Only meaningful when collaboration is
   // enabled via NEXT_PUBLIC_YJS_WS_URL.
   collabId?: string
+  // Progressive first-clone shell marker (progressive-clone). A SHELL note is
+  // created from the remote git tree (title + path + SHAs) BEFORE its body is
+  // fetched, so the sidebar populates instantly on a first clone. While
+  // `contentLoaded === false` the note's `content` is '' (a placeholder, NOT
+  // the real body) and the note MUST be treated as `unchanged` by the sync
+  // classifier — pushing it would overwrite the real remote file with an empty
+  // body. Its `gitLastPushedSha`/`gitRemoteBaseSha` are pinned to the RAW
+  // remote blob SHA so it can never be misread as a local edit. The body is
+  // streamed in by the background fill (src/utils/backgroundFill.ts) or
+  // on-open (src/hooks/useEnsureNoteLoaded.ts), which flips this to true and
+  // re-pins gitLastPushedSha to the canonical-local SHA.
+  //
+  // `undefined` means "treated as loaded" — back-compat for every note
+  // persisted before this field existed, and for all normally-created notes.
+  // Only an explicit `false` marks a shell.
+  contentLoaded?: boolean
 }
 
 export interface Folder {

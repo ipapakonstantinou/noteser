@@ -99,6 +99,15 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   // notes change. No more entity store.
   const tagCounts = useMemo(() => collectAllTags(activeNotes), [activeNotes])
 
+  // progressive-clone: how many notes are still SHELLS (body streaming in from
+  // a first clone). Drives the subtle "N notes loading…" banner so the user
+  // knows the vault is still populating. Counts down to 0 as bodies land, then
+  // the banner disappears.
+  const shellCount = useMemo(
+    () => activeNotes.reduce((n, note) => n + (note.contentLoaded === false ? 1 : 0), 0),
+    [activeNotes],
+  )
+
   // ── Attachment metadata (for rendering inside parent folders) ────────────
   // The IDB attachment store is mirrored here so we can render each
   // attachment file inside its parent folder (alongside notes). Refreshed on
@@ -830,6 +839,15 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
       onKeyDown={handleTreeKeyDown}
       onFocus={handleTreeFocus}
     >
+      {shellCount > 0 && (
+        <div
+          className="mb-1 flex items-center gap-2 px-2 py-1.5 text-xs text-obsidianSecondaryText"
+          data-testid="shell-loading-banner"
+        >
+          <span className="inline-block w-3 h-3 border-2 border-obsidianSecondaryText/30 border-t-obsidianAccentPurple rounded-full animate-spin" />
+          {shellCount} {shellCount === 1 ? 'note' : 'notes'} loading…
+        </div>
+      )}
       {selectedIds.size > 0 && (
         <div
           className="sticky top-0 z-10 mb-1 flex items-center gap-2 px-2 py-1.5 bg-obsidianAccentPurple/15 border border-obsidianAccentPurple/40 rounded text-xs"

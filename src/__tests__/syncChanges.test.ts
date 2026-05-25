@@ -23,6 +23,7 @@ function n(input: Partial<Note> & { id: string; title: string }): Note {
     templateId: null,
     gitPath: input.gitPath ?? null,
     gitLastPushedSha: input.gitLastPushedSha ?? null,
+    contentLoaded: input.contentLoaded,
   } as Note
 }
 
@@ -88,6 +89,17 @@ describe('classifyPendingChanges', () => {
       null,
     )
     expect(c.modified.map(x => x.title)).toEqual(['Orphan'])
+  })
+
+  test('a not-yet-loaded shell is NEVER pending, even with updatedAt > lastSyncedAt', () => {
+    // Regression: progressive-clone shells were miscounted as pending ("530
+    // pending" right after a clone). A shell (contentLoaded:false) is in sync
+    // with remote by definition and must not appear in any bucket.
+    const c = classifyPendingChanges(
+      [n({ id: 'a', title: 'Shell', gitPath: 'Shell.md', gitLastPushedSha: 'remote-sha', updatedAt: 999, contentLoaded: false } as Partial<Note> & { id: string; title: string })],
+      100,
+    )
+    expect(totalPendingCount(c)).toBe(0)
   })
 
   test('buckets are sorted alphabetically by title', () => {

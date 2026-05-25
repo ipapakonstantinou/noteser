@@ -88,6 +88,11 @@
   /* Prose styles for markdown preview */
   .prose {
     @apply text-obsidianText max-w-none;
+    /* Match the editor (CodeMirror live preview) so reading mode and edit
+       mode feel identical: same monospace font, 14px, 1.7 line-height. */
+    font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, monospace;
+    font-size: 14px;
+    line-height: 1.7;
   }
 
   .prose h1,
@@ -99,20 +104,37 @@
     @apply text-obsidianText font-semibold;
   }
 
+  /* Heading sizes mirror the live-preview (.cm-lp-h*) so both modes match. */
   .prose h1 {
-    @apply text-2xl mt-6 mb-4;
+    font-size: 1.75em;
+    font-weight: 700;
+    line-height: 1.3;
+    @apply mt-6 mb-4;
   }
 
   .prose h2 {
-    @apply text-xl mt-5 mb-3;
+    font-size: 1.4em;
+    font-weight: 700;
+    line-height: 1.35;
+    @apply mt-5 mb-3;
   }
 
   .prose h3 {
-    @apply text-lg mt-4 mb-2;
+    font-size: 1.2em;
+    font-weight: 600;
+    line-height: 1.4;
+    @apply mt-4 mb-2;
+  }
+
+  .prose h4 {
+    font-size: 1.05em;
+    font-weight: 600;
+    @apply mt-3 mb-2;
   }
 
   .prose p {
-    @apply text-obsidianText mb-4 leading-relaxed;
+    /* inherits the 1.7 line-height from .prose to match the editor */
+    @apply text-obsidianText mb-4;
   }
 
   .prose a {
@@ -228,7 +250,7 @@
 /* Inline #tag rendering in preview */
 .preview-tag {
   color: theme('colors.obsidianAccentPurple');
-  background: rgba(139, 109, 217, 0.1);
+  background: hsla(217, 88%, 50%, 0.1);
   border-radius: 3px;
   padding: 0 4px;
   font-weight: 500;

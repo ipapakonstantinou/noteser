@@ -59,6 +59,10 @@ export function classifyPendingChanges(
 }
 
 function classifyOne(n: Note, lastSyncedAt: number | null): SyncChange | null {
+  // A not-yet-loaded shell (progressive clone) is a placeholder, not a local
+  // change — its body has not been fetched, so it is in sync with remote by
+  // definition. Never count it as pending (it is also excluded from push).
+  if (n.contentLoaded === false) return null
   const hasPath = Boolean(n.gitPath)
   // Deleted-but-was-pushed → counts as a pending delete. Deleted but never
   // pushed = nothing for the user to see (already invisible).

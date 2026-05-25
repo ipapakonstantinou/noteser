@@ -14,6 +14,7 @@ import { markdownLivePreview } from './markdownLivePreview'
 import { tasksLivePreview } from './tasksLivePreview'
 import { basesLivePreview } from './basesLivePreview'
 import { imagesLivePreview } from './imagesLivePreview'
+import { linksLivePreview } from './linksLivePreview'
 import { getActiveWikilinkQuery } from '@/utils/wikilinks'
 import { getActiveTagQuery } from '@/utils/tagAutocomplete'
 import { collectAllTags } from '@/utils/tags'
@@ -335,6 +336,14 @@ export function CodeMirrorEditor({
     tasksLivePreview,
     basesLivePreview,
     imagesLivePreview,
+    // Clickable links in live preview (bare URLs, [text](url), [[wikilinks]]).
+    // Accessors read the stable refs so the (memoized-once) extension always
+    // resolves against the current note set + navigate callback — same idiom
+    // the Ctrl+Click wikilink handler below uses.
+    linksLivePreview({
+      getActiveNotes: () => activeNotesRef.current,
+      onWikilinkNavigate: (note) => navigateRef.current(note),
+    }),
     diffGutterExtension,
     // Built-in find / replace panel. `top: true` opens it above the
     // editor — matches VS Code / Obsidian placement. Keymap includes

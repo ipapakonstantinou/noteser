@@ -24,11 +24,21 @@ const hashNotes = (notes: Note[]): string => {
   return notes.map(n => `${n.id}:${n.updatedAt}`).join(',')
 }
 
+// progressive-clone: a SHELL note (contentLoaded === false) has an EMPTY body
+// — its real content hasn't streamed in yet. Indexing it would let a content
+// search miss a note that actually matches, AND surface an empty body in
+// results. Exclude shells from the index; they re-enter automatically as their
+// bodies load (updatedAt bumps → hash changes → index rebuilds).
+const isShell = (n: Note): boolean => n.contentLoaded === false
+
 // Initialize or update the Fuse index
 export const initializeSearch = (notes: Note[]): void => {
+  const indexable = notes.filter(n => !isShell(n))
+  // Hash the FULL list (including shells) so a shell loading its body — which
+  // changes the indexable set — busts the cache and triggers a rebuild.
   const currentHash = hashNotes(notes)
   if (currentHash !== lastNotesHash || !fuseInstance) {
-    fuseInstance = new Fuse(notes, fuseOptions)
+    fuseInstance = new Fuse(indexable, fuseOptions)
     lastNotesHash = currentHash
   }
 }
