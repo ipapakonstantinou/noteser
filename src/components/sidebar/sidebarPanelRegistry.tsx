@@ -23,12 +23,21 @@ import {
   LinkIcon,
 } from '@heroicons/react/24/outline'
 import { type SidebarTabId } from '@/stores'
+import dynamic from 'next/dynamic'
 import { FolderTree } from './FolderTree'
 import { FolderTreeToolbar } from './FolderTreeToolbar'
 import { CalendarView } from './CalendarView'
 import { OutlineView } from './OutlineView'
 import { GitHubView } from './GitHubView'
-import { SidebarSearchPanel } from './SidebarSearchPanel'
+// SidebarSearchPanel statically imports fuse.js (~30 kB gz). The sidebar is
+// rendered at first paint, so importing it eagerly dragged fuse into the
+// first-load bundle even though the default panel is "files", not "search".
+// Load it lazily — the chunk fetches only when the user opens the Search
+// panel. ssr:false keeps it out of the (client-only) server render.
+const SidebarSearchPanel = dynamic(
+  () => import('./SidebarSearchPanel').then(m => ({ default: m.SidebarSearchPanel })),
+  { ssr: false },
+)
 import { SidebarBookmarksPanel } from './SidebarBookmarksPanel'
 import { SidebarRelatedPanel } from './SidebarRelatedPanel'
 

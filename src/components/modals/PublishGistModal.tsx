@@ -175,21 +175,23 @@ export const PublishGistModal = () => {
       const device = await startDeviceFlow('repo gist')
       if (controller.signal.aborted) return
       setScopeFlow(device)
-      const newToken = await pollForToken({
+      const newTokenSet = await pollForToken({
         deviceCode: device.device_code,
         interval: device.interval,
         expiresIn: device.expires_in,
         signal: controller.signal,
       })
       if (controller.signal.aborted) return
-      const { user, scopes } = await fetchGitHubUserAndScopes(newToken)
+      const { user, scopes } = await fetchGitHubUserAndScopes(newTokenSet.accessToken)
       if (controller.signal.aborted) return
-      setSession(newToken, user, scopes)
+      // Persist the full token set so a gist-scope upgrade also captures the
+      // refresh token (the upgraded token is the one we keep going forward).
+      setSession(newTokenSet.accessToken, user, scopes, newTokenSet)
       setScopeFlow(null)
       // Auto-retry publish with the new token — the user's intent was
       // "publish my note", the scope prompt was incidental.
       if (hasGistScope(scopes)) {
-        await runPublishWithToken(newToken)
+        await runPublishWithToken(newTokenSet.accessToken)
       } else {
         // GitHub returned a token without the `gist` scope despite us
         // asking for it (rare — e.g. user manually deselected the scope

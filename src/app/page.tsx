@@ -1,30 +1,37 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { Sidebar, RightSidebar, Ribbon, MobileTopBar, DrawerHandle } from '@/components/sidebar'
 import { Editor } from '@/components/editor'
 import { Toaster } from '@/components/ui'
-import {
-  SearchModal,
-  DeleteConfirmModal,
-  ShortcutsModal,
-  TemplatesModal,
-  SettingsModal,
-  ExportModal,
-  GitHubAuthModal,
-  GitHubRepoModal,
-  TaskEditModal,
-  CommandPalette,
-  BugReportModal,
-  AIResultModal,
-  VaultSettingsConflictModal,
-  FileHistoryModal,
-  PublishGistModal,
-  VaultEncryptionModal,
-  RevertToCommitModal,
-  LocalFolderImportModal,
-  DiscardLocalChangesModal,
-} from '@/components/modals'
+
+// Modals are code-split out of the route's first-load bundle. Each one
+// renders `null` until its store flag opens it, so deferring the code load
+// is behaviour-preserving: the chunk fetches on the first open and the
+// modal then behaves exactly as before. ssr:false because the whole app is
+// client-only anyway, and the modals read client-only state (localStorage /
+// IDB-hydrated stores). The 1,490-line SettingsModal and CommandPalette
+// (which statically imports fuse.js) are the biggest wins here.
+const SearchModal = dynamic(() => import('@/components/modals/SearchModal').then(m => ({ default: m.SearchModal })), { ssr: false })
+const DeleteConfirmModal = dynamic(() => import('@/components/modals/DeleteConfirmModal').then(m => ({ default: m.DeleteConfirmModal })), { ssr: false })
+const ShortcutsModal = dynamic(() => import('@/components/modals/ShortcutsModal').then(m => ({ default: m.ShortcutsModal })), { ssr: false })
+const TemplatesModal = dynamic(() => import('@/components/modals/TemplatesModal').then(m => ({ default: m.TemplatesModal })), { ssr: false })
+const SettingsModal = dynamic(() => import('@/components/modals/SettingsModal').then(m => ({ default: m.SettingsModal })), { ssr: false })
+const ExportModal = dynamic(() => import('@/components/modals/ExportModal').then(m => ({ default: m.ExportModal })), { ssr: false })
+const GitHubAuthModal = dynamic(() => import('@/components/modals/GitHubAuthModal').then(m => ({ default: m.GitHubAuthModal })), { ssr: false })
+const GitHubRepoModal = dynamic(() => import('@/components/modals/GitHubRepoModal').then(m => ({ default: m.GitHubRepoModal })), { ssr: false })
+const TaskEditModal = dynamic(() => import('@/components/modals/TaskEditModal').then(m => ({ default: m.TaskEditModal })), { ssr: false })
+const CommandPalette = dynamic(() => import('@/components/modals/CommandPalette').then(m => ({ default: m.CommandPalette })), { ssr: false })
+const BugReportModal = dynamic(() => import('@/components/modals/BugReportModal').then(m => ({ default: m.BugReportModal })), { ssr: false })
+const AIResultModal = dynamic(() => import('@/components/modals/AIResultModal').then(m => ({ default: m.AIResultModal })), { ssr: false })
+const VaultSettingsConflictModal = dynamic(() => import('@/components/modals/VaultSettingsConflictModal').then(m => ({ default: m.VaultSettingsConflictModal })), { ssr: false })
+const FileHistoryModal = dynamic(() => import('@/components/modals/FileHistoryModal').then(m => ({ default: m.FileHistoryModal })), { ssr: false })
+const PublishGistModal = dynamic(() => import('@/components/modals/PublishGistModal').then(m => ({ default: m.PublishGistModal })), { ssr: false })
+const VaultEncryptionModal = dynamic(() => import('@/components/modals/VaultEncryptionModal').then(m => ({ default: m.VaultEncryptionModal })), { ssr: false })
+const RevertToCommitModal = dynamic(() => import('@/components/modals/RevertToCommitModal').then(m => ({ default: m.RevertToCommitModal })), { ssr: false })
+const LocalFolderImportModal = dynamic(() => import('@/components/modals/LocalFolderImportModal').then(m => ({ default: m.LocalFolderImportModal })), { ssr: false })
+const DiscardLocalChangesModal = dynamic(() => import('@/components/modals/DiscardLocalChangesModal').then(m => ({ default: m.DiscardLocalChangesModal })), { ssr: false })
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useKeyboardShortcuts, useHydration, useAutoSync, useAutoEmbedNotes, useApplyTheme, useViewport } from '@/hooks'
 import { useUIStore, useWorkspaceStore, useGitHubStore } from '@/stores'
@@ -44,7 +51,10 @@ import {
   PERSISTED_RESET_VERSION,
   PRESERVE_ON_KILLSWITCH,
 } from '@/utils/reset'
-import { ResetConfirmModal } from '@/components/modals/ResetConfirmModal'
+const ResetConfirmModal = dynamic(
+  () => import('@/components/modals/ResetConfirmModal').then(m => ({ default: m.ResetConfirmModal })),
+  { ssr: false },
+)
 
 export default function Home() {
   const hydrated = useHydration()
