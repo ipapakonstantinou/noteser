@@ -18,7 +18,6 @@ import {
   type GitTreeEntry,
 } from './github'
 import { threeWayMerge } from './lineDiff'
-import { mapWithConcurrency, DEFAULT_CONCURRENCY } from './concurrency'
 import {
   isAttachmentPath,
   listAttachmentPaths,
@@ -228,7 +227,12 @@ export type PullClassification =
   // a reconciled unlinked note that still needs its gitPath linked on apply.
   | { kind: 'unchanged'; noteId: string; adoptPath?: string }
   // Remote has a file with no matching local note yet — create one.
-  | { kind: 'remoteCreated'; path: string; remoteSha: string; remoteContent: string; tags: string[]; body: string }
+  // progressive-clone: on a FIRST clone we emit these WITHOUT fetching the body
+  // (remoteContent '', tags [], body '') and set `shell: true`. The apply layer
+  // then creates a SHELL note (content '', contentLoaded false) so the sidebar
+  // populates instantly; the body streams in afterwards. `shell` is absent/false
+  // for an incremental pull's remoteCreated, which carries the real body as today.
+  | { kind: 'remoteCreated'; path: string; remoteSha: string; remoteContent: string; tags: string[]; body: string; shell?: boolean }
   // Local exists, remote changed since our last push, local has NOT changed
   // since last sync — accept the remote version.
   | { kind: 'remoteUpdated'; noteId: string; remoteSha: string; remoteContent: string; tags: string[]; body: string; adoptPath?: string }
@@ -327,15 +331,18 @@ export async function pullFromGitHub(input: {
   // localVaultUpdatedAt. Pass null / undefined to skip settings pull.
   vaultSettingsPath?: string | null
   vaultSettingsLocalUpdatedAt?: number
-  // no-vercel-clone: when true the caller has determined this is a first
-  // clone (no local notes/folders to reconcile), so every remote .md will be
-  // `remoteCreated`. We then PRE-FETCH all .md blob contents with bounded
-  // concurrency before the classify loop — that's what replaces the old
-  // zipball fast path. Omit/false for incremental pulls so they don't fetch
-  // any extra blobs beyond what the diff actually needs.
+  // progressive-clone: when true the caller has determined this is a first
+  // clone (no local notes/folders to reconcile), so every remote .md is
+  // `remoteCreated`. We emit them as SHELLS (empty body, shell:true) WITHOUT
+  // fetching any blob bodies — the sidebar populates instantly and bodies
+  // stream in afterwards. Omit/false for incremental pulls so they classify +
+  // fetch normally (lazily, only what the diff needs).
   isFirstClone?: boolean
-  // Optional progress hook so the UI can surface "Downloading vault (N / M)…"
-  // while the parallel blob prefetch runs. Called as each blob lands.
+  // Legacy progress hook from the prefetch era — no longer fired by
+  // pullFromGitHub now that the first clone is shell-only (there is no blob
+  // prefetch to report). Kept on the interface for back-compat with callers
+  // that still pass it; harmless. The progressive background fill reports its
+  // own progress via the onPhase callback wired in useGitHubSync.
   onBlobProgress?: (loaded: number, total: number) => void
 }): Promise<PullOutcome> {
   const { token, repo, notes } = input
@@ -388,38 +395,20 @@ export async function pullFromGitHub(input: {
   const out: PullClassification[] = []
   const seenLocalIds = new Set<string>()
 
-  // no-vercel-clone: on a first clone we already know every remote .md will be
-  // `remoteCreated`, and the classify loop below fetches blob content
-  // ONE-AT-A-TIME (loadRemote → getBlobContent). On a large vault that
-  // sequential walk is what blew the 45s sync watchdog. So when isFirstClone
-  // holds, pre-fetch ALL .md blob contents up front with bounded concurrency,
-  // keyed by their tree blob SHA. The classify loop's loadRemote() consults
-  // this map first and only hits the network on a miss. We do NOT prefetch for
-  // incremental pulls — those should fetch nothing beyond what the diff needs.
+  // progressive-clone: a FIRST clone NO LONGER prefetches blob bodies here.
+  // We walk the tree (already one call) for titles/paths/SHAs only and emit
+  // SHELL `remoteCreated` classifications with an EMPTY body. The sidebar then
+  // populates instantly from those shells; the bodies stream in afterwards via
+  // the background fill (useGitHubSync wires that up) and on-open. This keeps
+  // the prefetch map empty on a first clone — the classify loop's `shell`
+  // branch never calls loadRemote, so no per-blob network trips happen during
+  // the pull. Incremental pulls keep the lazy per-blob fetch unchanged.
   //
-  // Decryption still happens per-call inside loadRemote (maybeDecryptFromPull),
-  // so the cache holds RAW blob text and the decrypt path is unchanged.
+  // (The old behaviour pre-fetched ALL .md blobs with bounded concurrency. That
+  // still avoided the per-file watchdog blowout but blocked the sidebar on the
+  // whole download; the progressive shell approach is strictly faster to first
+  // paint.)
   const prefetchedBlobs = new Map<string, string>()
-  if (isFirstClone) {
-    // Unique blob SHAs for all non-ignored .md paths. De-duped because two
-    // identical files share one blob SHA — fetch each blob at most once.
-    const shas = new Set<string>()
-    for (const [path, remoteSha] of remoteTree) {
-      if (!path.endsWith('.md')) continue
-      if (gitignoreMatcher.isIgnored(path)) continue
-      shas.add(remoteSha)
-    }
-    const shaList = Array.from(shas)
-    const total = shaList.length
-    let loaded = 0
-    const contents = await mapWithConcurrency(shaList, DEFAULT_CONCURRENCY, async (sha) => {
-      const raw = await getBlobContent(token, owner, name, sha)
-      loaded++
-      input.onBlobProgress?.(loaded, total)
-      return raw
-    })
-    shaList.forEach((sha, i) => prefetchedBlobs.set(sha, contents[i]))
-  }
 
   // 1. Walk every remote .md file.
   for (const [path, remoteSha] of remoteTree) {
@@ -436,6 +425,24 @@ export async function pullFromGitHub(input: {
       // Pending deletion — skip the fetch + classification entirely.
       // seenLocalIds includes it so the orphan-detection branch below
       // doesn't double-count.
+      seenLocalIds.add(localMatch.id)
+      out.push({ kind: 'unchanged', noteId: localMatch.id })
+      continue
+    }
+
+    // progressive-clone CORE SAFETY GUARD: a SHELL note (body not yet loaded)
+    // must NEVER be classified as anything but `unchanged`. Its `content` is ''
+    // (a placeholder, not the real body), so computing a local blob SHA from it
+    // would produce the SHA of an empty file — which mismatches the real remote
+    // blob and would (a) re-classify the note as a local edit and (b) on push
+    // overwrite the real remote file with an empty body. We short-circuit BEFORE
+    // serializeNote / gitBlobSha / loadRemote so no body work happens at all.
+    // The background fill / on-open path will load the body and re-classify the
+    // note normally once `contentLoaded` flips true. (gitLastPushedSha is also
+    // pinned to remoteSha for shells, so even without this guard a SHELL whose
+    // remote is unchanged would read unchanged — but this guard makes it
+    // unconditional and avoids the empty-body SHA computation entirely.)
+    if (localMatch && localMatch.contentLoaded === false) {
       seenLocalIds.add(localMatch.id)
       out.push({ kind: 'unchanged', noteId: localMatch.id })
       continue
@@ -502,6 +509,13 @@ export async function pullFromGitHub(input: {
     }
 
     if (!localMatch) {
+      // progressive-clone: on a FIRST clone, emit a SHELL — no body fetch. The
+      // apply layer materialises a placeholder note (content '', contentLoaded
+      // false) so the sidebar populates instantly; the body streams in later.
+      if (isFirstClone) {
+        out.push({ kind: 'remoteCreated', path, remoteSha, remoteContent: '', tags: [], body: '', shell: true })
+        continue
+      }
       const content = await loadRemote()
       const parsed = parseNote(content)
       out.push({ kind: 'remoteCreated', path, remoteSha, remoteContent: content, tags: parsed.tags, body: parsed.body })
@@ -1031,7 +1045,17 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   onProgress?.({ phase: 'computing' })
 
   // 1. Compute desired files for every active note.
-  const activeNotes = notes.filter(n => !n.isDeleted)
+  // progressive-clone: EXCLUDE shells (contentLoaded === false) outright. A
+  // shell's `content` is '' (a placeholder, not the real body), so it must
+  // never participate in the push: it would (a) upload an empty blob over the
+  // real remote file, and (b) — if we only skipped it from `desired` — get
+  // detected as a missing path by the deletion loop (step 4) and emit a
+  // `sha: null` DELETE for the real file. Dropping it from activeNotes here
+  // keeps it out of BOTH paths; the shell stays exactly as the remote has it
+  // until its body loads and contentLoaded flips true. This is the push-side
+  // half of the #1 sync-safety rule (the pull-side half is the classifier
+  // guard in pullFromGitHub).
+  const activeNotes = notes.filter(n => !n.isDeleted && n.contentLoaded !== false)
   const desired = new Map<string, { content: string; note: Note }>()
   for (const note of activeNotes) {
     const path = notePath(note, folders)

@@ -52,10 +52,16 @@ export function _resetTagCache(): void {
 // Collect all tags across an array of notes (ignoring deleted notes).
 // Uses extractTagsCached so unchanged notes are nearly free on repeat
 // invocations — important at 5k+ notes where the regex scan dominates.
-export function collectAllTags(notes: { content?: string; isDeleted?: boolean }[]): Map<string, number> {
+//
+// progressive-clone: SHELL notes (contentLoaded === false) have an EMPTY body
+// — their real tags haven't streamed in yet — so they're skipped. As each
+// shell's body loads, the note object reference changes (Zustand immutable
+// update) and the Tags view recomputes, so its tags appear automatically.
+export function collectAllTags(notes: { content?: string; isDeleted?: boolean; contentLoaded?: boolean }[]): Map<string, number> {
   const counts = new Map<string, number>()
   for (const n of notes) {
     if (n.isDeleted) continue
+    if (n.contentLoaded === false) continue
     for (const tag of extractTagsCached(n)) {
       counts.set(tag, (counts.get(tag) ?? 0) + 1)
     }

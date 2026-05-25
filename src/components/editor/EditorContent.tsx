@@ -16,6 +16,7 @@ const PrismHighlighter = dynamic(() => import('./PrismHighlighter'), {
 })
 import type { EditorView } from '@codemirror/view'
 import { useUIStore, useNoteStore, useWorkspaceStore } from '@/stores'
+import { useEnsureNoteLoaded } from '@/hooks/useEnsureNoteLoaded'
 import { renderWikilinks } from '@/utils/wikilinks'
 import { decodeWikilinkHref, findFragmentLine } from '@/utils/wikilinkTarget'
 import { expandEmbeds } from '@/utils/embeds'
@@ -41,6 +42,11 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
   const { setPreviewMode } = useUIStore()
   const { getActiveNotes } = useNoteStore()
   const openNote = useWorkspaceStore(s => s.openNote)
+
+  // progressive-clone: if this note is still a SHELL (body not yet streamed in
+  // by the first-clone background fill), fetch its body now and show a brief
+  // "Loading note…" hint until it lands.
+  const noteLoading = useEnsureNoteLoaded(note.id)
 
   // Local copy so the preview overlay reflects unsaved edits immediately.
   const [previewContent, setPreviewContent] = useState(note.content)
@@ -509,6 +515,15 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
 
   return (
     <div className="relative flex-1 h-full overflow-hidden flex flex-col">
+      {noteLoading && (
+        <div
+          className="absolute top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full bg-obsidianDarkGray/90 border border-obsidianBorder text-xs text-obsidianSecondaryText shadow"
+          data-testid="note-loading-hint"
+        >
+          <span className="inline-block w-3 h-3 border-2 border-obsidianSecondaryText/40 border-t-obsidianAccentPurple rounded-full animate-spin" />
+          Loading note…
+        </div>
+      )}
       <FrontmatterPanel
         content={note.content ?? ''}
         onChange={(next) => { setPreviewContent(next); onContentChange(next) }}

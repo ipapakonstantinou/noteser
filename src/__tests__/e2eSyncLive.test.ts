@@ -24,10 +24,16 @@
  * What it asserts (each scenario logged with a [scenario] tag):
  *   1. Baseline pull with empty local state.
  *   2. Push 3 new notes  → created === 3 + commitSha returned.
- *   2b. CLONE (no-vercel-clone): pull with EMPTY local state and
- *       isFirstClone=true → all 3 pushed notes come back `remoteCreated`
- *       WITH content (proving the parallel blob prefetch delivered bytes),
- *       and fetchZipball (the Vercel proxy path) is NOT called.
+ *   2b. PROGRESSIVE CLONE: pull with EMPTY local state and isFirstClone=true →
+ *       all 3 pushed notes come back as SHELLS (remoteCreated, shell:true,
+ *       EMPTY remoteContent — NO body fetched), and fetchZipball (the Vercel
+ *       proxy path) is NOT called.
+ *   2c. SHELL SAFETY: apply the shells (content '', contentLoaded false),
+ *       confirm a re-pull classifies them `unchanged` WITHOUT fetching bodies,
+ *       and confirm syncToGitHub produces NO push for the unfilled shells
+ *       (no empty-body overwrite). Then simulate the background fill (set the
+ *       real body + contentLoaded true) and confirm a re-pull still reads
+ *       `unchanged` — normal behaviour resumes.
  *   3. Re-pull with those 3 notes as local state → all `unchanged`
  *      (regression guard for the misclassification bug).
  *   4. Empty-commit guard: re-push unchanged notes → unchanged === true
@@ -241,13 +247,17 @@ maybe('e2e GitHub sync (live)', () => {
     log(`[scenario 2] pushed 3 notes: created=${outcome.result.created} commit=${outcome.result.commitSha.slice(0, 8)} (head ${before.slice(0, 8)} → ${after.slice(0, 8)})`)
   })
 
-  test('scenario 2b: CLONE — pull with EMPTY local state + isFirstClone → all 3 remoteCreated WITH content, no zipball', async () => {
+  // progressive-clone: shells captured from scenario 2b so 2c can apply them.
+  // Each carries the remote path + raw remote blob SHA (the only inputs the
+  // shell representation needs); body stays empty until a fill.
+  let shellSeeds: Array<{ path: string; remoteSha: string }> = []
+
+  test('scenario 2b: PROGRESSIVE CLONE — pull with EMPTY local state + isFirstClone → all 3 SHELLS (empty body), no zipball', async () => {
     // Guard against the Vercel proxy path WITHOUT mocking github.ts (we keep it
     // real here). fetchZipball is the ONLY caller of the `/api/github/zipball`
     // proxy route, and it goes through the global fetch like every other GitHub
-    // call. So we wrap the global fetch, record every requested URL, let the
-    // real request through, and afterwards assert NONE of them hit the zipball
-    // proxy. This proves the clone path never touched Vercel bandwidth.
+    // call. We also use this fetch wrapper to count BLOB reads — a progressive
+    // clone must fetch ZERO note blobs (the whole point: bodies stream later).
     const realFetch = globalThis.fetch
     const requestedUrls: string[] = []
     globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
@@ -257,17 +267,15 @@ maybe('e2e GitHub sync (live)', () => {
     }) as typeof fetch
 
     let pull: Awaited<ReturnType<typeof pullFromGitHub>>
-    const progress: Array<[number, number]> = []
     try {
       // Mirror the production dispatch: a true first clone passes EMPTY local
-      // state and isFirstClone=true, which triggers the parallel blob prefetch.
+      // state and isFirstClone=true, which now emits SHELLS (no body fetch).
       pull = await pullFromGitHub({
         token: TOKEN!,
         repo,
         notes: [],
         folders: [],
         isFirstClone: true,
-        onBlobProgress: (loaded, total) => progress.push([loaded, total]),
       })
     } finally {
       globalThis.fetch = realFetch
@@ -277,29 +285,119 @@ maybe('e2e GitHub sync (live)', () => {
     const zipballHits = requestedUrls.filter(u => u.includes('zipball'))
     expect(zipballHits).toEqual([])
 
-    // (a) Each note we pushed in scenario 2 comes back classified remoteCreated.
+    // (a) Each note we pushed in scenario 2 comes back classified remoteCreated
+    //     as a SHELL (shell:true) with an EMPTY body.
     const pushedPaths = new Set(notes.map(n => n.gitPath))
     const created = pull.classifications.filter(
       (c): c is Extract<typeof c, { kind: 'remoteCreated' }> =>
         c.kind === 'remoteCreated' && pushedPaths.has((c as { path: string }).path),
     )
     expect(created).toHaveLength(3)
-
-    // (b) Their content was delivered by the prefetch (non-empty, and matches
-    //     the body we pushed for the corresponding note).
     for (const c of created) {
-      expect(typeof c.remoteContent).toBe('string')
-      expect(c.remoteContent.length).toBeGreaterThan(0)
-      const local = notes.find(n => n.gitPath === c.path)!
-      expect(c.remoteContent).toContain(local.content.trim())
+      expect((c as { shell?: boolean }).shell).toBe(true)
+      expect(c.remoteContent).toBe('')
+      expect(c.body).toBe('')
+      expect(c.remoteSha).toMatch(/^[0-9a-f]{40}$/)
     }
 
-    // Sanity: progress fired and was monotonic up to the blob total.
-    expect(progress.length).toBeGreaterThan(0)
-    const [, total] = progress[progress.length - 1]
-    expect(progress[progress.length - 1][0]).toBe(total)
+    // (b) NO note blob (git/blobs/<sha>) was fetched during the clone pull.
+    const blobReads = requestedUrls.filter(u => /\/git\/blobs\//.test(u))
+    expect(blobReads).toEqual([])
 
-    log(`[scenario 2b] clone pull: ${created.length} notes remoteCreated WITH content, 0 zipball requests (of ${requestedUrls.length} fetches), ${progress.length} progress ticks (last ${progress[progress.length - 1].join('/')})`)
+    // Stash the seeds for scenario 2c.
+    shellSeeds = created.map(c => ({ path: c.path, remoteSha: c.remoteSha }))
+
+    log(`[scenario 2b] progressive clone: ${created.length} SHELLS (empty body, shell:true), 0 zipball + 0 blob reads (of ${requestedUrls.length} fetches)`)
+  })
+
+  test('scenario 2c: SHELL SAFETY — shells classify unchanged + never push; fill resumes normal behaviour', async () => {
+    expect(shellSeeds.length).toBe(3)
+
+    // Build local SHELL notes the way applyNonConflicts would: content '',
+    // contentLoaded false, BOTH SHAs pinned to the raw remote blob SHA.
+    let shells: Note[] = shellSeeds.map((s, i) => {
+      const title = s.path.endsWith('.md') ? s.path.slice(0, -3) : s.path
+      return {
+        ...makeNote(title, ''),
+        id: `shell-${i}`,
+        content: '',
+        contentLoaded: false,
+        gitPath: s.path,
+        gitLastPushedSha: s.remoteSha,
+        gitRemoteBaseSha: s.remoteSha,
+      }
+    })
+
+    // (a) Re-pull with shells as local state → all `unchanged`, and NO note
+    //     blob is fetched (the classifier guard short-circuits before any body
+    //     work). Wrap fetch to prove zero blob reads.
+    const realFetch = globalThis.fetch
+    const urls: string[] = []
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url
+      urls.push(url)
+      return realFetch(input as Parameters<typeof realFetch>[0], init)
+    }) as typeof fetch
+    let pull: Awaited<ReturnType<typeof pullFromGitHub>>
+    try {
+      pull = await pullFromGitHub({ token: TOKEN!, repo, notes: shells, folders: [] })
+    } finally {
+      globalThis.fetch = realFetch
+    }
+    const shellIds = new Set(shells.map(n => n.id))
+    const mine = pull.classifications.filter(
+      c => 'noteId' in c && shellIds.has((c as { noteId: string }).noteId),
+    )
+    expect(mine).toHaveLength(3)
+    for (const c of mine) expect(c.kind).toBe('unchanged')
+    // The classifier guard short-circuits BEFORE any blob fetch for OUR shells.
+    // (The repo may hold OTHER notes whose blobs an incremental pull legitimately
+    // reads — we only assert NONE of the shells' own remote SHAs were fetched,
+    // which is what the empty-body-overwrite hazard hinges on.)
+    const shellShas = new Set(shells.map(n => n.gitRemoteBaseSha!))
+    const shellBlobReads = urls.filter(u => {
+      const m = u.match(/\/git\/blobs\/([0-9a-f]{40})/)
+      return m && shellShas.has(m[1])
+    })
+    expect(shellBlobReads).toEqual([])
+
+    // (b) syncToGitHub with ONLY shells → NO push (no empty-body overwrite,
+    //     no delete of the real remote file). Head sha unchanged.
+    const headBefore = await getRefSha(HARNESS_BRANCH)
+    const dry = await syncToGitHub({ token: TOKEN!, repo, notes: shells, folders: [] })
+    expect(dry.result.unchanged).toBe(true)
+    expect(dry.result.created).toBe(0)
+    expect(dry.result.updated).toBe(0)
+    expect(dry.result.deleted).toBe(0)
+    // No shell got a gitPath:null (delete) path update.
+    expect(dry.pathUpdates.find(u => shellIds.has(u.noteId) && u.gitPath === null)).toBeUndefined()
+    const headAfter = await getRefSha(HARNESS_BRANCH)
+    expect(headAfter).toBe(headBefore)
+
+    // (c) Simulate the background fill: fetch each shell's REAL body and patch
+    //     it in (content + canonical SHA + contentLoaded true), exactly as
+    //     backgroundFill.loadOneShell does.
+    const { getBlobContent } = await import('../utils/github')
+    const { gitBlobSha } = await import('../utils/github')
+    const { serializeNote, parseNote } = await import('../utils/githubSync')
+    shells = await Promise.all(shells.map(async (n) => {
+      const raw = await getBlobContent(TOKEN!, OWNER, REPO_NAME, n.gitRemoteBaseSha!)
+      const body = parseNote(raw).body
+      const canonical = await gitBlobSha(serializeNote({ content: body } as Note))
+      return { ...n, content: body, contentLoaded: true, gitLastPushedSha: canonical }
+    }))
+    expect(shells.every(n => n.contentLoaded === true && n.content.length > 0)).toBe(true)
+
+    // (d) After fill, a re-pull still reads `unchanged` — normal behaviour
+    //     resumed, no phantom local edit, no re-upload churn.
+    const pull2 = await pullFromGitHub({ token: TOKEN!, repo, notes: shells, folders: [] })
+    const mine2 = pull2.classifications.filter(
+      c => 'noteId' in c && shellIds.has((c as { noteId: string }).noteId),
+    )
+    expect(mine2).toHaveLength(3)
+    for (const c of mine2) expect(c.kind).toBe('unchanged')
+
+    log(`[scenario 2c] shell safety: 3 shells classified unchanged (0 blob reads), syncToGitHub made NO push (head ${headBefore.slice(0, 8)} unchanged); after fill, re-pull still unchanged`)
   })
 
   test('scenario 3: re-pull with the 3 notes as local state → all unchanged (no misclassification)', async () => {
