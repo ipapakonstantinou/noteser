@@ -41,7 +41,11 @@ import { saveAttachment } from '@/utils/attachments'
 import { WikilinkAutocomplete } from './WikilinkAutocomplete'
 import { TagAutocomplete } from './TagAutocomplete'
 import { getConfiguredUrl } from '@/hooks/useCollaboration'
-import { createCollabBinding, type CollabBinding } from './collabExtension'
+// Type-only import: erased at compile time, so it does NOT pull yjs /
+// y-websocket / y-codemirror.next into the editor bundle. The actual
+// createCollabBinding implementation is loaded via dynamic import() inside
+// the collab effect below — only when NEXT_PUBLIC_YJS_WS_URL is configured.
+import { type CollabBinding } from './collabExtension'
 import type { Note } from '@/types'
 
 interface WikilinkState {
@@ -220,14 +224,25 @@ export function CodeMirrorEditor({
     // The CodeMirror view is created during the keyed remount; it may not
     // exist on the very first effect tick. Poll a couple of microtasks for
     // it, then bail if it never shows (note closed mid-mount).
-    const attach = (attemptsLeft: number) => {
+    //
+    // createCollabBinding (and its yjs / y-websocket / y-codemirror.next
+    // dependencies, ~hundreds of kB) is loaded lazily here so it never lands
+    // in the default editor bundle. We only reach this code when a collab URL
+    // is configured, which is opt-in via NEXT_PUBLIC_YJS_WS_URL.
+    const attach = async (attemptsLeft: number) => {
       if (cancelled) return
       const view = cmRef.current?.view
       if (!view) {
         if (attemptsLeft <= 0) return
-        queueMicrotask(() => attach(attemptsLeft - 1))
+        queueMicrotask(() => { void attach(attemptsLeft - 1) })
         return
       }
+      const { createCollabBinding } = await import('./collabExtension')
+      // The component may have unmounted (or the note changed) while the
+      // dynamic import was in flight — re-check before touching the view.
+      if (cancelled) return
+      const freshView = cmRef.current?.view
+      if (!freshView) return
       const note = useNoteStore.getState().notes.find(n => n.id === noteId)
       binding = createCollabBinding({
         url,
@@ -236,9 +251,9 @@ export function CodeMirrorEditor({
         user: githubUserRef.current,
       })
       collabBindingRef.current = binding
-      view.dispatch({ effects: compartment.reconfigure(binding.extension) })
+      freshView.dispatch({ effects: compartment.reconfigure(binding.extension) })
     }
-    attach(5)
+    void attach(5)
 
     return () => {
       cancelled = true
