@@ -1165,15 +1165,18 @@ rvhMaybe('e2e GitHub sync — REALISTIC VAULT (live)', () => {
     await resetLocalState()
     await cloneAndApply(true)
 
-    // Sanity: the store now holds the same vault values, and the SEEDED hash is
-    // the hash of the RAW (non-canonical) bytes — NOT the canonical hash.
+    // THE FIX: the SEEDED baseline is now the CANONICAL hash of the applied
+    // slice (exactly what the push serializes), NOT the raw non-canonical
+    // remote bytes. So an unchanged clone of a non-canonical settings.json
+    // re-pushes nothing (the final contract below).
     const state = useSettingsStore.getState()
     const seeded = state.vaultSettingsLastPushedHash
     const rawHash = vaultSettingsHash(nonCanonicalSettings)
     const canonicalHash = vaultSettingsHash(
       serializeVaultSettings(pickVaultSlice(state), state.vaultSettingsUpdatedAt || 0),
     )
-    expect(seeded).toBe(rawHash)
+    expect(seeded).toBe(canonicalHash)
+    expect(seeded).not.toBe(rawHash)
 
     // Build the bundle + push, counting blob POSTs that target settings.json by
     // diffing the remote tree's settings.json SHA before/after.
