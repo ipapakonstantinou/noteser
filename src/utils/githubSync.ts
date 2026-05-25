@@ -1,6 +1,11 @@
 import type JSZip from 'jszip'
 import type { Note, Folder, SyncRepo } from '@/types'
-import { sanitizeFilename } from './export'
+// Import from the dedicated sanitiser module, NOT from './export'. The
+// latter statically imports jszip + file-saver at module scope, and
+// githubSync sits on the app-init path (useGitHubSync → useAutoSync), so
+// importing sanitizeFilename from './export' dragged jszip + file-saver
+// into the first-load bundle. './sanitizeFilename' is jszip-free.
+import { sanitizeFilename } from './sanitizeFilename'
 import {
   getBranchRefSha,
   getCommitTreeSha,
