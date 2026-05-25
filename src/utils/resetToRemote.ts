@@ -16,6 +16,9 @@
 // modal lifecycle.
 
 import { useNoteStore } from '@/stores/noteStore'
+import { useFolderStore } from '@/stores/folderStore'
+import { useSettingsStore } from '@/stores/settingsStore'
+import { clearAllAttachments } from './attachments'
 
 export interface ResetToRemoteOptions {
   // When true (default), notes with no gitPath are kept. When false,
@@ -35,16 +38,26 @@ export interface ResetToRemoteResult {
 }
 
 /**
- * Synchronously wipe local note state per the strategy above. The
- * caller MUST follow up with a pull to repopulate from the remote
- * (the util only handles the local half so we don't bake sync-flow
- * coupling into a low-level helper).
+ * Wipe local note state (and the rest of the per-vault cache) per the
+ * strategy above. The caller MUST follow up with a pull to repopulate
+ * from the remote (the util only handles the local half so we don't
+ * bake sync-flow coupling into a low-level helper).
  *
- * Pure local effect — no network calls. Safe to run before the user
- * has a syncRepo connected (it'd just empty the vault, which is
+ * rename-not-delete: this ALSO clears the folder store (folders +
+ * deletedFolderPaths), attachments, and the per-vault sync bookkeeping —
+ * mirroring switchVault's freshClone reset set. Previously it wiped only
+ * `notes`, leaving the folder hierarchy (and its possibly dash-form
+ * names) intact. A discard → re-pull then re-derived folders from the
+ * stale local names, perpetuating the path-FORM mismatch that turns a
+ * remote rename into a delete. By clearing folders too, the re-clone
+ * produces a truly clean vault whose folder names match the remote's
+ * current (e.g. space-form) tree.
+ *
+ * Async because clearing attachments touches IDB. Safe to run before the
+ * user has a syncRepo connected (it'd just empty the vault, which is
  * obviously a destructive thing the UI should guard against).
  */
-export function resetToRemote(opts: ResetToRemoteOptions = {}): ResetToRemoteResult {
+export async function resetToRemote(opts: ResetToRemoteOptions = {}): Promise<ResetToRemoteResult> {
   const preserveUnpushed = opts.preserveUnpushed ?? true
   const { notes } = useNoteStore.getState()
 
@@ -62,6 +75,33 @@ export function resetToRemote(opts: ResetToRemoteOptions = {}): ResetToRemoteRes
       return next.some(n => n.id === cur) ? cur : null
     })(),
     notes: next,
+  })
+
+  // Clear the folder hierarchy + its tombstones. Re-deriving folders from a
+  // clean slate on the next pull is what guarantees the re-clone picks up the
+  // remote's CURRENT folder-name form (the fix for the rename-as-delete bug).
+  // Mirrors switchVault's freshClone reset of the folder store.
+  useFolderStore.setState({ folders: [], activeFolderId: null, expandedFolders: {}, deletedFolderPaths: [] })
+
+  // Clear local attachments (IDB) + tombstones + URL cache — same as
+  // switchVault's freshClone. Pushed attachments live in the repo and come
+  // back on the next pull; unpushed ones go away with their referring notes.
+  // Best-effort (never throws).
+  await clearAllAttachments()
+
+  // Reset the per-vault sync bookkeeping so the follow-up pull reconciles
+  // against a clean slate instead of stale gitignore/settings/encryption
+  // state. User-/device-scoped preferences are deliberately left untouched —
+  // this mirrors switchVault's freshClone settings reset exactly.
+  useSettingsStore.setState({
+    vaultSettingsUpdatedAt: 0,
+    vaultSettingsLastPushedHash: '',
+    vaultGitignoreDraft: null,
+    vaultGitignoreRemoteSnapshot: null,
+    localGitignoreOverlay: '',
+    vaultEncryptionEnabled: false,
+    vaultEncryptionSalt: null,
+    vaultEncryptionCanary: null,
   })
 
   return {

@@ -30,9 +30,10 @@ export function useAutoSync(): void {
   // store for a brand-new vault and re-import everything (mass-duplicate bug).
   // useStoresHydrated stays false until BOTH stores report hasHydrated().
   const hydrated = useStoresHydrated()
-  const { runSync, runPullOnly, isConnected, syncState } = useGitHubSync()
+  // Auto-sync is PULL-ONLY: runSync (which pushes) is intentionally not used
+  // here — push only happens on an explicit user action.
+  const { runPullOnly, isConnected, syncState } = useGitHubSync()
   const autoSyncOnStart = useSettingsStore(s => s.autoSyncOnStart)
-  const pullOnlyOnStartup = useSettingsStore(s => s.pullOnlyOnStartup)
   const intervalMinutes = useSettingsStore(s => s.autoSyncIntervalMinutes)
 
   // Latest syncState in a ref so the interval callback can read it
@@ -48,17 +49,12 @@ export function useAutoSync(): void {
     if (!isConnected) return
     if (!autoSyncOnStart) return
     startupRanRef.current = true
-    // pullOnlyOnStartup: run pull only on boot. Local unsynced edits
-    // stay local until the user clicks Commit & Sync (the pending-
-    // count chip in EditorFooter still surfaces them). Useful on
-    // devices that frequently have work-in-flight notes the user
-    // doesn't want auto-pushed on every page load.
-    if (pullOnlyOnStartup) {
-      void runPullOnly()
-    } else {
-      void runSync()
-    }
-  }, [hydrated, isConnected, autoSyncOnStart, pullOnlyOnStartup, runSync, runPullOnly])
+    // Auto-sync NEVER pushes. Pushing happens only on an explicit user action
+    // (Commit & Sync, revert, discard, connecting a repo). On boot we PULL
+    // only, so the app never rewrites the user's repo without them clicking.
+    // Firm product rule: "if I don't click Commit & Sync, it must not push."
+    void runPullOnly()
+  }, [hydrated, isConnected, autoSyncOnStart, runPullOnly])
 
   // ── progressive-clone: resume the body fill after a reload ──────────
   // A first clone that was interrupted (reload, crash, navigate-away) leaves
@@ -88,12 +84,12 @@ export function useAutoSync(): void {
     if (!intervalMinutes || intervalMinutes <= 0) return
 
     const id = setInterval(() => {
-      // Skip if a sync is already in flight — the previous run is still
-      // working through its pull/apply/push pipeline.
+      // Skip if a sync is already in flight.
       if (syncStateRef.current.kind === 'running') return
-      void runSync()
+      // Pull only — the periodic auto-sync never pushes (see startup above).
+      void runPullOnly()
     }, intervalMinutes * 60 * 1000)
 
     return () => clearInterval(id)
-  }, [hydrated, isConnected, intervalMinutes, runSync])
+  }, [hydrated, isConnected, intervalMinutes, runPullOnly])
 }

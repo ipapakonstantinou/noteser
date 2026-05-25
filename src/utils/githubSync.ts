@@ -477,32 +477,75 @@ export async function pullFromGitHub(input: {
     // normal gitPath-keyed match.
     let adoptPath: string | undefined
     if (!localMatch) {
-      const candidates = notes.filter(n => {
-        if (n.isDeleted) return false
-        if (seenLocalIds.has(n.id)) return false
-        if (notePath(n, input.folders) !== path) return false
-        // Unlinked: never pushed (no/empty gitPath) OR a stale gitPath that the
-        // current remote tree doesn't contain (a rename/respawn left it behind).
+      // rename-not-delete: an "unlinked" local note is one that has no gitPath
+      // pointing at a file in THIS remote tree — either never pushed, or its
+      // stored gitPath is stale (a rename/respawn left it behind). Such a note
+      // is a candidate to ADOPT this remote file.
+      const isUnlinked = (n: Note): boolean => {
         const gp = n.gitPath
         if (!gp) return true
         return !remoteTree.has(gp)
+      }
+      // Path-form match: the note's computed repo path equals this remote path.
+      const pathCandidates = notes.filter(n => {
+        if (n.isDeleted) return false
+        if (seenLocalIds.has(n.id)) return false
+        if (notePath(n, input.folders) !== path) return false
+        return isUnlinked(n)
       })
 
-      if (candidates.length === 1) {
-        localMatch = candidates[0]
+      if (pathCandidates.length === 1) {
+        localMatch = pathCandidates[0]
         adoptPath = path
-      } else if (candidates.length > 1) {
+      } else if (pathCandidates.length > 1) {
         // Ambiguous — be conservative. Only adopt if EXACTLY ONE candidate's
         // serialized blob SHA equals the remote SHA (a clean, identical adopt
         // we can make with confidence). Otherwise we refuse to guess and fall
         // through to remoteCreated rather than risk merging the wrong note.
         const shaMatches: Note[] = []
-        for (const c of candidates) {
+        for (const c of pathCandidates) {
           const sha = await gitBlobSha(serializeNote(c))
           if (sha === remoteSha) shaMatches.push(c)
         }
         if (shaMatches.length === 1) {
           localMatch = shaMatches[0]
+          adoptPath = path
+        }
+      }
+
+      // rename-not-delete CONTENT-HASH ADOPTION: the path FORM differs (e.g. the
+      // note's stored gitPath/folder names are dash-form, the remote reverted to
+      // space-form), so notePath() no longer equals the remote path and the
+      // path-match above found nothing. Fall back to matching by CONTENT: an
+      // unlinked local note whose serialized blob SHA equals this remote blob
+      // (or whose last-pushed SHA equals it) logically IS this file under a new
+      // name. Adopting it (gitPath := remotePath) prevents the catastrophic
+      // "old-path deleted + new-path created" misread that soft-deletes the note
+      // and then deletes the real remote file. We only adopt on an UNAMBIGUOUS
+      // single content match, mirroring the conservative SHA tiebreak above.
+      if (!localMatch) {
+        const hashMatches: Note[] = []
+        for (const n of notes) {
+          if (n.isDeleted) continue
+          if (seenLocalIds.has(n.id)) continue
+          if (!isUnlinked(n)) continue
+          // Content-hash adoption is for RENAMES: a note that was PUSHED before
+          // (so it has a baseline gitPath + last-pushed SHA) whose stored path
+          // FORM no longer matches the remote. A never-pushed note (no gitPath
+          // AND no gitLastPushedSha) is the job of the notePath path-form match
+          // above — adopting it here by raw content equality is both unnecessary
+          // and riskier (it could vacuum up an unrelated local draft that merely
+          // happens to share bytes). Require a push lineage to qualify.
+          if (!n.gitPath && !n.gitLastPushedSha) continue
+          // Cheap check first: the note's recorded last-pushed SHA already
+          // equals this remote blob (it was pushed as this exact content).
+          if (n.gitLastPushedSha === remoteSha) { hashMatches.push(n); continue }
+          // Otherwise hash the note's current serialized content.
+          const sha = await gitBlobSha(serializeNote(n))
+          if (sha === remoteSha) hashMatches.push(n)
+        }
+        if (hashMatches.length === 1) {
+          localMatch = hashMatches[0]
           adoptPath = path
         }
       }
@@ -1114,7 +1157,24 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   // has this SHA, or our in-tab cache says we uploaded it) vs "needs
   // upload". Keeping the pre-pass separate lets us emit a stable
   // `total` to the progress callback.
-  interface NoteBlobPlan { path: string; content: string; note: Note; localSha: string; remoteSha: string | undefined }
+  //
+  // push-only-real-edits: the upload decision must reflect a GENUINE local
+  // edit, not just a wire-form mismatch against the remote blob. The remote
+  // blob can be in a NON-CANONICAL shape (e.g. an imported Obsidian vault with
+  // no trailing newline, or frontmatter we strip on store), so `remoteSha`
+  // routinely differs from our canonical `localSha` even when the user never
+  // touched the note. Uploading on that mismatch rewrites the user's vault into
+  // noteser's canonical form on every sync (the churn bug).
+  //
+  // The authoritative "did the user edit this?" signal is the PLAINTEXT
+  // canonical SHA (`plainSha = gitBlobSha(serializeNote(note))`) vs the note's
+  // `gitLastPushedSha` baseline (set by syncApply/backgroundFill to the
+  // canonical SHA as of the last sync). When they match the body is byte-equal
+  // to what we last synced → NO genuine edit. A null baseline means a
+  // new/never-synced note → MUST push. We use `plainSha` (NOT the wire/encrypted
+  // sha) ONLY for this change decision; `localSha` (wire) is still what we
+  // hash, upload and dedupe against `uploadedShas`/`remoteSha`.
+  interface NoteBlobPlan { path: string; content: string; note: Note; localSha: string; remoteSha: string | undefined; locallyChanged: boolean }
   const noteBlobPlan: NoteBlobPlan[] = []
   for (const [path, { content, note }] of desired) {
     if (pushMatcher.isIgnored(path)) continue
@@ -1123,11 +1183,25 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     // snapshot (it compares against the unencrypted body).
     const wireContent = await maybeEncryptForPush(content)
     const localSha = await gitBlobSha(wireContent)
+    // Plaintext canonical SHA for the genuine-edit decision. `content` here is
+    // the canonical plaintext (serializeNote output) BEFORE encryption.
+    const plainSha = await gitBlobSha(content)
+    const baseline = note.gitLastPushedSha ?? null
+    const locallyChanged = baseline === null || plainSha !== baseline
     const remoteSha = remoteTree.get(path)
-    noteBlobPlan.push({ path, content: wireContent, note, localSha, remoteSha })
+    noteBlobPlan.push({ path, content: wireContent, note, localSha, remoteSha, locallyChanged })
   }
-  const noteBlobsToUpload = noteBlobPlan.filter(p => p.remoteSha !== p.localSha && !uploadedShas.has(p.localSha))
-  const noteBlobsCached   = noteBlobPlan.filter(p => p.remoteSha !== p.localSha &&  uploadedShas.has(p.localSha))
+  // push-only-real-edits: SUPPRESS the upload for a note that is NOT locally
+  // changed AND already has a remote blob at this path. We emit NO tree entry
+  // for it, so the base tree's existing (user's original, possibly
+  // non-canonical) blob is preserved untouched — zero rewrite. We STILL push
+  // when the note is locally changed (a real edit) OR has no remote blob yet
+  // (`remoteSha === undefined`: a brand-new note, or a note moved to a new path
+  // — the move's old-path deletion is handled by the deletion loop in step 4).
+  const noteBlobsSuppressed = noteBlobPlan.filter(p => !p.locallyChanged && p.remoteSha !== undefined && p.remoteSha !== p.localSha)
+  const suppressedNoteIds = new Set(noteBlobsSuppressed.map(p => p.note.id))
+  const noteBlobsToUpload = noteBlobPlan.filter(p => !suppressedNoteIds.has(p.note.id) && p.remoteSha !== p.localSha && !uploadedShas.has(p.localSha))
+  const noteBlobsCached   = noteBlobPlan.filter(p => !suppressedNoteIds.has(p.note.id) && p.remoteSha !== p.localSha &&  uploadedShas.has(p.localSha))
 
   let blobsUploaded = 0
   let blobsSkipped = noteBlobsCached.length
@@ -1148,13 +1222,26 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   // Pure-skip entries (remote has this SHA): no entry, no upload, but the
   // note's path metadata may still need an update. The lastPushedSnapshot
   // gets the PLAINTEXT body (gutter compares against unencrypted text).
+  //
+  // push-only-real-edits: a SUPPRESSED note (unchanged but its canonical wire
+  // SHA differs from the non-canonical remote blob) is left ENTIRELY untouched:
+  // no tree entry (handled by the filters above) AND no pathUpdate. Emitting a
+  // pathUpdate here would rewrite gitLastPushedSha to `finalSha` (the wire SHA),
+  // overwriting the canonical baseline syncApply pinned — which would make the
+  // NEXT pull misclassify the note (localChanged would flip on every sync). The
+  // note did not change, so we leave gitPath / gitLastPushedSha / gitRemoteBaseSha
+  // exactly as they are. We still take a gutter snapshot (body is unchanged, so
+  // the plaintext is correct).
   for (const plan of noteBlobPlan) {
+    const suppressed = suppressedNoteIds.has(plan.note.id)
     const skipped = plan.remoteSha === plan.localSha
-    const finalSha = skipped ? plan.remoteSha! : plan.localSha
-    if (skipped && (plan.note.gitPath !== plan.path || plan.note.gitLastPushedSha !== finalSha || plan.note.gitRemoteBaseSha !== finalSha)) {
+    if (!suppressed && skipped) {
       // After a push the pushed blob IS the remote file, so the local baseline
       // and the remote merge base coincide — set both to finalSha.
-      pathUpdates.push({ noteId: plan.note.id, gitPath: plan.path, gitLastPushedSha: finalSha, gitRemoteBaseSha: finalSha })
+      const finalSha = plan.remoteSha!
+      if (plan.note.gitPath !== plan.path || plan.note.gitLastPushedSha !== finalSha || plan.note.gitRemoteBaseSha !== finalSha) {
+        pathUpdates.push({ noteId: plan.note.id, gitPath: plan.path, gitLastPushedSha: finalSha, gitRemoteBaseSha: finalSha })
+      }
     }
     // Gutter snapshot uses the plaintext, not the wire form — look it up
     // from `desired` rather than `plan.content` (which is the wire form).
@@ -1283,17 +1370,66 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   // resolve there (rename or moved folder) and notes that are now in trash.
   const desiredPaths = new Set(desired.keys())
   const seenGitPaths = new Set<string>()
+
+  // rename-not-delete HARD PUSH-SIDE SAFETY NET (the critical data-loss
+  // preventer). Before we emit ANY `sha:null` delete, build the set of remote
+  // paths that a LIVE (non-deleted) note still represents. A remote file at
+  // such a path MUST NOT be deleted, even if some upstream classification was
+  // wrong (e.g. a rename misread as a delete that soft-deleted the note).
+  //
+  // A path is protected when EITHER:
+  //   (a) it is in `desired` — an active note's CURRENT computed path maps to
+  //       it (the note literally lives there now), OR
+  //   (b) a live note's serialized content hash equals the remote blob SHA at
+  //       that path — the file's content IS a live note, just under a name
+  //       whose form no longer matches the note's stored path (the dash↔space
+  //       rename case). Deleting it would destroy the user's real note.
+  // We hash each live note ONCE here (and only for paths present in the remote
+  // tree, so we never pay for paths we wouldn't delete anyway).
+  const protectedRemotePaths = new Set<string>(desiredPaths)
+  {
+    // Map remote path → its blob SHA, but only for paths some live note could
+    // be defending. We need a SHA→paths index to test content equality.
+    const livePlainShaByNote = new Map<string, string>()
+    for (const note of activeNotes) {
+      const sha = await gitBlobSha(serializeNote(note))
+      livePlainShaByNote.set(note.id, sha)
+    }
+    const liveShaSet = new Set(livePlainShaByNote.values())
+    // Also count any baseline SHA a live note last pushed — a note whose body
+    // hasn't been re-serialized identically (e.g. non-canonical remote) is
+    // still defended by the SHA it was pushed as.
+    for (const note of activeNotes) {
+      if (note.gitLastPushedSha) liveShaSet.add(note.gitLastPushedSha)
+    }
+    for (const [path, remoteSha] of remoteTree) {
+      if (protectedRemotePaths.has(path)) continue
+      if (liveShaSet.has(remoteSha)) protectedRemotePaths.add(path)
+    }
+  }
+
   for (const note of activeNotes) {
     if (note.gitPath) seenGitPaths.add(note.gitPath)
     if (note.gitPath && !desiredPaths.has(note.gitPath) && remoteTree.has(note.gitPath)) {
+      // Safety net: never delete a path a live note still represents (by
+      // content), even though this note's CURRENT path moved away from it.
+      if (protectedRemotePaths.has(note.gitPath)) continue
       entries.push({ path: note.gitPath, mode: '100644', type: 'blob', sha: null })
       deleted++
     }
   }
   for (const note of notes) {
     if (note.isDeleted && note.gitPath && remoteTree.has(note.gitPath)) {
-      // Only delete if no active note has already moved into that path.
-      if (!desired.has(note.gitPath) && !seenGitPaths.has(note.gitPath)) {
+      // Only delete if no active note has already moved into that path AND no
+      // live note's content maps to it. The protectedRemotePaths check is the
+      // hard guard: a soft-deleted note's gitPath that an active note still
+      // represents (by current path OR by content hash) must survive — the
+      // delete classification was a rename misread, not a real deletion.
+      if (
+        !desired.has(note.gitPath) &&
+        !seenGitPaths.has(note.gitPath) &&
+        !protectedRemotePaths.has(note.gitPath)
+      ) {
         entries.push({ path: note.gitPath, mode: '100644', type: 'blob', sha: null })
         deleted++
       }

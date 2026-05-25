@@ -1,10 +1,12 @@
 /**
  * @jest-environment jsdom
  *
- * pullOnlyOnStartup behaviour. The hook calls runPullOnly (pull, apply,
- * STOP) instead of runSync (pull, apply, push) when this device-level
- * setting is on. Useful when a device has frequent work-in-flight that
- * the user doesn't want auto-pushed on every page load.
+ * Auto-sync is PULL-ONLY. On boot (and on the interval) the hook calls
+ * runPullOnly (pull, apply, STOP), never runSync (which pushes). Pushing
+ * happens only on an explicit user action (Commit & Sync, revert, discard,
+ * connecting a repo). Firm rule: if the user does not click Commit & Sync,
+ * nothing is pushed. The old `pullOnlyOnStartup` setting is therefore moot for
+ * the push decision and no longer gates it.
  */
 
 import { renderHook } from '@testing-library/react'
@@ -58,14 +60,14 @@ beforeEach(() => {
   mockSettings.autoSyncIntervalMinutes = 0
 })
 
-describe('useAutoSync — pullOnlyOnStartup', () => {
-  test('default: runs runSync (full pull + push) on mount', () => {
+describe('useAutoSync — startup is pull-only (never pushes)', () => {
+  test('autoSyncOnStart=true: runs runPullOnly on mount, NEVER runSync', () => {
     renderHook(() => useAutoSync())
-    expect(runSync).toHaveBeenCalledTimes(1)
-    expect(runPullOnly).not.toHaveBeenCalled()
+    expect(runPullOnly).toHaveBeenCalledTimes(1)
+    expect(runSync).not.toHaveBeenCalled()
   })
 
-  test('pullOnlyOnStartup=true: runs runPullOnly instead', () => {
+  test('still pull-only regardless of the legacy pullOnlyOnStartup setting', () => {
     mockSettings.pullOnlyOnStartup = true
     renderHook(() => useAutoSync())
     expect(runPullOnly).toHaveBeenCalledTimes(1)
@@ -74,7 +76,6 @@ describe('useAutoSync — pullOnlyOnStartup', () => {
 
   test('autoSyncOnStart=false: neither runs', () => {
     mockSettings.autoSyncOnStart = false
-    mockSettings.pullOnlyOnStartup = true
     renderHook(() => useAutoSync())
     expect(runSync).not.toHaveBeenCalled()
     expect(runPullOnly).not.toHaveBeenCalled()

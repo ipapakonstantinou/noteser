@@ -22,7 +22,10 @@ import { resetToRemote } from '@/utils/resetToRemote'
 export const DiscardLocalChangesModal = () => {
   const { modal, closeModal } = useUIStore()
   const isOpen = modal.type === 'discard-local-changes'
-  const { runSync } = useGitHubSync()
+  // Discard is a RESET-TO-REMOTE: we want to PULL the remote version, never
+  // push. Using runSync here re-pushed settings.json + attachments after the
+  // wipe (a surprise commit). runPullOnly only fetches + applies.
+  const { runPullOnly } = useGitHubSync()
 
   // Count notes that exist locally without a gitPath — these are
   // the unpushed ones the "Also drop" toggle would wipe. Used in
@@ -41,13 +44,12 @@ export const DiscardLocalChangesModal = () => {
     setBusy(true)
     setError(null)
     try {
-      resetToRemote({ preserveUnpushed: !alsoDropUnpushed })
-      // Trigger a pull to repopulate the wiped pushed notes from
-      // remote. runSync without an explicit commit message is a
-      // safe "fetch + apply + push-if-anything-new" — since we just
-      // wiped everything that had a gitPath, the push side will be
-      // a no-op.
-      await runSync()
+      await resetToRemote({ preserveUnpushed: !alsoDropUnpushed })
+      // Pull-only: repopulate the wiped notes from remote. We must NOT push
+      // here — discard resets us TO the remote, so there is nothing to send.
+      // (runSync pushed settings.json + attachments after the wipe, which
+      // surprised the user with an unasked-for commit.)
+      await runPullOnly()
       setDone(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Discard failed')
