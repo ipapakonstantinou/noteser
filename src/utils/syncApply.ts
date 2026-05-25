@@ -3,6 +3,7 @@ import { useNoteStore, useFolderStore, useGitHubStore, useSettingsStore } from '
 import type { Note } from '@/types'
 import type { PullClassification } from './githubSync'
 import { parseNote, serializeNote, takeZipballAttachmentBytes } from './githubSync'
+import { pickVaultSlice, serializeVaultSettings, vaultSettingsHash } from './vaultSettings'
 import { putAttachmentAtPath } from './attachments'
 import { getBlobBytes, gitBlobSha } from './github'
 import { mapWithConcurrency, DEFAULT_CONCURRENCY } from './concurrency'
@@ -113,6 +114,17 @@ export async function applyNonConflicts(classifications: PullClassification[]): 
         c.remoteUpdatedAt,
         c.remoteHash,
       )
+      // Re-seed the push baseline to the CANONICAL hash of the APPLIED slice
+      // (exactly what the push serializes via pickVaultSlice), NOT the raw
+      // remote bytes. Otherwise a remote settings.json that is equivalent but
+      // not byte-identical (older formatting, a key this client fills with a
+      // default, a different client version) re-pushes on every clean clone.
+      // Mirrors the note baseline = canonicalLocalSha, not the raw remote SHA.
+      {
+        const s = useSettingsStore.getState()
+        const canonical = vaultSettingsHash(serializeVaultSettings(pickVaultSlice(s), c.remoteUpdatedAt))
+        s.setVaultSettingsLastPushedHash(canonical)
+      }
       counts.updated++
       continue
     }

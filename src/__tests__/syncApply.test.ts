@@ -80,6 +80,7 @@ import { useNoteStore } from '../stores/noteStore'
 import { useFolderStore } from '../stores/folderStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useGitHubStore } from '../stores/githubStore'
+import { pickVaultSlice, serializeVaultSettings, vaultSettingsHash } from '../utils/vaultSettings'
 import type { Note, SyncRepo } from '@/types'
 
 const REPO: SyncRepo = { owner: 'me', name: 'vault', branch: 'main', isPrivate: false }
@@ -367,10 +368,14 @@ test('vaultSettingsUpdated: applies the remote slice + counts as updated', async
 
   const s = useSettingsStore.getState()
   expect(s.folderSortMode).toBe('modified')
-  // The store advances vaultSettingsUpdatedAt + lastPushedHash so the next
-  // push doesn't treat this as a local change.
   expect(s.vaultSettingsUpdatedAt).toBe(9999)
-  expect(s.vaultSettingsLastPushedHash).toBe('remote-hash')
+  // The baseline is seeded to the CANONICAL hash of the applied slice (exactly
+  // what the push serializes), NOT the raw remote bytes. This is what stops an
+  // equivalent-but-not-byte-identical remote settings.json from re-pushing on
+  // every clean clone (the settings analogue of the note canonical-baseline).
+  const expectedCanonical = vaultSettingsHash(serializeVaultSettings(pickVaultSlice(s), 9999))
+  expect(s.vaultSettingsLastPushedHash).toBe(expectedCanonical)
+  expect(s.vaultSettingsLastPushedHash).not.toBe('remote-hash')
 })
 
 // ── THE ROUND-TRIP INVARIANT (the exact regression guard) ────────────────────
