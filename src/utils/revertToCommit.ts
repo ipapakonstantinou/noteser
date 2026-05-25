@@ -30,13 +30,22 @@ import {
 } from '@/utils/github'
 import { parseNote } from '@/utils/githubSync'
 import { bodyWithInlineTags } from '@/utils/syncApply'
+import { mapWithConcurrency, DEFAULT_CONCURRENCY } from '@/utils/concurrency'
+import { withTokenRefresh } from '@/utils/tokenRefresh'
 import { v4 as uuidv4 } from 'uuid'
 
 export interface RevertToCommitOptions {
-  token: string
+  // Legacy field: kept so existing call sites compile, but the revert now
+  // sources a freshly-validated (auto-refreshed) token internally via
+  // withTokenRefresh, so a stale token passed here no longer 401s the flow.
+  // Pass it or not — it is ignored in favour of the renewal layer's token.
+  token?: string
   owner: string
   repo: string
   commitSha: string
+  // Optional progress callback fired as historical .md blobs come down, so the
+  // UI can show "Fetching N/M…" instead of looking hung on a large vault.
+  onBlobProgress?: (fetched: number, total: number) => void
 }
 
 export interface RevertToCommitResult {
@@ -55,30 +64,53 @@ export interface RevertToCommitResult {
 // user what happened. Throws on network failures so the caller can
 // surface a friendly error.
 export async function revertToCommit(opts: RevertToCommitOptions): Promise<RevertToCommitResult> {
-  const { token, owner, repo, commitSha } = opts
+  const { owner, repo, commitSha, onBlobProgress } = opts
 
-  // 1. Resolve commit → tree → blob list.
-  const treeSha = await getCommitTreeSha(token, owner, repo, commitSha)
-  const tree = await getTreeMap(token, owner, repo, treeSha)
+  // All GitHub reads run inside withTokenRefresh: it hands us a proactively
+  // validated (refreshed if near expiry) token, and if any read still 401s it
+  // refreshes once and retries the whole closure with the rotated token. A
+  // non-refreshable (PAT/classic) token behaves exactly as before — single
+  // attempt, no retry. ReconnectRequiredError surfaces only when truly
+  // exhausted, so the modal can route the user to reconnect.
+  const historicalContent = await withTokenRefresh(async (token) => {
+    // 1. Resolve commit → tree → blob list.
+    const treeSha = await getCommitTreeSha(token, owner, repo, commitSha)
+    const tree = await getTreeMap(token, owner, repo, treeSha)
 
-  // Filter to `.md` blobs only. Attachments + non-markdown files in
-  // the historical tree are left untouched for v1 — they're rarer in
-  // the noteser model and would significantly grow the surface area.
-  const mdPaths: Array<{ path: string; sha: string }> = []
-  for (const [path, sha] of tree) {
-    if (path.toLowerCase().endsWith('.md')) {
-      mdPaths.push({ path, sha })
+    // Filter to `.md` blobs only. Attachments + non-markdown files in
+    // the historical tree are left untouched for v1 — they're rarer in
+    // the noteser model and would significantly grow the surface area.
+    const mdPaths: Array<{ path: string; sha: string }> = []
+    for (const [path, sha] of tree) {
+      if (path.toLowerCase().endsWith('.md')) {
+        mdPaths.push({ path, sha })
+      }
     }
-  }
 
-  // 2. Fetch every blob's content. Done sequentially to keep the rate
-  // limit happy on a large vault; the GitHub Git Data API doesn't
-  // bulk-fetch blobs. We could parallelise with a concurrency cap for
-  // big vaults if this turns out to be slow in practice.
-  const historicalContent = new Map<string, string>()
-  for (const { path, sha } of mdPaths) {
-    historicalContent.set(path, await getBlobContent(token, owner, repo, sha))
-  }
+    // 2. Fetch every blob's content with a bounded concurrency pool. The Git
+    // Data API can't bulk-fetch blobs, so on a real vault the old sequential
+    // loop was the "Rewinding…" hang. DEFAULT_CONCURRENCY (8) in flight keeps
+    // wall time bounded while staying under GitHub's secondary rate limits.
+    // mapWithConcurrency preserves INPUT ORDER, so the resulting map matches
+    // the tree-walk order exactly and a mid-batch failure rejects cleanly.
+    const total = mdPaths.length
+    let fetched = 0
+    onBlobProgress?.(0, total)
+    const contents = await mapWithConcurrency(
+      mdPaths,
+      DEFAULT_CONCURRENCY,
+      async ({ sha }) => {
+        const content = await getBlobContent(token, owner, repo, sha)
+        fetched += 1
+        onBlobProgress?.(fetched, total)
+        return content
+      },
+    )
+
+    const map = new Map<string, string>()
+    mdPaths.forEach(({ path }, i) => map.set(path, contents[i]))
+    return map
+  })
 
   // 3. Mutate the noteStore.
   const { notes } = useNoteStore.getState()

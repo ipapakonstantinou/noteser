@@ -6,6 +6,7 @@ import { Modal, Button } from '@/components/ui'
 import { useUIStore, useNoteStore, useGitHubStore } from '@/stores'
 import { listFileCommits, getFileContentAtCommit, formatRelativeAuthorDate } from '@/utils/githubHistory'
 import { GitHubAPIError } from '@/utils/github'
+import { withTokenRefresh, ReconnectRequiredError } from '@/utils/tokenRefresh'
 import { parseNote } from '@/utils/githubSync'
 import { bodyWithInlineTags } from '@/utils/syncApply'
 import type { FileCommitEntry } from '@/utils/githubHistory'
@@ -69,7 +70,10 @@ export const FileHistoryModal = () => {
     let cancelled = false
     setLoading(true)
     setError(null)
-    listFileCommits(token, repo.owner, repo.name, note.gitPath, { perPage: 30 })
+    // withTokenRefresh proactively validates (and refreshes if near-expiry) the
+    // token before the read, and on a 401 refreshes once and retries — so an
+    // expired token auto-renews instead of failing the history fetch.
+    withTokenRefresh(tok => listFileCommits(tok, repo.owner, repo.name, note.gitPath!, { perPage: 30 }))
       .then(list => {
         if (cancelled) return
         setCommits(list)
@@ -77,11 +81,13 @@ export const FileHistoryModal = () => {
       })
       .catch((err: unknown) => {
         if (cancelled) return
-        const msg = err instanceof GitHubAPIError
-          ? err.isRateLimit
-            ? `GitHub rate-limited — try again in ${err.resetInSeconds() ?? '?'}s`
-            : err.message
-          : (err as Error).message
+        const msg = err instanceof ReconnectRequiredError
+          ? err.message
+          : err instanceof GitHubAPIError
+            ? err.isRateLimit
+              ? `GitHub rate-limited — try again in ${err.resetInSeconds() ?? '?'}s`
+              : err.message
+            : (err as Error).message
         setError(msg)
       })
       .finally(() => { if (!cancelled) setLoading(false) })
@@ -97,7 +103,7 @@ export const FileHistoryModal = () => {
     let cancelled = false
     setContentLoading(true)
     setContentError(null)
-    getFileContentAtCommit(token, repo.owner, repo.name, note.gitPath, selectedSha)
+    withTokenRefresh(tok => getFileContentAtCommit(tok, repo.owner, repo.name, note.gitPath!, selectedSha))
       .then(raw => {
         if (cancelled) return
         const parsed = parseNote(raw)
@@ -105,7 +111,9 @@ export const FileHistoryModal = () => {
       })
       .catch((err: unknown) => {
         if (cancelled) return
-        const msg = err instanceof GitHubAPIError ? err.message : (err as Error).message
+        const msg = err instanceof ReconnectRequiredError
+          ? err.message
+          : err instanceof GitHubAPIError ? err.message : (err as Error).message
         setContentError(msg)
         setSelectedContent(null)
       })
