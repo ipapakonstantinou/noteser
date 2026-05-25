@@ -14,9 +14,12 @@ jest.mock('idb-keyval', () => ({
 }))
 
 // Stub the github helpers so the util's network calls are deterministic.
+// refreshAccessToken is mocked too so the token-refresh wrapper around the
+// revert reads can be exercised without touching the proxy/network.
 const mockGetCommitTreeSha = jest.fn()
 const mockGetTreeMap = jest.fn()
 const mockGetBlobContent = jest.fn()
+const mockRefreshAccessToken = jest.fn()
 jest.mock('../utils/github', () => {
   const actual = jest.requireActual('../utils/github') as typeof import('../utils/github')
   return {
@@ -24,12 +27,18 @@ jest.mock('../utils/github', () => {
     getCommitTreeSha: (...a: unknown[]) => mockGetCommitTreeSha(...a),
     getTreeMap: (...a: unknown[]) => mockGetTreeMap(...a),
     getBlobContent: (...a: unknown[]) => mockGetBlobContent(...a),
+    refreshAccessToken: (...a: unknown[]) => mockRefreshAccessToken(...a),
   }
 })
 
 import { revertToCommit } from '../utils/revertToCommit'
 import { useNoteStore } from '../stores/noteStore'
+import { useGitHubStore, type GitHubTokenSet } from '../stores/githubStore'
+import { GitHubAPIError } from '../utils/github'
+import { ReconnectRequiredError, _resetInFlightRefresh } from '../utils/tokenRefresh'
 import type { Note } from '../types'
+
+const USER = { login: 'octocat', avatar_url: '', name: null, id: 1 }
 
 function makeNote(overrides: Partial<Note> = {}): Note {
   return {
@@ -54,6 +63,18 @@ beforeEach(() => {
   mockGetCommitTreeSha.mockReset()
   mockGetTreeMap.mockReset()
   mockGetBlobContent.mockReset()
+  mockRefreshAccessToken.mockReset()
+  _resetInFlightRefresh()
+  // Default: a connected, comfortably-valid expiring session so the
+  // withTokenRefresh wrapper hands the revert a usable token without
+  // triggering a refresh. Individual tests override for the 401 paths.
+  useGitHubStore.getState().disconnect()
+  useGitHubStore.getState().setSession('gho_access', USER, ['repo'], {
+    accessToken: 'gho_access',
+    accessTokenExpiresAt: Date.now() + 60 * 60 * 1000,
+    refreshToken: 'ghr_refresh',
+    refreshTokenExpiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+  })
 })
 
 describe('revertToCommit', () => {
@@ -172,6 +193,174 @@ describe('revertToCommit', () => {
     expect(restored.content).toContain('#a')
     expect(restored.content).toContain('#b')
     expect(restored.content).toContain('actual body')
+  })
+})
+
+describe('revertToCommit — parallel blob fetch', () => {
+  it('fetches blobs with bounded concurrency (≤8 in flight) and completes correctly', async () => {
+    // 25 markdown files in the historical tree.
+    const tree = new Map<string, string>()
+    for (let i = 0; i < 25; i++) tree.set(`notes/n${i}.md`, `blob-${i}`)
+    mockGetCommitTreeSha.mockResolvedValue('tree-abc')
+    mockGetTreeMap.mockResolvedValue(tree)
+
+    let inFlight = 0
+    let maxInFlight = 0
+    mockGetBlobContent.mockImplementation(async (_t, _o, _r, sha: string) => {
+      inFlight++
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      await new Promise((r) => setTimeout(r, 3))
+      inFlight--
+      // Content keyed off the blob sha so we can verify the path→content map.
+      return `body-for-${sha}`
+    })
+
+    const result = await revertToCommit({
+      token: 't', owner: 'o', repo: 'r', commitSha: 'commit-x',
+    })
+
+    // Every file became a new note (no local notes seeded).
+    expect(result.created).toBe(25)
+    // Concurrency was actually bounded at the default cap of 8 …
+    expect(maxInFlight).toBeLessThanOrEqual(8)
+    // … and it actually parallelised (sequential would peak at 1).
+    expect(maxInFlight).toBeGreaterThan(1)
+    expect(mockGetBlobContent).toHaveBeenCalledTimes(25)
+
+    // Result is COMPLETE and CORRECT: every path's content matches its blob.
+    const notes = useNoteStore.getState().notes
+    expect(notes).toHaveLength(25)
+    for (let i = 0; i < 25; i++) {
+      const n = notes.find((x) => x.gitPath === `notes/n${i}.md`)!
+      expect(n).toBeDefined()
+      expect(n.content).toBe(`body-for-blob-${i}`)
+    }
+  })
+
+  it('reports progress to the onBlobProgress callback (fetched/total)', async () => {
+    const tree = new Map<string, string>([
+      ['notes/a.md', 'blob-a'],
+      ['notes/b.md', 'blob-b'],
+      ['notes/c.md', 'blob-c'],
+    ])
+    mockGetCommitTreeSha.mockResolvedValue('tree-abc')
+    mockGetTreeMap.mockResolvedValue(tree)
+    mockGetBlobContent.mockResolvedValue('body')
+
+    const progress: Array<[number, number]> = []
+    await revertToCommit({
+      token: 't', owner: 'o', repo: 'r', commitSha: 'commit-x',
+      onBlobProgress: (fetched, total) => progress.push([fetched, total]),
+    })
+
+    // Total is constant; fetched starts at 0 and ends at the total.
+    expect(progress.every(([, total]) => total === 3)).toBe(true)
+    expect(progress[0]).toEqual([0, 3])
+    expect(progress[progress.length - 1]).toEqual([3, 3])
+  })
+
+  it('surfaces a mid-batch blob failure cleanly (rejects, does not partially apply)', async () => {
+    const tree = new Map<string, string>([
+      ['notes/a.md', 'blob-a'],
+      ['notes/b.md', 'blob-b'],
+      ['notes/c.md', 'blob-c'],
+    ])
+    mockGetCommitTreeSha.mockResolvedValue('tree-abc')
+    mockGetTreeMap.mockResolvedValue(tree)
+    mockGetBlobContent.mockImplementation(async (_t, _o, _r, sha: string) => {
+      if (sha === 'blob-b') throw new Error('blob fetch boom')
+      return 'body'
+    })
+
+    await expect(
+      revertToCommit({ token: 't', owner: 'o', repo: 'r', commitSha: 'commit-x' }),
+    ).rejects.toThrow('blob fetch boom')
+
+    // The store was NOT mutated — the failure happens before the setState.
+    expect(useNoteStore.getState().notes).toHaveLength(0)
+  })
+})
+
+describe('revertToCommit — token refresh on the read path', () => {
+  function setNearExpirySession() {
+    useGitHubStore.getState().disconnect()
+    useGitHubStore.getState().setSession('gho_access', USER, ['repo'], {
+      accessToken: 'gho_access',
+      accessTokenExpiresAt: Date.now() + 1_000, // within skew → wants refresh
+      refreshToken: 'ghr_refresh',
+      refreshTokenExpiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    })
+  }
+
+  const rotated: GitHubTokenSet = {
+    accessToken: 'gho_rotated',
+    accessTokenExpiresAt: Date.now() + 8 * 60 * 60 * 1000,
+    refreshToken: 'ghr_rotated',
+    refreshTokenExpiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+  }
+
+  it('refreshes-and-retries when a read 401s, then succeeds with the fresh token', async () => {
+    // Comfortable session so the first attempt uses the stored token.
+    mockGetCommitTreeSha
+      .mockImplementationOnce(async () => {
+        throw new GitHubAPIError(401, 'Read commit', 'Bad credentials', null, null)
+      })
+      .mockResolvedValue('tree-abc')
+    mockGetTreeMap.mockResolvedValue(new Map([['notes/x.md', 'blob-x']]))
+    mockGetBlobContent.mockResolvedValue('recovered body')
+    mockRefreshAccessToken.mockResolvedValue(rotated)
+
+    const result = await revertToCommit({
+      token: 'gho_access', owner: 'o', repo: 'r', commitSha: 'commit-x',
+    })
+
+    expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1)
+    expect(result.created).toBe(1)
+    // The retry used the rotated token (proves the closure re-ran with it).
+    expect(mockGetCommitTreeSha).toHaveBeenLastCalledWith('gho_rotated', 'o', 'r', 'commit-x')
+    expect(useGitHubStore.getState().token).toBe('gho_rotated')
+  })
+
+  it('proactively refreshes a near-expiry token before the read', async () => {
+    setNearExpirySession()
+    mockRefreshAccessToken.mockResolvedValue(rotated)
+    mockGetCommitTreeSha.mockResolvedValue('tree-abc')
+    mockGetTreeMap.mockResolvedValue(new Map([['notes/x.md', 'blob-x']]))
+    mockGetBlobContent.mockResolvedValue('body')
+
+    await revertToCommit({ token: 'stale', owner: 'o', repo: 'r', commitSha: 'commit-x' })
+
+    expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1)
+    // The very first read already used the rotated token.
+    expect(mockGetCommitTreeSha).toHaveBeenCalledWith('gho_rotated', 'o', 'r', 'commit-x')
+  })
+
+  it('surfaces ReconnectRequiredError when the refresh is exhausted (two consecutive 401s)', async () => {
+    mockGetCommitTreeSha.mockImplementation(async () => {
+      throw new GitHubAPIError(401, 'Read commit', 'Bad credentials', null, null)
+    })
+    mockRefreshAccessToken.mockResolvedValue(rotated)
+
+    await expect(
+      revertToCommit({ token: 'gho_access', owner: 'o', repo: 'r', commitSha: 'commit-x' }),
+    ).rejects.toBeInstanceOf(ReconnectRequiredError)
+
+    // Exactly one refresh, never loops.
+    expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1)
+  })
+
+  it('a PAT 401 surfaces ReconnectRequiredError with NO refresh attempt', async () => {
+    // PAT / classic: no refresh fields → never refreshable.
+    useGitHubStore.getState().disconnect()
+    useGitHubStore.getState().setSession('github_pat_xyz', USER, null)
+    mockGetCommitTreeSha.mockImplementation(async () => {
+      throw new GitHubAPIError(401, 'Read commit', 'Bad credentials', null, null)
+    })
+
+    await expect(
+      revertToCommit({ token: 'github_pat_xyz', owner: 'o', repo: 'r', commitSha: 'commit-x' }),
+    ).rejects.toBeInstanceOf(ReconnectRequiredError)
+    expect(mockRefreshAccessToken).not.toHaveBeenCalled()
   })
 })
 

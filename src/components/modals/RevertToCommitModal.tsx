@@ -10,6 +10,7 @@ import { Modal, Button } from '@/components/ui'
 import { useUIStore, useGitHubStore } from '@/stores'
 import { useGitHubSync } from '@/hooks/useGitHubSync'
 import { revertToCommit, type RevertToCommitResult } from '@/utils/revertToCommit'
+import { ReconnectRequiredError } from '@/utils/tokenRefresh'
 
 // Revert-to-commit modal — fired from a row in Source Control →
 // Recent commits. Two-step UX:
@@ -45,6 +46,9 @@ export const RevertToCommitModal = () => {
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<RevertToCommitResult | null>(null)
   const [pushedOk, setPushedOk] = useState(false)
+  // Fetch progress so the button stops looking hung on a large vault.
+  // null until the first blob progress callback fires.
+  const [progress, setProgress] = useState<{ fetched: number; total: number } | null>(null)
 
   useEffect(() => {
     if (!isOpen) return
@@ -52,6 +56,7 @@ export const RevertToCommitModal = () => {
     setError(null)
     setResult(null)
     setPushedOk(false)
+    setProgress(null)
   }, [isOpen, data?.commitSha])
 
   if (!isOpen || !data) return null
@@ -68,18 +73,28 @@ export const RevertToCommitModal = () => {
   const handleRevert = async () => {
     setBusy(true)
     setError(null)
+    setProgress(null)
     try {
       const out = await revertToCommit({
         token,
         owner: repo.owner,
         repo: repo.name,
         commitSha: data.commitSha,
+        onBlobProgress: (fetched, total) => setProgress({ fetched, total }),
       })
       setResult(out)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Revert failed')
+      // A token that couldn't be renewed surfaces as ReconnectRequiredError —
+      // show its message verbatim so the user knows to reconnect rather than
+      // retry into the same 401.
+      if (err instanceof ReconnectRequiredError) {
+        setError(err.message)
+      } else {
+        setError(err instanceof Error ? err.message : 'Revert failed')
+      }
     } finally {
       setBusy(false)
+      setProgress(null)
     }
   }
 
@@ -143,7 +158,11 @@ export const RevertToCommitModal = () => {
               data-testid="revert-confirm"
             >
               <ArrowUturnLeftIcon className="w-4 h-4" />
-              {busy ? 'Rewinding…' : 'Revert vault'}
+              {busy
+                ? progress && progress.total > 0
+                  ? `Fetching ${progress.fetched}/${progress.total}…`
+                  : 'Rewinding…'
+                : 'Revert vault'}
             </Button>
           </div>
         </div>
