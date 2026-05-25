@@ -56,9 +56,10 @@
     background-color: theme('colors.obsidianHighlight');
   }
 
-  /* Selection */
+  /* Selection — needs enough opacity that light text stays readable on top
+     of the highlight (at 30% the selected text washed out / disappeared). */
   ::selection {
-    background-color: theme('colors.obsidianAccentPurple / 30%');
+    background-color: theme('colors.obsidianAccentPurple / 55%');
   }
 }
 
