@@ -1144,7 +1144,9 @@ function VaultEncryptionField() {
 // clean slate.
 function ResetToRemoteField() {
   const syncRepo = useGitHubStore(s => s.syncRepo)
-  const { runSync } = useGitHubSync()
+  // Reset-to-remote PULLS the remote version; it must never push (pushing
+  // here re-sent settings.json + attachments as a surprise commit).
+  const { runPullOnly } = useGitHubSync()
   const [confirming, setConfirming] = useState(false)
   const [dropUnpushed, setDropUnpushed] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -1169,10 +1171,9 @@ function ResetToRemoteField() {
     try {
       const { resetToRemote } = await import('@/utils/resetToRemote')
       const r = await resetToRemote({ preserveUnpushed: !dropUnpushed })
-      // Kick the regular sync — it pulls and re-creates the wiped
-      // notes from remote. Any further failures surface in the
-      // standard sync status badge.
-      await runSync()
+      // Pull-only — re-create the wiped notes from remote without pushing
+      // anything back (reset means "match the remote", not "send local").
+      await runPullOnly()
       const kept = r.preserved > 0 ? ` · kept ${r.preserved} local-only` : ''
       setResultMsg(`Reset complete — dropped ${r.pushedDropped} pushed${kept}.`)
     } catch (err) {
