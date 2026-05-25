@@ -2,7 +2,14 @@
 export { useNoteStore } from './noteStore'
 export { useFolderStore } from './folderStore'
 export { useTagStore } from './tagStore'
-export { useUIStore, DEFAULT_SECTION_HEIGHT } from './uiStore'
+export {
+  useUIStore,
+  DEFAULT_SECTION_HEIGHT,
+  DEFAULT_SIDEBAR_WIDTH,
+  MIN_SIDEBAR_WIDTH,
+  MAX_SIDEBAR_WIDTH,
+  clampSidebarWidth,
+} from './uiStore'
 export type { SidebarSectionId, SidebarSectionState, SidebarTabId } from './uiStore'
 export { useGitHubStore } from './githubStore'
 export { useWorkspaceStore } from './workspaceStore'
