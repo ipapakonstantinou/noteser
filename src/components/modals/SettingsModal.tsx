@@ -1168,7 +1168,7 @@ function ResetToRemoteField() {
     setResultMsg(null)
     try {
       const { resetToRemote } = await import('@/utils/resetToRemote')
-      const r = resetToRemote({ preserveUnpushed: !dropUnpushed })
+      const r = await resetToRemote({ preserveUnpushed: !dropUnpushed })
       // Kick the regular sync — it pulls and re-creates the wiped
       // notes from remote. Any further failures surface in the
       // standard sync status badge.

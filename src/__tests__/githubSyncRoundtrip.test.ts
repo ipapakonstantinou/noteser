@@ -312,3 +312,77 @@ test('REPRO (c2): non-identical unlinked local note adopts via remoteUpdated and
   expect(stored[0].gitPath).toBe('Temp.md')
   expect(stored[0].content).toBe('updated remote body\n')
 })
+
+// ── rename-not-delete GUARD 1: content-hash adoption when the path FORM differs ──
+//
+// The catastrophe's pull-side trigger: the user reverted their remote vault to a
+// DIFFERENT filename form than the notes' stored gitPaths (dash-form note path,
+// space-form remote file). notePath() therefore no longer equals the remote
+// path, so the existing path-form reconcile finds NO candidate — pre-fix the
+// file became a NEW note (remoteCreated) and the original note was orphaned →
+// later soft-deleted → its real file deleted on push.
+//
+// The fix adds a CONTENT-HASH fallback: an unlinked local note whose serialized
+// blob SHA (or recorded gitLastPushedSha) equals the remote blob is ADOPTED to
+// the new path. Here the note's stored gitPath is the dash-form `my-note.md`
+// (absent from the remote tree → "unlinked"), notePath() resolves to the
+// dash-form too, and the remote file is the SPACE-form `my note.md` with
+// identical content. Only the content hash can match them.
+test('REPRO (rename): unlinked note adopts a renamed remote file by CONTENT HASH when the path form differs', async () => {
+  const body = 'shared body that survived the rename\n'
+  const sha = await gitBlobSha(body)
+
+  useNoteStore.setState({
+    notes: [
+      {
+        id: 'renamed-note',
+        // Dash-form title → notePath resolves to `my-note.md`, which is NOT the
+        // space-form path the remote now uses.
+        title: 'my-note',
+        content: body,
+        folderId: null,
+        createdAt: 1,
+        updatedAt: 1,
+        isDeleted: false,
+        deletedAt: null,
+        isPinned: false,
+        templateId: null,
+        // Stale gitPath: the dash-form file is GONE from the remote tree (the
+        // user renamed it to the space-form). This makes the note "unlinked".
+        gitPath: 'my-note.md',
+        gitLastPushedSha: sha,
+        gitRemoteBaseSha: sha,
+      },
+    ],
+    selectedNoteId: null,
+  })
+
+  // Remote now holds ONLY the space-form file, content-identical to the note.
+  const remotePath = 'my note.md'
+  mockGetTreeMap.mockResolvedValue(new Map([[remotePath, sha]]))
+  mockGetBlobContent.mockResolvedValue(body)
+
+  const pull = await pullFromGitHub({
+    token: 't', repo: REPO,
+    notes: useNoteStore.getState().notes,
+    folders: [],
+  })
+
+  // It must NOT be a NEW note (the twin / data-loss precursor) and must NOT be
+  // remoteDeleted (the orphan-then-delete path).
+  expect(pull.classifications.find(c => c.kind === 'remoteCreated')).toBeUndefined()
+  expect(pull.classifications.find(c => c.kind === 'remoteDeleted')).toBeUndefined()
+  // It IS an adoption of the existing note to the new (space-form) path.
+  expect(pull.classifications[0]).toMatchObject({
+    kind: 'unchanged',
+    noteId: 'renamed-note',
+    adoptPath: remotePath,
+  })
+
+  await applyNonConflicts(pull.classifications)
+  const stored = useNoteStore.getState().notes
+  expect(stored).toHaveLength(1)
+  expect(stored[0].id).toBe('renamed-note')
+  // gitPath now tracks the renamed remote file — no orphan, no delete.
+  expect(stored[0].gitPath).toBe(remotePath)
+})

@@ -41,7 +41,7 @@ export const DiscardLocalChangesModal = () => {
     setBusy(true)
     setError(null)
     try {
-      resetToRemote({ preserveUnpushed: !alsoDropUnpushed })
+      await resetToRemote({ preserveUnpushed: !alsoDropUnpushed })
       // Trigger a pull to repopulate the wiped pushed notes from
       // remote. runSync without an explicit commit message is a
       // safe "fetch + apply + push-if-anything-new" — since we just
