@@ -125,12 +125,25 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           return
         }
 
-        // Fresh tab — apply the user's "open notes in preview mode"
-        // default. Dynamic import to avoid a static cycle between
-        // workspace and settings stores. Best-effort: if the import
-        // fails (test envs without the store), we just leave the
-        // global preview flag alone.
-        if (typeof window !== 'undefined') {
+        // Fresh tab — decide the view mode (rendered preview vs editable
+        // source) it should land in.
+        //
+        // Behaviour: a note opens in the SAME view mode the last note was
+        // in (the global isPreviewMode flag, which the editor header
+        // toggle drives and which persists across reloads). We only fall
+        // back to the user's "open notes in preview mode" DEFAULT when
+        // there is no other note open to inherit a mode from — i.e. a cold
+        // start with an empty workspace. That keeps "last-used mode wins"
+        // for the common case while still honouring the default on first
+        // open.
+        //
+        // Dynamic import to avoid a static cycle between workspace and
+        // settings/ui stores. Best-effort: if the import fails (test envs
+        // without the store), we just leave the global preview flag alone.
+        const hasOpenNoteTab = state.panes.some(p =>
+          p.tabs.some(t => t.kind === 'note'),
+        )
+        if (typeof window !== 'undefined' && !hasOpenNoteTab) {
           import('./settingsStore').then(({ useSettingsStore }) => {
             const preferPreview = useSettingsStore.getState().notesOpenInPreviewMode
             import('./uiStore').then(({ useUIStore }) => {

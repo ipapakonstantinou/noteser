@@ -5,6 +5,7 @@ import type { PullClassification } from './githubSync'
 import { parseNote, serializeNote, takeZipballAttachmentBytes } from './githubSync'
 import { putAttachmentAtPath } from './attachments'
 import { getBlobBytes, gitBlobSha } from './github'
+import { mapWithConcurrency, DEFAULT_CONCURRENCY } from './concurrency'
 
 // ── Folder + tag find-or-create helpers ─────────────────────────────────────
 
@@ -330,8 +331,19 @@ export async function applyAttachmentClassifications(
   // (caller shouldn't have classified anything as an attachment without them).
   const { token, syncRepo } = useGitHubStore.getState()
 
-  for (const c of classifications) {
-    if (c.kind !== 'attachmentCreated' && c.kind !== 'attachmentUpdated') continue
+  const attachments = classifications.filter(
+    (c): c is Extract<PullClassification, { kind: 'attachmentCreated' | 'attachmentUpdated' }> =>
+      c.kind === 'attachmentCreated' || c.kind === 'attachmentUpdated',
+  )
+
+  // no-vercel-clone: fetch the attachment bytes with bounded concurrency
+  // instead of one blob at a time — on a first clone of a vault with many
+  // images the sequential getBlobBytes walk was a second contributor to the
+  // 45s watchdog blowout. Behaviour is otherwise identical: a single failed
+  // attachment is logged + counted as `failed`, never aborting the batch (so
+  // we catch INSIDE the mapper and return null rather than letting
+  // mapWithConcurrency reject the whole call on the first error).
+  const fetched = await mapWithConcurrency(attachments, DEFAULT_CONCURRENCY, async (c) => {
     try {
       // Prefer the bytes already in memory from a zipball pull.
       const cached = takeZipballAttachmentBytes(c.path)
@@ -345,6 +357,21 @@ export async function applyAttachmentClassifications(
         bytes = await getBlobBytes(token, syncRepo.owner, syncRepo.name, c.remoteSha)
         mime = c.mime
       }
+      return { c, bytes, mime }
+    } catch (err) {
+      console.error(`Failed to fetch attachment ${c.path}:`, err)
+      return null
+    }
+  })
+
+  // IDB writes are cheap and must stay deterministic — apply them in order.
+  for (const item of fetched) {
+    if (!item) {
+      counts.failed++
+      continue
+    }
+    const { c, bytes, mime } = item
+    try {
       // `.slice()` detaches from any SharedArrayBuffer typing so the Blob
       // constructor accepts the bytes as a BlobPart on strict TS configs.
       const blob = new Blob([bytes.slice()], { type: mime })

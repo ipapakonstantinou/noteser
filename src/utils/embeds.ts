@@ -15,8 +15,25 @@ export const MAX_EMBED_DEPTH = 4
 
 const EMBED_REGEX = /!\[\[([^\]|\n]+?)(?:\|([^\]\n]+?))?\]\]/g
 
+// Image file extensions Obsidian embeds inline via `![[name.ext]]`. Used to
+// decide whether an embed target is an image (→ render as an image) vs a note
+// transclusion (→ blockquote expansion).
+const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i
+
+export function isImageEmbedTarget(target: string): boolean {
+  return IMAGE_EXT_RE.test(target.trim())
+}
+
 export interface ExpandOptions {
   maxDepth?: number
+  /**
+   * Resolve a (possibly bare) attachment name to the actual stored
+   * attachment path the renderer understands, or null when unknown. Obsidian
+   * embeds images by bare filename (`![[Pasted image 20260522.png]]`) while
+   * attachments are stored under a path (`Files/Pasted image 20260522.png`).
+   * Callers wire this to attachments.resolveAttachmentPath; tests pass a stub.
+   */
+  resolveAttachment?: (target: string) => string | null
   /** Internal: tracks currently-expanding titles for cycle detection. */
   _visited?: Set<string>
   /** Internal: current depth (root = 0). */
@@ -36,9 +53,29 @@ export function expandEmbeds(
   const visited = opts._visited ?? new Set<string>()
   const depth = opts._depth ?? 0
 
-  return content.replace(EMBED_REGEX, (_, rawTitle: string) => {
+  const resolveAttachment = opts.resolveAttachment
+
+  return content.replace(EMBED_REGEX, (_, rawTitle: string, rawAlias?: string) => {
     const title = rawTitle.trim()
     if (!title) return `*[missing embed]*`
+
+    // ── Image embeds ──────────────────────────────────────────────────────
+    // `![[name.png]]` is an Obsidian image embed, NOT a note transclusion.
+    // We detect it either by image extension or by the resolver recognising
+    // the target as a stored attachment, then convert it to the standard
+    // markdown image form the renderer already understands. The bare name is
+    // resolved to the actual stored attachment path (match by basename);
+    // when no stored path is found we fall back to the raw target so an
+    // ordinary `![](target)` still flows through the normal image pipeline.
+    const resolved = resolveAttachment?.(title) ?? null
+    if (resolved || isImageEmbedTarget(title)) {
+      const src = resolved ?? title
+      const alt = rawAlias?.trim() || title
+      // Mirror Obsidian: `![[img.png|120]]` sets width via the alt slot; we
+      // keep it simple and use the alias as alt text. Encode spaces so the
+      // markdown link parser keeps the path intact.
+      return `![${alt}](${encodeAttachmentSrc(src)})`
+    }
 
     if (depth >= maxDepth) {
       return `*[embed too deep: \`${escapeMd(title)}\`]*`
@@ -62,6 +99,7 @@ export function expandEmbeds(
     nextVisited.add(cycleKey)
     const expanded = expandEmbeds(body, notes, {
       maxDepth,
+      resolveAttachment,
       _visited: nextVisited,
       _depth: depth + 1,
     })
@@ -88,6 +126,18 @@ function formatEmbed(title: string, body: string): string {
 
 function escapeMd(s: string): string {
   return s.replace(/[`*_]/g, '\\$&')
+}
+
+// Format an attachment path as a markdown image destination. CommonMark only
+// allows a bare destination up to the first whitespace, so paths with spaces
+// (very common with Obsidian's "Pasted image …png") must be wrapped in angle
+// brackets — `![alt](<Files/Pasted image.png>)`. The angle-bracket form keeps
+// the LITERAL path (spaces intact) so the downstream resolver's IDB lookup
+// still hits, unlike %20-encoding which would change the key. Plain paths are
+// emitted as-is.
+function encodeAttachmentSrc(src: string): string {
+  if (/[\s()]/.test(src)) return `<${src}>`
+  return src
 }
 
 // Extract every embed reference's title without expanding. Used by the

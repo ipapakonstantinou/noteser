@@ -5,12 +5,12 @@ import type { Note, Template, DEFAULT_TEMPLATES } from '@/types'
 import { idbStorage } from '@/utils/idbStorage'
 import {
   softDelete,
-  restoreSoftDeleted,
   permanentlyDelete,
   emptyTrash as emptyTrashItems,
 } from '@/utils/softDelete'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useFolderStore } from '@/stores/folderStore'
 
 // Module-scoped memoisation for the active / deleted getters. Keyed by
 // the `notes` ARRAY IDENTITY — Zustand's set() always replaces the
@@ -146,8 +146,24 @@ export const useNoteStore = create<NoteState>()(
       },
 
       restoreNote: (id) => {
+        // A note's original folder may have been deleted (soft-deleted or
+        // dropped entirely) while the note sat in the trash. Restoring it
+        // straight back into a non-existent folder would orphan it — it
+        // wouldn't render under any folder in the tree. So validate the
+        // folderId on restore: if it's missing or points to a soft-deleted
+        // folder, fall back to root (folderId: null). Otherwise leave the
+        // folder as-is.
+        const folders = useFolderStore.getState().folders
         set(state => ({
-          notes: restoreSoftDeleted(state.notes, id),
+          notes: state.notes.map(note => {
+            if (note.id !== id) return note
+            const restored = { ...note, isDeleted: false, deletedAt: null }
+            if (restored.folderId) {
+              const folder = folders.find(f => f.id === restored.folderId)
+              if (!folder || folder.isDeleted) restored.folderId = null
+            }
+            return restored
+          }),
         }))
       },
 

@@ -6,7 +6,7 @@
  * here — just embedding behaviour, recursion + cycle handling.
  */
 
-import { expandEmbeds, extractEmbedTitles, MAX_EMBED_DEPTH } from '../utils/embeds'
+import { expandEmbeds, extractEmbedTitles, isImageEmbedTarget, MAX_EMBED_DEPTH } from '../utils/embeds'
 import type { Note } from '@/types'
 
 function n(id: string, title: string, content: string): Note {
@@ -113,6 +113,79 @@ describe('expandEmbeds — recursion', () => {
 
   test('default MAX_EMBED_DEPTH is 4', () => {
     expect(MAX_EMBED_DEPTH).toBe(4)
+  })
+})
+
+describe('isImageEmbedTarget', () => {
+  test.each([
+    'a.png', 'a.PNG', 'a.jpg', 'a.jpeg', 'a.gif', 'a.webp', 'a.svg', 'a.bmp', 'a.avif',
+    'Pasted image 20260522191842.png',
+  ])('%s is an image target', t => {
+    expect(isImageEmbedTarget(t)).toBe(true)
+  })
+
+  test.each(['Some Note', 'a.md', 'note.txt', 'no-extension'])(
+    '%s is NOT an image target',
+    t => {
+      expect(isImageEmbedTarget(t)).toBe(false)
+    },
+  )
+})
+
+describe('expandEmbeds — image embeds (Obsidian wiki images)', () => {
+  test('`![[x.png]]` becomes an image, NOT a "no note found" callout', () => {
+    const out = expandEmbeds('![[diagram.png]]', [])
+    expect(out).toContain('![diagram.png](diagram.png)')
+    expect(out).not.toContain('no note found')
+  })
+
+  test('resolver maps a bare filename to the stored attachment path', () => {
+    const resolveAttachment = (t: string) =>
+      t === 'Pasted image 20260522191842.png'
+        ? 'Files/Pasted image 20260522191842.png'
+        : null
+    const out = expandEmbeds('![[Pasted image 20260522191842.png]]', [], {
+      resolveAttachment,
+    })
+    // Path has spaces → angle-bracket destination so the markdown parser keeps
+    // the literal path (spaces intact) for the downstream IDB lookup.
+    expect(out).toBe(
+      '![Pasted image 20260522191842.png](<Files/Pasted image 20260522191842.png>)',
+    )
+  })
+
+  test('resolver hit wins even without an image extension', () => {
+    // Some vaults store attachments without an extension in the embed; the
+    // resolver recognising it as stored is enough to render as an image.
+    const out = expandEmbeds('![[blob123]]', [], {
+      resolveAttachment: t => (t === 'blob123' ? 'attachments/blob123' : null),
+    })
+    expect(out).toBe('![blob123](attachments/blob123)')
+  })
+
+  test('image embed with an alias uses the alias as alt text', () => {
+    const out = expandEmbeds('![[diagram.png|My diagram]]', [])
+    expect(out).toBe('![My diagram](diagram.png)')
+  })
+
+  test('resolveAttachment threads through recursion (image inside a transcluded note)', () => {
+    const notes = [n('a', 'Host', 'intro\n![[pic.png]]')]
+    const resolveAttachment = (t: string) =>
+      t === 'pic.png' ? 'Files/pic.png' : null
+    const out = expandEmbeds('![[Host]]', notes, { resolveAttachment })
+    // The nested image embed resolves to its stored path inside the blockquote.
+    expect(out).toContain('![pic.png](Files/pic.png)')
+  })
+
+  test('a real `![[note]]` still resolves as a note transclusion', () => {
+    const notes = [n('a', 'Source', 'Hello world')]
+    const out = expandEmbeds('![[Source]]', notes, {
+      // Resolver returns null for non-attachments → falls through to note lookup.
+      resolveAttachment: () => null,
+    })
+    expect(out).toContain('**📎 [[Source]]**')
+    expect(out).toContain('> Hello world')
+    expect(out).not.toContain('![Source]')
   })
 })
 

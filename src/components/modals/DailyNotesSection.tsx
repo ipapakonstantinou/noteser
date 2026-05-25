@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react'
 import { useNoteStore, useSettingsStore } from '@/stores'
+import type { CalendarWeekStartDay } from '@/stores/settingsStore'
 import { listTemplateNotes } from '@/utils/dailyNotes'
 import {
   Field,
@@ -19,8 +20,10 @@ const normalizeFolder = (s: string | undefined | null): string => {
 export const DailyNotesSection = () => {
   const dailyFolder = useSettingsStore(s => s.dailyNotesFolder)
   const dateFormat = useSettingsStore(s => s.dailyNoteDateFormat)
+  const weekStartDay = useSettingsStore(s => s.calendarWeekStartDay)
   const setDailyFolder = useSettingsStore(s => s.setDailyNotesFolder)
   const setDateFormat = useSettingsStore(s => s.setDailyNoteDateFormat)
+  const setWeekStartDay = useSettingsStore(s => s.setCalendarWeekStartDay)
 
   return (
     <>
@@ -44,6 +47,19 @@ export const DailyNotesSection = () => {
           onCommit={(v) => setDateFormat(v.trim() || 'YYYY-MM-DD')}
           placeholder="YYYY-MM-DD"
           mono
+        />
+      </Field>
+      <Field
+        label="Calendar starts on"
+        description="First day of the week in the sidebar Calendar grid. This is a per-device display preference and is not synced."
+      >
+        <SettingsSelect<CalendarWeekStartDay>
+          value={weekStartDay}
+          onChange={setWeekStartDay}
+          options={[
+            { value: 0, label: 'Sunday' },
+            { value: 1, label: 'Monday' },
+          ]}
         />
       </Field>
     </>

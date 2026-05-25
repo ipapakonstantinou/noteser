@@ -27,6 +27,7 @@ import {
   type AttachmentMeta,
 } from '@/utils/attachments'
 import { ATTACHMENTS_CHANGED_EVENT } from '@/utils/events'
+import { TRASH_FOLDER_ID } from '@/utils/systemFolder'
 import { revealNote } from '@/utils/revealNote'
 
 interface FolderTreeProps {
@@ -518,7 +519,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
           multiSelected ? 'bg-obsidianAccentPurple/25 border-l-2 border-obsidianAccentPurple -ml-[2px] pl-[10px]' :
             selectedNoteId === note.id ? 'bg-obsidianHighlight' : ''
         } ${kbFocused ? 'ring-1 ring-inset ring-obsidianAccentPurple' : ''} ${className}`}
-        draggable={currentView !== 'trash' && !multiSelected}
+        draggable={currentView !== 'trash' && !multiSelected && !note.isDeleted}
         onDragStart={e => beginNoteDrag(e, note.id)}
         onDragEnd={endDrag}
         onClick={(e) => handleNoteClick(note.id, e)}
@@ -851,8 +852,9 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
       {deletedNotes.length > 0 && (
         <TrashSyntheticFolder
           deletedNotes={deletedNotes}
-          expanded={!!expandedFolders['__trash__']}
-          onToggle={() => toggleFolderExpanded('__trash__')}
+          expanded={!!expandedFolders[TRASH_FOLDER_ID]}
+          onToggle={() => toggleFolderExpanded(TRASH_FOLDER_ID)}
+          onContextMenu={e => onRightClick(e, 'folder', TRASH_FOLDER_ID)}
           renderNote={(note) => <NoteItem key={note.id} note={note} />}
         />
       )}
@@ -882,18 +884,24 @@ interface TrashSyntheticFolderProps {
   deletedNotes: Note[]
   expanded: boolean
   onToggle: () => void
+  // Right-click handler — wires the trash row into the same ContextMenu
+  // real folders use, so the BROWSER menu never shows. The handler
+  // preventDefaults; the menu it opens special-cases TRASH_FOLDER_ID to
+  // show only "Empty Trash".
+  onContextMenu: (e: React.MouseEvent) => void
   renderNote: (note: Note) => React.ReactNode
 }
 
 const TrashSyntheticFolder = ({
-  deletedNotes, expanded, onToggle, renderNote,
+  deletedNotes, expanded, onToggle, onContextMenu, renderNote,
 }: TrashSyntheticFolderProps) => {
   return (
     <div className="mb-0.5" data-testid="trash-synthetic-folder">
       <div
         className="obsidian-folder-item"
         onClick={onToggle}
-        data-folder-id="__trash__"
+        onContextMenu={onContextMenu}
+        data-folder-id={TRASH_FOLDER_ID}
         data-folder-name=".trash"
       >
         <button

@@ -5,10 +5,11 @@ import { useUIStore, useNoteStore, useFolderStore, useSettingsStore } from '@/st
 import { Modal, Button } from '@/components/ui'
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline'
 import { cascadeDeleteFolder } from '@/utils/cascadeDelete'
+import { TRASH_FOLDER_ID } from '@/utils/systemFolder'
 
 export const DeleteConfirmModal = () => {
   const { modal, closeModal } = useUIStore()
-  const { deleteNote, permanentlyDeleteNote, getNoteById } = useNoteStore()
+  const { deleteNote, permanentlyDeleteNote, getNoteById, emptyTrash, getDeletedNotes } = useNoteStore()
   const { permanentlyDeleteFolder, getFolderById } = useFolderStore()
   const { notes } = useNoteStore()
   const trashMode = useSettingsStore(s => s.trashMode)
@@ -35,6 +36,15 @@ export const DeleteConfirmModal = () => {
     if (data.type === 'note') {
       if (isPerm) permanentlyDeleteNote(data.id)
       else deleteNote(data.id)
+    } else if (data.id === TRASH_FOLDER_ID) {
+      // `.trash` is a SYNTHETIC sidebar folder, not a real Folder entity.
+      // Routing it through cascade/permanent-delete would tombstone a
+      // `.trash` path in deletedFolderPaths AND leave the soft-deleted
+      // notes intact — so a fresh empty synthetic `.trash` re-renders and
+      // we end up with two `.trash` rows. "Deleting" the trash means
+      // emptying it: hard-delete every soft-deleted note. Never touch
+      // deletedFolderPaths.
+      emptyTrash()
     } else {
       // For folders, hardDelete and "soft" both cascade attachment
       // tombstones + relocate notes to root. The only difference is
@@ -77,12 +87,17 @@ export const DeleteConfirmModal = () => {
 
   const isBulk = data.type === 'bulk'
   const isNote = !isBulk && data.type === 'note'
+  // The synthetic ".trash" folder isn't a real entity — "deleting" it
+  // empties the trash. Special-case the copy so the user sees what will
+  // actually happen.
+  const isTrash = !isBulk && data.type === 'folder' && data.id === TRASH_FOLDER_ID
   const isPermanent = !isBulk ? data.permanent : false
   const note = !isBulk && isNote ? getNoteById(data.id) : null
-  const folder = !isBulk && !isNote ? getFolderById(data.id) : null
+  const folder = !isBulk && !isNote && !isTrash ? getFolderById(data.id) : null
   const itemName = isNote ? note?.title : folder?.name
+  const trashedCount = isTrash ? getDeletedNotes().length : 0
 
-  const notesInFolder = !isBulk && !isNote
+  const notesInFolder = !isBulk && !isNote && !isTrash
     ? notes.filter(n => n.folderId === data.id && !n.isDeleted)
     : []
 
@@ -94,7 +109,9 @@ export const DeleteConfirmModal = () => {
         </div>
 
         <h3 className="text-lg font-medium text-obsidianText mb-2">
-          {isBulk
+          {isTrash
+            ? 'Empty Trash?'
+            : isBulk
             ? (trashMode === 'hardDelete'
                 ? `Permanently delete ${data.ids.length} notes?`
                 : `Move ${data.ids.length} notes to trash?`)
@@ -102,7 +119,9 @@ export const DeleteConfirmModal = () => {
         </h3>
 
         <p className="text-sm text-obsidianSecondaryText mb-4">
-          {isBulk ? (
+          {isTrash ? (
+            `This action cannot be undone. ${trashedCount} note${trashedCount === 1 ? '' : 's'} in the trash will be permanently deleted.`
+          ) : isBulk ? (
             trashMode === 'hardDelete'
               ? `${data.ids.length} note${data.ids.length === 1 ? '' : 's'} will be permanently deleted. This cannot be undone.`
               : `${data.ids.length} note${data.ids.length === 1 ? '' : 's'} will be moved to trash. Recover them from the Trash view if needed.`
@@ -135,7 +154,9 @@ export const DeleteConfirmModal = () => {
             Cancel
           </Button>
           <Button variant="danger" onClick={handleDelete} data-testid="delete-confirm">
-            {isBulk
+            {isTrash
+              ? 'Empty Trash'
+              : isBulk
               ? (trashMode === 'hardDelete' ? `Delete ${data.ids.length} forever` : `Move ${data.ids.length} to trash`)
               : (isPermanent || trashMode === 'hardDelete' ? 'Delete Forever' : 'Move to Trash')}
           </Button>

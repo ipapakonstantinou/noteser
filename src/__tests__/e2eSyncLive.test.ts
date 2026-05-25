@@ -24,6 +24,10 @@
  * What it asserts (each scenario logged with a [scenario] tag):
  *   1. Baseline pull with empty local state.
  *   2. Push 3 new notes  → created === 3 + commitSha returned.
+ *   2b. CLONE (no-vercel-clone): pull with EMPTY local state and
+ *       isFirstClone=true → all 3 pushed notes come back `remoteCreated`
+ *       WITH content (proving the parallel blob prefetch delivered bytes),
+ *       and fetchZipball (the Vercel proxy path) is NOT called.
  *   3. Re-pull with those 3 notes as local state → all `unchanged`
  *      (regression guard for the misclassification bug).
  *   4. Empty-commit guard: re-push unchanged notes → unchanged === true
@@ -232,6 +236,67 @@ maybe('e2e GitHub sync (live)', () => {
     notes = applyPathUpdates(notes, outcome.pathUpdates)
     expect(notes.every(n => n.gitPath && n.gitLastPushedSha)).toBe(true)
     log(`[scenario 2] pushed 3 notes: created=${outcome.result.created} commit=${outcome.result.commitSha.slice(0, 8)} (head ${before.slice(0, 8)} → ${after.slice(0, 8)})`)
+  })
+
+  test('scenario 2b: CLONE — pull with EMPTY local state + isFirstClone → all 3 remoteCreated WITH content, no zipball', async () => {
+    // Guard against the Vercel proxy path WITHOUT mocking github.ts (we keep it
+    // real here). fetchZipball is the ONLY caller of the `/api/github/zipball`
+    // proxy route, and it goes through the global fetch like every other GitHub
+    // call. So we wrap the global fetch, record every requested URL, let the
+    // real request through, and afterwards assert NONE of them hit the zipball
+    // proxy. This proves the clone path never touched Vercel bandwidth.
+    const realFetch = globalThis.fetch
+    const requestedUrls: string[] = []
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url
+      requestedUrls.push(url)
+      return realFetch(input as Parameters<typeof realFetch>[0], init)
+    }) as typeof fetch
+
+    let pull: Awaited<ReturnType<typeof pullFromGitHub>>
+    const progress: Array<[number, number]> = []
+    try {
+      // Mirror the production dispatch: a true first clone passes EMPTY local
+      // state and isFirstClone=true, which triggers the parallel blob prefetch.
+      pull = await pullFromGitHub({
+        token: TOKEN!,
+        repo,
+        notes: [],
+        folders: [],
+        isFirstClone: true,
+        onBlobProgress: (loaded, total) => progress.push([loaded, total]),
+      })
+    } finally {
+      globalThis.fetch = realFetch
+    }
+
+    // (c) The Vercel/zipball path was NOT touched.
+    const zipballHits = requestedUrls.filter(u => u.includes('zipball'))
+    expect(zipballHits).toEqual([])
+
+    // (a) Each note we pushed in scenario 2 comes back classified remoteCreated.
+    const pushedPaths = new Set(notes.map(n => n.gitPath))
+    const created = pull.classifications.filter(
+      (c): c is Extract<typeof c, { kind: 'remoteCreated' }> =>
+        c.kind === 'remoteCreated' && pushedPaths.has((c as { path: string }).path),
+    )
+    expect(created).toHaveLength(3)
+
+    // (b) Their content was delivered by the prefetch (non-empty, and matches
+    //     the body we pushed for the corresponding note).
+    for (const c of created) {
+      expect(typeof c.remoteContent).toBe('string')
+      expect(c.remoteContent.length).toBeGreaterThan(0)
+      const local = notes.find(n => n.gitPath === c.path)!
+      expect(c.remoteContent).toContain(local.content.trim())
+    }
+
+    // Sanity: progress fired and was monotonic up to the blob total.
+    expect(progress.length).toBeGreaterThan(0)
+    const [, total] = progress[progress.length - 1]
+    expect(progress[progress.length - 1][0]).toBe(total)
+
+    log(`[scenario 2b] clone pull: ${created.length} notes remoteCreated WITH content, 0 zipball requests (of ${requestedUrls.length} fetches), ${progress.length} progress ticks (last ${progress[progress.length - 1].join('/')})`)
   })
 
   test('scenario 3: re-pull with the 3 notes as local state → all unchanged (no misclassification)', async () => {

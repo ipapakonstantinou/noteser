@@ -14,6 +14,11 @@ export type TaskListDensity = 'compact' | 'comfortable'
 //                  next round-trip).
 export type TrashMode = 'trash' | 'hardDelete'
 
+// First day of the week shown in the sidebar Calendar. 0 = Sunday
+// (default, US/legacy), 1 = Monday (ISO / most of Europe). Device-only
+// UI pref — not vault-synced.
+export type CalendarWeekStartDay = 0 | 1
+
 // Bring-your-own-key AI provider. `'off'` disables every AI feature; the
 // aiClient throws if a feature is invoked while off so callers can show a
 // friendly "set up AI in settings" hint instead of silently no-op-ing.
@@ -91,6 +96,10 @@ export interface SettingsState {
   // "wow" rendered output up front; clicking pencil / pressing the
   // toggle still switches to edit. Per-device.
   notesOpenInPreviewMode: boolean
+  // First day of the week in the sidebar Calendar grid. 0 = Sunday
+  // (default), 1 = Monday. Device-only UI pref — NOT vault-synced, since
+  // week-start convention is a per-user/per-device display choice.
+  calendarWeekStartDay: CalendarWeekStartDay
   // SECURITY NOTE: localStorage is readable by any script on the page; any
   // XSS would expose the key. Same trust model the GitHub OAuth token uses
   // (see `githubStore.ts`). Acceptable for a personal note tool, NOT for a
@@ -268,6 +277,7 @@ export interface SettingsState {
   setAiEmbeddingsEnabled: (enabled: boolean) => void
   setAiCommitMessages: (enabled: boolean) => void
   setNotesOpenInPreviewMode: (enabled: boolean) => void
+  setCalendarWeekStartDay: (day: CalendarWeekStartDay) => void
   setShortcutOverride: (id: string, combo: string) => void
   clearShortcutOverride: (id: string) => void
   resetShortcutOverrides: () => void
@@ -373,7 +383,8 @@ const DEFAULTS = {
   aiModel: DEFAULT_AI_MODEL.anthropic,
   aiEmbeddingsEnabled: false,
   aiCommitMessages: false,
-  notesOpenInPreviewMode: true,
+  notesOpenInPreviewMode: false,
+  calendarWeekStartDay: 1 as CalendarWeekStartDay,
   shortcutOverrides: {} as Record<string, string>,
   trashMode: 'trash' as TrashMode,
   confirmBulkDelete: true,
@@ -443,6 +454,7 @@ export const useSettingsStore = create<SettingsState>()(
         setAiEmbeddingsEnabled: (aiEmbeddingsEnabled) => set({ aiEmbeddingsEnabled }),
         setAiCommitMessages: (aiCommitMessages) => set({ aiCommitMessages }),
         setNotesOpenInPreviewMode: (notesOpenInPreviewMode) => set({ notesOpenInPreviewMode }),
+        setCalendarWeekStartDay: (calendarWeekStartDay) => set({ calendarWeekStartDay }),
         setShortcutOverride: (id, combo) =>
           set((state) => ({
             shortcutOverrides: { ...state.shortcutOverrides, [id]: combo },

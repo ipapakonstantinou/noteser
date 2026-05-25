@@ -20,6 +20,7 @@ import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore, useSetting
 import type { ContextMenuState, Folder } from '@/types'
 import { AI_ACTIONS } from '@/utils/aiActions'
 import { runNoteAIAction } from '@/utils/runNoteAIAction'
+import { TRASH_FOLDER_ID } from '@/utils/systemFolder'
 
 // Build a flat list of folders annotated with their full path
 // ("Parent / Child / Leaf"), in tree order.
@@ -71,6 +72,11 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   const hasGithubToken = useGitHubStore(s => Boolean(s.token))
 
   const isNote = contextMenu.type === 'note'
+  // The synthetic ".trash" sidebar folder uses a reserved id and is NOT a
+  // real Folder entity — getFolderById returns undefined for it. Detect it
+  // up front so we can render a trash-only menu ("Empty Trash") and skip
+  // the normal folder actions (New note / Rename / cascade Delete).
+  const isTrashFolder = !isNote && contextMenu.id === TRASH_FOLDER_ID
   const item = isNote
     ? getNoteById(contextMenu.id)
     : getFolderById(contextMenu.id)
@@ -141,12 +147,55 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
     }
   }, [onClose])
 
+  // Trash-only menu. Rendered before the `if (!item) return null` guard
+  // because the synthetic ".trash" folder has no backing Folder entity
+  // (item is undefined for it). Shows ONLY "Empty Trash", routed through
+  // the DeleteConfirmModal's "Empty Trash?" flow which hard-deletes the
+  // soft-deleted notes and never touches deletedFolderPaths.
+  if (isTrashFolder) {
+    const handleEmptyTrash = () => {
+      openModal({
+        type: 'delete',
+        data: { type: 'folder', id: TRASH_FOLDER_ID },
+      })
+      onClose()
+    }
+    return (
+      <div
+        ref={menuRef}
+        className="fixed bg-obsidianGray border border-obsidianBorder rounded-lg shadow-obsidian py-1 min-w-[180px] z-50"
+        style={{ top: contextMenu.y, left: contextMenu.x }}
+        role="menu"
+        data-testid="context-menu"
+      >
+        <button
+          onClick={handleEmptyTrash}
+          className="w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors text-red-400 hover:bg-red-900/30"
+          data-testid="context-menu-empty-trash"
+        >
+          <TrashIcon className="w-4 h-4" />
+          Empty Trash
+        </button>
+      </div>
+    )
+  }
+
   if (!item) return null
+
+  // Note-only: is the right-clicked note in the trash? Drives the
+  // Restore option visibility — and we hide the rest of the note
+  // actions for trashed items since most don't make sense (you
+  // can't pin or duplicate a trashed row from here).
+  const isTrashedNote = isNote && item && 'isDeleted' in item && item.isDeleted
 
   const handleDelete = () => {
     openModal({
       type: 'delete',
-      data: { type: contextMenu.type, id: contextMenu.id }
+      // A trashed note's "Delete" means PERMANENTLY delete (it's already
+      // in the trash) — pass permanent so the modal calls
+      // permanentlyDeleteNote instead of soft-deleting it again (which
+      // would be a no-op and is the "delete-in-trash doesn't work" bug).
+      data: { type: contextMenu.type, id: contextMenu.id, permanent: isTrashedNote || undefined }
     })
     onClose()
   }
@@ -155,12 +204,6 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
     if (isNote) restoreNote(contextMenu.id)
     onClose()
   }
-
-  // Note-only: is the right-clicked note in the trash? Drives the
-  // Restore option visibility — and we hide the rest of the note
-  // actions for trashed items since most don't make sense (you
-  // can't pin or duplicate a trashed row from here).
-  const isTrashedNote = isNote && item && 'isDeleted' in item && item.isDeleted
 
   const handleDuplicate = () => {
     if (isNote) {
@@ -435,7 +478,7 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
 
       <MenuButton
         icon={TrashIcon}
-        label="Delete"
+        label={isTrashedNote ? 'Permanently Delete' : 'Delete'}
         onClick={handleDelete}
         danger
       />
