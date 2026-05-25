@@ -71,7 +71,13 @@ async function loadOneShell(
     // A shell with no remote sha can't be filled — clear the shell flag so it
     // stops being skipped by search/tags and isn't retried forever. Its body
     // stays empty (the safest outcome for a degenerate shell).
-    useNoteStore.getState().updateNote(noteId, { contentLoaded: true })
+    // Patch directly (not updateNote) so updatedAt is not bumped — clearing a
+    // degenerate shell's flag is not a user edit.
+    useNoteStore.setState(state => ({
+      notes: state.notes.map(n =>
+        n.id === noteId ? { ...n, contentLoaded: true } : n,
+      ),
+    }))
     return true
   }
 
@@ -95,11 +101,19 @@ async function loadOneShell(
   const current = useNoteStore.getState().notes.find(n => n.id === noteId)
   if (!current || current.contentLoaded !== false) return true
 
-  useNoteStore.getState().updateNote(noteId, {
-    content: body,
-    gitLastPushedSha: await canonicalLocalSha(body),
-    contentLoaded: true,
-  })
+  // Patch directly (NOT updateNote) so we do NOT bump updatedAt: loading a
+  // note's body from remote is not a user edit. Bumping updatedAt would make
+  // every freshly-cloned note look "modified" in the pending-changes count
+  // (the "530 pending" right after a clone). The note is in sync with remote
+  // (gitLastPushedSha = canonical of the loaded body), so updatedAt stays as-is.
+  const loadedSha = await canonicalLocalSha(body)
+  useNoteStore.setState(state => ({
+    notes: state.notes.map(n =>
+      n.id === noteId
+        ? { ...n, content: body, gitLastPushedSha: loadedSha, contentLoaded: true }
+        : n,
+    ),
+  }))
   return true
 }
 
