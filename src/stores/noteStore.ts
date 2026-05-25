@@ -33,6 +33,13 @@ interface NoteState {
   deleteNotes: (ids: string[]) => void
   permanentlyDeleteNote: (id: string) => void
   restoreNote: (id: string) => void
+  /** Bulk restore — un-deletes every matching id in one setState. Used by
+   *  the trash view when restoring a deleted FOLDER, which must bring its
+   *  trashed notes back alongside the folder. No-op for ids not present. */
+  restoreNotes: (ids: string[]) => void
+  /** Bulk permanent delete — drops every matching id in one setState.
+   *  Used when permanently deleting a trashed folder subtree. */
+  permanentlyDeleteNotes: (ids: string[]) => void
   selectNote: (id: string | null) => void
   duplicateNote: (id: string) => Note | null
   moveNoteToFolder: (noteId: string, folderId: string | null) => void
@@ -164,6 +171,35 @@ export const useNoteStore = create<NoteState>()(
             }
             return restored
           }),
+        }))
+      },
+
+      // Bulk restore. Unlike single restoreNote, this does NOT apply the
+      // root-fallback for a deleted folderId — the caller (folder restore
+      // in the trash view) un-deletes the owning folders in the SAME tick,
+      // so the notes' folderId stays valid and they land back where they
+      // were. Notes whose folder is genuinely gone aren't part of a folder
+      // restore set, so this path never orphans anything.
+      restoreNotes: (ids) => {
+        if (ids.length === 0) return
+        const idSet = new Set(ids)
+        set(state => ({
+          notes: state.notes.map(n =>
+            idSet.has(n.id) && n.isDeleted
+              ? { ...n, isDeleted: false, deletedAt: null }
+              : n
+          ),
+        }))
+      },
+
+      permanentlyDeleteNotes: (ids) => {
+        if (ids.length === 0) return
+        const idSet = new Set(ids)
+        set(state => ({
+          notes: state.notes.filter(n => !idSet.has(n.id)),
+          selectedNoteId: state.selectedNoteId != null && idSet.has(state.selectedNoteId)
+            ? null
+            : state.selectedNoteId,
         }))
       },
 

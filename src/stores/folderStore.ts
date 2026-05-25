@@ -30,6 +30,14 @@ interface FolderState {
   removeDeletedFolderPath: (path: string) => void
   permanentlyDeleteFolder: (id: string) => void
   restoreFolder: (id: string) => void
+  /** Bulk restore — un-deletes every matching folder id in one setState
+   *  and drops each restored folder's repo path from deletedFolderPaths.
+   *  Used by the trash view when restoring a deleted folder SUBTREE (the
+   *  folder plus its deleted descendant folders, recursively). */
+  restoreFolders: (ids: string[]) => void
+  /** Bulk permanent delete — drops every matching folder id in one
+   *  setState. Used when permanently deleting a trashed folder subtree. */
+  permanentlyDeleteFolders: (ids: string[]) => void
   setActiveFolder: (id: string | null) => void
   toggleFolderExpanded: (id: string) => void
   setFolderExpanded: (id: string, expanded: boolean) => void
@@ -150,6 +158,54 @@ export const useFolderStore = create<FolderState>()(
             : state.deletedFolderPaths
           return { folders: restored, deletedFolderPaths }
         })
+      },
+
+      restoreFolders: (ids) => {
+        if (ids.length === 0) return
+        const idSet = new Set(ids)
+        set(state => {
+          // Un-delete the whole set in one pass so a child folder's path
+          // computation sees its (also-restored) ancestors as active.
+          const restored = state.folders.map(f =>
+            idSet.has(f.id) && f.isDeleted
+              ? { ...f, isDeleted: false, deletedAt: null }
+              : f
+          )
+          // Drop the tombstone path of every restored folder. Paths are
+          // computed from the restored array so freshly-revived ancestors
+          // don't truncate the walk.
+          const byId = new Map(restored.map(x => [x.id, x]))
+          const pathsToDrop = new Set<string>()
+          for (const id of ids) {
+            const f = byId.get(id)
+            if (!f) continue
+            const segs: string[] = []
+            let cur: Folder | undefined = f
+            for (let i = 0; cur && i < 32; i++) {
+              if (cur.isDeleted) break
+              segs.unshift(sanitizeFilename(cur.name))
+              const p: string | null = cur.parentId ?? null
+              cur = p ? byId.get(p) : undefined
+            }
+            const path = segs.join('/')
+            if (path) pathsToDrop.add(path)
+          }
+          const deletedFolderPaths = pathsToDrop.size > 0
+            ? state.deletedFolderPaths.filter(p => !pathsToDrop.has(p))
+            : state.deletedFolderPaths
+          return { folders: restored, deletedFolderPaths }
+        })
+      },
+
+      permanentlyDeleteFolders: (ids) => {
+        if (ids.length === 0) return
+        const idSet = new Set(ids)
+        set(state => ({
+          folders: state.folders.filter(f => !idSet.has(f.id)),
+          activeFolderId: state.activeFolderId != null && idSet.has(state.activeFolderId)
+            ? null
+            : state.activeFolderId,
+        }))
       },
 
       setActiveFolder: (id) => {

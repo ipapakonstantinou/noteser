@@ -21,6 +21,7 @@ import type { ContextMenuState, Folder } from '@/types'
 import { AI_ACTIONS } from '@/utils/aiActions'
 import { runNoteAIAction } from '@/utils/runNoteAIAction'
 import { TRASH_FOLDER_ID } from '@/utils/systemFolder'
+import { buildTrashTree, collectTrashFolderIds, collectTrashNoteIds } from '@/utils/trashTree'
 
 // Build a flat list of folders annotated with their full path
 // ("Parent / Child / Leaf"), in tree order.
@@ -61,9 +62,11 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
     duplicateNote,
     togglePinNote,
     deleteNote,
-    restoreNote
+    restoreNote,
+    restoreNotes,
+    getDeletedNotes
   } = useNoteStore()
-  const { getFolderById, addFolder, deleteFolder, getActiveFolders, toggleFolderExpanded, expandedFolders } = useFolderStore()
+  const { getFolderById, addFolder, deleteFolder, getActiveFolders, getDeletedFolders, restoreFolders, toggleFolderExpanded, expandedFolders } = useFolderStore()
   const openNote = useWorkspaceStore(s => s.openNote)
   // "Publish as gist" reuses the GitHub OAuth token. Hooked up here at
   // the top of the component so it sits BEFORE the early `if (!item)
@@ -80,6 +83,14 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   const item = isNote
     ? getNoteById(contextMenu.id)
     : getFolderById(contextMenu.id)
+
+  // A real, soft-deleted folder right-clicked inside the .trash view. Its
+  // backing Folder entity still exists (isDeleted:true), so getFolderById
+  // returns it — but the normal folder menu (New note / Rename / cascade
+  // Delete) is wrong here. We show Restore / Permanently Delete instead,
+  // both operating on the whole reconstructed subtree.
+  const isTrashedFolder =
+    !isNote && !isTrashFolder && !!item && 'isDeleted' in item && item.isDeleted
 
   const folders = getActiveFolders()
   const folderPaths = useMemo(() => flattenFolders(folders), [folders])
@@ -205,6 +216,51 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
     onClose()
   }
 
+  // Resolve the trashed-folder subtree node (this folder + its deleted
+  // descendant folders + their deleted notes) by reconstructing the trash
+  // tree and finding the node for this folder id. Returns null if the
+  // folder isn't found in the reconstructed tree (e.g. it had no trashed
+  // contents — though such a shell folder wouldn't surface a row to
+  // right-click in the first place). Searches recursively because a
+  // deleted SUBfolder nests under its deleted parent in the tree.
+  const findTrashSubtree = () => {
+    const tree = buildTrashTree(getDeletedNotes(), getDeletedFolders())
+    const stack = [...tree.rootFolders]
+    while (stack.length > 0) {
+      const node = stack.pop()!
+      if (node.folder.id === contextMenu.id) return node
+      stack.push(...node.childFolders)
+    }
+    return null
+  }
+
+  const handleRestoreFolder = () => {
+    const node = findTrashSubtree()
+    if (node) {
+      // Restore the folder subtree FIRST so the notes' folderIds resolve
+      // to live folders, then bring the notes back. restoreNotes skips the
+      // root-fallback that single restoreNote applies, so notes land back
+      // inside their (now-restored) folders.
+      restoreFolders(collectTrashFolderIds(node))
+      restoreNotes(collectTrashNoteIds(node))
+    } else {
+      // Fallback: at least revive the folder entity itself.
+      useFolderStore.getState().restoreFolder(contextMenu.id)
+    }
+    onClose()
+  }
+
+  const handlePermanentlyDeleteFolder = () => {
+    // Route through the confirm modal so a folder full of notes isn't
+    // nuked on a single mis-click. The modal's trashed-folder branch
+    // collects the same subtree and hard-deletes folders + notes.
+    openModal({
+      type: 'delete',
+      data: { type: 'folder', id: contextMenu.id, permanent: true, trashed: true },
+    })
+    onClose()
+  }
+
   const handleDuplicate = () => {
     if (isNote) {
       duplicateNote(contextMenu.id)
@@ -287,6 +343,33 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
       {label}
     </button>
   )
+
+  // Trashed real folder: Restore (folder + its trashed notes + deleted
+  // descendant folders) and Permanently Delete (hard-delete the subtree).
+  // None of the normal folder actions make sense on a tombstoned folder.
+  if (isTrashedFolder) {
+    return (
+      <div
+        ref={menuRef}
+        className="fixed bg-obsidianGray border border-obsidianBorder rounded-lg shadow-obsidian py-1 min-w-[180px] z-50"
+        style={{ top: contextMenu.y, left: contextMenu.x }}
+        role="menu"
+        data-testid="context-menu"
+      >
+        <MenuButton
+          icon={ArrowUturnLeftIcon}
+          label="Restore"
+          onClick={handleRestoreFolder}
+        />
+        <MenuButton
+          icon={TrashIcon}
+          label="Permanently Delete"
+          onClick={handlePermanentlyDeleteFolder}
+          danger
+        />
+      </div>
+    )
+  }
 
   return (
     <div

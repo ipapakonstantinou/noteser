@@ -14,12 +14,17 @@ export const INVALID_FILENAME_CHARS = /[^\p{L}\p{N} \-_.()]/gu
 export const sanitizeTitleInput = (s: string): string =>
   s.replace(INVALID_FILENAME_CHARS, '')
 
-// Destination-side sanitizer: aggressive — also collapses whitespace
-// to dashes and truncates. Use for the actual filename written to disk
-// or pushed to git.
+// Destination-side sanitizer: strips disallowed chars, collapses runs of
+// whitespace to a SINGLE SPACE (spaces are valid in filenames and git paths,
+// and Obsidian keeps them, so we do too), trims, and truncates. It is
+// idempotent, so the push (notePath/buildFolderPath) and pull
+// (ensureFolderPath) sides round-trip to the same path with no re-upload
+// churn. Use for the actual filename written to disk or pushed to git.
 export const sanitizeFilename = (name: string): string => {
   return name
     .replace(INVALID_FILENAME_CHARS, '')
-    .replace(/\s+/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
     .slice(0, 100)
+    .trim()
 }
