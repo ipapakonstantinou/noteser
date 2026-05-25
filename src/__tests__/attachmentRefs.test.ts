@@ -8,6 +8,7 @@ jest.mock('idb-keyval', () => ({
 
 import {
   extractAttachmentRefs,
+  extractWikiImageTargets,
   collectReferencedAttachments,
   findOrphanAttachments,
 } from '../utils/attachmentRefs'
@@ -99,6 +100,36 @@ describe('collectReferencedAttachments', () => {
   })
 })
 
+describe('extractWikiImageTargets', () => {
+  test('captures bare image filenames from wiki embeds', () => {
+    const md = 'see ![[Pasted image 20260522.png]] and ![[diagram.jpg|alt]]'
+    expect(extractWikiImageTargets(md)).toEqual([
+      'Pasted image 20260522.png',
+      'diagram.jpg',
+    ])
+  })
+
+  test('ignores non-image wiki embeds (note transclusions)', () => {
+    expect(extractWikiImageTargets('![[Some Note]] and ![[notes/Daily]]')).toEqual([])
+  })
+})
+
+describe('collectReferencedAttachments — wiki image embeds', () => {
+  test('resolves a bare wiki embed to its stored path by basename', () => {
+    const notes = [makeNote('![[Pasted image 20260522.png]]')]
+    const stored = ['Files/Pasted image 20260522.png', 'Files/other.png']
+    const refs = collectReferencedAttachments(notes, stored)
+    expect(refs.has('Files/Pasted image 20260522.png')).toBe(true)
+    expect(refs.has('Files/other.png')).toBe(false)
+  })
+
+  test('without knownPaths, only explicit ![](path) forms are counted', () => {
+    const notes = [makeNote('![[Pasted image.png]] ![](attachments/x.png)')]
+    const refs = collectReferencedAttachments(notes)
+    expect([...refs]).toEqual(['attachments/x.png'])
+  })
+})
+
 describe('findOrphanAttachments', () => {
   test('returns paths in storage that no note references', () => {
     const paths = [
@@ -111,6 +142,18 @@ describe('findOrphanAttachments', () => {
       'attachments/orphan1.png',
       'attachments/orphan2.png',
     ])
+  })
+
+  test('a wiki-embedded image is NOT flagged as an orphan', () => {
+    // The Obsidian case: attachments folder configured to `Files`, note embeds
+    // the bare filename. Before the fix all 164 such files were false orphans.
+    useSettingsStore.getState().setAttachmentsFolder('Files')
+    const paths = [
+      'Files/Pasted image 20260522.png', // referenced via wiki embed
+      'Files/unused.png',                // genuine orphan
+    ]
+    const notes = [makeNote('here it is: ![[Pasted image 20260522.png]]')]
+    expect(findOrphanAttachments(paths, notes)).toEqual(['Files/unused.png'])
   })
 
   test('excludes non-attachment keys defensively', () => {

@@ -209,10 +209,19 @@
   51%, 100% { opacity: 0; }
 }
 
+/* Completed task (`- [x]`) — strike through the whole item including nested
+   inline content (links, bold, text inside a wrapping <p>). The earlier
+   `> *` only reached direct children, so text inside a paragraph or a span
+   stayed un-struck. The descendant selector cascades to all of it. We keep
+   the checkbox itself readable (no strike on the input). */
 .preview-task-done,
-.preview-task-done > * {
+.preview-task-done * {
   text-decoration: line-through;
   opacity: 0.55;
+}
+.preview-task-done input[type='checkbox'] {
+  text-decoration: none;
+  opacity: 1;
 }
 
 /* Inline #tag rendering in preview */

@@ -27,6 +27,7 @@ import {
   type AttachmentMeta,
 } from '@/utils/attachments'
 import { ATTACHMENTS_CHANGED_EVENT } from '@/utils/events'
+import { TRASH_FOLDER_ID } from '@/utils/systemFolder'
 import { revealNote } from '@/utils/revealNote'
 
 interface FolderTreeProps {
@@ -851,8 +852,8 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
       {deletedNotes.length > 0 && (
         <TrashSyntheticFolder
           deletedNotes={deletedNotes}
-          expanded={!!expandedFolders['__trash__']}
-          onToggle={() => toggleFolderExpanded('__trash__')}
+          expanded={!!expandedFolders[TRASH_FOLDER_ID]}
+          onToggle={() => toggleFolderExpanded(TRASH_FOLDER_ID)}
           renderNote={(note) => <NoteItem key={note.id} note={note} />}
         />
       )}
@@ -893,7 +894,7 @@ const TrashSyntheticFolder = ({
       <div
         className="obsidian-folder-item"
         onClick={onToggle}
-        data-folder-id="__trash__"
+        data-folder-id={TRASH_FOLDER_ID}
         data-folder-name=".trash"
       >
         <button

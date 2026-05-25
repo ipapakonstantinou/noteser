@@ -88,6 +88,13 @@ export class SystemFolder {
   }
 }
 
+// Magic id for the synthetic ".trash" sidebar folder. It is NOT a real
+// Folder entity — FolderTree renders it whenever soft-deleted notes exist.
+// Anything that receives a folder id must treat this value specially:
+// "deleting" it means emptying the trash (hard-delete the soft-deleted
+// notes), never cascade/permanent-delete a folder entity.
+export const TRASH_FOLDER_ID = '__trash__'
+
 // ── Pre-built singletons for the system folders we ship ─────────────────────
 
 // Attachments folder. Default name `attachments`. Renaming it (via the
