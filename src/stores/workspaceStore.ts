@@ -5,6 +5,17 @@ import type { PullClassification } from '@/utils/githubSync'
 import { SYNC_REQUEST_EVENT } from '@/utils/events'
 import { useNoteStore } from './noteStore'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
+import {
+  type NavHistory,
+  createHistory,
+  push as pushHistory,
+  back as backHistory,
+  forward as forwardHistory,
+  currentEntry as historyCurrent,
+  canGoBack as historyCanGoBack,
+  canGoForward as historyCanGoForward,
+  pruneHistory,
+} from '@/utils/navHistory'
 
 export type ConflictTabData = Extract<PullClassification, { kind: 'conflict' } | { kind: 'conflictDeleted' }>
 
@@ -37,6 +48,10 @@ interface WorkspaceState {
   // Bumped each time the user clicks Apply on a merge tab; reset to 0 when a
   // new openMergeConflicts batch starts.
   mergeAppliedCount: number
+  // Per-pane Obsidian-style note navigation history (Back / Forward).
+  // Keyed by pane id. Not persisted — history is a point-in-time session
+  // concept (matches Obsidian, which forgets pane history on reload).
+  histories: Record<string, NavHistory>
 
   openNote: (noteId: string, opts?: { preview?: boolean; paneId?: string }) => void
   // Open (or focus, if already open) the Welcome tab. Lives in the
@@ -61,6 +76,16 @@ interface WorkspaceState {
   // Take the tab out of its current pane and put it in a brand-new pane that
   // sits to the right (or alone if there's nowhere to go).
   splitTabRight: (tabId: string) => void
+
+  // ── Navigation history (Back / Forward) ────────────────────────────────
+  // Move the given pane (default: active pane) back / forward through its
+  // note history, opening the target note in that pane WITHOUT recording a
+  // new history entry. No-op at the ends.
+  goBack: (paneId?: string) => void
+  goForward: (paneId?: string) => void
+  // Pure selectors for button enabled-state.
+  canGoBack: (paneId?: string) => boolean
+  canGoForward: (paneId?: string) => boolean
 }
 
 function findTab(panes: PaneState[], tabId: string): { paneIdx: number; tabIdx: number } | null {
@@ -88,12 +113,84 @@ function compactPanes(panes: PaneState[]): PaneState[] {
   return kept.length === 0 ? [makePane()] : kept
 }
 
+// Push a note view onto a pane's navigation history (creating the history
+// if this pane hasn't been seen before). Returns a NEW histories map so
+// callers can fold it straight into a set(). Pushing the note already at
+// the cursor is a no-op inside navHistory, so re-focusing the same note
+// never spams the stack.
+function recordNav(
+  histories: Record<string, NavHistory>,
+  paneId: string,
+  noteId: string,
+): Record<string, NavHistory> {
+  const cur = histories[paneId] ?? createHistory()
+  const next = pushHistory(cur, noteId)
+  if (next === cur) return histories
+  return { ...histories, [paneId]: next }
+}
+
+// Open `noteId` in `paneId` as the result of a Back / Forward navigation.
+// Unlike openNote this never pushes onto history — instead it writes the
+// already-moved cursor (`movedHistory`) straight into the histories map.
+// History is per-pane, so we keep navigation self-contained: if the note
+// already has a tab IN THIS PANE we focus it (promoting it out of preview
+// so back/forward lands on a stable, non-italic tab); otherwise we add a
+// fresh pinned tab to this pane. A copy open in the OTHER pane is left
+// untouched — each pane navigates its own history independently.
+function navigateInPane(
+  set: (partial: Partial<WorkspaceState>) => void,
+  get: () => WorkspaceState,
+  paneId: string,
+  noteId: string,
+  movedHistory: NavHistory,
+): void {
+  const state = get()
+
+  const pane = state.panes.find(p => p.id === paneId)
+  const existing = pane?.tabs.find(t => t.kind === 'note' && t.noteId === noteId)
+  if (pane && existing) {
+    const next = state.panes.map(p => p.id === paneId
+      ? {
+          ...p,
+          activeTabId: existing.id,
+          tabs: p.tabs.map(t =>
+            t.id === existing.id && t.kind === 'note' && t.isPreview
+              ? { ...t, isPreview: false }
+              : t,
+          ),
+        }
+      : p,
+    )
+    set({
+      panes: next,
+      activePaneId: paneId,
+      histories: { ...state.histories, [paneId]: movedHistory },
+    })
+    selectNoteFromActive(next, paneId)
+    return
+  }
+
+  // Not open in this pane — add a fresh pinned tab to the target pane.
+  const id = uuidv4()
+  const newTab: Tab = { id, kind: 'note', noteId, isPreview: false }
+  const next = state.panes.map(p =>
+    p.id === paneId ? { ...p, tabs: [...p.tabs, newTab], activeTabId: id } : p,
+  )
+  set({
+    panes: next,
+    activePaneId: paneId,
+    histories: { ...state.histories, [paneId]: movedHistory },
+  })
+  selectNoteFromActive(next, paneId)
+}
+
 export const useWorkspaceStore = create<WorkspaceState>()(
   persist(
     (set, get) => ({
       panes: [makePane()],
       activePaneId: null,
       mergeAppliedCount: 0,
+      histories: {},
 
       openNote: (noteId, opts) => {
         const preview = opts?.preview ?? true
@@ -120,7 +217,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
               }
             : p,
           )
-          set({ panes: next, activePaneId: found.pane.id })
+          set({
+            panes: next,
+            activePaneId: found.pane.id,
+            histories: recordNav(state.histories, found.pane.id, noteId),
+          })
           selectNoteFromActive(next, found.pane.id)
           return
         }
@@ -175,7 +276,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             activeTabId: id,
           }
         })
-        set({ panes: next, activePaneId: targetPaneId })
+        set({
+          panes: next,
+          activePaneId: targetPaneId,
+          histories: recordNav(state.histories, targetPaneId, noteId),
+        })
         selectNoteFromActive(next, targetPaneId)
       },
 
@@ -319,7 +424,14 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           i === loc.paneIdx ? { ...p, activeTabId: tabId } : p,
         )
         const paneId = state.panes[loc.paneIdx].id
-        set({ panes: next, activePaneId: paneId })
+        // Clicking a note tab is a navigation — record it so Back returns
+        // to whatever was focused before. Non-note tabs (merge / welcome)
+        // don't participate in note history.
+        const focusedTab = state.panes[loc.paneIdx].tabs[loc.tabIdx]
+        const histories = focusedTab?.kind === 'note'
+          ? recordNav(state.histories, paneId, focusedTab.noteId)
+          : state.histories
+        set({ panes: next, activePaneId: paneId, histories })
         selectNoteFromActive(next, paneId)
       },
 
@@ -393,6 +505,49 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         selectNoteFromActive(panes, newPane.id)
       },
 
+      goBack: (paneId) => {
+        const state = get()
+        const targetPaneId = paneId ?? state.activePaneId ?? state.panes[0]?.id
+        if (!targetPaneId) return
+        const hist = state.histories[targetPaneId]
+        if (!hist || !historyCanGoBack(hist)) return
+        const moved = backHistory(hist)
+        const noteId = historyCurrent(moved)
+        if (noteId == null) return
+        // Open the target note in this pane WITHOUT recording history (we
+        // pass the moved cursor in via the histories set below, and
+        // navigateInPane opens the note without touching histories).
+        navigateInPane(set, get, targetPaneId, noteId, moved)
+      },
+
+      goForward: (paneId) => {
+        const state = get()
+        const targetPaneId = paneId ?? state.activePaneId ?? state.panes[0]?.id
+        if (!targetPaneId) return
+        const hist = state.histories[targetPaneId]
+        if (!hist || !historyCanGoForward(hist)) return
+        const moved = forwardHistory(hist)
+        const noteId = historyCurrent(moved)
+        if (noteId == null) return
+        navigateInPane(set, get, targetPaneId, noteId, moved)
+      },
+
+      canGoBack: (paneId) => {
+        const state = get()
+        const targetPaneId = paneId ?? state.activePaneId ?? state.panes[0]?.id
+        if (!targetPaneId) return false
+        const hist = state.histories[targetPaneId]
+        return !!hist && historyCanGoBack(hist)
+      },
+
+      canGoForward: (paneId) => {
+        const state = get()
+        const targetPaneId = paneId ?? state.activePaneId ?? state.panes[0]?.id
+        if (!targetPaneId) return false
+        const hist = state.histories[targetPaneId]
+        return !!hist && historyCanGoForward(hist)
+      },
+
       closeAllMergeTabs: () => {
         const state = get()
         const stripped = state.panes.map(p => ({
@@ -422,7 +577,16 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         const compacted = compactPanes(next)
         const activeStillThere = compacted.find(p => p.id === state.activePaneId)
         const newActive = activeStillThere ? state.activePaneId : compacted[0].id
-        set({ panes: compacted, activePaneId: newActive })
+        // Drop deleted notes from each pane's history + forget histories for
+        // panes that no longer exist, so Back/Forward never lands on a note
+        // that was deleted out from under it.
+        const livePaneIds = new Set(compacted.map(p => p.id))
+        const histories: Record<string, NavHistory> = {}
+        for (const [pid, hist] of Object.entries(state.histories)) {
+          if (!livePaneIds.has(pid)) continue
+          histories[pid] = pruneHistory(hist, liveIds)
+        }
+        set({ panes: compacted, activePaneId: newActive, histories })
       },
     }),
     {

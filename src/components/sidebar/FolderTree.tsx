@@ -234,16 +234,20 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     }, 200)
   }
   const handleNoteDoubleClick = (id: string) => {
-    // Obsidian behaviour: double-click a note row triggers inline
-    // rename (not pin). The pin gesture happens implicitly via
-    // typing into a preview tab, OR explicitly via right-click →
-    // Pin to top. Cancel any pending single-click handler so the
-    // note doesn't briefly flash into preview.
+    // VS Code behaviour: double-click PINS the note — opens it as a
+    // permanent (non-preview, non-italic) tab. Cancel any pending
+    // single-click handler so the note never briefly flashes into a
+    // preview tab. openNote with preview:false both opens a fresh
+    // pinned tab AND promotes an already-open preview tab to pinned
+    // (see workspaceStore.openNote — the "found" branch flips
+    // isPreview off when !preview). Rename stays reachable via the
+    // right-click context menu and the F2 key.
     if (clickTimerRef.current) {
       clearTimeout(clickTimerRef.current)
       clickTimerRef.current = null
     }
-    useUIStore.getState().requestRename({ type: 'note', id })
+    openNote(id, { preview: false })
+    closeDrawerIfMobile()
   }
 
   // ── Attachment helpers ─────────────────────────────────────────────────
@@ -449,6 +453,16 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
         if (selectedIds.size === 0) return
         e.preventDefault()
         deleteSelected()
+        return
+      }
+      case 'F2': {
+        // F2 = inline rename of the focused row (notes and folders).
+        // Mirrors the right-click → Rename action; both route through
+        // uiStore.requestRename, which the matching EditableText watches.
+        if (!currentRow) return
+        if (currentRow.kind !== 'note' && currentRow.kind !== 'folder') return
+        e.preventDefault()
+        useUIStore.getState().requestRename({ type: currentRow.kind, id: currentRow.id })
         return
       }
       case 'Escape': {
