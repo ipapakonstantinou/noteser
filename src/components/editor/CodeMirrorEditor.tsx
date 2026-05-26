@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import { EditorView, keymap } from '@codemirror/view'
-import { Prec, Compartment } from '@codemirror/state'
+import { EditorView, keymap, type Command } from '@codemirror/view'
+import { Prec, Compartment, EditorSelection } from '@codemirror/state'
+import { moveLineUp, moveLineDown } from '@codemirror/commands'
 import { search, searchKeymap, openSearchPanel } from '@codemirror/search'
 import { diffGutterExtension, setDiffBaseline } from './diffGutter'
 import { getLastPushedContent } from '@/utils/lastPushedContent'
@@ -20,6 +21,13 @@ import { getActiveTagQuery } from '@/utils/tagAutocomplete'
 import { collectAllTags } from '@/utils/tags'
 import { findNoteByTitleOrAlias } from '@/utils/aliases'
 import { toggleTaskLineText, UI_TASK_LINE_REGEX } from '@/utils/tasks'
+import {
+  splitListLine,
+  toggleTodo,
+  toggleNumbered,
+  cycleNumberedTask,
+  renumberOrderedRuns,
+} from '@/utils/listTransforms'
 import {
   buildEmptyRow,
   buildTable,
@@ -93,6 +101,147 @@ async function insertImagesAt(view: EditorView, files: File[], pos: number): Pro
     selection: { anchor: pos + insert.length },
   })
 }
+
+// ── List / todo line-command plumbing ──────────────────────────────────────
+// Apply a pure per-line transform (from utils/listTransforms) to every line
+// the current selection touches, then renumber any ordered-list runs in the
+// document so "1." sequences stay 1,2,3 after the edit. One transaction so
+// undo is a single step. The caret/selection is mapped through the change so
+// it lands sensibly after the rewrite.
+function applyLineTransform(view: EditorView, transform: (line: string) => string): boolean {
+  const { state } = view
+  const range = state.selection.main
+  const fromLine = state.doc.lineAt(range.from)
+  const toLine = state.doc.lineAt(range.to)
+
+  const changes: { from: number; to: number; insert: string }[] = []
+  for (let n = fromLine.number; n <= toLine.number; n++) {
+    const line = state.doc.line(n)
+    const next = transform(line.text)
+    if (next !== line.text) {
+      changes.push({ from: line.from, to: line.to, insert: next })
+    }
+  }
+  if (changes.length === 0) return false
+
+  // First transaction: the per-line rewrite. We map the selection through it.
+  const tr = state.update({
+    changes,
+    selection: range.empty
+      ? undefined
+      : EditorSelection.single(fromLine.from, state.doc.line(toLine.number).to),
+    scrollIntoView: true,
+  })
+  view.dispatch(tr)
+
+  // Second pass: renumber ordered runs across the whole doc. Cheap (one split)
+  // and keeps "1." lists correct after a toggle inserts/removes an item.
+  renumberDocument(view)
+  return true
+}
+
+// Rewrite ordered-list numbers across the whole document if any are wrong.
+// Emits MINIMAL per-line changes (only the lines whose number changed) rather
+// than a full-doc replace, so the diff gutter and undo history stay tidy and
+// the existing caret mapping survives. No-op (no transaction) when every
+// number is already correct, so it is safe to call after every list edit and
+// after a move-line.
+function renumberDocument(view: EditorView): void {
+  const { doc } = view.state
+  const currentLines = doc.toString().split('\n')
+  const fixedLines = renumberOrderedRuns(currentLines.join('\n')).split('\n')
+
+  const changes: { from: number; to: number; insert: string }[] = []
+  for (let i = 0; i < currentLines.length; i++) {
+    if (currentLines[i] !== fixedLines[i]) {
+      const line = doc.line(i + 1)
+      changes.push({ from: line.from, to: line.to, insert: fixedLines[i] })
+    }
+  }
+  if (changes.length === 0) return
+  view.dispatch({ changes })
+}
+
+// Mod+L — Obsidian "Toggle checkbox status". On an existing task line we route
+// through toggleTaskLineText so the ✅-date stamp + recurring-task behaviour is
+// preserved; on a plain/bullet/ordered line we convert it into an unchecked
+// task. Works across a multi-line selection.
+const toggleCheckboxStatus: Command = (view) => {
+  const { state } = view
+  const range = state.selection.main
+  const fromLine = state.doc.lineAt(range.from)
+  const toLine = state.doc.lineAt(range.to)
+
+  const changes: { from: number; to: number; insert: string }[] = []
+  for (let n = fromLine.number; n <= toLine.number; n++) {
+    const line = state.doc.line(n)
+    const parts = splitListLine(line.text)
+    let next: string
+    if (parts.kind === 'task') {
+      // Existing task → flip done/undone with metadata-aware helper.
+      const flipped = toggleTaskLineText(line.text)
+      next = flipped ?? line.text
+    } else {
+      // plain / bullet / ordered → unchecked task, keeping any carrier.
+      const carrier = parts.kind === 'ordered' ? parts.carrier : '- '
+      next = `${parts.indent}${carrier}[ ] ${parts.body}`
+    }
+    if (next !== line.text) changes.push({ from: line.from, to: line.to, insert: next })
+  }
+  if (changes.length === 0) return false
+  view.dispatch({ changes, scrollIntoView: true })
+  renumberDocument(view)
+  return true
+}
+
+// Wrap a built-in move-line command so an ordered list renumbers after the
+// move. Obsidian renumbers when you Alt+Up/Down a list item; this matches.
+function moveLineThenRenumber(base: Command): Command {
+  return (view) => {
+    const moved = base(view)
+    if (!moved) return false
+    renumberDocument(view)
+    return true
+  }
+}
+
+// Renumber ordered lists after a structural edit (Enter inserts a new "1."
+// item, Backspace removes one, paste, etc.) so "1." sequences self-heal to
+// 1,2,3 — matching Obsidian. Guarded so the renumber transaction it dispatches
+// does not retrigger itself, and skipped while a CodeMirror composition (IME)
+// is active. We only react when an ordered-list line is present in the new doc
+// AND the change inserted or deleted a newline (the operations that shift item
+// counts); pure in-line typing is left alone for performance.
+const ORDERED_LINE_PROBE = /(^|\n)\s*\d+\.\s/
+let renumberInFlight = false
+const renumberOnEdit = EditorView.updateListener.of((update) => {
+  if (!update.docChanged) return
+  if (renumberInFlight) return
+  if (update.view.composing) return
+
+  let touchedNewline = false
+  update.changes.iterChanges((_fA, _tA, _fB, _tB, inserted) => {
+    if (inserted.toString().includes('\n')) touchedNewline = true
+  })
+  // Deletions of a newline also matter. iterChanges' inserted is the new text;
+  // detect removed newlines by comparing line counts.
+  if (!touchedNewline && update.startState.doc.lines !== update.state.doc.lines) {
+    touchedNewline = true
+  }
+  if (!touchedNewline) return
+  if (!ORDERED_LINE_PROBE.test(update.state.doc.toString())) return
+
+  renumberInFlight = true
+  // Defer to escape the current update cycle (dispatching inside an
+  // updateListener is discouraged).
+  queueMicrotask(() => {
+    try {
+      renumberDocument(update.view)
+    } finally {
+      renumberInFlight = false
+    }
+  })
+})
 
 const obsidianTheme = EditorView.theme({
   '&': { height: '100%', backgroundColor: 'transparent', color: '#dadada', fontSize: '14px' },
@@ -385,7 +534,11 @@ export function CodeMirrorEditor({
     // (close). High precedence so noteser's own keymap doesn't shadow.
     search({ top: true }),
     Prec.highest(keymap.of([
-      ...searchKeymap,
+      // Drop the search keymap's Mod-d (= selectNextOccurrence). Obsidian
+      // leaves Cmd/Ctrl+D unbound, and Jon found noteser's Mod+D surprising
+      // (selecting/replacing the word read as a "delete the line"). Removing
+      // it restores Obsidian parity — Mod+D now does nothing in the editor.
+      ...searchKeymap.filter(b => b.key !== 'Mod-d'),
       // Obsidian binds Ctrl+H to find-and-replace. The CodeMirror panel
       // shows both find + replace inputs, so this just opens the same
       // panel as Ctrl+F.
@@ -393,6 +546,7 @@ export function CodeMirrorEditor({
     ])),
     obsidianTheme,
     EditorView.lineWrapping,
+    renumberOnEdit,
     // Prec.highest ensures our bindings win over any conflicting default keymap.
     Prec.highest(keymap.of([
     {
@@ -403,6 +557,38 @@ export function CodeMirrorEditor({
         return true
       },
     },
+    // ── Obsidian-style list / todo commands ────────────────────────────────
+    // (1) Mod+L — Toggle checkbox status (Obsidian default). Flip a task
+    // done/undone; turn a plain/bullet/numbered line into a checkbox.
+    { key: 'Mod-l', preventDefault: true, run: toggleCheckboxStatus },
+    // (2) Mod+Shift+7 — Toggle numbered list. Obsidian ships "Toggle numbered
+    // list" with NO default hotkey, so we pick Mod+Shift+7 (the 7/& key, the
+    // ordered-list convention shared by Google Docs / Notion).
+    {
+      key: 'Mod-Shift-7',
+      preventDefault: true,
+      run: (view) => applyLineTransform(view, toggleNumbered),
+    },
+    // (3) Mod+Shift+8 — Toggle todo (`- [ ]`) on/off. Pairs with the numbered
+    // toggle (8/* is the bullet/unordered-list convention); Obsidian leaves
+    // these unbound by default.
+    {
+      key: 'Mod-Shift-8',
+      preventDefault: true,
+      run: (view) => applyLineTransform(view, toggleTodo),
+    },
+    // (4) Mod+Shift+9 — Cycle a line between numbered list and task list
+    // (Jon's explicit "switch between 1. and a task list"). Obsidian's
+    // "Cycle bullet/checkbox" has no default key, so we assign one.
+    {
+      key: 'Mod-Shift-9',
+      preventDefault: true,
+      run: (view) => applyLineTransform(view, cycleNumberedTask),
+    },
+    // (5) Alt+Up / Alt+Down — Move line up/down (Obsidian default), then
+    // renumber ordered runs so "1." sequences stay 1,2,3 after the move.
+    { key: 'Alt-ArrowUp', preventDefault: true, run: moveLineThenRenumber(moveLineUp) },
+    { key: 'Alt-ArrowDown', preventDefault: true, run: moveLineThenRenumber(moveLineDown) },
     {
       // Alt+L toggles the "- [ ]" task bullet (add on plain lines, remove
       // on task lines). Alt+Shift+L toggles the [x]/[ ] checkmark
