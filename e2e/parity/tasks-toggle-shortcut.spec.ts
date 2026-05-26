@@ -92,18 +92,19 @@ test('Alt+L (without Shift) on a task line removes the task bullet', async ({ pa
   expect(after).toBe('Remove me')
 })
 
-test('PARITY GAP: Ctrl+L does NOT toggle tasks (Obsidian binding not implemented)', async ({ page }) => {
+test('Ctrl+L toggles a task done (Obsidian "Toggle checkbox status")', async ({ page }) => {
+  // Obsidian parity: Cmd/Ctrl+L is now bound to "Toggle checkbox status" in
+  // CodeMirrorEditor.tsx. On a `- [ ]` line it marks it done. (Previously this
+  // was a documented parity GAP — Ctrl+L did nothing. Implemented 2026-05-26
+  // alongside the numbered/todo/cycle commands; see
+  // e2e/parity/list-shortcuts-obsidian.spec.ts for the full matrix.)
   await newNoteInEditMode(page)
   await page.locator('.cm-content').first().click()
   await page.keyboard.type('- [ ] Obsidian shortcut test')
-  await page.waitForTimeout(300)
-
-  const before = await getNoteContent(page)
+  await page.waitForTimeout(400)
 
   await page.keyboard.press('Control+l')
-  await page.waitForTimeout(300)
-
-  const after = await getNoteContent(page)
-  expect(after).toBe(before)
-  expect(after).not.toMatch(/- \[x\]/)
+  await expect
+    .poll(async () => (await getNoteContent(page)) ?? '', { timeout: 4000 })
+    .toMatch(/^- \[x\] Obsidian shortcut test/)
 })
