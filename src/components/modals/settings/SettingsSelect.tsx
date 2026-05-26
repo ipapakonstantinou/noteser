@@ -7,12 +7,14 @@ interface SettingsSelectProps<T extends string | number> {
   value: T
   onChange: (v: T) => void
   options: { value: T; label: string }[]
+  'data-testid'?: string
 }
 
 export const SettingsSelect = <T extends string | number>({
   value,
   onChange,
   options,
+  'data-testid': dataTestid,
 }: SettingsSelectProps<T>) => (
   <select
     value={String(value)}
@@ -22,6 +24,7 @@ export const SettingsSelect = <T extends string | number>({
       const matched = options.find((opt) => String(opt.value) === raw)
       if (matched) onChange(matched.value)
     }}
+    data-testid={dataTestid}
     className="bg-obsidianDarkGray border border-obsidianBorder rounded px-2 py-1 text-sm text-obsidianText focus:outline-none focus:border-obsidianAccentPurple"
   >
     {options.map((opt) => (
