@@ -201,6 +201,29 @@ export function normalizeForPush(content: string): string {
   return lf.endsWith('\n') ? lf : `${lf}\n`
 }
 
+// content-normalization-churn: "did the user actually edit this note since the
+// last sync?" — decided by a BYTE-EXACT comparison of the two bodies AFTER
+// canonicalisation, NOT by diffing blob SHAs.
+//
+// The blob-SHA path catches NORMALIZATION DRIFT: a note's stored body and the
+// exact remote blob it was pulled from can differ purely by line endings
+// (CRLF↔LF) or a trailing newline — never by anything the user typed. Hashing
+// the two raw forms yields different SHAs, so a SHA-only "changed?" test reports
+// a phantom edit and re-pushes a note the user never touched (the churn). Real
+// repro: a smart-punctuation note ("Don’t…" — U+2019/U+2014/U+2009/U+00A0) with
+// NO trailing newline whose baseline is the RAW (non-canonical) remote SHA —
+// e.g. a legacy note synced before gitLastPushedSha was pinned to the canonical
+// form, or a conflict-resolved note pinned to the raw remote SHA.
+//
+// Canonicalising BOTH sides (normalizeForPush) collapses exactly that drift —
+// CRLF→LF and trailing-newline — while preserving every byte the user can type,
+// INCLUDING all smart punctuation (curly quotes, em dashes, thin/non-breaking
+// spaces survive verbatim). So this returns true iff the only difference between
+// the two bodies is normalization → the note is UNEDITED.
+export function isUnchangedModuloNormalization(localContent: string, remoteContent: string): boolean {
+  return normalizeForPush(localContent) === normalizeForPush(remoteContent)
+}
+
 // ── Parser (Phase 4 pull) ───────────────────────────────────────────────────
 // We only support the YAML subset we ourselves emit / commonly see in
 // Obsidian vaults: `tags: [a, "b", c]` or `aliases: [Short, "Even Shorter"]`
@@ -1237,8 +1260,41 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     // the canonical plaintext (serializeNote output) BEFORE encryption.
     const plainSha = await gitBlobSha(content)
     const baseline = note.gitLastPushedSha ?? null
-    const locallyChanged = baseline === null || plainSha !== baseline
     const remoteSha = remoteTree.get(path)
+    // Primary signal: the canonical SHA equals the baseline → byte-identical to
+    // what we last synced → not a real edit. A null baseline is a brand-new note.
+    let locallyChanged = baseline === null || plainSha !== baseline
+
+    // content-normalization-churn: the canonical-SHA test above mis-fires for a
+    // note whose baseline is the RAW (non-canonical) remote blob rather than the
+    // canonical serialisation — a LEGACY note (synced before gitLastPushedSha was
+    // pinned to the canonical form) or a conflict-resolved note. There the remote
+    // blob lacks a trailing newline (or uses CRLF), so plainSha (canonical, with
+    // \n) != baseline (raw) even though the user never typed a thing — the churn.
+    //
+    // Disambiguate with a BYTE-EXACT comparison: when the baseline IS the current
+    // remote blob (baseline === remoteSha), the note was last synced AS that exact
+    // blob and its gitPath hasn't moved. Fetch the remote body ONCE and compare it
+    // to the local body modulo normalization. If they match, the difference is
+    // pure CRLF/trailing-newline drift → UNEDITED → suppress (leave the user's
+    // original non-canonical bytes on the remote untouched, exactly like the
+    // canonical-baseline path does). This network read only happens for the legacy
+    // drift case (SHA says changed AND baseline names the live remote blob), so the
+    // hot path (canonical baseline, or a genuine edit) pays nothing.
+    if (locallyChanged && baseline !== null && remoteSha !== undefined && baseline === remoteSha) {
+      try {
+        const remoteRawBody = await maybeDecryptFromPull(
+          await getBlobContent(token, owner, name, remoteSha),
+        )
+        if (isUnchangedModuloNormalization(content, remoteRawBody)) {
+          locallyChanged = false
+        }
+      } catch {
+        // Network blip / GC'd blob — fall back to the SHA decision (treat as a
+        // possible edit). Worst case is one re-push, never data loss.
+      }
+    }
+
     noteBlobPlan.push({ path, content: wireContent, note, localSha, remoteSha, locallyChanged })
   }
   // push-only-real-edits: SUPPRESS the upload for a note that is NOT locally

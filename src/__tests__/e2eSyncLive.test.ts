@@ -883,6 +883,22 @@ rvhMaybe('e2e GitHub sync — REALISTIC VAULT (live)', () => {
   const APOS_NOTE_PATH = "Jake's project.md"
   const APOS_NOTE_RAW = "Jake's project kickoff notes — milestones and owners.\n"
 
+  // content-normalization-churn fixtures (scenario F). A note straight out of a
+  // real Obsidian vault that has been through "smart punctuation": curly
+  // apostrophes (U+2019), an em dash (U+2014) flanked by thin spaces (U+2009),
+  // and a non-breaking space (U+00A0) — AND committed with NO trailing newline
+  // (Obsidian's on-disk form). This MIRRORS Jon's real "Day 3 - Shower
+  // Thoughts.md" that got re-pushed though he never edited it. We escape every
+  // non-ASCII codepoint so the exact bytes are unambiguous regardless of how
+  // this file is encoded or edited. The point: a freshly-cloned note carrying
+  // these bytes must NEVER re-push (the clone's baseline must hash-match the
+  // push-time serialization), and the bytes must survive verbatim on the remote.
+  const SMART_NOTE_PATH = 'Day 3 - Shower Thoughts.md'
+  const SMART_NOTE_RAW =
+    'Don\u2019t overthink it\u2009\u2014\u2009just ship.\u00a0Really.\n' +
+    'Second line with a curly quote: \u201cidea\u201d\u2014noted.'
+  // ^ NO trailing newline on purpose (Obsidian leaves the last line bare).
+
   // settings.json content + its updatedAt. Written EXACTLY as noteser would, via
   // the app's own serializeVaultSettings over a vault slice — because Jon's real
   // settings.json WAS written by noteser. We capture the seed/clone hash so
@@ -1000,6 +1016,7 @@ rvhMaybe('e2e GitHub sync — REALISTIC VAULT (live)', () => {
     const plainCanonSha = await createBlob(TOKEN!, OWNER, REPO_NAME, PLAIN_CANON_RAW)
     const ampSha = await createBlob(TOKEN!, OWNER, REPO_NAME, AMP_NOTE_RAW)
     const aposSha = await createBlob(TOKEN!, OWNER, REPO_NAME, APOS_NOTE_RAW)
+    const smartSha = await createBlob(TOKEN!, OWNER, REPO_NAME, SMART_NOTE_RAW)
 
     const treeSha = await createTree(TOKEN!, OWNER, REPO_NAME, baseTreeSha, [
       { path: ATTACHMENT_PATH, mode: '100644', type: 'blob', sha: pngSha },
@@ -1009,6 +1026,7 @@ rvhMaybe('e2e GitHub sync — REALISTIC VAULT (live)', () => {
       { path: PLAIN_CANON_PATH, mode: '100644', type: 'blob', sha: plainCanonSha },
       { path: AMP_NOTE_PATH, mode: '100644', type: 'blob', sha: ampSha },
       { path: APOS_NOTE_PATH, mode: '100644', type: 'blob', sha: aposSha },
+      { path: SMART_NOTE_PATH, mode: '100644', type: 'blob', sha: smartSha },
     ])
     const { sha: commitSha } = await createCommit(
       TOKEN!, OWNER, REPO_NAME, 'rvh: plant realistic vault fixture', treeSha, mainSha,
@@ -1389,5 +1407,124 @@ rvhMaybe('e2e GitHub sync — REALISTIC VAULT (live)', () => {
     expect(tree.has('Jakes project.md')).toBe(false)
 
     log(`[scenario E] special-char (&/') no-churn: clone + discard/pull then sync deleted=0 created=0 updated=0 (head ${headBefore.slice(0, 8)} unchanged); "${AMP_NOTE_PATH}" + "${APOS_NOTE_PATH}" survive verbatim`)
+  })
+
+  // ── content-normalization-churn: THE FIX'S DEDICATED REGRESSION ───────────
+  // A note straight out of a real Obsidian vault, full of "smart punctuation"
+  // (curly apostrophe U+2019, em dash U+2014 flanked by thin spaces U+2009,
+  // non-breaking space U+00A0, curly quotes U+201C/U+201D) AND committed with NO
+  // trailing newline, must sync with ZERO pushes when the user never edited it.
+  // This MIRRORS Jon's real "Day 3 - Shower Thoughts.md", which re-pushed on
+  // every sync though he never touched it.
+  //
+  // THE CHURN (pre-fix): the note's gitLastPushedSha baseline is the RAW
+  // (non-canonical) remote blob SHA \u2014 the shape a LEGACY note has (synced
+  // before gitLastPushedSha was pinned to the canonical serialisation) or a
+  // conflict-resolved note. The remote blob has NO trailing newline, so the
+  // canonical push serialisation (plainSha, WITH a trailing \\n) differs from the
+  // baseline even though the user typed nothing \u2192 push-only-real-edits reads
+  // it as a real edit and re-uploads. We reproduce that exact persisted state and
+  // assert the sync pushes NOTHING. FAILS on the current dev code (updated=1, head
+  // moves, a blob + commit are POSTed); PASSES after the byte-exact "unedited
+  // modulo normalization" decision lands.
+  test('scenario F: SMART-PUNCTUATION CONTENT no-churn \u2014 a legacy/non-canonical baseline pushes NOTHING and the bytes survive verbatim', async () => {
+    const { useNoteStore } = await import('@/stores/noteStore')
+    const { useFolderStore } = await import('@/stores/folderStore')
+
+    // (1) CLONE the realistic vault (which now carries the smart-punctuation note).
+    await resetLocalState()
+    await cloneAndApply(true)
+
+    // The smart-punctuation note materialised, body filled, every codepoint intact.
+    const cloned = useNoteStore.getState().notes.find(n => n.gitPath === SMART_NOTE_PATH)
+    expect(cloned).toBeDefined()
+    expect(cloned!.contentLoaded).not.toBe(false)
+    expect(cloned!.content).toContain('\u2019') // curly apostrophe
+    expect(cloned!.content).toContain('\u2014') // em dash
+    expect(cloned!.content).toContain('\u2009') // thin space (flanking the em dash)
+    expect(cloned!.content).toContain('\u00a0') // non-breaking space
+    expect(cloned!.content).toContain('\u201c') // curly open quote
+    expect(cloned!.content).toContain('\u201d') // curly close quote
+
+    // (2) FORCE the LEGACY / non-canonical baseline. The fixed clone path pins
+    //     gitLastPushedSha to the CANONICAL serialisation SHA \u2014 so to
+    //     reproduce the actual bug we rewrite the persisted note to the pre-fix
+    //     shape: gitLastPushedSha = the RAW remote blob SHA (no trailing newline),
+    //     gitRemoteBaseSha cleared (the field did not exist for legacy notes). The
+    //     BODY is untouched (the user edited nothing). This is exactly what Jon's
+    //     real note carried.
+    const rawRemoteSha = await gitBlobSha(SMART_NOTE_RAW)
+    const canonicalSha = await gitBlobSha(serializeNote(cloned!))
+    expect(canonicalSha).not.toBe(rawRemoteSha) // the no-trailing-newline drift is real
+    useNoteStore.setState(state => ({
+      notes: state.notes.map(n =>
+        n.gitPath === SMART_NOTE_PATH
+          ? { ...n, gitLastPushedSha: rawRemoteSha, gitRemoteBaseSha: undefined }
+          : n,
+      ),
+    }))
+
+    const notes = useNoteStore.getState().notes
+    const folders = useFolderStore.getState().folders
+    const vaultSettings = await buildVaultSettingsBundle()
+
+    // (3) SYNC with NOTHING edited \u2192 ZERO pushes. Count network mutations so a
+    //     failure names the exact churn, and assert the branch head is byte-
+    //     identical before/after (no commit at all).
+    const realFetch = globalThis.fetch
+    const mutations: Array<{ method: string; url: string }> = []
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url
+      const method = (init?.method ?? 'GET').toUpperCase()
+      if (method !== 'GET' && method !== 'HEAD') mutations.push({ method, url })
+      return realFetch(input as Parameters<typeof realFetch>[0], init)
+    }) as typeof fetch
+
+    const headBefore = await getRefSha(RVH_BRANCH)
+    let outcome: Awaited<ReturnType<typeof syncToGitHub>>
+    try {
+      outcome = await syncToGitHub({ token: TOKEN!, repo: rvhRepo, notes, folders, vaultSettings })
+    } finally {
+      globalThis.fetch = realFetch
+    }
+    const headAfter = await getRefSha(RVH_BRANCH)
+
+    const blobCreates = mutations.filter(m => /\/git\/blobs$/.test(m.url))
+    const treeCreates = mutations.filter(m => /\/git\/trees$/.test(m.url))
+    const commitCreates = mutations.filter(m => /\/git\/commits$/.test(m.url))
+    if (
+      !outcome.result.unchanged ||
+      outcome.result.created + outcome.result.updated + outcome.result.deleted > 0 ||
+      headAfter !== headBefore
+    ) {
+      console.error(
+        `\n[scenario F] CONTENT-NORMALIZATION CHURN DETECTED \u2014 a smart-punctuation note re-pushed though it was never edited.\n` +
+          `  created=${outcome.result.created} updated=${outcome.result.updated} deleted=${outcome.result.deleted} ` +
+          `unchanged=${outcome.result.unchanged} | blob POSTs=${blobCreates.length} tree POSTs=${treeCreates.length} ` +
+          `commit POSTs=${commitCreates.length}\n` +
+          `  head ${headBefore.slice(0, 8)} \u2192 ${headAfter.slice(0, 8)}\n` +
+          `  rawRemoteSha=${rawRemoteSha.slice(0, 8)} (baseline, no trailing newline) vs canonicalSha=${canonicalSha.slice(0, 8)} (push serialisation, with \\n)\n` +
+          `  ROOT CAUSE: the legacy/non-canonical gitLastPushedSha baseline differs from the canonical push SHA by\n` +
+          `  trailing-newline normalization ONLY, so push-only-real-edits misreads the note as edited and re-uploads it.\n`,
+      )
+    }
+
+    // THE CONTRACT: an unedited smart-punctuation note with a non-canonical
+    // baseline pushes NOTHING. (No create, no update, no delete, no commit.)
+    expect(outcome.result.created).toBe(0)
+    expect(outcome.result.updated).toBe(0)
+    expect(outcome.result.deleted).toBe(0)
+    expect(outcome.result.unchanged).toBe(true)
+    expect(headAfter).toBe(headBefore)
+
+    // Belt-and-braces: the smart-punctuation file still exists remotely under its
+    // EXACT name, and its blob SHA is byte-identical to what we planted (verbatim \u2014
+    // the user's original non-canonical bytes are preserved, NOT re-canonicalised).
+    const treeSha = await getCommitTreeSha(TOKEN!, OWNER, REPO_NAME, headAfter)
+    const tree = await getTreeMap(TOKEN!, OWNER, REPO_NAME, treeSha)
+    expect(tree.has(SMART_NOTE_PATH)).toBe(true)
+    expect(tree.get(SMART_NOTE_PATH)).toBe(rawRemoteSha) // bytes survived verbatim
+
+    log(`[scenario F] smart-punctuation no-churn: unedited note with non-canonical baseline pushed deleted=0 created=0 updated=0 (head ${headBefore.slice(0, 8)} unchanged); "${SMART_NOTE_PATH}" survives verbatim (blob ${rawRemoteSha.slice(0, 8)}, NOT re-canonicalised)`)
   })
 })
