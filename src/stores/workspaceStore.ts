@@ -16,6 +16,7 @@ import {
   canGoForward as historyCanGoForward,
   pruneHistory,
 } from '@/utils/navHistory'
+import { pushRecent, pruneRecents } from '@/utils/recents'
 
 export type ConflictTabData = Extract<PullClassification, { kind: 'conflict' } | { kind: 'conflictDeleted' }>
 
@@ -52,6 +53,12 @@ interface WorkspaceState {
   // Keyed by pane id. Not persisted — history is a point-in-time session
   // concept (matches Obsidian, which forgets pane history on reload).
   histories: Record<string, NavHistory>
+  // Flat most-recently-opened note ids, most-recent-first, de-duplicated and
+  // capped. Drives the "Recent" list the search modal shows on an empty
+  // query (Obsidian quick-switcher / VS Code Ctrl+P style). Distinct from
+  // `noteStore.getRecentNotes`, which orders by last *modified*. Persisted
+  // so recents survive a reload.
+  recents: string[]
 
   openNote: (noteId: string, opts?: { preview?: boolean; paneId?: string }) => void
   // Open (or focus, if already open) the Welcome tab. Lives in the
@@ -228,6 +235,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       activePaneId: null,
       mergeAppliedCount: 0,
       histories: {},
+      recents: [],
 
       openNote: (noteId, opts) => {
         const preview = opts?.preview ?? true
@@ -258,6 +266,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             panes: next,
             activePaneId: found.pane.id,
             histories: recordNav(state.histories, found.pane.id, noteId),
+            recents: pushRecent(state.recents, noteId),
           })
           selectNoteFromActive(next, found.pane.id)
           return
@@ -317,6 +326,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           panes: next,
           activePaneId: targetPaneId,
           histories: recordNav(state.histories, targetPaneId, noteId),
+          recents: pushRecent(state.recents, noteId),
         })
         selectNoteFromActive(next, targetPaneId)
       },
@@ -623,7 +633,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           if (!livePaneIds.has(pid)) continue
           histories[pid] = pruneHistory(hist, liveIds)
         }
-        set({ panes: compacted, activePaneId: newActive, histories })
+        set({
+          panes: compacted,
+          activePaneId: newActive,
+          histories,
+          recents: pruneRecents(state.recents, liveIds),
+        })
       },
     }),
     {
@@ -648,6 +663,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           tabs: p.tabs.filter(t => t.kind === 'note'),
         })),
         activePaneId: state.activePaneId,
+        recents: state.recents,
       }),
     },
   ),
