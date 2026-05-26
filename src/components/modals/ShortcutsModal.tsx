@@ -77,6 +77,19 @@ export const ShortcutsModal = () => {
             ))}
           </div>
         </div>
+
+        {/* Quiet footer link: report an issue on GitHub (opens a new tab). */}
+        <div className="pt-2 border-t border-obsidianBorder">
+          <a
+            href="https://github.com/ipapakonstantinou/noteser/issues/new"
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-obsidianSecondaryText hover:text-obsidianText hover:underline"
+            data-testid="shortcuts-report-issue-link"
+          >
+            Report an issue on GitHub →
+          </a>
+        </div>
       </div>
     </Modal>
   )

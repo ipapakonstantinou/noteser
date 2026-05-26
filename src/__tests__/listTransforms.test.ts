@@ -83,15 +83,27 @@ describe('toggleNumbered', () => {
   })
 })
 
-describe('toggleBullet', () => {
+describe('toggleBullet (Mod+Alt+Shift+B)', () => {
   it('plain -> bullet', () => {
     expect(toggleBullet('thing')).toBe('- thing')
   })
   it('bullet -> plain', () => {
     expect(toggleBullet('* thing')).toBe('thing')
   })
+  it('"- " bullet -> plain', () => {
+    expect(toggleBullet('- thing')).toBe('thing')
+  })
   it('ordered -> bullet', () => {
     expect(toggleBullet('2. thing')).toBe('- thing')
+  })
+  it('round-trips plain -> bullet -> plain', () => {
+    expect(toggleBullet(toggleBullet('thing'))).toBe('thing')
+  })
+  it('preserves indentation when adding the bullet', () => {
+    expect(toggleBullet('   sub')).toBe('   - sub')
+  })
+  it('preserves indentation when removing the bullet', () => {
+    expect(toggleBullet('   - sub')).toBe('   sub')
   })
 })
 
