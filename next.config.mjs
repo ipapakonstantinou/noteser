@@ -19,7 +19,17 @@ const securityHeaders = [
   },
 ]
 
+// Per-build identifier exposed to the client. The service worker is
+// registered as `/sw.js?v=<BUILD_ID>` so that the registration URL changes
+// on every deploy — that is what makes the browser detect a new SW and
+// install it (the committed sw.js bytes never change). On Vercel we use the
+// commit SHA; locally / on any other host we fall back to a build timestamp.
+const BUILD_ID = process.env.VERCEL_GIT_COMMIT_SHA || String(Date.now())
+
 const nextConfig = {
+  env: {
+    NEXT_PUBLIC_BUILD_ID: BUILD_ID,
+  },
   async headers() {
     return [
       {

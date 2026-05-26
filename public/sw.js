@@ -20,8 +20,13 @@
  * *.openai.com) and anything that is not a GET.
  */
 
-// Bump CACHE_VERSION on any shell/asset-caching change to force old caches out.
-const CACHE_VERSION = 'v1'
+// CACHE_VERSION is derived from this SW's own registration URL query
+// (`/sw.js?v=<buildId>`). The page registers the worker with a per-build id
+// (next.config.mjs -> NEXT_PUBLIC_BUILD_ID), so each deploy installs under a
+// distinct CACHE_NAME and the activate handler purges every older cache. The
+// committed bytes of this file never need to change to ship a new version.
+// Falls back to 'v1' when registered without a query (e.g. legacy clients).
+const CACHE_VERSION = new URL(self.location.href).searchParams.get('v') || 'v1'
 const CACHE_NAME = `noteser-shell-${CACHE_VERSION}`
 
 // The minimal shell pre-cached at install. Keep this small and stable —
@@ -49,9 +54,21 @@ self.addEventListener('install', (event) => {
           )
         )
       )
-      // Activate this SW immediately instead of waiting for all tabs to close.
-      .then(() => self.skipWaiting())
+    // NOTE: deliberately NO self.skipWaiting() here. A freshly-installed SW
+    // must WAIT (state 'installed') instead of activating immediately, so the
+    // page can detect the update and surface a controlled "New version
+    // available — Reload" prompt. Activation happens only when the page posts
+    // {type:'SKIP_WAITING'} (see the message handler below).
   )
+})
+
+// The page asks the waiting worker to take over after the user accepts the
+// update prompt. skipWaiting() promotes this SW to active; that fires
+// 'controllerchange' in the page, which reloads exactly once.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting()
+  }
 })
 
 self.addEventListener('activate', (event) => {
