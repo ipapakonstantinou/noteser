@@ -1434,6 +1434,18 @@ function AboutPanel() {
         </p>
         <p>
           <a
+            href="https://github.com/ipapakonstantinou/noteser/issues/new"
+            target="_blank"
+            rel="noreferrer"
+            className="text-obsidianAccentPurple hover:underline"
+            data-testid="settings-report-issue-link"
+          >
+            Report an issue on GitHub →
+          </a>
+          <span className="text-obsidianSecondaryText"> (opens a new GitHub issue in a new tab)</span>
+        </p>
+        <p>
+          <a
             href="https://noteser.thetechjon.com"
             target="_blank"
             rel="noopener noreferrer"
