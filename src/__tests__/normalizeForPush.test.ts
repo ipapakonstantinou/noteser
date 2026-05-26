@@ -7,7 +7,7 @@
  * so we don't end up re-uploading every note on every cycle.
  */
 
-import { normalizeForPush, serializeNote } from '../utils/githubSync'
+import { normalizeForPush, serializeNote, isUnchangedModuloNormalization } from '../utils/githubSync'
 
 describe('normalizeForPush', () => {
   test('empty string stays empty (no spurious trailing newline)', () => {
@@ -64,5 +64,64 @@ describe('serializeNote — wires through normalizeForPush', () => {
   test('Obsidian-style content (CRLF + trailing \\n) round-trips cleanly', () => {
     const note = { content: 'a\r\nb\r\n' } as Parameters<typeof serializeNote>[0]
     expect(serializeNote(note)).toBe('a\nb\n')
+  })
+
+  // content-normalization-churn: smart punctuation must survive serialization
+  // BYTE-FOR-BYTE. The only thing serializeNote/normalizeForPush touches is line
+  // endings + the trailing newline; every other codepoint is preserved verbatim.
+  test('smart punctuation (U+2019 U+2014 U+2009 U+00A0 U+201C/D) survives serialization verbatim', () => {
+    // Don’t…thin-space em-dash thin-space…nbsp…curly quotes — NO trailing newline.
+    const body =
+      'Don’t overthink it — just ship. Really.\nA “great” idea.'
+    const note = { content: body } as Parameters<typeof serializeNote>[0]
+    const out = serializeNote(note)
+    // Trailing newline added (canonical), but every smart codepoint intact.
+    expect(out).toBe(body + '\n')
+    expect(out).toContain('’')
+    expect(out).toContain('—')
+    expect(out).toContain(' ')
+    expect(out).toContain(' ')
+    expect(out).toContain('“')
+    expect(out).toContain('”')
+    // Idempotent: re-serializing the canonical form is a no-op (no further drift).
+    expect(serializeNote({ content: out } as Parameters<typeof serializeNote>[0])).toBe(out)
+  })
+})
+
+// content-normalization-churn: the "did the user edit this?" predicate. Returns
+// true (UNEDITED) iff the two bodies differ ONLY by normalization — line endings
+// or the trailing newline — and false when any real content byte changed.
+describe('isUnchangedModuloNormalization', () => {
+  test('identical bodies are unchanged', () => {
+    expect(isUnchangedModuloNormalization('hello world', 'hello world')).toBe(true)
+  })
+
+  test('trailing-newline-only difference is unchanged (the legacy/Obsidian churn case)', () => {
+    // Remote (Obsidian) has no trailing newline; local canonical has one.
+    expect(isUnchangedModuloNormalization('Some note body\n', 'Some note body')).toBe(true)
+    expect(isUnchangedModuloNormalization('Some note body', 'Some note body\n')).toBe(true)
+  })
+
+  test('CRLF-vs-LF-only difference is unchanged', () => {
+    expect(isUnchangedModuloNormalization('a\nb\nc', 'a\r\nb\r\nc')).toBe(true)
+  })
+
+  test('smart-punctuation note with trailing-newline drift is unchanged (Jon\'s real note)', () => {
+    const remote = 'Don’t overthink it — just ship. Really.' // no \n
+    const local = remote + '\n' // canonical, with trailing \n
+    expect(isUnchangedModuloNormalization(local, remote)).toBe(true)
+  })
+
+  test('a genuine content edit is NOT unchanged', () => {
+    expect(isUnchangedModuloNormalization('hello world EDITED\n', 'hello world')).toBe(false)
+  })
+
+  test('a single smart-punctuation change IS detected as an edit (no over-suppression)', () => {
+    // Straight apostrophe vs curly apostrophe is a real byte change → edited.
+    expect(isUnchangedModuloNormalization("Don't\n", 'Don’t')).toBe(false)
+  })
+
+  test('empty body vs empty-with-newline: both normalize away, unchanged', () => {
+    expect(isUnchangedModuloNormalization('', '')).toBe(true)
   })
 })
