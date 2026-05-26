@@ -174,6 +174,48 @@ describe('parseTaskQuery', () => {
     // The pathIncludes filter should NOT be pushed because parts.length === 0
     expect(q.filters.every(f => f.kind !== 'pathIncludes')).toBe(true)
   })
+
+  test('"path includes \\"Projects\\"" → quotes stripped, substring is bare Projects', () => {
+    // Regression: Obsidian-Tasks quoting. The literal quote chars must NOT
+    // survive into the substring or no path will ever match.
+    const q = parseTaskQuery('path includes "Projects"')
+    expect(q.filters).toEqual([{ kind: 'pathIncludes', substring: 'Projects' }])
+  })
+
+  test("\"path includes 'Projects'\" (single quotes) → quotes stripped", () => {
+    const q = parseTaskQuery("path includes 'Projects'")
+    expect(q.filters).toEqual([{ kind: 'pathIncludes', substring: 'Projects' }])
+  })
+
+  test('"path includes \\"Some Multi Word\\"" → quotes stripped, multi-word kept', () => {
+    const q = parseTaskQuery('path includes "Some Multi Word" group by folder')
+    expect(q.filters).toEqual([{ kind: 'pathIncludes', substring: 'Some Multi Word' }])
+    expect(q.groupBy).toEqual(['folder'])
+  })
+
+  test('unbalanced/inner quotes are left intact', () => {
+    // Only a matching leading+trailing pair is stripped.
+    expect(parseTaskQuery('path includes "Projects').filters).toEqual([
+      { kind: 'pathIncludes', substring: '"Projects' },
+    ])
+    expect(parseTaskQuery('path includes Foo"Bar"').filters).toEqual([
+      { kind: 'pathIncludes', substring: 'Foo"Bar"' },
+    ])
+  })
+
+  test('empty quoted substring "" → no filter added', () => {
+    const q = parseTaskQuery('path includes ""')
+    expect(q.filters.every(f => f.kind !== 'pathIncludes')).toBe(true)
+  })
+
+  test('multi-line query with quoted path matches the parser of the unquoted form', () => {
+    const q = parseTaskQuery('done today\npath includes "Projects"\ngroup by folder\ngroup by filename')
+    expect(q.filters).toEqual([
+      { kind: 'doneToday' },
+      { kind: 'pathIncludes', substring: 'Projects' },
+    ])
+    expect(q.groupBy).toEqual(['folder', 'filename'])
+  })
 })
 
 // ── executeTaskQuery ──────────────────────────────────────────────────────────
@@ -387,6 +429,97 @@ describe('executeTaskQuery', () => {
       noteTitle: 'Note',
       folderPath: '',
     })
+  })
+})
+
+// ── executeTaskQuery — "done today" + quoted path (real-world bug) ─────────────
+
+describe('executeTaskQuery — done today with quoted path filter', () => {
+  const TODAY = '2026-05-26'
+
+  // The exact line from the bug report: wikilink, stray bracket, a URL in
+  // parens, and the ✅ completion stamp at the end. Verifies metadata
+  // extraction survives the surrounding punctuation.
+  const REAL_LINE =
+    '- [x] Move to BG ETEM in all systems [[C02130-483]] IIA Book: Additional Columns - Jira@consolut] (https://consolut.atlassian.net/browse/C02130-483) ✅ 2026-05-26'
+
+  function projectsNote(content: string) {
+    const folders = [makeFolder('f-proj', 'Projects')]
+    const notes = [makeNote('n1', 'C02130-483', content, 'f-proj')]
+    return { notes, folders }
+  }
+
+  test('real-world line: `done today` + `path includes "Projects"` matches the completed task', () => {
+    const { notes, folders } = projectsNote(REAL_LINE)
+    const q = parseTaskQuery(
+      'done today\npath includes "Projects"\ngroup by folder\ngroup by filename'
+    )
+    const result = executeTaskQuery(q, { notes, folders, today: TODAY })
+    expect(result).toHaveLength(1)
+    expect(result[0].completed).toBe(true)
+    expect(result[0].completedDate).toBe(TODAY)
+    expect(result[0].folderPath).toBe('Projects')
+    expect(result[0].text).toContain('Move to BG ETEM in all systems')
+  })
+
+  test('`done today` matches a task whose ✅ date is today', () => {
+    const { notes, folders } = projectsNote('- [x] shipped it ✅ 2026-05-26')
+    const q = parseTaskQuery('done today path includes "Projects"')
+    const result = executeTaskQuery(q, { notes, folders, today: TODAY })
+    expect(result.map(r => r.text)).toEqual(['shipped it'])
+  })
+
+  test('`done today` does NOT match a task completed yesterday', () => {
+    const { notes, folders } = projectsNote('- [x] shipped yesterday ✅ 2026-05-25')
+    const q = parseTaskQuery('done today path includes "Projects"')
+    const result = executeTaskQuery(q, { notes, folders, today: TODAY })
+    expect(result).toHaveLength(0)
+  })
+
+  test('`done today` does NOT match a completed task with no ✅ date', () => {
+    const { notes, folders } = projectsNote('- [x] done but undated')
+    const q = parseTaskQuery('done today')
+    const result = executeTaskQuery(q, { notes, folders, today: TODAY })
+    expect(result).toHaveLength(0)
+  })
+
+  test('plain `done` still matches a completed task with no date', () => {
+    const { notes, folders } = projectsNote('- [x] done but undated')
+    const q = parseTaskQuery('done')
+    const result = executeTaskQuery(q, { notes, folders, today: TODAY })
+    expect(result.map(r => r.text)).toEqual(['done but undated'])
+  })
+
+  test('quoted `path includes` excludes a note that is NOT under Projects', () => {
+    const folders = [makeFolder('f-arch', 'Archive')]
+    const notes = [makeNote('n1', 'Old', '- [x] done elsewhere ✅ 2026-05-26', 'f-arch')]
+    const q = parseTaskQuery('done today path includes "Projects"')
+    const result = executeTaskQuery(q, { notes, folders, today: TODAY })
+    expect(result).toHaveLength(0)
+  })
+
+  test('`done before`/`done after` still behave (regression guard)', () => {
+    // These tokens are not first-class filters; verify the parser does not
+    // explode and `done` is still applied. `before`/`after` are skipped.
+    const { notes, folders } = projectsNote(
+      '- [x] a ✅ 2026-05-20\n- [x] b ✅ 2026-05-26\n- [ ] open'
+    )
+    const qBefore = parseTaskQuery('done before 2026-05-22')
+    const qAfter = parseTaskQuery('done after 2026-05-22')
+    // `done` matches both completed tasks; the date words are ignored.
+    expect(
+      executeTaskQuery(qBefore, { notes, folders, today: TODAY }).map(r => r.text).sort()
+    ).toEqual(['a', 'b'])
+    expect(
+      executeTaskQuery(qAfter, { notes, folders, today: TODAY }).map(r => r.text).sort()
+    ).toEqual(['a', 'b'])
+  })
+
+  test('`not done` still excludes the completed task', () => {
+    const { notes, folders } = projectsNote('- [x] done ✅ 2026-05-26\n- [ ] open')
+    const q = parseTaskQuery('not done path includes "Projects"')
+    const result = executeTaskQuery(q, { notes, folders, today: TODAY })
+    expect(result.map(r => r.text)).toEqual(['open'])
   })
 })
 
