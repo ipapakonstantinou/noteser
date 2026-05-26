@@ -131,17 +131,113 @@ test('double-click semantics: openNote(preview:false) on a preview tab promotes 
   expect(pane.tabs.filter(t => t.kind === 'note').length).toBe(1)
 })
 
-test('goBack focuses an already-open tab and promotes it out of preview', () => {
+test('goBack focuses an already-open pinned tab without changing it', () => {
   const ws = () => useWorkspaceStore.getState()
   ws().openNote('A', { preview: false })
   ws().openNote('B', { preview: false })
-  // Re-open A as a preview tab won't happen (A already open as pinned);
-  // instead simulate B preview then navigate.
   ws().goBack('p1')
   const pane = ws().panes.find(p => p.id === 'p1')!
   const tab = pane.tabs.find(t => t.id === pane.activeTabId)!
   expect(tab.kind === 'note' && tab.noteId === 'A').toBe(true)
   expect(tab.kind === 'note' && tab.isPreview).toBe(false)
+})
+
+// Regression — the "arrows spawn a new tab on every press / going left and
+// right" bounce. In the common single-click workflow the pane holds ONE
+// preview tab and the visited notes have no tabs of their own. Back/Forward
+// must reuse that single preview tab, not pile up a fresh pinned tab per
+// press.
+test('Back/Forward through preview history reuses the single preview tab (no tab pile-up)', () => {
+  const ws = () => useWorkspaceStore.getState()
+  // Single-click style: each open replaces the one preview tab.
+  ws().openNote('A', { preview: true })
+  ws().openNote('B', { preview: true })
+  ws().openNote('C', { preview: true })
+
+  const noteTabCount = () =>
+    ws().panes.flatMap(p => p.tabs).filter(t => t.kind === 'note').length
+
+  expect(noteTabCount()).toBe(1)
+  expect(activeNoteId()).toBe('C')
+
+  ws().goBack('p1')
+  expect(activeNoteId()).toBe('B')
+  expect(noteTabCount()).toBe(1) // reused, not spawned
+
+  ws().goBack('p1')
+  expect(activeNoteId()).toBe('A')
+  expect(noteTabCount()).toBe(1)
+
+  ws().goForward('p1')
+  expect(activeNoteId()).toBe('B')
+  expect(noteTabCount()).toBe(1)
+
+  ws().goForward('p1')
+  expect(activeNoteId()).toBe('C')
+  expect(noteTabCount()).toBe(1)
+
+  // The reused tab stays a preview tab — navigation is a transient view
+  // change, it must not silently pin the note.
+  const pane = ws().panes.find(p => p.id === 'p1')!
+  const tab = pane.tabs.find(t => t.id === pane.activeTabId)!
+  expect(tab.kind === 'note' && tab.isPreview).toBe(true)
+})
+
+// Mixed: a pinned tab plus a preview slot. Navigating to the pinned note
+// focuses its own tab; navigating to a note with no tab reuses the preview.
+test('Back/Forward mixes pinned tabs and the preview slot correctly', () => {
+  const ws = () => useWorkspaceStore.getState()
+  ws().openNote('A', { preview: false }) // pinned tab for A
+  ws().openNote('B', { preview: true })  // preview slot, now showing B
+  ws().openNote('C', { preview: true })  // preview slot reused → C
+
+  const noteTabCount = () =>
+    ws().panes.flatMap(p => p.tabs).filter(t => t.kind === 'note').length
+  // A (pinned) + the single preview tab = 2 tabs.
+  expect(noteTabCount()).toBe(2)
+  expect(activeNoteId()).toBe('C')
+
+  ws().goBack('p1') // B — reuses preview slot
+  expect(activeNoteId()).toBe('B')
+  expect(noteTabCount()).toBe(2)
+
+  ws().goBack('p1') // A — focuses A's own pinned tab
+  expect(activeNoteId()).toBe('A')
+  expect(noteTabCount()).toBe(2)
+  const paneAtA = ws().panes.find(p => p.id === 'p1')!
+  const tabAtA = paneAtA.tabs.find(t => t.id === paneAtA.activeTabId)!
+  expect(tabAtA.kind === 'note' && tabAtA.isPreview).toBe(false) // A stays pinned
+
+  ws().goForward('p1') // B again via preview slot
+  expect(activeNoteId()).toBe('B')
+  expect(noteTabCount()).toBe(2)
+})
+
+// When the pane has a history but NO note tab to focus or reuse (only a
+// non-note tab, e.g. welcome, is open), navigation adds exactly ONE preview
+// tab and keeps reusing it rather than spawning a pinned tab per press.
+test('Back/Forward with no existing note tab opens a single reusable preview tab', () => {
+  const ws = () => useWorkspaceStore.getState()
+  // Pane holds a welcome tab; seed a two-entry history sitting at index 1.
+  useWorkspaceStore.setState({
+    panes: [{ id: 'p1', tabs: [{ id: 'w1', kind: 'welcome' }], activeTabId: 'w1' }],
+    activePaneId: 'p1',
+    histories: { p1: { entries: ['A', 'B'], index: 1 } },
+  })
+
+  ws().goBack('p1') // A — no note tab to focus/reuse → fresh preview tab
+  expect(activeNoteId()).toBe('A')
+  expect(ws().panes.flatMap(p => p.tabs).filter(t => t.kind === 'note').length).toBe(1)
+  let pane = ws().panes.find(p => p.id === 'p1')!
+  let tab = pane.tabs.find(t => t.id === pane.activeTabId)!
+  expect(tab.kind === 'note' && tab.isPreview).toBe(true)
+
+  ws().goForward('p1') // B — reuses the same preview tab, no pile-up
+  expect(activeNoteId()).toBe('B')
+  expect(ws().panes.flatMap(p => p.tabs).filter(t => t.kind === 'note').length).toBe(1)
+  pane = ws().panes.find(p => p.id === 'p1')!
+  tab = pane.tabs.find(t => t.id === pane.activeTabId)!
+  expect(tab.kind === 'note' && tab.isPreview).toBe(true)
 })
 
 test('pruneStaleTabs drops deleted notes from history', () => {

@@ -122,9 +122,20 @@ export default function Home() {
 
   // Mouse back / forward buttons (the thumb buttons, DOM button 3 = back,
   // button 4 = forward) drive the active pane's note history — same as the
-  // header arrows and Alt+←/→. We listen on `mouseup` and preventDefault so
-  // the browser doesn't also try to navigate the page back/forward.
+  // header arrows and Alt+←/→.
+  //
+  // The browser's own page back/forward fires on the button's MOUSEDOWN,
+  // not mouseup, so we must preventDefault on `mousedown` to stop the page
+  // from navigating out from under the SPA. The actual note navigation then
+  // runs once on `mouseup` (one step per physical press). Doing both on
+  // mouseup let the browser navigate first — and on a freshly-loaded SPA
+  // that could even unload the app.
   useEffect(() => {
+    const onMouseDown = (e: MouseEvent) => {
+      // Suppress the browser's native history navigation for the thumb
+      // buttons; we handle them ourselves on mouseup.
+      if (e.button === 3 || e.button === 4) e.preventDefault()
+    }
     const onMouseUp = (e: MouseEvent) => {
       if (e.button === 3) {
         e.preventDefault()
@@ -134,10 +145,12 @@ export default function Home() {
         useWorkspaceStore.getState().goForward()
       }
     }
-    // Some browsers fire `auxclick` for these; guard both, dedupe via
-    // preventDefault on mouseup which suppresses the synthetic click.
+    window.addEventListener('mousedown', onMouseDown)
     window.addEventListener('mouseup', onMouseUp)
-    return () => window.removeEventListener('mouseup', onMouseUp)
+    return () => {
+      window.removeEventListener('mousedown', onMouseDown)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
   }, [])
 
   // Auto-sync on startup + on the configured interval (Settings → GitHub).

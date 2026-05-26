@@ -132,11 +132,28 @@ function recordNav(
 // Open `noteId` in `paneId` as the result of a Back / Forward navigation.
 // Unlike openNote this never pushes onto history — instead it writes the
 // already-moved cursor (`movedHistory`) straight into the histories map.
-// History is per-pane, so we keep navigation self-contained: if the note
-// already has a tab IN THIS PANE we focus it (promoting it out of preview
-// so back/forward lands on a stable, non-italic tab); otherwise we add a
-// fresh pinned tab to this pane. A copy open in the OTHER pane is left
-// untouched — each pane navigates its own history independently.
+// History is per-pane, so we keep navigation self-contained.
+//
+// Resolution order WITHIN the target pane (a copy open in the OTHER pane is
+// left untouched — each pane navigates its own history independently):
+//
+//   1. The note already has a tab in this pane → focus it. We do NOT
+//      promote it out of preview: Back/Forward is a transient view change,
+//      not an intent to keep the note around, so a preview tab stays a
+//      preview (Obsidian keeps the same tab and never silently pins on
+//      navigation).
+//   2. Otherwise, if the pane has a preview tab, REUSE it — rewrite its
+//      noteId in place. This is the fix for the "arrows spawn a new tab on
+//      every press" bounce: in the common single-click workflow the pane
+//      holds one preview tab and the visited notes have no tabs of their
+//      own, so the old "add a fresh pinned tab" branch piled up a new tab
+//      for every Back/Forward and the active highlight jumped around the
+//      strip ("going left and right"). Navigating into the existing
+//      preview tab matches how single-click preview already behaves.
+//   3. No tab and no preview tab to reuse → add a fresh tab. It inherits
+//      the pane's "has a preview slot" expectation: we open it as a
+//      preview so repeated navigation keeps reusing the one slot instead
+//      of accumulating tabs.
 function navigateInPane(
   set: (partial: Partial<WorkspaceState>) => void,
   get: () => WorkspaceState,
@@ -147,15 +164,34 @@ function navigateInPane(
   const state = get()
 
   const pane = state.panes.find(p => p.id === paneId)
+
+  // 1. Already open in this pane → just focus it (leave preview state as-is).
   const existing = pane?.tabs.find(t => t.kind === 'note' && t.noteId === noteId)
   if (pane && existing) {
     const next = state.panes.map(p => p.id === paneId
+      ? { ...p, activeTabId: existing.id }
+      : p,
+    )
+    set({
+      panes: next,
+      activePaneId: paneId,
+      histories: { ...state.histories, [paneId]: movedHistory },
+    })
+    selectNoteFromActive(next, paneId)
+    return
+  }
+
+  // 2. Reuse the pane's existing preview tab (rewrite its noteId in place)
+  //    so navigation never piles up tabs.
+  const previewTab = pane?.tabs.find(t => t.kind === 'note' && t.isPreview)
+  if (pane && previewTab) {
+    const next = state.panes.map(p => p.id === paneId
       ? {
           ...p,
-          activeTabId: existing.id,
+          activeTabId: previewTab.id,
           tabs: p.tabs.map(t =>
-            t.id === existing.id && t.kind === 'note' && t.isPreview
-              ? { ...t, isPreview: false }
+            t.id === previewTab.id && t.kind === 'note'
+              ? { ...t, noteId, isPreview: true }
               : t,
           ),
         }
@@ -170,9 +206,10 @@ function navigateInPane(
     return
   }
 
-  // Not open in this pane — add a fresh pinned tab to the target pane.
+  // 3. No tab for this note and no preview slot to reuse — add one as a
+  //    preview so future navigation keeps reusing this single slot.
   const id = uuidv4()
-  const newTab: Tab = { id, kind: 'note', noteId, isPreview: false }
+  const newTab: Tab = { id, kind: 'note', noteId, isPreview: true }
   const next = state.panes.map(p =>
     p.id === paneId ? { ...p, tabs: [...p.tabs, newTab], activeTabId: id } : p,
   )
