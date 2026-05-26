@@ -67,12 +67,16 @@ interface TreeEntry { path: string; sha: string | null }
 // Builds a fetch mock with a configurable remote tree. Records the tree
 // entries POSTed to /git/trees and whether a commit was created, so a test can
 // assert exactly which paths were written (or that nothing was committed).
-function makeFetchMock(remoteBlobs: Map<string, string>) {
+// Optional map of remote blob SHA → its raw body, served on a GET
+// /git/blobs/<sha> read. Used by the legacy-baseline normalization-drift test,
+// where the push fetches the remote blob to confirm a note is unedited.
+function makeFetchMock(remoteBlobs: Map<string, string>, blobReadBodies?: Map<string, string>) {
   const record = {
     treeEntriesPosted: null as TreeEntry[] | null,
     blobsCreated: [] as string[],
     commitCreated: false,
     refUpdated: false,
+    blobReads: [] as string[],
   }
   const fetchMock = jest.fn(async (url: string | URL, init?: RequestInit) => {
     const u = String(url)
@@ -89,6 +93,14 @@ function makeFetchMock(remoteBlobs: Map<string, string>) {
     if (u.includes('/git/trees/base-tree?recursive=1')) {
       const tree = Array.from(remoteBlobs.entries()).map(([path, sha]) => ({ path, type: 'blob', sha }))
       return new Response(JSON.stringify({ tree }), { status: 200 })
+    }
+    // GET /git/blobs/<sha> — serve a base64 body when the test registered one.
+    const blobRead = u.match(/\/git\/blobs\/([^/?]+)$/)
+    if (blobRead && (!init || (init.method ?? 'GET') === 'GET')) {
+      record.blobReads.push(blobRead[1])
+      const body = blobReadBodies?.get(blobRead[1]) ?? ''
+      const b64 = Buffer.from(body, 'utf8').toString('base64')
+      return new Response(JSON.stringify({ content: b64, encoding: 'base64' }), { status: 200 })
     }
     if (u.endsWith('/git/blobs') && init?.method === 'POST') {
       const body = JSON.parse(String(init.body)) as { content: string }
@@ -225,6 +237,72 @@ describe('syncToGitHub — push only on a real edit (churn fix)', () => {
     const oldEntry = paths.find(e => e.path === 'Old.md')
     expect(newEntry?.sha).toBe('created-blob-0') // a real blob, written
     expect(oldEntry?.sha).toBeNull() // deletion entry
+    expect(record.commitCreated).toBe(true)
+  })
+
+  // ── content-normalization-churn: LEGACY / non-canonical baseline ──────────
+  // A note whose gitLastPushedSha is the RAW remote blob SHA (no trailing
+  // newline) — the shape a legacy or conflict-resolved note has — must NOT churn
+  // when the user never edited it, even though the canonical push SHA (with a
+  // trailing \n) differs from that baseline. The push confirms "unedited" with a
+  // BYTE-EXACT normalized comparison against the fetched remote blob.
+  test('LEGACY baseline (raw remote SHA, smart punctuation, no trailing newline) is SUPPRESSED — no churn', async () => {
+    _resetUploadedShaCache()
+    // Real-vault body: curly apostrophe + em dash with thin spaces + nbsp, no \n.
+    const remoteRaw = 'Don’t overthink it — just ship. Really.'
+    const rawSha = await gitBlobSha(remoteRaw) // baseline = raw remote SHA
+    const canonicalSha = await gitBlobSha(serializeNote(makeNote('x', 'N', remoteRaw)))
+    expect(canonicalSha).not.toBe(rawSha) // trailing-newline drift is real
+
+    const legacy = makeNote('n1', 'Day 3 - Shower Thoughts', remoteRaw, {
+      gitPath: 'Day 3 - Shower Thoughts.md',
+      gitLastPushedSha: rawSha,    // RAW remote SHA, NOT the canonical form
+      gitRemoteBaseSha: undefined, // legacy: field did not exist
+    })
+
+    const remoteBlobs = new Map([['Day 3 - Shower Thoughts.md', rawSha]])
+    const blobReadBodies = new Map([[rawSha, remoteRaw]])
+    const { fetchMock, record } = makeFetchMock(remoteBlobs, blobReadBodies)
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const outcome = await syncToGitHub({ token: 't', repo: REPO, notes: [legacy], folders: [] as Folder[] })
+
+    // Nothing pushed — the byte-exact normalization check identified it as unedited.
+    expect(outcome.result.unchanged).toBe(true)
+    expect(outcome.result.updated).toBe(0)
+    expect(outcome.result.created).toBe(0)
+    expect(record.blobsCreated).toEqual([])
+    expect(record.treeEntriesPosted).toBeNull()
+    expect(record.commitCreated).toBe(false)
+    expect(record.refUpdated).toBe(false)
+    // It DID fetch the remote blob once to make the byte-exact comparison.
+    expect(record.blobReads).toContain(rawSha)
+  })
+
+  test('LEGACY baseline but the body WAS actually edited → still pushes (no over-suppression)', async () => {
+    _resetUploadedShaCache()
+    const remoteRaw = 'Don’t overthink it — just ship. Really.'
+    const rawSha = await gitBlobSha(remoteRaw)
+
+    // The user genuinely edited the body since the legacy baseline was recorded.
+    const edited = makeNote('n1', 'Day 3 - Shower Thoughts', remoteRaw + '\n\nNew thought added.', {
+      gitPath: 'Day 3 - Shower Thoughts.md',
+      gitLastPushedSha: rawSha,
+      gitRemoteBaseSha: undefined,
+    })
+
+    const remoteBlobs = new Map([['Day 3 - Shower Thoughts.md', rawSha]])
+    const blobReadBodies = new Map([[rawSha, remoteRaw]])
+    const { fetchMock, record } = makeFetchMock(remoteBlobs, blobReadBodies)
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const outcome = await syncToGitHub({ token: 't', repo: REPO, notes: [edited], folders: [] as Folder[] })
+
+    // The normalized bodies DIFFER (real edit) → push goes through.
+    expect(outcome.result.unchanged).toBe(false)
+    expect(outcome.result.updated).toBe(1)
+    expect(record.blobsCreated).toHaveLength(1)
+    expect(record.blobsCreated[0]).toBe(serializeNote(edited))
     expect(record.commitCreated).toBe(true)
   })
 })
