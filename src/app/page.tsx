@@ -120,6 +120,26 @@ export default function Home() {
   // Set up keyboard shortcuts
   useKeyboardShortcuts()
 
+  // Mouse back / forward buttons (the thumb buttons, DOM button 3 = back,
+  // button 4 = forward) drive the active pane's note history — same as the
+  // header arrows and Alt+←/→. We listen on `mouseup` and preventDefault so
+  // the browser doesn't also try to navigate the page back/forward.
+  useEffect(() => {
+    const onMouseUp = (e: MouseEvent) => {
+      if (e.button === 3) {
+        e.preventDefault()
+        useWorkspaceStore.getState().goBack()
+      } else if (e.button === 4) {
+        e.preventDefault()
+        useWorkspaceStore.getState().goForward()
+      }
+    }
+    // Some browsers fire `auxclick` for these; guard both, dedupe via
+    // preventDefault on mouseup which suppresses the synthetic click.
+    window.addEventListener('mouseup', onMouseUp)
+    return () => window.removeEventListener('mouseup', onMouseUp)
+  }, [])
+
   // Auto-sync on startup + on the configured interval (Settings → GitHub).
   useAutoSync()
 

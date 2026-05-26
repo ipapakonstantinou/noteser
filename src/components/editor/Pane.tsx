@@ -125,7 +125,7 @@ export const Pane = ({ pane, allowSplitDropZone }: Props) => {
       }
       body = (
         <>
-          <EditorHeader note={note} onTitleChange={handleTitleChange} />
+          <EditorHeader note={note} paneId={pane.id} onTitleChange={handleTitleChange} />
           <EditorContent
             note={note}
             isPreviewMode={isPreviewMode}

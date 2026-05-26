@@ -1,22 +1,31 @@
 'use client'
 
-import { EyeIcon, PencilIcon, StarIcon } from '@heroicons/react/24/outline'
+import { EyeIcon, PencilIcon, StarIcon, ArrowLeftIcon, ArrowRightIcon } from '@heroicons/react/24/outline'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
-import { useUIStore, useNoteStore, useFolderStore } from '@/stores'
+import { useUIStore, useNoteStore, useFolderStore, useWorkspaceStore } from '@/stores'
+import { canGoBack as histCanGoBack, canGoForward as histCanGoForward } from '@/utils/navHistory'
 import { useViewport } from '@/hooks'
 import { sanitizeTitleInput } from '@/utils/sanitizeFilename'
 import type { Note } from '@/types'
 
 interface EditorHeaderProps {
   note: Note
+  paneId: string
   onTitleChange: (title: string) => void
 }
 
-export const EditorHeader = ({ note, onTitleChange }: EditorHeaderProps) => {
+export const EditorHeader = ({ note, paneId, onTitleChange }: EditorHeaderProps) => {
   const { isPreviewMode, togglePreview } = useUIStore()
   const { togglePinNote } = useNoteStore()
   const { getFolderById } = useFolderStore()
   const { isMobile } = useViewport()
+  const goBack = useWorkspaceStore(s => s.goBack)
+  const goForward = useWorkspaceStore(s => s.goForward)
+  // Subscribe to this pane's history so the arrows re-evaluate their
+  // enabled state whenever navigation changes it.
+  const history = useWorkspaceStore(s => s.histories[paneId])
+  const canBack = !!history && histCanGoBack(history)
+  const canForward = !!history && histCanGoForward(history)
 
   // Aggressive mobile mode (per user feedback on the Phase B build):
   // hide the entire editor header on mobile — the tab strip already
@@ -50,6 +59,30 @@ export const EditorHeader = ({ note, onTitleChange }: EditorHeaderProps) => {
         </div>
       )}
       <div className="flex items-center gap-2 px-4 py-3">
+      {/* Obsidian-style Back / Forward through this pane's note history.
+          Disabled at the ends. Alt+Left / Alt+Right + mouse buttons
+          3/4 trigger the same actions (wired globally in page.tsx). */}
+      <button
+        onClick={() => goBack(paneId)}
+        disabled={!canBack}
+        className="p-1.5 rounded transition-colors inline-flex items-center justify-center text-obsidianSecondaryText enabled:hover:bg-obsidianHighlight disabled:opacity-30 disabled:cursor-default"
+        title="Back (Alt+←)"
+        aria-label="Navigate back"
+        data-testid="nav-back"
+      >
+        <ArrowLeftIcon className="w-5 h-5" />
+      </button>
+      <button
+        onClick={() => goForward(paneId)}
+        disabled={!canForward}
+        className="p-1.5 rounded transition-colors inline-flex items-center justify-center text-obsidianSecondaryText enabled:hover:bg-obsidianHighlight disabled:opacity-30 disabled:cursor-default"
+        title="Forward (Alt+→)"
+        aria-label="Navigate forward"
+        data-testid="nav-forward"
+      >
+        <ArrowRightIcon className="w-5 h-5" />
+      </button>
+
       <button
         onClick={() => togglePinNote(note.id)}
         className={`p-1.5 max-md:p-2.5 rounded transition-colors inline-flex items-center justify-center max-md:min-w-[44px] max-md:min-h-[44px] ${
