@@ -870,6 +870,19 @@ rvhMaybe('e2e GitHub sync — REALISTIC VAULT (live)', () => {
   const PLAIN_CANON_PATH = 'Welcome.md'
   const PLAIN_CANON_RAW = 'Welcome to the vault. This file is already canonical.\n'
 
+  // sanitizer-churn fixtures (THE regression the relaxed sanitizer + pushPath
+  // fix). Real-vault names that contain git-LEGAL characters the OLD aggressive
+  // sanitizer stripped: `&` and apostrophes. Before the fix, push re-derived the
+  // path from the title, stripped the `&`/`'`, and the recomputed path no longer
+  // matched the real remote path → every sync deleted the real file + created a
+  // stripped-name copy (rename churn that permanently mangled the user's files).
+  // The folder name itself also carries `&`, so buildFolderPath is exercised too.
+  const AMP_FOLDER = 'R&D Work'
+  const AMP_NOTE_PATH = `${AMP_FOLDER}/Users & groups.md`
+  const AMP_NOTE_RAW = 'Access control notes for R&D. See Users & groups policy.\n'
+  const APOS_NOTE_PATH = "Jake's project.md"
+  const APOS_NOTE_RAW = "Jake's project kickoff notes — milestones and owners.\n"
+
   // settings.json content + its updatedAt. Written EXACTLY as noteser would, via
   // the app's own serializeVaultSettings over a vault slice — because Jon's real
   // settings.json WAS written by noteser. We capture the seed/clone hash so
@@ -985,6 +998,8 @@ rvhMaybe('e2e GitHub sync — REALISTIC VAULT (live)', () => {
     const fmSha = await createBlob(TOKEN!, OWNER, REPO_NAME, FRONTMATTER_NOTE_RAW)
     const plainNonCanonSha = await createBlob(TOKEN!, OWNER, REPO_NAME, PLAIN_NONCANON_RAW)
     const plainCanonSha = await createBlob(TOKEN!, OWNER, REPO_NAME, PLAIN_CANON_RAW)
+    const ampSha = await createBlob(TOKEN!, OWNER, REPO_NAME, AMP_NOTE_RAW)
+    const aposSha = await createBlob(TOKEN!, OWNER, REPO_NAME, APOS_NOTE_RAW)
 
     const treeSha = await createTree(TOKEN!, OWNER, REPO_NAME, baseTreeSha, [
       { path: ATTACHMENT_PATH, mode: '100644', type: 'blob', sha: pngSha },
@@ -992,6 +1007,8 @@ rvhMaybe('e2e GitHub sync — REALISTIC VAULT (live)', () => {
       { path: FRONTMATTER_NOTE_PATH, mode: '100644', type: 'blob', sha: fmSha },
       { path: PLAIN_NONCANON_PATH, mode: '100644', type: 'blob', sha: plainNonCanonSha },
       { path: PLAIN_CANON_PATH, mode: '100644', type: 'blob', sha: plainCanonSha },
+      { path: AMP_NOTE_PATH, mode: '100644', type: 'blob', sha: ampSha },
+      { path: APOS_NOTE_PATH, mode: '100644', type: 'blob', sha: aposSha },
     ])
     const { sha: commitSha } = await createCommit(
       TOKEN!, OWNER, REPO_NAME, 'rvh: plant realistic vault fixture', treeSha, mainSha,
@@ -1266,5 +1283,111 @@ rvhMaybe('e2e GitHub sync — REALISTIC VAULT (live)', () => {
     expect(fmNote.gitRemoteBaseSha).toBe(rawRemoteSha)
 
     log(`[scenario D] frontmatter round-trip: canonical baseline ${plainSha.slice(0, 8)} === gitLastPushedSha (raw remote ${rawRemoteSha.slice(0, 8)} differs) → suppressed, no re-push`)
+  })
+
+  // ── sanitizer-churn: THE FIX'S DEDICATED REGRESSION ───────────────────────
+  // A vault with files + folders whose names contain git-LEGAL characters the
+  // OLD sanitizer stripped (`&`, apostrophes) must clone, then discard+pull,
+  // then sync with ZERO pushes — no rename, no churn. On the OLD code the push
+  // re-derived each path from the title, stripped the `&`/`'`, and the
+  // recomputed path no longer matched the real remote path → the push deleted
+  // the real file and created a stripped-name copy on EVERY sync. This scenario
+  // FAILS on the old code (it would report created/deleted > 0 + a moved head)
+  // and PASSES on the relaxed-sanitizer + pushPath fix.
+  test('scenario E: SPECIAL-CHAR NAMES (& and apostrophe) — clone + discard/pull then sync pushes NOTHING (zero rename churn)', async () => {
+    const { useNoteStore } = await import('@/stores/noteStore')
+    const { useFolderStore } = await import('@/stores/folderStore')
+    const { resetToRemote } = await import('../utils/resetToRemote')
+
+    // (1) CLONE the realistic vault (which now carries "R&D Work/Users & groups.md"
+    //     and "Jake's project.md").
+    await resetLocalState()
+    await cloneAndApply(true)
+
+    // The special-char files materialised with their EXACT names (no `&`/`'`
+    // stripping) — gitPath preserves the real remote path verbatim.
+    let notes = useNoteStore.getState().notes
+    const ampNote = notes.find(n => n.gitPath === AMP_NOTE_PATH)
+    const aposNote = notes.find(n => n.gitPath === APOS_NOTE_PATH)
+    expect(ampNote).toBeDefined()
+    expect(aposNote).toBeDefined()
+    // The folder with `&` in its name materialised with the character kept.
+    const folderNames = useFolderStore.getState().folders.map(f => f.name)
+    expect(folderNames).toEqual(expect.arrayContaining([AMP_FOLDER]))
+    // And the derived push path equals the stored gitPath — the no-churn
+    // invariant the fix guarantees (relaxed sanitizer makes them agree).
+    const { pushPath } = await import('../utils/githubSync')
+    expect(pushPath(ampNote!, useFolderStore.getState().folders)).toBe(AMP_NOTE_PATH)
+    expect(pushPath(aposNote!, useFolderStore.getState().folders)).toBe(APOS_NOTE_PATH)
+
+    // (2) DISCARD = resetToRemote + a fresh pull-only (mirrors the discard flow
+    //     Jon would run on his real vault). Local is wiped then repopulated.
+    await resetToRemote({ preserveUnpushed: true })
+    expect(useNoteStore.getState().notes.length).toBe(0)
+    await cloneAndApply(false)
+    notes = useNoteStore.getState().notes
+    expect(notes.find(n => n.gitPath === AMP_NOTE_PATH)).toBeDefined()
+    expect(notes.find(n => n.gitPath === APOS_NOTE_PATH)).toBeDefined()
+
+    // (3) SYNC with NOTHING edited → ZERO pushes. Count network mutations so a
+    //     failure names the exact churn, and assert the branch head is byte-
+    //     identical before/after (no rename commit at all).
+    const folders = useFolderStore.getState().folders
+    const vaultSettings = await buildVaultSettingsBundle()
+    const realFetch = globalThis.fetch
+    const mutations: Array<{ method: string; url: string }> = []
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url
+      const method = (init?.method ?? 'GET').toUpperCase()
+      if (method !== 'GET' && method !== 'HEAD') mutations.push({ method, url })
+      return realFetch(input as Parameters<typeof realFetch>[0], init)
+    }) as typeof fetch
+
+    const headBefore = await getRefSha(RVH_BRANCH)
+    let outcome: Awaited<ReturnType<typeof syncToGitHub>>
+    try {
+      outcome = await syncToGitHub({ token: TOKEN!, repo: rvhRepo, notes, folders, vaultSettings })
+    } finally {
+      globalThis.fetch = realFetch
+    }
+    const headAfter = await getRefSha(RVH_BRANCH)
+
+    const treeCreates = mutations.filter(m => /\/git\/trees$/.test(m.url))
+    const commitCreates = mutations.filter(m => /\/git\/commits$/.test(m.url))
+    if (
+      !outcome.result.unchanged ||
+      outcome.result.created + outcome.result.updated + outcome.result.deleted > 0 ||
+      headAfter !== headBefore
+    ) {
+      console.error(
+        `\n[scenario E] SANITIZER CHURN DETECTED — special-char names (&/') re-pushed on an unchanged clone.\n` +
+          `  created=${outcome.result.created} updated=${outcome.result.updated} deleted=${outcome.result.deleted} ` +
+          `unchanged=${outcome.result.unchanged} | tree POSTs=${treeCreates.length} commit POSTs=${commitCreates.length}\n` +
+          `  head ${headBefore.slice(0, 8)} → ${headAfter.slice(0, 8)}\n` +
+          `  ROOT CAUSE on the old code: notePath() re-derived the path from the title via the aggressive\n` +
+          `  sanitizer, stripping &/' so "${AMP_NOTE_PATH}" became a stripped-name path that no longer matched\n` +
+          `  the real remote file → push deleted the real file + created the stripped copy (rename churn).\n`,
+      )
+    }
+
+    // THE CONTRACT: a freshly-cloned vault with &/' names, discarded + re-pulled,
+    // pushes NOTHING. (No rename, no delete, no create, no commit.)
+    expect(outcome.result.created).toBe(0)
+    expect(outcome.result.updated).toBe(0)
+    expect(outcome.result.deleted).toBe(0)
+    expect(outcome.result.unchanged).toBe(true)
+    expect(headAfter).toBe(headBefore)
+
+    // Belt-and-braces: the special-char files still exist remotely under their
+    // EXACT names (never renamed to a stripped form).
+    const treeSha = await getCommitTreeSha(TOKEN!, OWNER, REPO_NAME, headAfter)
+    const tree = await getTreeMap(TOKEN!, OWNER, REPO_NAME, treeSha)
+    expect(tree.has(AMP_NOTE_PATH)).toBe(true)
+    expect(tree.has(APOS_NOTE_PATH)).toBe(true)
+    // The stripped-name forms the OLD bug would have created must NOT exist.
+    expect(tree.has('RD Work/Users  groups.md')).toBe(false)
+    expect(tree.has('Jakes project.md')).toBe(false)
+
+    log(`[scenario E] special-char (&/') no-churn: clone + discard/pull then sync deleted=0 created=0 updated=0 (head ${headBefore.slice(0, 8)} unchanged); "${AMP_NOTE_PATH}" + "${APOS_NOTE_PATH}" survive verbatim`)
   })
 })

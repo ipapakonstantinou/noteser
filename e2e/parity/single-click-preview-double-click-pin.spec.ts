@@ -9,7 +9,9 @@ import { setupCleanVault, waitForTestHooks } from './_helpers'
 // replacing it. Typing into a preview tab auto-promotes it to pinned.
 //
 // Noteser today: FolderTree.handleNoteClick calls openNote(id, { preview: true })
-// after a 200ms guard; handleNoteDoubleClick calls openNote(id, { preview: false }).
+// after a 200ms guard; handleNoteDoubleClick calls openNote(id, { preview: false })
+// — VS Code style, PINNING the tab (non-italic, persistent). Inline rename
+// stays reachable via the right-click context menu and the F2 key.
 // Tab.isPreview=true renders italic in TabBar.
 
 test.beforeEach(async ({ page }) => {
@@ -90,10 +92,10 @@ test('single-clicking another note replaces the preview tab', async ({ page }) =
   expect(tabsAfter).toBe(1)
 })
 
-test('double-click triggers inline rename (not pin)', async ({ page }) => {
-  // Noteser maps double-click to inline-rename (matching Obsidian's
-  // double-click-on-title behaviour). Pin = right-click → Pin OR the
-  // auto-promote-preview-on-typing path. See
+test('double-click PINS the tab (non-preview), not rename', async ({ page }) => {
+  // VS Code behaviour: double-click opens the note as a PINNED
+  // (non-preview, non-italic) tab. Inline rename moved OFF double-click
+  // — it stays reachable via the right-click context menu and F2. See
   // e2e/parity/rename-note-inline.spec.ts for the rename coverage.
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
@@ -103,14 +105,53 @@ test('double-click triggers inline rename (not pin)', async ({ page }) => {
   await expect(page.getByTestId('note-row')).toHaveCount(1)
 
   await page.getByTestId('note-row').first().dblclick()
+  await expect(page.locator('.cm-editor').first()).toBeVisible({ timeout: 10_000 })
   await page.waitForTimeout(150)
 
+  // Double-click does NOT trigger inline rename — no rename request, no
+  // inline input in the row.
   const rename = await page.evaluate(() =>
     window.__noteser_test!.stores.uiStore.getState().renameRequest,
   )
-  expect(rename?.type).toBe('note')
-  // The rename input appears inline; CodeMirror does NOT mount.
-  await expect(page.getByTestId('note-row').first().locator('input')).toHaveCount(1)
+  expect(rename).toBeNull()
+  await expect(page.getByTestId('note-row').first().locator('input')).toHaveCount(0)
+
+  // The active tab is PINNED (isPreview=false), and there's exactly one.
+  const state = await page.evaluate(() => {
+    const ws = window.__noteser_test!.stores.workspaceStore.getState()
+    const pane = ws.panes[0]
+    const tab = pane?.tabs.find((t: { id: string }) => t.id === pane.activeTabId)
+    const noteTabs = ws.panes.flatMap(p => p.tabs).filter((t: { kind: string }) => t.kind === 'note')
+    return { isPreview: (tab as { isPreview?: boolean })?.isPreview ?? null, count: noteTabs.length }
+  })
+  expect(state.isPreview).toBe(false)
+  expect(state.count).toBe(1)
+})
+
+test('single-click preview then double-click promotes the SAME tab to pinned', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByTestId('folder-tree')).toBeVisible()
+  await waitForTestHooks(page)
+
+  await seedNotes(page, 1)
+  await expect(page.getByTestId('note-row')).toHaveCount(1)
+
+  // Single-click → preview tab.
+  await page.getByTestId('note-row').first().click()
+  await expect(page.locator('.cm-editor').first()).toBeVisible({ timeout: 10_000 })
+
+  // Double-click the same note → promotes to pinned, no second tab.
+  await page.getByTestId('note-row').first().dblclick()
+  await page.waitForTimeout(150)
+
+  const state = await page.evaluate(() => {
+    const ws = window.__noteser_test!.stores.workspaceStore.getState()
+    const pane = ws.panes[0]
+    const tab = pane?.tabs.find((t: { id: string }) => t.id === pane.activeTabId)
+    return { isPreview: (tab as { isPreview?: boolean })?.isPreview ?? null, count: pane?.tabs.length ?? 0 }
+  })
+  expect(state.isPreview).toBe(false)
+  expect(state.count).toBe(1)
 })
 
 test('typing into a preview tab auto-promotes it to pinned', async ({ page }) => {

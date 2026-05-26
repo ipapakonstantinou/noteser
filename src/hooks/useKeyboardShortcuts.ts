@@ -131,6 +131,21 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers = {}) => {
 
     // ── Hard-coded shortcuts (not yet user-rebindable) ────────────────────
 
+    // Back / Forward through the active pane's note history — Obsidian
+    // defaults (Alt+Left / Alt+Right). Fires regardless of focus (Obsidian
+    // navigates even while the editor is focused); Alt+Arrow isn't a
+    // text-editing combo so this doesn't clobber typing.
+    if (event.altKey && !hasCtrl && !hasShift && event.key === 'ArrowLeft') {
+      event.preventDefault()
+      useWorkspaceStore.getState().goBack()
+      return
+    }
+    if (event.altKey && !hasCtrl && !hasShift && event.key === 'ArrowRight') {
+      event.preventDefault()
+      useWorkspaceStore.getState().goForward()
+      return
+    }
+
     // Show shortcuts modal - Ctrl+/
     if (hasCtrl && event.key === '/') {
       event.preventDefault()

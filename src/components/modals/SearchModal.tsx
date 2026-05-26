@@ -15,6 +15,7 @@ export const SearchModal = () => {
   const { isSearchOpen, closeSearch, searchQuery, setSearchQuery } = useUIStore()
   const { notes, getActiveNotes } = useNoteStore()
   const openNote = useWorkspaceStore(s => s.openNote)
+  const recentIds = useWorkspaceStore(s => s.recents)
   const { getFolderById } = useFolderStore()
   const aiEmbeddingsEnabled = useSettingsStore(s => s.aiEmbeddingsEnabled)
   const aiProvider = useSettingsStore(s => s.aiProvider)
@@ -113,7 +114,27 @@ export const SearchModal = () => {
     return () => { cancelled = true }
   }, [mode, semanticDebounced, semanticAvailable, activeNotes])
 
-  const results = mode === 'semantic' ? semanticResults : fuzzyResults
+  // Recent notes shown when the query box is empty (Obsidian quick-switcher /
+  // VS Code Ctrl+P style). Resolve the MRU note-id list against the ACTIVE
+  // notes so trashed/deleted notes never surface, preserving most-recent-first
+  // order. `notes` is the trigger; activeNotes is already memoised on it.
+  const recentResults = useMemo<SearchResult[]>(() => {
+    const byId = new Map(activeNotes.map(n => [n.id, n]))
+    const out: SearchResult[] = []
+    for (const id of recentIds) {
+      const n = byId.get(id)
+      if (!n) continue
+      out.push({ noteId: n.id, title: n.title, content: n.content, matches: [], score: 0 })
+    }
+    return out
+  }, [recentIds, activeNotes])
+
+  // With an empty query we show recents; once the user types we hand over to
+  // the fuzzy / semantic results. Keyboard nav + selection operate on the
+  // SAME `results` array either way.
+  const showingRecents = !searchQuery.trim()
+  const searchResults = mode === 'semantic' ? semanticResults : fuzzyResults
+  const results = showingRecents ? recentResults : searchResults
 
   // Focus input when modal opens
   useEffect(() => {
@@ -123,9 +144,10 @@ export const SearchModal = () => {
     }
   }, [isSearchOpen])
 
-  // Reset selection when switching modes so the user doesn't end up
-  // with a stale index pointing past the end of the new results list.
-  useEffect(() => { setSelectedIndex(0) }, [mode])
+  // Reset selection when switching modes, or when crossing the
+  // recents↔search boundary (typing the first char / clearing back to
+  // empty), so the index never points past the end of the new list.
+  useEffect(() => { setSelectedIndex(0) }, [mode, showingRecents])
 
   // Handle keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -243,9 +265,18 @@ export const SearchModal = () => {
           ref={resultsRef}
           className="max-h-96 overflow-y-auto"
         >
-          {searchQuery && results.length === 0 && (
+          {!showingRecents && results.length === 0 && (
             <div className="px-4 py-8 text-center text-obsidianSecondaryText">
               No notes found for &quot;{searchQuery}&quot;
+            </div>
+          )}
+
+          {showingRecents && results.length > 0 && (
+            <div
+              className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-obsidianSecondaryText"
+              data-testid="search-recent-header"
+            >
+              Recent
             </div>
           )}
 
@@ -277,11 +308,13 @@ export const SearchModal = () => {
                       </span>
                     )}
                   </div>
-                  <p className="text-sm text-obsidianSecondaryText truncate mt-1">
-                    {mode === 'semantic'
-                      ? (result.content.trim().slice(0, 120) || '(empty note)')
-                      : getMatchSnippet(result.content, result.matches)}
-                  </p>
+                  {!showingRecents && (
+                    <p className="text-sm text-obsidianSecondaryText truncate mt-1">
+                      {mode === 'semantic'
+                        ? (result.content.trim().slice(0, 120) || '(empty note)')
+                        : getMatchSnippet(result.content, result.matches)}
+                    </p>
+                  )}
                   {mode === 'semantic' && (
                     <span className="text-[10px] text-obsidianSecondaryText/60 font-mono">
                       {(result.score * 100).toFixed(0)}% match
@@ -292,11 +325,12 @@ export const SearchModal = () => {
             )
           })}
 
-          {!searchQuery && (
-            <div className="px-4 py-8 text-center text-obsidianSecondaryText">
-              <p>Type to search your notes</p>
+          {showingRecents && results.length === 0 && (
+            <div className="px-4 py-8 text-center text-obsidianSecondaryText" data-testid="search-recent-empty">
+              <p>No recent notes yet</p>
               <p className="text-xs mt-2">
-                Use <kbd className="px-1 py-0.5 bg-obsidianDarkGray rounded text-xs">↑</kbd>{' '}
+                Type to search your notes. Use{' '}
+                <kbd className="px-1 py-0.5 bg-obsidianDarkGray rounded text-xs">↑</kbd>{' '}
                 <kbd className="px-1 py-0.5 bg-obsidianDarkGray rounded text-xs">↓</kbd> to navigate,{' '}
                 <kbd className="px-1 py-0.5 bg-obsidianDarkGray rounded text-xs">Enter</kbd> to select
               </p>

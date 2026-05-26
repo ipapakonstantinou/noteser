@@ -184,6 +184,80 @@ describe('markdownLivePreview StateField', () => {
     expect(markInside).toBeUndefined()
   })
 
+  // ── Done-task line decoration (incl. nested / indented tasks) ──────────────
+  //
+  // The `cm-lp-task-done` line decoration strikes a completed `- [x]` line. It
+  // must fire for nested/indented done tasks the same as top-level ones, and
+  // must NOT fire for an un-done nested task.
+
+  /** Line-start offset (0-based char index) of 1-based line `n`. */
+  const lineStart = (doc: string, n: number) =>
+    doc.split('\n').slice(0, n - 1).join('\n').length + (n > 1 ? 1 : 0)
+
+  test('top-level done task gets a task-done line decoration', () => {
+    const doc = '- [x] top done\n'
+    const decos = collectDecos(makeState(doc, 0))
+    const done = decos.find(d => d.from === 0 && d.to === 0 && d.class === 'cm-lp-task-done')
+    expect(done).toBeDefined()
+  })
+
+  test.each([
+    ['4-space', '- [x] top done\n    - [x] nested done\n    - [ ] nested undone'],
+    ['2-space', '- [x] top done\n  - [x] nested done\n  - [ ] nested undone'],
+    ['tab',     '- [x] top done\n\t- [x] nested done\n\t- [ ] nested undone'],
+  ])('nested done task (%s indent) gets a task-done line decoration; undone nested does NOT', (_label, doc) => {
+    const decos = collectDecos(makeState(doc, 0))
+
+    const topStart = lineStart(doc, 1)
+    const nestedDoneStart = lineStart(doc, 2)
+    const nestedUndoneStart = lineStart(doc, 3)
+
+    // Top-level done — struck.
+    expect(decos.find(d => d.from === topStart && d.to === topStart && d.class === 'cm-lp-task-done')).toBeDefined()
+    // Nested done — struck (the regression).
+    expect(decos.find(d => d.from === nestedDoneStart && d.to === nestedDoneStart && d.class === 'cm-lp-task-done')).toBeDefined()
+    // Nested un-done — NOT struck.
+    expect(decos.find(d => d.from === nestedUndoneStart && d.to === nestedUndoneStart && d.class === 'cm-lp-task-done')).toBeUndefined()
+  })
+
+  test('done task nested under a plain bullet still gets the task-done decoration', () => {
+    const doc = '- parent\n    - [x] child done'
+    const decos = collectDecos(makeState(doc, 0))
+    const childStart = lineStart(doc, 2)
+    expect(decos.find(d => d.from === childStart && d.to === childStart && d.class === 'cm-lp-task-done')).toBeDefined()
+    // The plain parent line is not struck.
+    expect(decos.find(d => d.from === 0 && d.to === 0 && d.class === 'cm-lp-task-done')).toBeUndefined()
+  })
+
+  // ── Jon's verbatim structure: DONE parent + DONE children + ✅ date stamp ───
+  //
+  // Reported bug: in live preview a done sub-task nested under a done parent is
+  // not struck through, even though top-level done tasks are. Jon's exact shape
+  // uses the Obsidian Tasks completion stamp "✅ YYYY-MM-DD". These tests assert
+  // that every done line — parent AND each nested child — gets the
+  // `cm-lp-task-done` line decoration, across tab / 4-space / 2-space indents.
+  test.each([
+    ['tab',     '- [x] AMD Q04 we must adjust the  iiaVMAgencyCompanyCode & number range ✅ 2026-05-25\n\t- [x] AMD Artifact name & customer ✅ 2026-05-25\n\t- [x] Check BG BAU everywhere ✅ 2026-05-25'],
+    ['4-space', '- [x] AMD Q04 we must adjust the  iiaVMAgencyCompanyCode & number range ✅ 2026-05-25\n    - [x] AMD Artifact name & customer ✅ 2026-05-25\n    - [x] Check BG BAU everywhere ✅ 2026-05-25'],
+    ['2-space', '- [x] AMD Q04 we must adjust the  iiaVMAgencyCompanyCode & number range ✅ 2026-05-25\n  - [x] AMD Artifact name & customer ✅ 2026-05-25\n  - [x] Check BG BAU everywhere ✅ 2026-05-25'],
+  ])('done parent + done children with ✅ stamp (%s indent): every line is struck', (_label, doc) => {
+    const decos = collectDecos(makeState(doc, 0))
+    for (let n = 1; n <= 3; n++) {
+      const ls = lineStart(doc, n)
+      expect(
+        decos.find(d => d.from === ls && d.to === ls && d.class === 'cm-lp-task-done'),
+      ).toBeDefined()
+    }
+  })
+
+  test('done parent + UNDONE child with ✅ stamp: child is NOT struck', () => {
+    const doc = '- [x] done parent ✅ 2026-05-25\n\t- [ ] still open child'
+    const decos = collectDecos(makeState(doc, 0))
+    expect(decos.find(d => d.from === 0 && d.to === 0 && d.class === 'cm-lp-task-done')).toBeDefined()
+    const childStart = lineStart(doc, 2)
+    expect(decos.find(d => d.from === childStart && d.to === childStart && d.class === 'cm-lp-task-done')).toBeUndefined()
+  })
+
   test('StateField is registered with EditorView.decorations facet', () => {
     // The plugin is a StateField, verify it participates in EditorView.decorations
     // by checking its `provide` property produces the right facet provider.

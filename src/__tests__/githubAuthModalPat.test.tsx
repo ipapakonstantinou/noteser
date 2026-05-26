@@ -109,7 +109,14 @@ describe('GitHubAuthModal — PAT sign-in path', () => {
 
   test('device-flow path is unaffected — it still validates and stores', async () => {
     // Override the default never-resolving poll so the device flow completes.
-    mockPollForToken.mockResolvedValueOnce('oauth_token_abc')
+    // pollForToken now resolves to a full token set (refresh-token support);
+    // a non-expiring device token has null refresh/expiry fields.
+    mockPollForToken.mockResolvedValueOnce({
+      accessToken: 'oauth_token_abc',
+      accessTokenExpiresAt: null,
+      refreshToken: null,
+      refreshTokenExpiresAt: null,
+    })
     mockFetchUserAndScopes.mockResolvedValueOnce({ user: USER, scopes: ['repo'] })
     openAuthModal()
     render(<GitHubAuthModal />)

@@ -182,13 +182,50 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
 
   // ── Single vs double click on a note ────────────────────────────────────
   // Single click = open as preview (italic, replaceable). Double click =
-  // open as pinned. We delay the single-click handler so a quick second
-  // click cancels it (matches VS Code's explorer behaviour).
+  // PIN (permanent, non-italic). VS Code's explorer behaviour.
+  //
+  // We do NOT rely on the DOM `dblclick` event here. In the real app a
+  // genuine double-click is only emitted by the browser when two clicks
+  // land within the OS double-click threshold AND the pointer barely moves;
+  // a slightly slow / deliberate double-click (common on trackpads and for
+  // many users) fires two separate `click`s with NO `dblclick`. The old
+  // code opened a preview on the first click's 200ms timer and relied on a
+  // later `dblclick` to promote it — when that `dblclick` never arrived the
+  // tab was stuck as a replaceable preview, so a following single-click on
+  // another note replaced it. That is the reported "double click is not
+  // working" bug.
+  //
+  // Fix: detect the double-click ourselves by counting clicks on the SAME
+  // note within `DOUBLE_CLICK_MS`. The first click arms a delayed preview
+  // open; a second click within the window cancels that timer and pins
+  // instead (openNote with preview:false both opens a fresh pinned tab and
+  // promotes an already-open preview tab — see workspaceStore.openNote).
+  // The `onDoubleClick` handler is kept only as a redundant fast-path for
+  // the native event and routes through the same pin logic, so a real
+  // browser dblclick and a self-detected one converge on one outcome.
   //
   // When the click originates from a non-tree view (Recent/Tags/etc.) we
   // also call revealNote so the user sees where the note lives. Reveal
   // switches the current view to 'notes' as a side-effect.
+  const DOUBLE_CLICK_MS = 350
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastClickRef = useRef<{ id: string; at: number } | null>(null)
+
+  // Promote the note to a pinned tab. Shared by the self-detected
+  // double-click and the native onDoubleClick fast-path. Cancels any
+  // pending single-click preview so the note never sticks as a preview.
+  const pinNote = (id: string) => {
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current)
+      clickTimerRef.current = null
+    }
+    lastClickRef.current = null
+    const fromNonTreeView = currentView !== 'notes' && currentView !== 'trash'
+    openNote(id, { preview: false })
+    if (fromNonTreeView) revealNote(id)
+    closeDrawerIfMobile()
+  }
+
   const handleNoteClick = (id: string, e?: React.MouseEvent) => {
     const fromNonTreeView = currentView !== 'notes' && currentView !== 'trash'
 
@@ -202,6 +239,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
         return next
       })
       lastClickedIdRef.current = id
+      lastClickRef.current = null
       return
     }
     // Shift+Click selects a contiguous range from the last-clicked row
@@ -216,11 +254,24 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
         const range = new Set(order.slice(lo, hi + 1))
         setSelectedIds(range)
       }
+      lastClickRef.current = null
       return
     }
 
-    // Plain click: clear the selection (so the user knows multi-mode ended)
-    // + open the note as preview after the double-click guard.
+    // ── Self-detected double-click ────────────────────────────────────────
+    // A second plain click on the SAME note within the window pins it,
+    // regardless of whether the browser also emits a native `dblclick`.
+    const now = Date.now()
+    const prev = lastClickRef.current
+    if (prev && prev.id === id && now - prev.at <= DOUBLE_CLICK_MS) {
+      pinNote(id)
+      return
+    }
+    lastClickRef.current = { id, at: now }
+
+    // Plain (first) click: clear the selection (so the user knows multi-mode
+    // ended) + open the note as preview after the double-click guard. If a
+    // second click lands within the window the timer is cancelled above.
     if (selectedIds.size > 0) clearSelection()
     lastClickedIdRef.current = id
     if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
@@ -231,19 +282,14 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
       // (the user wants the editor next, not the file tree).
       closeDrawerIfMobile()
       clickTimerRef.current = null
-    }, 200)
+      lastClickRef.current = null
+    }, DOUBLE_CLICK_MS)
   }
   const handleNoteDoubleClick = (id: string) => {
-    // Obsidian behaviour: double-click a note row triggers inline
-    // rename (not pin). The pin gesture happens implicitly via
-    // typing into a preview tab, OR explicitly via right-click →
-    // Pin to top. Cancel any pending single-click handler so the
-    // note doesn't briefly flash into preview.
-    if (clickTimerRef.current) {
-      clearTimeout(clickTimerRef.current)
-      clickTimerRef.current = null
-    }
-    useUIStore.getState().requestRename({ type: 'note', id })
+    // Native dblclick fast-path. Most genuine fast double-clicks fire this;
+    // the self-detected counter in handleNoteClick covers the rest. Both
+    // route through pinNote so the outcome is identical.
+    pinNote(id)
   }
 
   // ── Attachment helpers ─────────────────────────────────────────────────
@@ -449,6 +495,16 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
         if (selectedIds.size === 0) return
         e.preventDefault()
         deleteSelected()
+        return
+      }
+      case 'F2': {
+        // F2 = inline rename of the focused row (notes and folders).
+        // Mirrors the right-click → Rename action; both route through
+        // uiStore.requestRename, which the matching EditableText watches.
+        if (!currentRow) return
+        if (currentRow.kind !== 'note' && currentRow.kind !== 'folder') return
+        e.preventDefault()
+        useUIStore.getState().requestRename({ type: currentRow.kind, id: currentRow.id })
         return
       }
       case 'Escape': {

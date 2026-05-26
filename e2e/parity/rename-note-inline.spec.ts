@@ -7,8 +7,10 @@ import { setupCleanVault, waitForTestHooks } from './_helpers'
 // title becomes an editable text input in place. Enter commits,
 // Escape cancels.
 //
-// Noteser today: matches. Both right-click → Rename AND double-click
-// land in the same inline-edit flow via useUIStore.requestRename.
+// Noteser today: rename is reachable via right-click → Rename AND the
+// F2 key on the focused tree row — both land in the same inline-edit
+// flow via useUIStore.requestRename. Double-click now PINS the tab (VS
+// Code style), so it no longer starts rename.
 // (Was a parity gap until 2026-05-21.)
 
 test.beforeEach(async ({ page }) => {
@@ -67,7 +69,7 @@ test('context-menu Rename → Escape cancels, title unchanged', async ({ page })
   await expect(page.getByTestId('note-row').first()).toContainText(originalTitle!.trim())
 })
 
-test('double-click on a note row triggers inline rename (Obsidian behaviour)', async ({ page }) => {
+test('F2 on the focused tree row triggers inline rename', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
   await waitForTestHooks(page)
@@ -75,8 +77,9 @@ test('double-click on a note row triggers inline rename (Obsidian behaviour)', a
   await page.getByTestId('ribbon-item-new-note').click()
   await expect(page.getByTestId('note-row')).toHaveCount(1)
 
-  // Double-click → inline rename request lands in the UI store.
-  await page.getByTestId('note-row').first().dblclick()
+  // Focus the tree (drops the keyboard cursor on the first row), then F2.
+  await page.getByTestId('folder-tree').focus()
+  await page.keyboard.press('F2')
   await page.waitForTimeout(150)
 
   const rename = await page.evaluate(() =>
@@ -85,4 +88,22 @@ test('double-click on a note row triggers inline rename (Obsidian behaviour)', a
   expect(rename?.type).toBe('note')
   // And the EditableText component renders an <input> for the row.
   await expect(page.getByTestId('note-row').first().locator('input')).toHaveCount(1)
+})
+
+test('double-click does NOT trigger inline rename (it pins instead)', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByTestId('folder-tree')).toBeVisible()
+  await waitForTestHooks(page)
+
+  await page.getByTestId('ribbon-item-new-note').click()
+  await expect(page.getByTestId('note-row')).toHaveCount(1)
+
+  await page.getByTestId('note-row').first().dblclick()
+  await page.waitForTimeout(150)
+
+  const rename = await page.evaluate(() =>
+    window.__noteser_test!.stores.uiStore.getState().renameRequest,
+  )
+  expect(rename).toBeNull()
+  await expect(page.getByTestId('note-row').first().locator('input')).toHaveCount(0)
 })

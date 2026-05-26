@@ -11,6 +11,7 @@ import {
 } from '@/utils/syncChanges'
 import { listRecentCommits, formatRelativeAuthorDate, type FileCommitEntry } from '@/utils/githubHistory'
 import { GitHubAPIError } from '@/utils/github'
+import { withTokenRefresh, ReconnectRequiredError } from '@/utils/tokenRefresh'
 
 // VS Code-style source-control panel. Groups pending changes by their
 // gitPath folder hierarchy: each directory is a collapsible row, each
@@ -141,13 +142,17 @@ const RecentCommits = () => {
     let cancelled = false
     setLoading(true)
     setError(null)
-    listRecentCommits(token, repo.owner, repo.name, repo.branch, { perPage: 15 })
+    // Wrap in token refresh: an expired token auto-renews instead of 401-ing
+    // the panel (matches how the sync pull/push are wrapped).
+    withTokenRefresh(tok => listRecentCommits(tok, repo.owner, repo.name, repo.branch, { perPage: 15 }))
       .then(list => { if (!cancelled) setCommits(list) })
       .catch((err: unknown) => {
         if (cancelled) return
-        const msg = err instanceof GitHubAPIError
-          ? (err.isRateLimit ? 'GitHub rate-limited — recent commits unavailable' : err.message)
-          : (err as Error).message
+        const msg = err instanceof ReconnectRequiredError
+          ? err.message
+          : err instanceof GitHubAPIError
+            ? (err.isRateLimit ? 'GitHub rate-limited — recent commits unavailable' : err.message)
+            : (err as Error).message
         setError(msg)
         setCommits(null)
       })

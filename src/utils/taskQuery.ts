@@ -101,6 +101,24 @@ function isISODate(token: string | undefined): boolean {
   return !!token && /^\d{4}-\d{2}-\d{2}$/.test(token)
 }
 
+// Obsidian-Tasks allows quoting a `path includes` argument so multi-word or
+// punctuation-heavy substrings read naturally, e.g. `path includes "Projects"`.
+// The quotes are delimiters, not part of the substring — strip a single
+// matching leading/trailing pair (`"…"` or `'…'`) before matching. Without
+// this, the literal quote chars stay in the substring and the path never
+// matches. This was the `done today` "0 results" bug: the real query carried
+// `path includes "Projects"` and the quoted substring excluded every task.
+function stripWrappingQuotes(s: string): string {
+  if (s.length >= 2) {
+    const first = s[0]
+    const last = s[s.length - 1]
+    if ((first === '"' || first === "'") && last === first) {
+      return s.slice(1, -1)
+    }
+  }
+  return s
+}
+
 export function parseTaskQuery(source: string): TaskQuery {
   const tokens = source.split(/\s+/).map(t => t.trim()).filter(Boolean)
   const out: TaskQuery = { filters: [], groupBy: [], explain: false, source }
@@ -127,7 +145,8 @@ export function parseTaskQuery(source: string): TaskQuery {
         parts.push(tokens[j])
         j++
       }
-      if (parts.length) out.filters.push({ kind: 'pathIncludes', substring: parts.join(' ') })
+      const substring = stripWrappingQuotes(parts.join(' '))
+      if (substring) out.filters.push({ kind: 'pathIncludes', substring })
       i = j
     } else if (t === 'due' && lower(i + 1) === 'before' && isISODate(tokens[i + 2])) {
       out.filters.push({ kind: 'dueBefore', date: tokens[i + 2] })

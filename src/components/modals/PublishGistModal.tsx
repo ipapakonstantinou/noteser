@@ -13,6 +13,7 @@ import { Modal, Button } from '@/components/ui'
 import { useUIStore, useNoteStore, useGitHubStore } from '@/stores'
 import { hasGistScope } from '@/stores/githubStore'
 import { publishGist, GistScopeError, sanitizeGistFilename } from '@/utils/githubGist'
+import { withTokenRefresh, ReconnectRequiredError } from '@/utils/tokenRefresh'
 import {
   startDeviceFlow,
   pollForToken,
@@ -119,7 +120,14 @@ export const PublishGistModal = () => {
   // Publish using an explicit token — separated out so the
   // post-upgrade auto-retry can pass the newly-issued token without
   // racing the Zustand state update.
-  const runPublishWithToken = async (publishToken: string) => {
+  //
+  // `useFreshToken`: the scope-upgrade flow has JUST minted a token, so it
+  // passes it verbatim and skips the refresh wrapper (refreshing would
+  // discard the brand-new gist-scoped token for whatever is in the store).
+  // The normal "Publish gist" button leaves it false → withTokenRefresh
+  // proactively validates the stored token and retries once on a 401, so an
+  // expired session auto-renews instead of surfacing as a bogus scope error.
+  const runPublishWithToken = async (publishToken: string, useFreshToken = false) => {
     setPublishing(true)
     setError(null)
     setScopeError(false)
@@ -130,17 +138,22 @@ export const PublishGistModal = () => {
       // avoids the double-tag-line bug from an earlier draft that
       // called `bodyWithInlineTags` (a pull-side helper).
       const content = note.content
-      const r = await publishGist({
-        token: publishToken,
+      const doPublish = (tok: string) => publishGist({
+        token: tok,
         filename: sanitizeGistFilename(note.title || 'note'),
         content,
         description: description.trim(),
         isPublic,
       })
+      const r = useFreshToken
+        ? await doPublish(publishToken)
+        : await withTokenRefresh(doPublish)
       setResult({ htmlUrl: r.htmlUrl, id: r.id })
     } catch (err) {
       if (err instanceof GistScopeError) {
         setScopeError(true)
+        setError(err.message)
+      } else if (err instanceof ReconnectRequiredError) {
         setError(err.message)
       } else {
         setError((err as Error).message)
@@ -175,21 +188,23 @@ export const PublishGistModal = () => {
       const device = await startDeviceFlow('repo gist')
       if (controller.signal.aborted) return
       setScopeFlow(device)
-      const newToken = await pollForToken({
+      const newTokenSet = await pollForToken({
         deviceCode: device.device_code,
         interval: device.interval,
         expiresIn: device.expires_in,
         signal: controller.signal,
       })
       if (controller.signal.aborted) return
-      const { user, scopes } = await fetchGitHubUserAndScopes(newToken)
+      const { user, scopes } = await fetchGitHubUserAndScopes(newTokenSet.accessToken)
       if (controller.signal.aborted) return
-      setSession(newToken, user, scopes)
+      // Persist the full token set so a gist-scope upgrade also captures the
+      // refresh token (the upgraded token is the one we keep going forward).
+      setSession(newTokenSet.accessToken, user, scopes, newTokenSet)
       setScopeFlow(null)
       // Auto-retry publish with the new token — the user's intent was
       // "publish my note", the scope prompt was incidental.
       if (hasGistScope(scopes)) {
-        await runPublishWithToken(newToken)
+        await runPublishWithToken(newTokenSet.accessToken, true)
       } else {
         // GitHub returned a token without the `gist` scope despite us
         // asking for it (rare — e.g. user manually deselected the scope

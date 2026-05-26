@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { DocumentTextIcon, ExclamationTriangleIcon, XMarkIcon, SparklesIcon } from '@heroicons/react/24/outline'
 import { useNoteStore, useWorkspaceStore } from '@/stores'
 import { TAB_DRAG_MIME } from '@/hooks'
@@ -17,9 +17,25 @@ export const TabBar = ({ pane }: Props) => {
   const focusTab = useWorkspaceStore(s => s.focusTab)
   const closeTab = useWorkspaceStore(s => s.closeTab)
   const moveTab = useWorkspaceStore(s => s.moveTab)
+  const promoteTab = useWorkspaceStore(s => s.promoteTab)
   const notes = useNoteStore(s => s.notes)
 
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
+  // A genuine (slightly slow) double-click does not reliably fire the native
+  // dblclick event, so self-detect two clicks on the same tab within 350ms and
+  // pin it (VS Code: double-click a preview tab to keep it). onDoubleClick is
+  // kept as a redundant fast path.
+  const lastTabClick = useRef<{ id: string; t: number }>({ id: '', t: 0 })
+  const handleTabClick = (tabId: string) => {
+    const now = Date.now()
+    if (lastTabClick.current.id === tabId && now - lastTabClick.current.t < 350) {
+      lastTabClick.current = { id: '', t: 0 }
+      promoteTab(tabId)
+    } else {
+      lastTabClick.current = { id: tabId, t: now }
+      focusTab(tabId)
+    }
+  }
 
   if (pane.tabs.length === 0) return null
 
@@ -72,7 +88,8 @@ export const TabBar = ({ pane }: Props) => {
               draggable
               onDragStart={(e) => onDragStart(e, tab.id)}
               onDragEnd={onDragEnd}
-              onClick={() => focusTab(tab.id)}
+              onClick={() => handleTabClick(tab.id)}
+              onDoubleClick={() => promoteTab(tab.id)}
               onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); closeTab(tab.id) } }}
               className={`flex items-center gap-1.5 px-3 py-1.5 max-md:py-2.5 text-sm border-r border-obsidianBorder cursor-pointer max-w-[200px] flex-shrink-0 select-none min-h-[36px] max-md:min-h-[44px] ${
                 active

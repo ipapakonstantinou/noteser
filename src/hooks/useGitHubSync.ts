@@ -10,6 +10,7 @@ import { VaultLockedError } from '@/utils/vaultKey'
 // prefetch). pullFromZipball still lives in githubSync.ts for callers/tests.
 import { syncToGitHub, pullFromGitHub } from '@/utils/githubSync'
 import type { PullClassification, SyncResult, GitPathUpdate } from '@/utils/githubSync'
+import { getValidGitHubToken, withTokenRefresh, ReconnectRequiredError } from '@/utils/tokenRefresh'
 import { applyNonConflicts, applyAttachmentClassifications } from '@/utils/syncApply'
 import { fillShellsInBackground } from '@/utils/backgroundFill'
 import { pendingStoreHydration } from '@/utils/ensureStoresHydrated'
@@ -378,8 +379,15 @@ export function useGitHubSync(): UseGitHubSyncResult {
       setIsSyncing(true)
       setSyncState({ kind: 'running' })
       await withSyncWatchdog(controller, async () => {
-        const { classifications } = await runPull(activeToken, activeRepo, (msg) =>
-          setSyncState({ kind: 'running', message: msg }),
+        // Reactive+proactive token refresh: withTokenRefresh proactively
+        // refreshes a near-expiry token before the call and, on a 401,
+        // refreshes once and retries. Non-expiring tokens (PATs/classic) pass
+        // straight through. Push is wrapped separately below so it always uses
+        // a currently-valid (possibly just-rotated) token.
+        const { classifications } = await withTokenRefresh((tok) =>
+          runPull(tok, activeRepo, (msg) =>
+            setSyncState({ kind: 'running', message: msg }),
+          ),
         )
 
         const conflicts = classifications.filter(
@@ -432,7 +440,9 @@ export function useGitHubSync(): UseGitHubSyncResult {
         }
 
         setSyncState({ kind: 'running', message: 'Pushing…' })
-        const { result, pathUpdates, vaultSettingsHashPushed, vaultGitignorePushed } = await runPush(activeToken, activeRepo, effectiveCommitMessage)
+        const { result, pathUpdates, vaultSettingsHashPushed, vaultGitignorePushed } = await withTokenRefresh((tok) =>
+          runPush(tok, activeRepo, effectiveCommitMessage),
+        )
 
         // Write the per-note gitPath / gitLastPushedSha back so the next pull
         // classifies us as `unchanged` instead of detecting a phantom remote
@@ -484,6 +494,16 @@ export function useGitHubSync(): UseGitHubSyncResult {
         // the user has a one-click path back to working sync.
         useUIStore.getState().openModal({ type: 'vault-encryption', data: { mode: 'unlock' } })
         setSyncState({ kind: 'err', message: 'Vault is locked — unlock to sync.' })
+      } else if (err instanceof ReconnectRequiredError) {
+        // Both access AND refresh tokens are exhausted/invalid (or the token
+        // wasn't refreshable and 401'd). Fall back to the reconnect flow with a
+        // clear, one-click path — and DON'T offer a blind Retry (it would just
+        // 401 again and loop).
+        setSyncState({ kind: 'err', message: err.message })
+        addSyncToast({
+          kind: 'error', message: err.message,
+          actionLabel: 'Reconnect', onAction: () => { useUIStore.getState().openModal({ type: 'github-auth' }) },
+        })
       } else {
         const message = err instanceof Error ? err.message : 'Sync failed'
         setSyncState({ kind: 'err', message })
@@ -531,8 +551,11 @@ export function useGitHubSync(): UseGitHubSyncResult {
       setIsSyncing(true)
       setSyncState({ kind: 'running' })
       await withSyncWatchdog(controller, async () => {
-        const { classifications, latestCommitSha } = await runPull(activeToken, activeRepo, (msg) =>
-          setSyncState({ kind: 'running', message: msg }),
+        // Same proactive+reactive refresh wrapper as runSync (see there).
+        const { classifications, latestCommitSha } = await withTokenRefresh((tok) =>
+          runPull(tok, activeRepo, (msg) =>
+            setSyncState({ kind: 'running', message: msg }),
+          ),
         )
 
         const conflicts = classifications.filter(
@@ -591,6 +614,13 @@ export function useGitHubSync(): UseGitHubSyncResult {
       } else if (err instanceof VaultLockedError) {
         useUIStore.getState().openModal({ type: 'vault-encryption', data: { mode: 'unlock' } })
         setSyncState({ kind: 'err', message: 'Vault is locked — unlock to pull.' })
+      } else if (err instanceof ReconnectRequiredError) {
+        // Token exhausted — reconnect rather than a blind Retry (see runSync).
+        setSyncState({ kind: 'err', message: err.message })
+        addSyncToast({
+          kind: 'error', message: err.message,
+          actionLabel: 'Reconnect', onAction: () => { useUIStore.getState().openModal({ type: 'github-auth' }) },
+        })
       } else {
         const message = err instanceof Error ? err.message : 'Pull failed'
         setSyncState({ kind: 'err', message })

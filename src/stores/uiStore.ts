@@ -49,6 +49,19 @@ export interface SidebarSectionState {
 
 export const DEFAULT_SECTION_HEIGHT = 220
 
+// Left-sidebar width bounds (px). The default matches the old fixed
+// Tailwind `w-64` (16rem = 256px) so existing users see no jump on
+// upgrade. Min keeps the file tree usable; max stops a runaway drag
+// from eating the editor on smaller desktop windows.
+export const DEFAULT_SIDEBAR_WIDTH = 256
+export const MIN_SIDEBAR_WIDTH = 200
+export const MAX_SIDEBAR_WIDTH = 500
+
+// Clamp + round a candidate sidebar width to the allowed range.
+// Exported so the drag handler and tests share one source of truth.
+export const clampSidebarWidth = (width: number): number =>
+  Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, Math.round(width)))
+
 interface UIState {
   // Sidebar (left)
   sidebarCollapsed: boolean
@@ -116,7 +129,7 @@ export const useUIStore = create<UIState>()(
     (set) => ({
       // Initial state
       sidebarCollapsed: false,
-      sidebarWidth: 256,
+      sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       rightSidebarOpen: false,
       rightSidebarTab: 'properties',
       sidebarSections: {},
@@ -135,7 +148,7 @@ export const useUIStore = create<UIState>()(
       },
 
       setSidebarWidth: (width) => {
-        set({ sidebarWidth: Math.max(200, Math.min(500, width)) })
+        set({ sidebarWidth: clampSidebarWidth(width) })
       },
 
       toggleRightSidebar: () => {

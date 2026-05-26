@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { Sidebar, RightSidebar, Ribbon, MobileTopBar, DrawerHandle } from '@/components/sidebar'
+import { Sidebar, RightSidebar, Ribbon, MobileTopBar, DrawerHandle, SidebarResizeHandle } from '@/components/sidebar'
 import { Editor } from '@/components/editor'
 import { Toaster } from '@/components/ui'
 
@@ -34,7 +34,7 @@ const LocalFolderImportModal = dynamic(() => import('@/components/modals/LocalFo
 const DiscardLocalChangesModal = dynamic(() => import('@/components/modals/DiscardLocalChangesModal').then(m => ({ default: m.DiscardLocalChangesModal })), { ssr: false })
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useKeyboardShortcuts, useHydration, useAutoSync, useAutoEmbedNotes, useApplyTheme, useViewport } from '@/hooks'
-import { useUIStore, useWorkspaceStore, useGitHubStore } from '@/stores'
+import { useUIStore, useWorkspaceStore, useGitHubStore, DEFAULT_SIDEBAR_WIDTH } from '@/stores'
 import { switchVault } from '@/utils/switchVault'
 import { notesKey } from '@/utils/repoStorage'
 import { useNoteStore } from '@/stores/noteStore'
@@ -58,7 +58,7 @@ const ResetConfirmModal = dynamic(
 
 export default function Home() {
   const hydrated = useHydration()
-  const { sidebarCollapsed } = useUIStore()
+  const { sidebarCollapsed, sidebarWidth } = useUIStore()
   const pruneStaleTabs = useWorkspaceStore(s => s.pruneStaleTabs)
   const { isMobile } = useViewport()
 
@@ -119,6 +119,39 @@ export default function Home() {
 
   // Set up keyboard shortcuts
   useKeyboardShortcuts()
+
+  // Mouse back / forward buttons (the thumb buttons, DOM button 3 = back,
+  // button 4 = forward) drive the active pane's note history — same as the
+  // header arrows and Alt+←/→.
+  //
+  // The browser's own page back/forward fires on the button's MOUSEDOWN,
+  // not mouseup, so we must preventDefault on `mousedown` to stop the page
+  // from navigating out from under the SPA. The actual note navigation then
+  // runs once on `mouseup` (one step per physical press). Doing both on
+  // mouseup let the browser navigate first — and on a freshly-loaded SPA
+  // that could even unload the app.
+  useEffect(() => {
+    const onMouseDown = (e: MouseEvent) => {
+      // Suppress the browser's native history navigation for the thumb
+      // buttons; we handle them ourselves on mouseup.
+      if (e.button === 3 || e.button === 4) e.preventDefault()
+    }
+    const onMouseUp = (e: MouseEvent) => {
+      if (e.button === 3) {
+        e.preventDefault()
+        useWorkspaceStore.getState().goBack()
+      } else if (e.button === 4) {
+        e.preventDefault()
+        useWorkspaceStore.getState().goForward()
+      }
+    }
+    window.addEventListener('mousedown', onMouseDown)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => {
+      window.removeEventListener('mousedown', onMouseDown)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [])
 
   // Auto-sync on startup + on the configured interval (Settings → GitHub).
   useAutoSync()
@@ -455,13 +488,25 @@ export default function Home() {
         <Ribbon />
       </div>
 
+      {/* Sidebar column. Collapsed → fixed 50px rail. Expanded → the
+          user-set, drag-resizable width from useUIStore (defaults to
+          256 = the old w-64). We DROP the width transition while
+          expanded so the drag tracks the pointer 1:1 instead of
+          lagging behind a 300ms ease; the collapse toggle keeps its
+          animation. Pre-hydration we render the default width to avoid
+          an SSR/client mismatch (sidebarWidth is persisted). */}
       <div
-        className={`flex-none transition-all duration-300 ${
-          isSidebarCollapsed ? 'w-[50px]' : 'w-64'
+        className={`flex-none ${
+          isSidebarCollapsed ? 'w-[50px] transition-all duration-300' : ''
         }`}
+        style={isSidebarCollapsed ? undefined : { width: hydrated ? sidebarWidth : DEFAULT_SIDEBAR_WIDTH }}
       >
         <Sidebar />
       </div>
+
+      {/* Drag-to-resize handle — sits between the sidebar and the
+          editor. Only meaningful when the sidebar is expanded. */}
+      {!isSidebarCollapsed && <SidebarResizeHandle />}
 
       {/* Editor — width is "fill remaining" rather than the hard
           100vw calc we used before, so the right sidebar can claim
