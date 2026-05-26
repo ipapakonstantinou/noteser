@@ -132,23 +132,56 @@ export function toggleBullet(line: string): string {
   return `${p.indent}- ${p.body}`
 }
 
-// ── CYCLE numbered <-> task ───────────────────────────────────────────────
-// Jon's explicit ask: switch a line between "1." and a task list.
-//   ordered  -> task   ("1. foo"      -> "- [ ] foo")
-//   task     -> ordered("- [ ] foo"   -> "1. foo")
-//   bullet   -> ordered("- foo"       -> "1. foo")
-//   plain    -> ordered("foo"         -> "1. foo")
+// ── CYCLE list type (Mod+Alt+Shift+L) ─────────────────────────────────────
+// Jon's single cycle key. Advance a line through three states, in order:
+//   plain   -> ordered ("foo"        -> "1. foo")
+//   ordered -> task    ("1. foo"     -> "- [ ] foo")
+//   task    -> plain   ("- [ ] foo"  -> "foo")
+// A bullet line is treated as "plain" for the purpose of the cycle's NEXT
+// step, so it advances to ordered (bullets are not one of the three cycle
+// states — Jon will decide on a dedicated bullet step separately).
 // Numbers are fixed up by renumberOrderedRuns after the change.
-export function cycleNumberedTask(line: string): string {
+//
+// `cycleState` names where a line sits in the cycle so the editor command can
+// pick ONE target state from the selection's first list-line and apply it to
+// every line, keeping a multi-line selection consistent.
+export type CycleState = 'plain' | 'ordered' | 'task'
+
+export function cycleState(line: string): CycleState {
   const p = splitListLine(line)
-  if (p.kind === 'ordered') {
-    return `${p.indent}- [ ] ${p.body}`
+  if (p.kind === 'ordered') return 'ordered'
+  if (p.kind === 'task') return 'task'
+  // plain and bullet both count as the cycle's "plain" slot.
+  return 'plain'
+}
+
+// The state that follows `from` in the cycle.
+export function nextCycleState(from: CycleState): CycleState {
+  if (from === 'plain') return 'ordered'
+  if (from === 'ordered') return 'task'
+  return 'plain'
+}
+
+// Rewrite a single line INTO the requested cycle state, preserving indent and
+// (for plain) the bare body. Used by the editor command after it has decided a
+// single target state for the whole selection.
+export function setCycleState(line: string, target: CycleState): string {
+  const p = splitListLine(line)
+  if (target === 'plain') {
+    return `${p.indent}${p.body}`
   }
-  if (p.kind === 'task') {
+  if (target === 'ordered') {
     return `${p.indent}1. ${p.body}`
   }
-  // bullet or plain -> ordered
-  return `${p.indent}1. ${p.body}`
+  // task
+  return `${p.indent}- [ ] ${p.body}`
+}
+
+// Advance a single line one step around the cycle (plain -> ordered -> task ->
+// plain). Convenience wrapper over cycleState + nextCycleState + setCycleState
+// for the single-line case and for unit tests.
+export function cycleListType(line: string): string {
+  return setCycleState(line, nextCycleState(cycleState(line)))
 }
 
 // ── Renumber ordered-list runs ────────────────────────────────────────────

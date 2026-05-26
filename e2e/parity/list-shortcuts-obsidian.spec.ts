@@ -6,21 +6,20 @@ import { setupCleanVault, waitForTestHooks } from './_helpers'
 // Verifies the keyboard commands added in CodeMirrorEditor.tsx that bring the
 // editor's list / todo behaviour in line with Obsidian:
 //
-//   Mod+L          Toggle checkbox status (plain/bullet/ordered -> task,
-//                  task done <-> undone)            [Obsidian default]
-//   Mod+Shift+7    Toggle numbered list (1.)
-//   Mod+Shift+8    Toggle todo (- [ ])
-//   Mod+Shift+9    Cycle numbered <-> task
-//   Alt+Up/Down    Move line, renumbering ordered lists afterwards
-//   Mod+D          UNBOUND (was selectNextOccurrence; now a no-op)
+//   Mod+L            Toggle checkbox status (plain/bullet/ordered -> task,
+//                    task done <-> undone)          [Obsidian default]
+//   Mod+Alt+Shift+L  Cycle list type:
+//                    plain -> "1. " -> "- [ ] " -> plain
+//   Alt+Up/Down      Move line, renumbering ordered lists afterwards
+//   Mod+D            UNBOUND (was selectNextOccurrence; now a no-op)
 //
 // Strategy: Playwright's synthetic keyboard dispatch does NOT reliably reach
-// CodeMirror's `Shift-` chord handler (documented quirk in
-// tasks-toggle-shortcut.spec.ts). The non-shift bindings (Mod+L, Alt+Arrow,
-// Mod+D) dispatch cleanly via page.keyboard. For the Shift chords we send a
+// CodeMirror's modified-chord handler (documented quirk in
+// tasks-toggle-shortcut.spec.ts). The plain bindings (Mod+L, Alt+Arrow, Mod+D)
+// dispatch cleanly via page.keyboard. For the Mod+Alt+Shift+L chord we send a
 // real keydown through the editor's DOM with the exact properties CodeMirror's
-// keymap matcher reads (key, code, ctrlKey, shiftKey), which the matcher
-// resolves identically to a hardware press.
+// keymap matcher reads (key, code, ctrlKey, altKey, shiftKey), which the
+// matcher resolves identically to a hardware press.
 
 test.beforeEach(async ({ page }) => {
   await setupCleanVault(page)
@@ -68,26 +67,27 @@ async function newNoteInEditMode(page: Page) {
   await page.locator('.cm-content').first().click()
 }
 
-// Dispatch a Ctrl+Shift+<digit> chord straight at the focused .cm-content so
-// CodeMirror's keymap matcher sees the precise modifier flags. `digit` is the
-// number key, e.g. 7 for Ctrl+Shift+7.
-async function pressCtrlShiftDigit(page: Page, digit: number) {
-  await page.evaluate((d: number) => {
+// Dispatch the Ctrl+Alt+Shift+L cycle chord straight at the focused
+// .cm-content so CodeMirror's keymap matcher sees the precise modifier flags
+// (Playwright's synthetic modified-press does not reliably reach the matcher).
+async function pressCycleListType(page: Page) {
+  await page.evaluate(() => {
     const el = document.querySelector('.cm-content') as HTMLElement | null
     if (!el) throw new Error('no .cm-content')
     el.focus()
     const ev = new KeyboardEvent('keydown', {
-      key: String(d),
-      code: `Digit${d}`,
-      keyCode: 48 + d,
-      which: 48 + d,
+      key: 'L',
+      code: 'KeyL',
+      keyCode: 76,
+      which: 76,
       ctrlKey: true,
+      altKey: true,
       shiftKey: true,
       bubbles: true,
       cancelable: true,
     })
     el.dispatchEvent(ev)
-  }, digit)
+  })
   await page.waitForTimeout(250)
 }
 
@@ -116,41 +116,62 @@ test('Mod+L marks an unchecked task done (with checkbox), then undone', async ({
   expect(await getNoteContent(page)).not.toMatch(/\[x\]/)
 })
 
-test('Mod+Shift+7 toggles a numbered list on and off', async ({ page }) => {
-  await newNoteInEditMode(page)
-  await typeLine(page, 'First item')
-  await expectContent(page, 'First item')
-  await pressCtrlShiftDigit(page, 7)
-  await expectContent(page, '1. First item')
-
-  await pressCtrlShiftDigit(page, 7)
-  await expectContent(page, 'First item')
-})
-
-test('Mod+Shift+8 toggles a todo on and off', async ({ page }) => {
-  await newNoteInEditMode(page)
-  await typeLine(page, 'A task')
-  await expectContent(page, 'A task')
-  await pressCtrlShiftDigit(page, 8)
-  await expectContent(page, '- [ ] A task')
-
-  await pressCtrlShiftDigit(page, 8)
-  await expectContent(page, 'A task')
-})
-
-test('Mod+Shift+9 cycles a numbered item to a task and back', async ({ page }) => {
+test('Mod+Alt+Shift+L cycles a line plain -> numbered -> task -> plain', async ({ page }) => {
   await newNoteInEditMode(page)
   await typeLine(page, 'Switch me')
   await expectContent(page, 'Switch me')
   // plain -> numbered
-  await pressCtrlShiftDigit(page, 7)
+  await pressCycleListType(page)
   await expectContent(page, '1. Switch me')
   // numbered -> task
-  await pressCtrlShiftDigit(page, 9)
+  await pressCycleListType(page)
   await expectContent(page, '- [ ] Switch me')
-  // task -> numbered
-  await pressCtrlShiftDigit(page, 9)
-  await expectContent(page, '1. Switch me')
+  // task -> plain
+  await pressCycleListType(page)
+  await expectContent(page, 'Switch me')
+})
+
+test('Mod+Alt+Shift+L cycles every line of a multi-line selection in step', async ({ page }) => {
+  await newNoteInEditMode(page)
+  await page.keyboard.type('alpha')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('beta')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('gamma')
+  await expectContent(page, 'alpha\nbeta\ngamma')
+
+  // Select all three lines, then cycle: plain -> numbered for the whole block.
+  await page.keyboard.press('Control+a')
+  await page.waitForTimeout(100)
+  await pressCycleListType(page)
+  await expectContent(page, '1. alpha\n2. beta\n3. gamma')
+
+  // Re-select (Ctrl+A) and cycle again: numbered -> task across the block.
+  await page.keyboard.press('Control+a')
+  await page.waitForTimeout(100)
+  await pressCycleListType(page)
+  await expectContent(page, '- [ ] alpha\n- [ ] beta\n- [ ] gamma')
+
+  // task -> plain for the whole block.
+  await page.keyboard.press('Control+a')
+  await page.waitForTimeout(100)
+  await pressCycleListType(page)
+  await expectContent(page, 'alpha\nbeta\ngamma')
+})
+
+test('Mod+L still toggles done independently of the cycle key', async ({ page }) => {
+  await newNoteInEditMode(page)
+  await typeLine(page, 'Pay rent')
+  await expectContent(page, 'Pay rent')
+  // Mod+L turns the plain line into an unchecked task...
+  await page.keyboard.press('Control+l')
+  await expectContent(page, '- [ ] Pay rent')
+  // ...then toggles it done...
+  await page.keyboard.press('Control+l')
+  await expectContent(page, /^- \[x\] Pay rent/)
+  // ...and back undone. The cycle key (Mod+Alt+Shift+L) is not involved.
+  await page.keyboard.press('Control+l')
+  await expectContent(page, /^- \[ \] Pay rent/)
 })
 
 test('Alt+Down on an ordered list moves the item and renumbers 1,2,3', async ({ page }) => {
