@@ -13,6 +13,12 @@ interface Props {
   className?: string
 }
 
+// oneDark hard-codes a monospace fontFamily on both the <pre> and the
+// inner <code>. Override both with the user's code-font slot (fnt1) so a
+// chosen Monospace / code font reaches syntax-highlighted fenced blocks
+// too. Falls back to oneDark's own stack when --font-mono is unset.
+const FONT_MONO = 'var(--font-mono, ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace)'
+
 export default function PrismHighlighter({ language, children, className }: Props) {
   return (
     <SyntaxHighlighter
@@ -20,6 +26,8 @@ export default function PrismHighlighter({ language, children, className }: Prop
       language={language}
       PreTag="div"
       className={className}
+      customStyle={{ fontFamily: FONT_MONO }}
+      codeTagProps={{ style: { fontFamily: FONT_MONO } }}
     >
       {children}
     </SyntaxHighlighter>

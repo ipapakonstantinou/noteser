@@ -20,6 +20,17 @@
    * Settings → Appearance overrides continue to apply, but the
    * default value is now noteser blue, not Obsidian purple. */
   --obsidian-accent-purple: hsl(217, 88%, 50%);
+
+  /* Font slots (fnt1). User overrides from settingsStore (fontText /
+   * fontMono / fontInterface) are written to these variables at runtime
+   * by useApplyFonts. The defaults below match the historical hard-coded
+   * stacks so an unset choice reproduces today's appearance exactly.
+   *   --font-text       editor content + reading-mode body
+   *   --font-mono       code blocks, inline code, editor/preview mono
+   *   --font-interface  app chrome (sidebar, modals, buttons) */
+  --font-text: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, monospace;
+  --font-mono: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, monospace;
+  --font-interface: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 /* Base styles */
@@ -29,7 +40,7 @@
   }
 
   body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: var(--font-interface);
   }
 
   /* Scrollbar styling */
@@ -89,8 +100,10 @@
   .prose {
     @apply text-obsidianText max-w-none;
     /* Match the editor (CodeMirror live preview) so reading mode and edit
-       mode feel identical: same monospace font, 14px, 1.7 line-height. */
-    font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, monospace;
+       mode feel identical: same font (default monospace), 14px, 1.7
+       line-height. Driven by --font-text so a chosen Text font applies
+       to reading mode live (fnt1). */
+    font-family: var(--font-text);
     font-size: 14px;
     line-height: 1.7;
   }
@@ -150,7 +163,10 @@
   }
 
   .prose code {
-    @apply text-obsidianText bg-obsidianDarkGray px-1.5 py-0.5 rounded text-sm font-mono;
+    @apply text-obsidianText bg-obsidianDarkGray px-1.5 py-0.5 rounded text-sm;
+    /* Code font slot (fnt1) — overrides Tailwind's font-mono so a chosen
+       Monospace / code font applies to inline code + code blocks. */
+    font-family: var(--font-mono);
   }
 
   .prose pre {

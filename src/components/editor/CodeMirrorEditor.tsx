@@ -238,7 +238,10 @@ const obsidianTheme = EditorView.theme({
   '&.cm-focused': { outline: 'none' },
   '.cm-scroller': { overflow: 'auto', height: '100%' },
   '.cm-content': {
-    fontFamily: 'ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace',
+    // Driven by --font-text (fnt1) so a chosen Text font applies to the
+    // editor body live. Falls back to the historical monospace stack
+    // when the variable is unset.
+    fontFamily: 'var(--font-text, ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace)',
     lineHeight: '1.7',
     padding: '16px',
     caretColor: '#dadada',

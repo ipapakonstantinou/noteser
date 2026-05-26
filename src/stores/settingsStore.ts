@@ -226,6 +226,22 @@ export interface SettingsState {
   // VAULT-SYNCED so a user's theme follows them across devices.
   themeOverrides: Record<string, string>
 
+  // ── Fonts (fnt1) ───────────────────────────────────────────────────────
+  // User-pickable font families, applied as CSS variables on :root at
+  // runtime (see src/utils/fonts.ts). Each is a CSS font-family value
+  // (single family name OR a full comma-separated stack). An EMPTY string
+  // means "system default" — the variable is cleared and the default
+  // declared in globals.css takes over, so existing users see no change
+  // until they pick a font. No web-font downloads: these apply to
+  // locally-installed / system fonts.
+  //   fontText      → editor content + reading-mode body
+  //   fontMono      → code blocks, inline code, editor/live-preview mono
+  //   fontInterface → app chrome (sidebar, modals, buttons)
+  // VAULT-SYNCED so a user's font choice follows them across devices.
+  fontText: string
+  fontMono: string
+  fontInterface: string
+
   // ── Share defaults (shr2) ──────────────────────────────────────────────
   // Default expiry (days) baked into newly-generated /share URLs.
   // 0 means "no expiry" — the current legacy default. Per-device.
@@ -314,6 +330,9 @@ export interface SettingsState {
   setThemeOverrides: (overrides: Record<string, string>) => void
   setThemeToken: (token: string, value: string) => void
   resetThemeOverrides: () => void
+  setFontText: (value: string) => void
+  setFontMono: (value: string) => void
+  setFontInterface: (value: string) => void
   // Applies a remote vault-settings payload received via sync. Sets the
   // fields AND moves vaultSettingsUpdatedAt to the remote timestamp +
   // refreshes lastPushedHash so the next push doesn't think this is a
@@ -350,6 +369,9 @@ export const VAULT_SETTING_KEYS = [
   'betaEnabled',
   'betaFlags',
   'themeOverrides',
+  'fontText',
+  'fontMono',
+  'fontInterface',
   // Encryption flag + salt are vault-synced so a fresh device picks
   // them up from the repo's settings.json and knows to unlock the vault
   // before applying remote notes.
@@ -417,6 +439,11 @@ const DEFAULTS = {
   shareDefaultExpiryDays: 0,
   shareDefaultBurn: false,
   themeOverrides: {} as Record<string, string>,
+  // Empty = system default (see src/utils/fonts.ts). Defaults reproduce
+  // today's appearance exactly.
+  fontText: '',
+  fontMono: '',
+  fontInterface: '',
   vaultEncryptionEnabled: false,
   vaultEncryptionSalt: null as string | null,
   vaultEncryptionCanary: null as string | null,
@@ -521,6 +548,12 @@ export const useSettingsStore = create<SettingsState>()(
           vaultSettingsUpdatedAt: Date.now(),
         })),
         resetThemeOverrides: () => setVault({ themeOverrides: {} }),
+        // Fonts are part of the vault-synced slice — going through
+        // setVault keeps vaultSettingsUpdatedAt fresh so cross-device
+        // sync picks up font changes.
+        setFontText: (fontText) => setVault({ fontText }),
+        setFontMono: (fontMono) => setVault({ fontMono }),
+        setFontInterface: (fontInterface) => setVault({ fontInterface }),
         applyRemoteVaultSettings: (fields, remoteUpdatedAt, remoteHash) => {
           set({
             ...fields,

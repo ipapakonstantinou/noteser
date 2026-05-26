@@ -21,6 +21,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { PANELS } from '@/components/sidebar/sidebarPanelRegistry'
 import { THEME_TOKENS, THEME_PRESETS } from '@/utils/theme'
+import { FONT_SLOTS_DEF, SYSTEM_DEFAULT_VALUE, type FontSlot } from '@/utils/fonts'
 import { useUIStore, useSettingsStore, useGitHubStore, useLocalFolderStore, useNoteStore } from '@/stores'
 import type { FolderSortMode, TaskListDensity } from '@/stores'
 import type { TrashMode } from '@/stores/settingsStore'
@@ -400,7 +401,136 @@ function AppearancePanel() {
           })}
         </div>
       </div>
+
+      <FontsSection />
     </div>
+  )
+}
+
+// Font pickers (fnt1). One row per slot: a curated dropdown plus a
+// free-text Custom field for any locally-installed family. The dropdown
+// shows "Custom…" whenever the stored value isn't one of the curated
+// options, and reveals the text input so the user can type a family.
+function FontsSection() {
+  const fontText = useSettingsStore(s => s.fontText)
+  const fontMono = useSettingsStore(s => s.fontMono)
+  const fontInterface = useSettingsStore(s => s.fontInterface)
+  const setFontText = useSettingsStore(s => s.setFontText)
+  const setFontMono = useSettingsStore(s => s.setFontMono)
+  const setFontInterface = useSettingsStore(s => s.setFontInterface)
+
+  const values: Record<string, string> = {
+    text: fontText,
+    mono: fontMono,
+    interface: fontInterface,
+  }
+  const setters: Record<string, (v: string) => void> = {
+    text: setFontText,
+    mono: setFontMono,
+    interface: setFontInterface,
+  }
+
+  return (
+    <div
+      className="space-y-4 pt-3 mt-3 border-t border-obsidianBorder"
+      data-testid="settings-fonts"
+    >
+      <div className="text-xs uppercase tracking-wide text-obsidianSecondaryText">
+        Fonts
+      </div>
+      <p className="text-xs text-obsidianSecondaryText -mt-2">
+        Choose a curated family or type the name of any font installed on
+        this device. No fonts are downloaded. &ldquo;System default&rdquo;
+        keeps today&apos;s look.
+      </p>
+      {FONT_SLOTS_DEF.map(slot => (
+        <FontSlotRow
+          key={slot.id}
+          slot={slot}
+          value={values[slot.id]}
+          onChange={setters[slot.id]}
+        />
+      ))}
+    </div>
+  )
+}
+
+function FontSlotRow({
+  slot,
+  value,
+  onChange,
+}: {
+  slot: FontSlot
+  value: string
+  onChange: (v: string) => void
+}) {
+  // Is the stored value one of the curated options? If not, the user is
+  // in "Custom" mode and we surface the text field pre-filled with it.
+  const isCurated = slot.options.some(o => o.value === value)
+  const [custom, setCustom] = useState(isCurated ? '' : value)
+  // Selecting "Custom…" flips this on without immediately writing a value
+  // (an empty custom field would be treated as system default until typed).
+  const [customMode, setCustomMode] = useState(!isCurated)
+  const [draft, setDraft] = useState(custom)
+
+  // Keep local state in sync if the store value changes underneath us
+  // (e.g. a sync pull or Reset). Recompute curated-ness from the new value.
+  useEffect(() => {
+    const curated = slot.options.some(o => o.value === value)
+    setCustomMode(!curated)
+    if (!curated) {
+      setCustom(value)
+      setDraft(value)
+    }
+  }, [value, slot.options])
+
+  const CUSTOM_SENTINEL = '__custom__'
+  const selectValue = customMode ? CUSTOM_SENTINEL : value
+
+  return (
+    <Field label={slot.label} description={slot.description}>
+      <div className="space-y-2">
+        <SettingsSelect<string>
+          value={selectValue}
+          data-testid={`font-select-${slot.id}`}
+          onChange={(v) => {
+            if (v === CUSTOM_SENTINEL) {
+              setCustomMode(true)
+              // Don't write yet — wait for the user to type a family.
+            } else {
+              setCustomMode(false)
+              onChange(v)
+            }
+          }}
+          options={[
+            ...slot.options,
+            { value: CUSTOM_SENTINEL, label: 'Custom…' },
+          ]}
+        />
+        {customMode && (
+          <input
+            type="text"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => {
+              const v = draft.trim()
+              setCustom(v)
+              onChange(v)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                ;(e.target as HTMLInputElement).blur()
+              }
+            }}
+            spellCheck={false}
+            placeholder="e.g. JetBrains Mono"
+            data-testid={`font-custom-${slot.id}`}
+            className="block w-full bg-obsidianDarkGray border border-obsidianBorder rounded px-2 py-1 text-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple"
+          />
+        )}
+      </div>
+    </Field>
   )
 }
 
