@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { EditorView, keymap, type Command } from '@codemirror/view'
-import { Prec, Compartment, EditorSelection } from '@codemirror/state'
+import { Prec, Compartment } from '@codemirror/state'
 import { moveLineUp, moveLineDown } from '@codemirror/commands'
 import { search, searchKeymap, openSearchPanel } from '@codemirror/search'
 import { diffGutterExtension, setDiffBaseline } from './diffGutter'
@@ -23,9 +23,9 @@ import { findNoteByTitleOrAlias } from '@/utils/aliases'
 import { toggleTaskLineText, UI_TASK_LINE_REGEX } from '@/utils/tasks'
 import {
   splitListLine,
-  toggleTodo,
-  toggleNumbered,
-  cycleNumberedTask,
+  cycleState,
+  nextCycleState,
+  setCycleState,
   renumberOrderedRuns,
 } from '@/utils/listTransforms'
 import {
@@ -103,43 +103,6 @@ async function insertImagesAt(view: EditorView, files: File[], pos: number): Pro
 }
 
 // ── List / todo line-command plumbing ──────────────────────────────────────
-// Apply a pure per-line transform (from utils/listTransforms) to every line
-// the current selection touches, then renumber any ordered-list runs in the
-// document so "1." sequences stay 1,2,3 after the edit. One transaction so
-// undo is a single step. The caret/selection is mapped through the change so
-// it lands sensibly after the rewrite.
-function applyLineTransform(view: EditorView, transform: (line: string) => string): boolean {
-  const { state } = view
-  const range = state.selection.main
-  const fromLine = state.doc.lineAt(range.from)
-  const toLine = state.doc.lineAt(range.to)
-
-  const changes: { from: number; to: number; insert: string }[] = []
-  for (let n = fromLine.number; n <= toLine.number; n++) {
-    const line = state.doc.line(n)
-    const next = transform(line.text)
-    if (next !== line.text) {
-      changes.push({ from: line.from, to: line.to, insert: next })
-    }
-  }
-  if (changes.length === 0) return false
-
-  // First transaction: the per-line rewrite. We map the selection through it.
-  const tr = state.update({
-    changes,
-    selection: range.empty
-      ? undefined
-      : EditorSelection.single(fromLine.from, state.doc.line(toLine.number).to),
-    scrollIntoView: true,
-  })
-  view.dispatch(tr)
-
-  // Second pass: renumber ordered runs across the whole doc. Cheap (one split)
-  // and keeps "1." lists correct after a toggle inserts/removes an item.
-  renumberDocument(view)
-  return true
-}
-
 // Rewrite ordered-list numbers across the whole document if any are wrong.
 // Emits MINIMAL per-line changes (only the lines whose number changed) rather
 // than a full-doc replace, so the diff gutter and undo history stay tidy and
@@ -186,6 +149,33 @@ const toggleCheckboxStatus: Command = (view) => {
       const carrier = parts.kind === 'ordered' ? parts.carrier : '- '
       next = `${parts.indent}${carrier}[ ] ${parts.body}`
     }
+    if (next !== line.text) changes.push({ from: line.from, to: line.to, insert: next })
+  }
+  if (changes.length === 0) return false
+  view.dispatch({ changes, scrollIntoView: true })
+  renumberDocument(view)
+  return true
+}
+
+// Mod+Alt+Shift+L — Cycle list type. Advance the selected line(s) through the
+// three-state cycle: plain -> numbered ("1. ") -> task ("- [ ] ") -> plain.
+// For a multi-line selection we read the FIRST line's state, advance ONCE, and
+// drive EVERY line to that same target so a mixed selection ends up uniform
+// (this mirrors how the other list toggles read intent off the leading line).
+// Indentation/nesting is preserved by the pure helpers; ordered runs are then
+// renumbered so "1." sequences read 1,2,3.
+const cycleListTypeCommand: Command = (view) => {
+  const { state } = view
+  const range = state.selection.main
+  const fromLine = state.doc.lineAt(range.from)
+  const toLine = state.doc.lineAt(range.to)
+
+  const target = nextCycleState(cycleState(fromLine.text))
+
+  const changes: { from: number; to: number; insert: string }[] = []
+  for (let n = fromLine.number; n <= toLine.number; n++) {
+    const line = state.doc.line(n)
+    const next = setCycleState(line.text, target)
     if (next !== line.text) changes.push({ from: line.from, to: line.to, insert: next })
   }
   if (changes.length === 0) return false
@@ -561,29 +551,14 @@ export function CodeMirrorEditor({
     // (1) Mod+L — Toggle checkbox status (Obsidian default). Flip a task
     // done/undone; turn a plain/bullet/numbered line into a checkbox.
     { key: 'Mod-l', preventDefault: true, run: toggleCheckboxStatus },
-    // (2) Mod+Shift+7 — Toggle numbered list. Obsidian ships "Toggle numbered
-    // list" with NO default hotkey, so we pick Mod+Shift+7 (the 7/& key, the
-    // ordered-list convention shared by Google Docs / Notion).
+    // (2) Mod+Alt+Shift+L — Cycle list type. One key that advances the current
+    // line(s) through plain -> numbered ("1. ") -> task ("- [ ] ") -> plain.
+    // Replaces the earlier trio of Mod+Shift+7/8/9 toggles. Separate from
+    // Mod+L (which only toggles a checkbox done/undone).
     {
-      key: 'Mod-Shift-7',
+      key: 'Mod-Alt-Shift-l',
       preventDefault: true,
-      run: (view) => applyLineTransform(view, toggleNumbered),
-    },
-    // (3) Mod+Shift+8 — Toggle todo (`- [ ]`) on/off. Pairs with the numbered
-    // toggle (8/* is the bullet/unordered-list convention); Obsidian leaves
-    // these unbound by default.
-    {
-      key: 'Mod-Shift-8',
-      preventDefault: true,
-      run: (view) => applyLineTransform(view, toggleTodo),
-    },
-    // (4) Mod+Shift+9 — Cycle a line between numbered list and task list
-    // (Jon's explicit "switch between 1. and a task list"). Obsidian's
-    // "Cycle bullet/checkbox" has no default key, so we assign one.
-    {
-      key: 'Mod-Shift-9',
-      preventDefault: true,
-      run: (view) => applyLineTransform(view, cycleNumberedTask),
+      run: cycleListTypeCommand,
     },
     // (5) Alt+Up / Alt+Down — Move line up/down (Obsidian default), then
     // renumber ordered runs so "1." sequences stay 1,2,3 after the move.

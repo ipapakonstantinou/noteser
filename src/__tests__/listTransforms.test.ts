@@ -4,7 +4,10 @@ import {
   toggleTodo,
   toggleNumbered,
   toggleBullet,
-  cycleNumberedTask,
+  cycleState,
+  nextCycleState,
+  setCycleState,
+  cycleListType,
   renumberOrderedRuns,
 } from '@/utils/listTransforms'
 
@@ -92,24 +95,78 @@ describe('toggleBullet', () => {
   })
 })
 
-describe('cycleNumberedTask', () => {
-  it('ordered -> task', () => {
-    expect(cycleNumberedTask('1. thing')).toBe('- [ ] thing')
+describe('cycleState', () => {
+  it('classifies plain', () => {
+    expect(cycleState('thing')).toBe('plain')
   })
-  it('task -> ordered', () => {
-    expect(cycleNumberedTask('- [ ] thing')).toBe('1. thing')
+  it('treats a bullet as the cycle "plain" slot', () => {
+    expect(cycleState('- thing')).toBe('plain')
   })
-  it('checked task -> ordered (drops checkbox)', () => {
-    expect(cycleNumberedTask('- [x] thing')).toBe('1. thing')
+  it('classifies ordered', () => {
+    expect(cycleState('1. thing')).toBe('ordered')
   })
-  it('bullet -> ordered', () => {
-    expect(cycleNumberedTask('- thing')).toBe('1. thing')
+  it('classifies a task (checked or unchecked)', () => {
+    expect(cycleState('- [ ] thing')).toBe('task')
+    expect(cycleState('- [x] thing')).toBe('task')
+    expect(cycleState('2. [ ] thing')).toBe('task')
   })
-  it('plain -> ordered', () => {
-    expect(cycleNumberedTask('thing')).toBe('1. thing')
+})
+
+describe('nextCycleState', () => {
+  it('advances plain -> ordered -> task -> plain', () => {
+    expect(nextCycleState('plain')).toBe('ordered')
+    expect(nextCycleState('ordered')).toBe('task')
+    expect(nextCycleState('task')).toBe('plain')
+  })
+})
+
+describe('setCycleState', () => {
+  it('rewrites a line to plain, keeping body + indent', () => {
+    expect(setCycleState('  1. sub', 'plain')).toBe('  sub')
+    expect(setCycleState('- [x] done', 'plain')).toBe('done')
+  })
+  it('rewrites a line to ordered', () => {
+    expect(setCycleState('thing', 'ordered')).toBe('1. thing')
+    expect(setCycleState('- [ ] thing', 'ordered')).toBe('1. thing')
+  })
+  it('rewrites a line to task (unchecked)', () => {
+    expect(setCycleState('thing', 'task')).toBe('- [ ] thing')
+    expect(setCycleState('1. thing', 'task')).toBe('- [ ] thing')
   })
   it('preserves indent', () => {
-    expect(cycleNumberedTask('  1. sub')).toBe('  - [ ] sub')
+    expect(setCycleState('   deep', 'ordered')).toBe('   1. deep')
+  })
+})
+
+describe('cycleListType (Mod+Alt+Shift+L)', () => {
+  it('plain -> numbered', () => {
+    expect(cycleListType('thing')).toBe('1. thing')
+  })
+  it('numbered -> task', () => {
+    expect(cycleListType('1. thing')).toBe('- [ ] thing')
+  })
+  it('task -> plain', () => {
+    expect(cycleListType('- [ ] thing')).toBe('thing')
+  })
+  it('checked task -> plain (drops the checkbox)', () => {
+    expect(cycleListType('- [x] thing')).toBe('thing')
+  })
+  it('a bullet advances to numbered (treated as plain)', () => {
+    expect(cycleListType('- thing')).toBe('1. thing')
+  })
+  it('completes a full round trip back to plain', () => {
+    let line = 'thing'
+    line = cycleListType(line) // -> 1. thing
+    expect(line).toBe('1. thing')
+    line = cycleListType(line) // -> - [ ] thing
+    expect(line).toBe('- [ ] thing')
+    line = cycleListType(line) // -> thing
+    expect(line).toBe('thing')
+  })
+  it('preserves indent through the cycle', () => {
+    expect(cycleListType('  sub')).toBe('  1. sub')
+    expect(cycleListType('  1. sub')).toBe('  - [ ] sub')
+    expect(cycleListType('  - [ ] sub')).toBe('  sub')
   })
 })
 
