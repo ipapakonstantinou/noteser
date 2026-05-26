@@ -229,6 +229,35 @@ describe('markdownLivePreview StateField', () => {
     expect(decos.find(d => d.from === 0 && d.to === 0 && d.class === 'cm-lp-task-done')).toBeUndefined()
   })
 
+  // ── Jon's verbatim structure: DONE parent + DONE children + ✅ date stamp ───
+  //
+  // Reported bug: in live preview a done sub-task nested under a done parent is
+  // not struck through, even though top-level done tasks are. Jon's exact shape
+  // uses the Obsidian Tasks completion stamp "✅ YYYY-MM-DD". These tests assert
+  // that every done line — parent AND each nested child — gets the
+  // `cm-lp-task-done` line decoration, across tab / 4-space / 2-space indents.
+  test.each([
+    ['tab',     '- [x] AMD Q04 we must adjust the  iiaVMAgencyCompanyCode & number range ✅ 2026-05-25\n\t- [x] AMD Artifact name & customer ✅ 2026-05-25\n\t- [x] Check BG BAU everywhere ✅ 2026-05-25'],
+    ['4-space', '- [x] AMD Q04 we must adjust the  iiaVMAgencyCompanyCode & number range ✅ 2026-05-25\n    - [x] AMD Artifact name & customer ✅ 2026-05-25\n    - [x] Check BG BAU everywhere ✅ 2026-05-25'],
+    ['2-space', '- [x] AMD Q04 we must adjust the  iiaVMAgencyCompanyCode & number range ✅ 2026-05-25\n  - [x] AMD Artifact name & customer ✅ 2026-05-25\n  - [x] Check BG BAU everywhere ✅ 2026-05-25'],
+  ])('done parent + done children with ✅ stamp (%s indent): every line is struck', (_label, doc) => {
+    const decos = collectDecos(makeState(doc, 0))
+    for (let n = 1; n <= 3; n++) {
+      const ls = lineStart(doc, n)
+      expect(
+        decos.find(d => d.from === ls && d.to === ls && d.class === 'cm-lp-task-done'),
+      ).toBeDefined()
+    }
+  })
+
+  test('done parent + UNDONE child with ✅ stamp: child is NOT struck', () => {
+    const doc = '- [x] done parent ✅ 2026-05-25\n\t- [ ] still open child'
+    const decos = collectDecos(makeState(doc, 0))
+    expect(decos.find(d => d.from === 0 && d.to === 0 && d.class === 'cm-lp-task-done')).toBeDefined()
+    const childStart = lineStart(doc, 2)
+    expect(decos.find(d => d.from === childStart && d.to === childStart && d.class === 'cm-lp-task-done')).toBeUndefined()
+  })
+
   test('StateField is registered with EditorView.decorations facet', () => {
     // The plugin is a StateField, verify it participates in EditorView.decorations
     // by checking its `provide` property produces the right facet provider.
