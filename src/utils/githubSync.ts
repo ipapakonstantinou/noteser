@@ -115,6 +115,46 @@ export function notePath(note: Note, folders: Folder[]): string {
   return dir ? `${dir}/${file}` : file
 }
 
+// preserve-gitpath-on-push (the sanitizer-churn fix): the destination path a
+// PUSH writes a note to.
+//
+// THE CHURN BUG: on clone a note's gitPath is set to the REAL remote path
+// (e.g. "R&D Work.md"). On push we used to ALWAYS re-derive the path from the
+// title via notePath(), which runs the title back through sanitizeFilename.
+// The old aggressive sanitizer stripped git-legal characters (`&`, `'`, `:`,
+// …), so the recomputed path ("RD Work.md") no longer matched the stored
+// gitPath ("R&D Work.md"). The push then deleted the real file + created a
+// stripped-name copy — rename churn on EVERY sync, permanently mangling the
+// user's filenames. (The relaxed sanitizer in sanitizeFilename.ts is the other
+// half of the fix; together they stop the drift.)
+//
+// THE RULE:
+//   * NEW note (gitPath null/empty — never synced): derive a fresh path from
+//     the title via notePath() (relaxed sanitizer). It has no remote path yet.
+//   * SYNCED note whose title + folder STILL derive to its stored gitPath:
+//     use the stored gitPath VERBATIM. This is the no-churn path — even if any
+//     residual sanitizer difference existed, the cloned note stays pinned to
+//     the exact path the remote already has, so a freshly-cloned vault pushes
+//     nothing.
+//   * SYNCED note whose derived path DIFFERS from gitPath: the user genuinely
+//     RENAMED the title or MOVED the folder (updateNote/moveNoteToFolder change
+//     title/folderId but NOT gitPath — propagation is the push's job). We
+//     return the freshly-derived path so the move reaches the remote; the
+//     deletion loop (step 4) sha:null's the old gitPath. NOT breaking this is
+//     why we re-derive instead of blindly trusting gitPath.
+//
+// Folder names feed the derived path through buildFolderPath (also relaxed), so
+// the same principle covers folder-name churn: a synced note under a folder
+// like "Users & groups" derives back to its stored gitPath → no churn; a real
+// folder rename/move derives a new path → propagates.
+export function pushPath(note: Note, folders: Folder[]): string {
+  if (!note.gitPath) return notePath(note, folders)
+  // Synced note: trust the stored path unless a genuine rename/move means the
+  // derived path no longer matches it.
+  const derived = notePath(note, folders)
+  return derived === note.gitPath ? note.gitPath : derived
+}
+
 // Map common image extensions to MIME types so attachment pulls hand the
 // apply layer a properly-typed Blob. Unknown extensions fall back to
 // `application/octet-stream` — the file still round-trips, just without a
@@ -1106,7 +1146,12 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   const activeNotes = notes.filter(n => !n.isDeleted && n.contentLoaded !== false)
   const desired = new Map<string, { content: string; note: Note }>()
   for (const note of activeNotes) {
-    const path = notePath(note, folders)
+    // preserve-gitpath-on-push: a synced note pushes to its EXISTING gitPath
+    // verbatim; only a new note (no gitPath) derives a fresh path from its
+    // title. This is what stops the sanitizer-relax churn — a cloned note keeps
+    // the exact remote path even when the title contains characters the
+    // sanitizer would alter. See pushPath() for the rename rationale.
+    const path = pushPath(note, folders)
     const content = serializeNote(note)
     // If two notes resolve to the same path (e.g. duplicate titles in same
     // folder), the later one in the array wins. Acceptable for v1.
