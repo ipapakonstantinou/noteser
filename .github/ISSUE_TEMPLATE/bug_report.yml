@@ -1,0 +1,40 @@
+name: Bug report
+description: Something in noteser is not working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please do not paste private note contents or any GitHub token.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What went wrong, and what did you expect to happen instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: false
+  - type: input
+    id: env
+    attributes:
+      label: Browser / OS / installed as a PWA?
+      placeholder: e.g. Chrome 148 on macOS, installed as PWA
+    validations:
+      required: false
+  - type: textarea
+    id: console
+    attributes:
+      label: Console errors (optional)
+      description: Anything in the browser DevTools console.
+      render: shell
+    validations:
+      required: false
