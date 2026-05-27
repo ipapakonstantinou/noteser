@@ -1,8 +1,6 @@
-# Sponsor button for the repo. Uncomment and fill in the handles you actually
-# have, then GitHub shows a "Sponsor" button. Leave everything commented (as
-# now) and no button appears — no broken links.
-#
+# Sponsor button for the repo.
+custom: ["https://www.paypal.me/IoannisPapakonstan"]
+
+# When you enroll in GitHub Sponsors (recommended; pays out via your Stripe),
+# add it as the primary and it becomes the native button:
 # github: [your-github-sponsors-username]
-# ko_fi: your-kofi-username
-# buy_me_a_coffee: your-bmac-username
-# custom: ["https://your-link"]
