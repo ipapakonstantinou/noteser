@@ -6,9 +6,7 @@
 
 **Live:** [noteser.app](https://noteser.app)
 
-<!-- TODO: drop a hero screenshot or GIF here.
-     Suggested path: `public/screenshot.png` (or `.gif`), then:
-     ![Noteser](./public/screenshot.png) -->
+![Noteser](./public/screenshot.png)
 
 Browser-first, Obsidian-style markdown note app with optional GitHub sync.
 
