@@ -11,6 +11,7 @@ import { diffGutterExtension, setDiffBaseline } from './diffGutter'
 import { getLastPushedContent } from '@/utils/lastPushedContent'
 import { useDebouncedCallback } from '@/hooks/useDebounce'
 import { useUIStore, useGitHubStore } from '@/stores'
+import { useSettingsStore } from '@/stores/settingsStore'
 import { markdownLivePreview } from './markdownLivePreview'
 import { tasksLivePreview } from './tasksLivePreview'
 import { basesLivePreview } from './basesLivePreview'
@@ -331,6 +332,20 @@ const obsidianTheme = EditorView.theme({
   '.cm-searchMatch.cm-searchMatch-selected': { backgroundColor: 'rgba(250, 204, 21, 0.55)' },
 })
 
+// Opt the editable surface into (or out of) the device keyboard's autocorrect,
+// auto-capitalisation, and word suggestions. CodeMirror disables all three by
+// default so it won't "correct" code or markdown; the "Autocorrect & word
+// suggestions" setting turns them on, which is what makes a phone keyboard show
+// its predictive-text strip. Returns an explicit off-state too, so the
+// compartment flips deterministically rather than relying on browser defaults.
+function autocorrectAttrs(enabled: boolean) {
+  return EditorView.contentAttributes.of(
+    enabled
+      ? { autocorrect: 'on', autocapitalize: 'sentences', spellcheck: 'true' }
+      : { autocorrect: 'off', autocapitalize: 'off', spellcheck: 'false' }
+  )
+}
+
 export function CodeMirrorEditor({
   noteId,
   initialContent,
@@ -351,6 +366,12 @@ export function CodeMirrorEditor({
   // editor is byte-for-byte the same as before this phase.
   const collabCompartmentRef = useRef(new Compartment())
   const collabBindingRef = useRef<CollabBinding | null>(null)
+
+  // Autocorrect / word-suggestions compartment. Created once; reconfigured by
+  // an effect when the `editorAutocorrect` setting flips, so we toggle it live
+  // without rebuilding the (memoized-once) extension list.
+  const autocorrectCompartmentRef = useRef(new Compartment())
+  const editorAutocorrect = useSettingsStore(s => s.editorAutocorrect)
 
   // Stable refs so extension callbacks always see the latest values
   const activeNotesRef = useRef(activeNotes)
@@ -528,12 +549,28 @@ export function CodeMirrorEditor({
 
   const debouncedSave = useDebouncedCallback(onSave, 300)
 
+  // Flip autocorrect / suggestions live when the setting changes. The view may
+  // not exist yet on the first tick (keyed remount); the seed value in the
+  // extensions memo covers the initial render, so we just no-op until it's up.
+  useEffect(() => {
+    const view = cmRef.current?.view
+    if (!view) return
+    view.dispatch({
+      effects: autocorrectCompartmentRef.current.reconfigure(autocorrectAttrs(editorAutocorrect)),
+    })
+  }, [editorAutocorrect])
+
   // Extensions are stable (created once) — callbacks reach out to refs for fresh values
   const extensions = useMemo(() => [
     // Collaboration compartment. Starts empty; the collab effect
     // reconfigures it with the yCollab binding when collab is enabled.
     // Empty = zero behavioural change, which is the dormant default.
     collabCompartmentRef.current.of([]),
+    // Seed with the current setting; the effect below keeps it in sync. Read
+    // via getState() so this memo (empty deps) stays created-once.
+    autocorrectCompartmentRef.current.of(
+      autocorrectAttrs(useSettingsStore.getState().editorAutocorrect),
+    ),
     markdown({ base: markdownLanguage }),
     markdownLivePreview,
     tasksLivePreview,
