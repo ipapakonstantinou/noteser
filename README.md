@@ -1,12 +1,16 @@
-# Noteser
+<h1 align="center">Noteser</h1>
 
-![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
-![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)
-![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)
+<p align="center">
+  <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT">
+  <img src="https://img.shields.io/badge/node-%E2%89%A518-brightgreen" alt="Node">
+  <img src="https://img.shields.io/badge/Next.js-15-black?logo=next.js" alt="Next.js">
+</p>
 
-**Live:** [noteser.app](https://noteser.app)
+<p align="center"><strong>Live:</strong> <a href="https://noteser.app">noteser.app</a></p>
 
-![Noteser](./public/screenshot.png)
+<p align="center">
+  <img src="./public/screenshot.png" alt="Noteser" width="900">
+</p>
 
 Browser-first, Obsidian-style markdown note app with optional GitHub sync.
 
