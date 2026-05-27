@@ -33,7 +33,7 @@ const RevertToCommitModal = dynamic(() => import('@/components/modals/RevertToCo
 const LocalFolderImportModal = dynamic(() => import('@/components/modals/LocalFolderImportModal').then(m => ({ default: m.LocalFolderImportModal })), { ssr: false })
 const DiscardLocalChangesModal = dynamic(() => import('@/components/modals/DiscardLocalChangesModal').then(m => ({ default: m.DiscardLocalChangesModal })), { ssr: false })
 import { useSettingsStore } from '@/stores/settingsStore'
-import { useKeyboardShortcuts, useHydration, useAutoSync, useAutoEmbedNotes, useApplyTheme, useViewport } from '@/hooks'
+import { useKeyboardShortcuts, useHydration, useAutoSync, useAutoEmbedNotes, useApplyTheme, useApplyFonts, useViewport } from '@/hooks'
 import { useUIStore, useWorkspaceStore, useGitHubStore, DEFAULT_SIDEBAR_WIDTH } from '@/stores'
 import { switchVault } from '@/utils/switchVault'
 import { notesKey } from '@/utils/repoStorage'
@@ -164,6 +164,11 @@ export default function Home() {
   // colors to :root CSS variables so Tailwind utilities pick them up
   // live. No-op when themeOverrides is empty.
   useApplyTheme()
+
+  // Apply the user's font choices (fnt1) — writes chosen font-family
+  // values to --font-text / --font-mono / --font-interface on :root.
+  // No-op when all three are empty (system defaults).
+  useApplyFonts()
 
   // Lock-on-startup: if the vault has encryption enabled but the
   // in-memory key isn't loaded (every page refresh re-locks by

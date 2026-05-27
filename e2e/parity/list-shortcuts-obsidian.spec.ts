@@ -91,6 +91,30 @@ async function pressCycleListType(page: Page) {
   await page.waitForTimeout(250)
 }
 
+// Dispatch the Ctrl+Alt+Shift+B bullet-toggle chord straight at the focused
+// .cm-content (same DOM-dispatch idiom as pressCycleListType — Playwright's
+// synthetic modified press does not reliably reach CodeMirror's matcher).
+async function pressBulletToggle(page: Page) {
+  await page.evaluate(() => {
+    const el = document.querySelector('.cm-content') as HTMLElement | null
+    if (!el) throw new Error('no .cm-content')
+    el.focus()
+    const ev = new KeyboardEvent('keydown', {
+      key: 'B',
+      code: 'KeyB',
+      keyCode: 66,
+      which: 66,
+      ctrlKey: true,
+      altKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    el.dispatchEvent(ev)
+  })
+  await page.waitForTimeout(250)
+}
+
 async function typeLine(page: Page, text: string) {
   await page.keyboard.type(text)
   await page.waitForTimeout(250)
@@ -193,6 +217,76 @@ test('Alt+Down on an ordered list moves the item and renumbers 1,2,3', async ({ 
 
   // alpha is now second; numbers must still read 1,2,3.
   await expectContent(page, '1. beta\n2. alpha\n3. gamma')
+})
+
+test('Mod+Alt+Shift+B toggles a plain line into a "- " bullet and back', async ({ page }) => {
+  await newNoteInEditMode(page)
+  await typeLine(page, 'a bullet')
+  await expectContent(page, 'a bullet')
+  // plain -> "- "
+  await pressBulletToggle(page)
+  await expectContent(page, '- a bullet')
+  // "- " -> plain
+  await pressBulletToggle(page)
+  await expectContent(page, 'a bullet')
+})
+
+test('Mod+Alt+Shift+B toggles every line of a multi-line selection', async ({ page }) => {
+  await newNoteInEditMode(page)
+  await page.keyboard.type('one')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('two')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('three')
+  await expectContent(page, 'one\ntwo\nthree')
+
+  // Select all three, toggle bullets on.
+  await page.keyboard.press('Control+a')
+  await page.waitForTimeout(100)
+  await pressBulletToggle(page)
+  await expectContent(page, '- one\n- two\n- three')
+
+  // Re-select, toggle bullets back off.
+  await page.keyboard.press('Control+a')
+  await page.waitForTimeout(100)
+  await pressBulletToggle(page)
+  await expectContent(page, 'one\ntwo\nthree')
+})
+
+test('Mod+Alt+Shift+B is independent of the cycle: a bullet stays out of the cycle', async ({ page }) => {
+  await newNoteInEditMode(page)
+  await typeLine(page, 'standalone')
+  // Bullet toggle turns it into a "- " bullet.
+  await pressBulletToggle(page)
+  await expectContent(page, '- standalone')
+  // The cycle key (Mod+Alt+Shift+L) treats a bullet as the "plain" slot and
+  // advances to numbered — confirming the bullet is NOT a cycle state and the
+  // two commands stay independent.
+  await pressCycleListType(page)
+  await expectContent(page, '1. standalone')
+})
+
+test('Mod+L and Mod+Alt+Shift+L are untouched after adding the bullet toggle', async ({ page }) => {
+  await newNoteInEditMode(page)
+  // Mod+L still: plain -> task -> done -> undone.
+  await typeLine(page, 'check me')
+  await page.keyboard.press('Control+l')
+  await expectContent(page, '- [ ] check me')
+  await page.keyboard.press('Control+l')
+  await expectContent(page, /^- \[x\] check me/)
+  await page.keyboard.press('Control+l')
+  await expectContent(page, /^- \[ \] check me/)
+
+  // Mod+Alt+Shift+L still cycles plain -> numbered -> task -> plain on a fresh line.
+  await page.keyboard.press('Control+a')
+  await page.keyboard.press('Delete')
+  await typeLine(page, 'cycle me')
+  await pressCycleListType(page)
+  await expectContent(page, '1. cycle me')
+  await pressCycleListType(page)
+  await expectContent(page, '- [ ] cycle me')
+  await pressCycleListType(page)
+  await expectContent(page, 'cycle me')
 })
 
 test('Mod+D no longer deletes / mangles the line (Obsidian leaves it unbound)', async ({ page }) => {

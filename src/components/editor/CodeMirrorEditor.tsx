@@ -26,6 +26,7 @@ import {
   cycleState,
   nextCycleState,
   setCycleState,
+  toggleBullet,
   renumberOrderedRuns,
 } from '@/utils/listTransforms'
 import {
@@ -184,6 +185,32 @@ const cycleListTypeCommand: Command = (view) => {
   return true
 }
 
+// Mod+Alt+Shift+B — Toggle plain bullet list. STANDALONE toggle, separate from
+// the Mod+Alt+Shift+L cycle (a bullet is NOT one of the cycle's states). On a
+// plain line it prepends "- "; on an existing "- " bullet it strips the marker
+// back to plain. Works across a multi-line selection and preserves each line's
+// indentation. The string logic lives in toggleBullet (listTransforms.ts).
+const toggleBulletCommand: Command = (view) => {
+  const { state } = view
+  const range = state.selection.main
+  const fromLine = state.doc.lineAt(range.from)
+  const toLine = state.doc.lineAt(range.to)
+
+  const changes: { from: number; to: number; insert: string }[] = []
+  for (let n = fromLine.number; n <= toLine.number; n++) {
+    const line = state.doc.line(n)
+    const next = toggleBullet(line.text)
+    if (next !== line.text) changes.push({ from: line.from, to: line.to, insert: next })
+  }
+  if (changes.length === 0) return false
+  view.dispatch({ changes, scrollIntoView: true })
+  // Bullets carry no numbers, but a toggle can convert an ordered line into a
+  // bullet (toggleBullet ordered -> bullet), so heal any ordered runs left
+  // behind elsewhere in the doc — matches the other list commands.
+  renumberDocument(view)
+  return true
+}
+
 // Wrap a built-in move-line command so an ordered list renumbers after the
 // move. Obsidian renumbers when you Alt+Up/Down a list item; this matches.
 function moveLineThenRenumber(base: Command): Command {
@@ -238,7 +265,10 @@ const obsidianTheme = EditorView.theme({
   '&.cm-focused': { outline: 'none' },
   '.cm-scroller': { overflow: 'auto', height: '100%' },
   '.cm-content': {
-    fontFamily: 'ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace',
+    // Driven by --font-text (fnt1) so a chosen Text font applies to the
+    // editor body live. Falls back to the historical monospace stack
+    // when the variable is unset.
+    fontFamily: 'var(--font-text, ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace)',
     lineHeight: '1.7',
     padding: '16px',
     caretColor: '#dadada',
@@ -559,6 +589,15 @@ export function CodeMirrorEditor({
       key: 'Mod-Alt-Shift-l',
       preventDefault: true,
       run: cycleListTypeCommand,
+    },
+    // (3) Mod+Alt+Shift+B — Toggle a plain bullet list ("- ") on the current
+    // line(s). A STANDALONE toggle, NOT part of the Mod+Alt+Shift+L cycle:
+    // a plain line gains "- ", a "- " bullet drops it. Multi-line aware,
+    // indentation preserved.
+    {
+      key: 'Mod-Alt-Shift-b',
+      preventDefault: true,
+      run: toggleBulletCommand,
     },
     // (5) Alt+Up / Alt+Down — Move line up/down (Obsidian default), then
     // renumber ordered runs so "1." sequences stay 1,2,3 after the move.

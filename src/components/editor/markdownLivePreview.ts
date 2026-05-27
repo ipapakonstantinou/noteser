@@ -239,7 +239,8 @@ const livePreviewTheme = EditorView.baseTheme({
   '.cm-lp-bold':   { fontWeight: '700' },
   '.cm-lp-italic': { fontStyle: 'italic' },
   '.cm-lp-code': {
-    fontFamily: 'ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace',
+    // Code font slot (fnt1) — inline code inside the live-preview editor.
+    fontFamily: 'var(--font-mono, ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace)',
     background: '#333333',
     borderRadius: '3px',
     padding: '1px 4px',
