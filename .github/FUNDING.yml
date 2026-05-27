@@ -1,5 +1,7 @@
-# Sponsor button for the repo.
-custom: ["https://www.paypal.me/IoannisPapakonstan"]
+# Sponsor button for the repo. Stripe (pay-what-you-want) first, PayPal second.
+custom:
+  - "https://buy.stripe.com/4gMcN65EX0bkcOn7eP4gg00"
+  - "https://www.paypal.me/IoannisPapakonstan"
 
 # When you enroll in GitHub Sponsors (recommended; pays out via your Stripe),
 # add it as the primary and it becomes the native button:
