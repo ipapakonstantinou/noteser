@@ -21,24 +21,33 @@ const TIP_ATTR = 'data-noteser-tip'
 const OPEN_DELAY_MS = 400
 const GAP = 8
 
-// Move one element's native `title` into our data attribute, preserving the
-// accessible name. Exported for unit testing.
+// We only take tooltips over on ICON-ONLY interactive controls — buttons and
+// links whose purpose isn't obvious because they show no text. Everything that
+// already displays its own text (note rows, tabs, commit lines, menu items,
+// bookmarks) keeps its original native title untouched, so reliable tooltips
+// appear only where a label is genuinely needed, not "everywhere".
+const CONTROL_SELECTOR = 'button, a[href], [role="button"]'
+
+export function shouldAdoptTooltip(el: Element): boolean {
+  if (!el.matches(CONTROL_SELECTOR)) return false
+  // Icon-only = no visible text label.
+  return (el.textContent ?? '').trim().length === 0
+}
+
+// Move an icon-only control's native `title` into our data attribute,
+// preserving the accessible name. Non-controls and text-labelled controls are
+// left exactly as they were. Exported for unit testing.
 export function adoptTitle(el: Element): void {
+  if (!shouldAdoptTooltip(el)) return
   const raw = el.getAttribute('title')
   if (raw === null) return
   el.removeAttribute('title')
   const text = raw.trim()
   if (!text) return
   el.setAttribute(TIP_ATTR, text)
-  // Mirror to aria-label ONLY for controls that would otherwise have no
-  // accessible name — i.e. icon-only buttons with no visible text. For an
-  // element that already shows text, that text IS the accessible name, so we
-  // leave it alone rather than override it with the (often longer) tip.
-  const hasName =
-    el.hasAttribute('aria-label') ||
-    el.hasAttribute('aria-labelledby') ||
-    (el.textContent ?? '').trim().length > 0
-  if (!hasName) {
+  // Icon-only control → mirror to aria-label so screen readers keep the label,
+  // unless it already has an explicit accessible name.
+  if (!el.hasAttribute('aria-label') && !el.hasAttribute('aria-labelledby')) {
     el.setAttribute('aria-label', text)
   }
 }

@@ -1,8 +1,9 @@
-import { adoptTitle } from '@/components/ui/TooltipLayer'
+import { adoptTitle, shouldAdoptTooltip } from '@/components/ui/TooltipLayer'
 
-// adoptTitle is the accessibility-critical part of the tooltip layer: it must
-// suppress the native title (so the browser stops drawing its flaky tooltip)
-// WITHOUT dropping the element's accessible name.
+// The tooltip layer only takes over ICON-ONLY interactive controls (buttons /
+// links with no visible text). It must (a) suppress the native title and keep
+// the accessible name on those, and (b) leave every other titled element
+// untouched so reliable tooltips don't appear "everywhere".
 
 function el(html: string): Element {
   const d = document.createElement('div')
@@ -10,9 +11,26 @@ function el(html: string): Element {
   return d.firstElementChild as Element
 }
 
+describe('shouldAdoptTooltip', () => {
+  it('accepts icon-only buttons and links', () => {
+    expect(shouldAdoptTooltip(el('<button title="x"><svg></svg></button>'))).toBe(true)
+    expect(shouldAdoptTooltip(el('<a href="#" title="x"></a>'))).toBe(true)
+    expect(shouldAdoptTooltip(el('<span role="button" title="x"></span>'))).toBe(true)
+  })
+
+  it('rejects controls that already show text', () => {
+    expect(shouldAdoptTooltip(el('<button title="x">Save</button>'))).toBe(false)
+  })
+
+  it('rejects non-interactive elements', () => {
+    expect(shouldAdoptTooltip(el('<div title="Full note title">Note title</div>'))).toBe(false)
+    expect(shouldAdoptTooltip(el('<li title="x"></li>'))).toBe(false)
+  })
+})
+
 describe('adoptTitle', () => {
-  it('moves title into the data attr and mirrors it to aria-label', () => {
-    const button = el('<button title="New note (Alt+N)"></button>')
+  it('adopts an icon-only button: moves title to data attr + mirrors aria-label', () => {
+    const button = el('<button title="New note (Alt+N)"><svg></svg></button>')
     adoptTitle(button)
     expect(button.hasAttribute('title')).toBe(false)
     expect(button.getAttribute('data-noteser-tip')).toBe('New note (Alt+N)')
@@ -20,38 +38,24 @@ describe('adoptTitle', () => {
   })
 
   it('does NOT clobber an existing aria-label', () => {
-    const button = el('<button title="Tip text" aria-label="Real label"></button>')
+    const button = el('<button title="Tip text" aria-label="Real label"><svg></svg></button>')
     adoptTitle(button)
     expect(button.getAttribute('data-noteser-tip')).toBe('Tip text')
     expect(button.getAttribute('aria-label')).toBe('Real label')
   })
 
-  it('respects an existing aria-labelledby (no aria-label added)', () => {
-    const button = el('<button title="Tip" aria-labelledby="x"></button>')
+  it('leaves a text-labelled button completely alone', () => {
+    const button = el('<button title="Commit & sync">Commit</button>')
     adoptTitle(button)
-    expect(button.getAttribute('data-noteser-tip')).toBe('Tip')
-    expect(button.hasAttribute('aria-label')).toBe(false)
-  })
-
-  it('removes an empty/whitespace title without creating a tip', () => {
-    const button = el('<button title="   "></button>')
-    adoptTitle(button)
-    expect(button.hasAttribute('title')).toBe(false)
+    expect(button.getAttribute('title')).toBe('Commit & sync')
     expect(button.hasAttribute('data-noteser-tip')).toBe(false)
-    expect(button.hasAttribute('aria-label')).toBe(false)
   })
 
-  it('does NOT add aria-label to an element that already has visible text', () => {
-    const item = el('<div title="Full note title that is long">Note title</div>')
-    adoptTitle(item)
-    expect(item.getAttribute('data-noteser-tip')).toBe('Full note title that is long')
-    expect(item.hasAttribute('aria-label')).toBe(false)
-  })
-
-  it('is a no-op on elements without a title', () => {
-    const button = el('<button aria-label="x"></button>')
-    adoptTitle(button)
-    expect(button.hasAttribute('data-noteser-tip')).toBe(false)
-    expect(button.getAttribute('aria-label')).toBe('x')
+  it('leaves a non-interactive titled element (note row) alone', () => {
+    const row = el('<div title="Full note title that is long">Note title</div>')
+    adoptTitle(row)
+    expect(row.getAttribute('title')).toBe('Full note title that is long')
+    expect(row.hasAttribute('data-noteser-tip')).toBe(false)
+    expect(row.hasAttribute('aria-label')).toBe(false)
   })
 })
