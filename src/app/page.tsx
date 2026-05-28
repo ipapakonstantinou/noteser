@@ -114,8 +114,14 @@ export default function Home() {
   // Once the vault's notes are genuinely loaded: drop tabs whose note is
   // really gone, then — only if nothing is open — restore a useful note.
   // Preference: the previously-active note, else the most-recently-updated.
+  // When the user has turned "reopen tabs on startup" off, skip restoring and
+  // start fresh with an empty workspace instead.
   useEffect(() => {
     if (!vaultReady) return
+    if (!useSettingsStore.getState().reopenTabsOnStartup) {
+      useWorkspaceStore.getState().resetToEmptyWorkspace()
+      return
+    }
     pruneStaleTabs()
 
     const ws = useWorkspaceStore.getState()

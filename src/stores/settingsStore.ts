@@ -103,6 +103,10 @@ export interface SettingsState {
   // predictive-text strip while writing prose. Per-device — autocorrect is
   // a property of the keyboard you're typing on, not the vault.
   editorAutocorrect: boolean
+  // When true (default), reopen the tabs that were open last session on
+  // startup. When false, start fresh each load with an empty workspace.
+  // Per-device — a startup/session preference, not vault content.
+  reopenTabsOnStartup: boolean
   // First day of the week in the sidebar Calendar grid. 0 = Sunday
   // (default), 1 = Monday. Device-only UI pref — NOT vault-synced, since
   // week-start convention is a per-user/per-device display choice.
@@ -301,6 +305,7 @@ export interface SettingsState {
   setAiCommitMessages: (enabled: boolean) => void
   setNotesOpenInPreviewMode: (enabled: boolean) => void
   setEditorAutocorrect: (enabled: boolean) => void
+  setReopenTabsOnStartup: (enabled: boolean) => void
   setCalendarWeekStartDay: (day: CalendarWeekStartDay) => void
   setShortcutOverride: (id: string, combo: string) => void
   clearShortcutOverride: (id: string) => void
@@ -415,6 +420,7 @@ const DEFAULTS = {
   aiCommitMessages: false,
   notesOpenInPreviewMode: false,
   editorAutocorrect: true,
+  reopenTabsOnStartup: true,
   calendarWeekStartDay: 1 as CalendarWeekStartDay,
   shortcutOverrides: {} as Record<string, string>,
   trashMode: 'trash' as TrashMode,
@@ -491,6 +497,7 @@ export const useSettingsStore = create<SettingsState>()(
         setAiCommitMessages: (aiCommitMessages) => set({ aiCommitMessages }),
         setNotesOpenInPreviewMode: (notesOpenInPreviewMode) => set({ notesOpenInPreviewMode }),
         setEditorAutocorrect: (editorAutocorrect) => set({ editorAutocorrect }),
+        setReopenTabsOnStartup: (reopenTabsOnStartup) => set({ reopenTabsOnStartup }),
         setCalendarWeekStartDay: (calendarWeekStartDay) => set({ calendarWeekStartDay }),
         setShortcutOverride: (id, combo) =>
           set((state) => ({

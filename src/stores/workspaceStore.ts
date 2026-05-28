@@ -77,6 +77,9 @@ interface WorkspaceState {
   recordMergeApplied: () => void
   closeAllMergeTabs: () => void
   pruneStaleTabs: () => void
+  // Reset to a single empty pane (start fresh). Used on startup when the
+  // "reopen tabs on startup" setting is off.
+  resetToEmptyWorkspace: () => void
   // Reorder / move a tab. Drops the tab into the destination pane at the
   // given index. `toIdx` may be tabs.length to append.
   moveTab: (tabId: string, toPaneId: string, toIdx: number) => void
@@ -646,6 +649,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           histories,
           recents: pruneRecents(state.recents, liveIds),
         })
+      },
+      resetToEmptyWorkspace: () => {
+        const pane = makePane()
+        set({ panes: [pane], activePaneId: pane.id, histories: {} })
+        useNoteStore.getState().selectNote(null)
       },
     }),
     {

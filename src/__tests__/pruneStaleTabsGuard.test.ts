@@ -48,3 +48,15 @@ test('still prunes a genuinely stale tab when other notes are present', () => {
   const { panes } = useWorkspaceStore.getState()
   expect(panes[0].tabs.find(t => t.kind === 'note' && t.noteId === 'n1')).toBeUndefined()
 })
+
+test('resetToEmptyWorkspace clears tabs to a single empty pane', () => {
+  useNoteStore.setState({ notes: [note('n1')], selectedNoteId: 'n1' })
+  useWorkspaceStore.setState({
+    panes: [{ id: 'p1', tabs: [{ id: 't1', kind: 'note', noteId: 'n1', isPreview: false }], activeTabId: 't1' }],
+    activePaneId: 'p1', mergeAppliedCount: 0,
+  })
+  useWorkspaceStore.getState().resetToEmptyWorkspace()
+  const { panes } = useWorkspaceStore.getState()
+  expect(panes).toHaveLength(1)
+  expect(panes[0].tabs).toHaveLength(0)
+})

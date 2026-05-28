@@ -549,6 +549,8 @@ function EditorPanel() {
   const setNotesOpenInPreviewMode = useSettingsStore(s => s.setNotesOpenInPreviewMode)
   const editorAutocorrect = useSettingsStore(s => s.editorAutocorrect)
   const setEditorAutocorrect = useSettingsStore(s => s.setEditorAutocorrect)
+  const reopenTabsOnStartup = useSettingsStore(s => s.reopenTabsOnStartup)
+  const setReopenTabsOnStartup = useSettingsStore(s => s.setReopenTabsOnStartup)
 
   return (
     <div className="space-y-4">
@@ -569,6 +571,15 @@ function EditorPanel() {
         <SettingsCheckbox
           checked={editorAutocorrect}
           onChange={setEditorAutocorrect}
+        />
+      </Field>
+      <Field
+        label="Reopen tabs on startup"
+        description="When ON (default), the notes you had open are reopened when you reload or return to noteser. Turn it OFF to start fresh with an empty workspace each time."
+      >
+        <SettingsCheckbox
+          checked={reopenTabsOnStartup}
+          onChange={setReopenTabsOnStartup}
         />
       </Field>
       <Field
