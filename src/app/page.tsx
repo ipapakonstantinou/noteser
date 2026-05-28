@@ -72,21 +72,52 @@ export default function Home() {
   // sidebarCollapsed: true = drawer closed, false = drawer open.
   const drawerOpen = mobileLayout && !isSidebarCollapsed
 
-  // After hydration, drop any persisted tabs whose underlying notes are gone.
-  useEffect(() => {
-    if (hydrated) pruneStaleTabs()
-  }, [hydrated, pruneStaleTabs])
-
-  // After hydration + prune, if there are still no open tabs, restore
-  // *something* useful so the user lands on a note instead of "No note
-  // selected." Preference order:
-  //   1. The previously-active note (`selectedNoteId`) if it still
-  //      exists and isn't soft-deleted.
-  //   2. The most-recently-updated non-deleted note as a fallback —
-  //      covers the case where the previously-selected note got purged
-  //      (trash, sync, etc.) since the last session.
+  // Startup sequencing. The note/folder stores rehydrate from IndexedDB
+  // ASYNC, and for a GitHub-connected vault the real notes live under a
+  // repo-scoped key we only switch to AFTER mount. We MUST NOT prune
+  // "orphaned" tabs or run the restore-fallback until the correct notes are
+  // genuinely loaded: otherwise prune sees zero notes, treats every persisted
+  // tab as orphaned, wipes the workspace, and writes the empty result back —
+  // so on a synced vault the tabs never come back on reload. `vaultReady`
+  // gates those steps until the vault's notes are actually present.
+  const [vaultReady, setVaultReady] = useState(false)
   useEffect(() => {
     if (!hydrated) return
+    let cancelled = false
+    void (async () => {
+      // 1. Wait for the note store's own (async, IDB-backed) rehydration.
+      if (!useNoteStore.persist.hasHydrated()) {
+        await new Promise<void>(resolve => {
+          let settled = false
+          const finish = () => { if (!settled) { settled = true; resolve() } }
+          const unsub = useNoteStore.persist.onFinishHydration(() => { unsub(); finish() })
+          // Safety net: never hang if the finish event was already missed.
+          setTimeout(finish, 3000)
+        })
+      }
+      // 2. If a repo is connected but we're still on the unscoped default key,
+      //    switch to the scoped key — this loads the real vault from IDB, so
+      //    the notes are present once it resolves.
+      const repo = useGitHubStore.getState().syncRepo
+      if (repo) {
+        const currentName = useNoteStore.persist.getOptions().name as string
+        if (currentName !== notesKey(repo)) {
+          await switchVault(repo, { carryOver: true })
+            .catch(err => console.error('Vault scope migration failed', err))
+        }
+      }
+      if (!cancelled) setVaultReady(true)
+    })()
+    return () => { cancelled = true }
+  }, [hydrated])
+
+  // Once the vault's notes are genuinely loaded: drop tabs whose note is
+  // really gone, then — only if nothing is open — restore a useful note.
+  // Preference: the previously-active note, else the most-recently-updated.
+  useEffect(() => {
+    if (!vaultReady) return
+    pruneStaleTabs()
+
     const ws = useWorkspaceStore.getState()
     const hasOpenTabs = ws.panes.some(p => p.tabs.length > 0)
     if (hasOpenTabs) return
@@ -99,23 +130,10 @@ export default function Home() {
       target = activeNotes.find(n => n.id === selectedNoteId)
     }
     if (!target) {
-      // Pick the most-recently-updated note as a fallback.
       target = activeNotes.slice().sort((a, b) => b.updatedAt - a.updatedAt)[0]
     }
     if (target) ws.openNote(target.id, { preview: false })
-  }, [hydrated])
-
-  // After hydration, if a repo is connected but the stores are still pointed
-  // at the unscoped default key (e.g. first run after upgrading to per-repo
-  // vaults), move them to the scoped key so subsequent writes are isolated.
-  useEffect(() => {
-    if (!hydrated) return
-    const repo = useGitHubStore.getState().syncRepo
-    if (!repo) return
-    const currentName = useNoteStore.persist.getOptions().name as string
-    if (currentName === notesKey(repo)) return
-    switchVault(repo, { carryOver: true }).catch(err => console.error('Vault scope migration failed', err))
-  }, [hydrated])
+  }, [vaultReady, pruneStaleTabs])
 
   // Set up keyboard shortcuts
   useKeyboardShortcuts()

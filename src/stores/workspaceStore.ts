@@ -614,7 +614,14 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       },
 
       pruneStaleTabs: () => {
-        const liveIds = new Set(useNoteStore.getState().notes.filter(n => !n.isDeleted).map(n => n.id))
+        const notes = useNoteStore.getState().notes
+        // Never prune while the note store is empty. On startup that means
+        // notes simply haven't loaded yet (IDB is async; a synced vault loads
+        // under a repo-scoped key after mount) — NOT that every tab is
+        // orphaned. Pruning here would wipe the whole restored workspace and
+        // persist the empty result, so tabs would never come back on reload.
+        if (notes.length === 0) return
+        const liveIds = new Set(notes.filter(n => !n.isDeleted).map(n => n.id))
         const state = get()
         const next = state.panes.map(p => {
           const cleanTabs = p.tabs.filter(t => t.kind !== 'note' || liveIds.has(t.noteId))
