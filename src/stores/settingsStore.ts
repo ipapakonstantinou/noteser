@@ -96,6 +96,13 @@ export interface SettingsState {
   // "wow" rendered output up front; clicking pencil / pressing the
   // toggle still switches to edit. Per-device.
   notesOpenInPreviewMode: boolean
+  // When true (default), the editor opts the editable surface into the
+  // device keyboard's autocorrect, capitalisation, and word suggestions
+  // (spellcheck). CodeMirror leaves these OFF by default so it won't mangle
+  // code or markdown; turning it on makes phone keyboards offer their
+  // predictive-text strip while writing prose. Per-device — autocorrect is
+  // a property of the keyboard you're typing on, not the vault.
+  editorAutocorrect: boolean
   // First day of the week in the sidebar Calendar grid. 0 = Sunday
   // (default), 1 = Monday. Device-only UI pref — NOT vault-synced, since
   // week-start convention is a per-user/per-device display choice.
@@ -293,6 +300,7 @@ export interface SettingsState {
   setAiEmbeddingsEnabled: (enabled: boolean) => void
   setAiCommitMessages: (enabled: boolean) => void
   setNotesOpenInPreviewMode: (enabled: boolean) => void
+  setEditorAutocorrect: (enabled: boolean) => void
   setCalendarWeekStartDay: (day: CalendarWeekStartDay) => void
   setShortcutOverride: (id: string, combo: string) => void
   clearShortcutOverride: (id: string) => void
@@ -406,6 +414,7 @@ const DEFAULTS = {
   aiEmbeddingsEnabled: false,
   aiCommitMessages: false,
   notesOpenInPreviewMode: false,
+  editorAutocorrect: true,
   calendarWeekStartDay: 1 as CalendarWeekStartDay,
   shortcutOverrides: {} as Record<string, string>,
   trashMode: 'trash' as TrashMode,
@@ -481,6 +490,7 @@ export const useSettingsStore = create<SettingsState>()(
         setAiEmbeddingsEnabled: (aiEmbeddingsEnabled) => set({ aiEmbeddingsEnabled }),
         setAiCommitMessages: (aiCommitMessages) => set({ aiCommitMessages }),
         setNotesOpenInPreviewMode: (notesOpenInPreviewMode) => set({ notesOpenInPreviewMode }),
+        setEditorAutocorrect: (editorAutocorrect) => set({ editorAutocorrect }),
         setCalendarWeekStartDay: (calendarWeekStartDay) => set({ calendarWeekStartDay }),
         setShortcutOverride: (id, combo) =>
           set((state) => ({

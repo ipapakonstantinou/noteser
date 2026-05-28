@@ -547,6 +547,8 @@ function EditorPanel() {
   const setTaskListDensity = useSettingsStore(s => s.setTaskListDensity)
   const notesOpenInPreviewMode = useSettingsStore(s => s.notesOpenInPreviewMode)
   const setNotesOpenInPreviewMode = useSettingsStore(s => s.setNotesOpenInPreviewMode)
+  const editorAutocorrect = useSettingsStore(s => s.editorAutocorrect)
+  const setEditorAutocorrect = useSettingsStore(s => s.setEditorAutocorrect)
 
   return (
     <div className="space-y-4">
@@ -558,6 +560,15 @@ function EditorPanel() {
         <SettingsCheckbox
           checked={notesOpenInPreviewMode}
           onChange={setNotesOpenInPreviewMode}
+        />
+      </Field>
+      <Field
+        label="Autocorrect & word suggestions"
+        description="When ON (default), lets your keyboard's autocorrect, auto-capitalisation, and predictive-text suggestions work while you type — most noticeable on phones, which only show their suggestion strip when this is on. Turn it OFF if you don't want it altering code blocks, wikilinks, or task syntax."
+      >
+        <SettingsCheckbox
+          checked={editorAutocorrect}
+          onChange={setEditorAutocorrect}
         />
       </Field>
       <Field

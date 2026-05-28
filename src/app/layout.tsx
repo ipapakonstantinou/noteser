@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { headers } from 'next/headers'
 import { PwaProvider } from '@/components/pwa/PwaProvider'
+import { TooltipLayer } from '@/components/ui/TooltipLayer'
 import '@/styles/globals.css'
 
 export const metadata: Metadata = {
@@ -61,6 +62,7 @@ export default async function RootLayout({
       >
         {children}
         <PwaProvider />
+        <TooltipLayer />
       </body>
     </html>
   )
