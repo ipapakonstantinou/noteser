@@ -212,6 +212,29 @@ const toggleBulletCommand: Command = (view) => {
   return true
 }
 
+// Pressing Enter at the end of an EMPTY checkbox line exits the list, leaving a
+// blank line (Obsidian behaviour). Returns false for everything else so the
+// markdown keymap keeps handling normal continuation — a checkbox WITH text
+// continues as a fresh "- [ ] ", which already works. This exists because the
+// markdown continuation only recognises a task when a space follows the "]";
+// a freshly-inserted "- [ ]" with the cursor right after the bracket would
+// otherwise degrade into a plain "- " bullet on Enter.
+const EMPTY_CHECKBOX_LINE = /^(\s*)([-*+])\s+\[[ xX]\]\s*$/
+const exitEmptyCheckboxOnEnter: Command = (view) => {
+  const { state } = view
+  const sel = state.selection.main
+  if (!sel.empty) return false
+  const line = state.doc.lineAt(sel.head)
+  if (sel.head !== line.to) return false
+  if (!EMPTY_CHECKBOX_LINE.test(line.text)) return false
+  view.dispatch({
+    changes: { from: line.from, to: line.to, insert: '' },
+    selection: { anchor: line.from },
+    userEvent: 'input',
+  })
+  return true
+}
+
 // Wrap a built-in move-line command so an ordered list renumbers after the
 // move. Obsidian renumbers when you Alt+Up/Down a list item; this matches.
 function moveLineThenRenumber(base: Command): Command {
@@ -618,6 +641,10 @@ export function CodeMirrorEditor({
     // "bookmark this page" dialog (Ctrl+D), which is interceptable (unlike
     // Ctrl+W). Replaces the old selectNextOccurrence binding we removed.
     { key: 'Mod-d', preventDefault: true, run: deleteLine },
+    // Enter on an EMPTY checkbox exits the list. No preventDefault: when it
+    // returns false (any other line) the event falls through to the markdown
+    // keymap's normal Enter continuation.
+    { key: 'Enter', run: exitEmptyCheckboxOnEnter },
     // ── Obsidian-style list / todo commands ────────────────────────────────
     // (1) Mod+L — Toggle checkbox status (Obsidian default). Flip a task
     // done/undone; turn a plain/bullet/numbered line into a checkbox.
