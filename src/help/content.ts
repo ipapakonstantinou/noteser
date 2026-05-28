@@ -60,7 +60,7 @@ A few essentials — full list under **Settings → Shortcuts**:
 - \`Ctrl+E\` — toggle preview mode
 - \`Ctrl+B\` — toggle sidebar
 - \`Ctrl+,\` — open settings
-- \`Ctrl+W\` — close current tab
+- \`Alt+W\` — close current tab
 
 Press \`Ctrl+/\` any time to see the shortcuts modal. For deeper dives on
 each editor power feature see [Editor power features](/help/editor).
@@ -212,7 +212,7 @@ Open the shortcuts cheatsheet with \`Ctrl+/\`. Some highlights:
 | New folder | \`Ctrl+Shift+N\` |
 | Toggle preview | \`Ctrl+E\` |
 | Toggle sidebar | \`Ctrl+B\` |
-| Close tab | \`Ctrl+W\` |
+| Close tab | \`Alt+W\` |
 | Open settings | \`Ctrl+,\` |
 | Toggle task at cursor | \`Alt+L\` |
 | Remove task prefix | \`Alt+Shift+L\` |

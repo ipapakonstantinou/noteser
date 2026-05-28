@@ -114,8 +114,8 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   {
     id: 'closeTab',
     label: 'Close active tab',
-    description: 'Close the currently focused tab. Matches Obsidian / VS Code.',
-    defaultCombo: 'Ctrl+W',
+    description: 'Close the currently focused tab. Alt+W rather than Ctrl+W, which the browser reserves for closing its own tab.',
+    defaultCombo: 'Alt+W',
     action: 'closeTab',
   },
   {

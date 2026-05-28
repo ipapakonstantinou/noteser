@@ -5,7 +5,7 @@ import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { EditorView, keymap, type Command } from '@codemirror/view'
 import { Prec, Compartment } from '@codemirror/state'
-import { moveLineUp, moveLineDown } from '@codemirror/commands'
+import { moveLineUp, moveLineDown, deleteLine } from '@codemirror/commands'
 import { search, searchKeymap, openSearchPanel } from '@codemirror/search'
 import { diffGutterExtension, setDiffBaseline } from './diffGutter'
 import { getLastPushedContent } from '@/utils/lastPushedContent'
@@ -614,6 +614,10 @@ export function CodeMirrorEditor({
         return true
       },
     },
+    // Mod+D — delete the current line. preventDefault suppresses the browser's
+    // "bookmark this page" dialog (Ctrl+D), which is interceptable (unlike
+    // Ctrl+W). Replaces the old selectNextOccurrence binding we removed.
+    { key: 'Mod-d', preventDefault: true, run: deleteLine },
     // ── Obsidian-style list / todo commands ────────────────────────────────
     // (1) Mod+L — Toggle checkbox status (Obsidian default). Flip a task
     // done/undone; turn a plain/bullet/numbered line into a checkbox.

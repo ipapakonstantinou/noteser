@@ -24,6 +24,10 @@ interface ShortcutHandlers {
 const ALLOWED_IN_INPUT: ReadonlySet<ShortcutAction> = new Set<ShortcutAction>([
   'openSearch',
   'openCommandPalette',
+  // Close-tab must work while the cursor is in the editor too — that's the
+  // common case (you close the note you're editing). Its Alt+W combo isn't a
+  // normal typing keystroke, so allowing it in inputs is safe.
+  'closeTab',
 ])
 
 export const useKeyboardShortcuts = (handlers: ShortcutHandlers = {}) => {
