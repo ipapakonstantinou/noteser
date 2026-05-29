@@ -21,26 +21,37 @@ describe('shouldPromptForUpdate', () => {
 })
 
 describe('shouldReloadOnControllerChange', () => {
-  test('reloads on the first controllerchange', () => {
-    expect(shouldReloadOnControllerChange(false)).toBe(true)
+  test('does NOT reload on the first-install claim (no prior controller)', () => {
+    // The fresh-install clients.claim() fires controllerchange with no update
+    // takeover — reloading there made every new visitor load twice.
+    expect(shouldReloadOnControllerChange(false, false)).toBe(false)
+  })
+
+  test('reloads on a genuine update takeover', () => {
+    expect(shouldReloadOnControllerChange(false, true)).toBe(true)
   })
 
   test('never reloads again once latched (no reload loop)', () => {
-    expect(shouldReloadOnControllerChange(true)).toBe(false)
+    expect(shouldReloadOnControllerChange(true, true)).toBe(false)
   })
 
-  test('models the host latch: reload exactly once across repeated events', () => {
+  test('models the host latch: reload exactly once across repeated update events', () => {
     let reloaded = false
     let reloadCount = 0
     const onControllerChange = () => {
-      if (!shouldReloadOnControllerChange(reloaded)) return
+      if (!shouldReloadOnControllerChange(reloaded, true)) return
       reloaded = true
       reloadCount += 1
     }
-    // Fire controllerchange several times — only the first must act.
     onControllerChange()
     onControllerChange()
     onControllerChange()
     expect(reloadCount).toBe(1)
+  })
+
+  test('a first-install claim followed by a later update: only the update reloads', () => {
+    // First the claim (no takeover) must not reload; then an update takeover must.
+    expect(shouldReloadOnControllerChange(false, false)).toBe(false)
+    expect(shouldReloadOnControllerChange(false, true)).toBe(true)
   })
 })

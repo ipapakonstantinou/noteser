@@ -60,6 +60,10 @@ export function PwaProvider() {
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null)
   // Latched once we trigger the reload so a second controllerchange can't loop.
   const reloadedRef = useRef(false)
+  // Set when the user explicitly accepts an update ("Reload" button), so a
+  // same-session takeover reloads even though no controller existed when this
+  // tab first loaded.
+  const userAcceptedUpdateRef = useRef(false)
 
   // Register the service worker (production only) and wire up the update flow.
   useEffect(() => {
@@ -74,10 +78,17 @@ export function PwaProvider() {
 
     let cleanupReg: (() => void) | undefined
 
+    // Whether a SW already controlled this page when the tab loaded. On a FIRST
+    // install there is none — the install's clients.claim() then fires
+    // controllerchange, and we must NOT treat that as an update reload.
+    const hadControllerAtStart = Boolean(sw.controller)
+
     // When a waiting worker activates it fires controllerchange; reload ONCE so
-    // the page picks up the new build. Guarded against reload loops.
+    // the page picks up the new build — but only for a genuine UPDATE takeover,
+    // never the first-install claim. Guarded against reload loops.
     const onControllerChange = () => {
-      if (!shouldReloadOnControllerChange(reloadedRef.current)) return
+      const isUpdateTakeover = hadControllerAtStart || userAcceptedUpdateRef.current
+      if (!shouldReloadOnControllerChange(reloadedRef.current, isUpdateTakeover)) return
       reloadedRef.current = true
       window.location.reload()
     }
@@ -152,6 +163,9 @@ export function PwaProvider() {
   // User accepted the update: ask the waiting worker to take over. Its
   // activation fires controllerchange, which reloads the page exactly once.
   const handleReload = () => {
+    // Mark this as a user-accepted update so the resulting controllerchange
+    // reloads even if no controller existed when the tab first loaded.
+    userAcceptedUpdateRef.current = true
     waitingWorker?.postMessage({ type: 'SKIP_WAITING' })
   }
 
