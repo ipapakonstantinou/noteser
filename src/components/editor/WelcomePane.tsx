@@ -88,6 +88,16 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
           </p>
         </div>
 
+        {/* Demo clip: the live-preview editing experience. Plain <img> on
+            purpose — next/image does not animate GIFs. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/demo/noteser-demo.gif"
+          alt="Typing a note in noteser: live-preview Markdown with wikilinks, tags, and tasks"
+          className="w-full rounded-lg border border-obsidianBorder shadow-obsidian"
+          loading="lazy"
+        />
+
         {/* Coming from Obsidian — the migration path is "point at your repo
             and go", so it sits right under the hero where an Obsidian user
             sees it first. Opens the GitHub connect flow. */}
