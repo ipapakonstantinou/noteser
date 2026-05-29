@@ -22,10 +22,18 @@ export function shouldPromptForUpdate(
   return state === 'installed' && hasController === true
 }
 
-// Guard against reload loops: 'controllerchange' can fire more than once, and
-// a reload that itself triggers another controllerchange must not re-reload.
-// The host keeps a single boolean and routes it through this helper so the
-// page reloads exactly once per accepted update.
-export function shouldReloadOnControllerChange(alreadyReloaded: boolean): boolean {
-  return alreadyReloaded === false
+// Decide whether a 'controllerchange' should reload the page.
+//
+//   - `alreadyReloaded` guards against reload loops: a reload that itself
+//     triggers another controllerchange must not re-reload.
+//   - `isUpdateTakeover` distinguishes a genuine UPDATE (a new SW replacing
+//     one that already controlled the page, or an update the user explicitly
+//     accepted) from the FIRST install, where the SW's clients.claim() fires
+//     controllerchange with no prior controller. Reloading on that first claim
+//     made every new visitor load twice; we now skip it.
+export function shouldReloadOnControllerChange(
+  alreadyReloaded: boolean,
+  isUpdateTakeover: boolean,
+): boolean {
+  return alreadyReloaded === false && isUpdateTakeover === true
 }
