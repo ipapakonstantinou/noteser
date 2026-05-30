@@ -5,22 +5,50 @@ Loosely prioritized — top section is what's being picked up next, bottom is
 (`.claude/orchestrator/queue.json`) holds the *active* work; this file is the
 wider backlog.
 
-Last refresh: 2026-05-23 (mid-day).
+Last refresh: 2026-05-30 (evening, post-launch tranche).
 
-> The 2026-05-21 batch + 2026-05-22 → 23 stretch are all in prod. Domain
-> migrated to **noteser.app** (308 redirect from the old URL). See
-> "Recently shipped (2026-05-22 → 2026-05-23)" for the latest tranche.
+> Everything below "Recently shipped (2026-05-25 → 2026-05-30)" is now
+> in prod at noteser.app (main `48b53b5`). The launch GTM thread also
+> kicked off this week — see "Launch / GTM status" below.
 
 ## In flight
 
 _Nothing right now._
 
+## Launch / GTM status (2026-05-30)
+
+- **r/ObsidianMD** — POSTED + PERMA-BANNED on launch day. Mods removed
+  the post citing pinned-rules violation (the sub funnels project
+  showcases through mod pre-approval; we did not check). 614 views
+  in 60 min before removal. Lesson recorded in
+  `~/.claude/projects/-home-jon-github/memory/project_noteser_launch.md`:
+  ALWAYS read pinned posts + sidebar rules on every niche sub BEFORE
+  posting. r/ObsidianMD is closed off going forward.
+- **r/PKMS** — Mod pre-approved a Self Promotion thread comment.
+  Pending Jon's actual post.
+- **r/SideProject (300k members)** — queued for Sunday morning EST.
+  Recon required: pinned thread vs. standalone post.
+- **r/selfhosted, r/Notetaking, r/opensource** — queued, one per
+  24h pacing rule.
+- **Show HN** — queued, no mod pre-approval needed.
+
 ## Next (genuinely upcoming)
 
+- **Email signup** (#16 in task list) — Jon picked Buttondown 2026-05-30.
+  Blocked on Jon creating the Buttondown account + sharing the API key.
+  Will compound with Reddit / HN traffic.
+- **Sponsor / tip-jar links** (#24) — blocked on you creating GitHub
+  Sponsors + Ko-fi accounts. (Note: Stripe donations are already live
+  per separate project memory.)
+- **Native wrap via Tauri** (#26) — multi-week scope, NOW MORE INTERESTING
+  after the 2026-05-30 mobile-keyboard saga: the iOS Safari input-
+  accessory pill cannot be hidden from a web app, so a native wrap is
+  the only path to an Obsidian-style keyboard-flush experience. Bonus:
+  closes the keyboard-PWA pain Jon hit on his iPhone.
 - **Live collaboration — Phase B/C.** Add yjs + y-websocket deps; bind
   a `Y.Doc` per note; integrate y-codemirror.next for remote cursors.
   Phase A (presence + WebSocket probe) is already in prod.
-- **Security audit follow-ups** still open (medium severity):
+- **Security audit follow-ups** (older, still open, medium severity):
   - Finding 2: OAuth scope — needs user input on `repo` →
     `public_repo` / fine-grained PAT trade-off.
   - Finding 3: in-memory rate limiter on serverless — needs Vercel KV
@@ -29,11 +57,15 @@ _Nothing right now._
     controlled trust depth.
   - Finding 6: nonce-based `script-src` — Next.js middleware
     investigation.
-- **Email signup** (#16 in task list) — blocked on you picking a
-  provider (Buttondown vs Resend) + creating the account.
-- **Sponsor / tip-jar links** (#24) — blocked on you creating GitHub
-  Sponsors + Ko-fi accounts.
-- **Native desktop (Tauri)** (#26) — multi-week scope, not started.
+- **OPTIONS preflight tightening on git-proxy** — defence-in-depth
+  follow-up from the 2026-05-30 git-proxy security fix (see SECURITY.md
+  audit log). Echo only allowed origins rather than `*`. Low priority;
+  the actual handler is already guarded.
+- **ESLint rule migration off `next lint`** — the noteser repo is on
+  flat-config via FlatCompat, but `next/core-web-vitals` silently drops
+  custom rule blocks in that wrapping (verified 2026-05-30 trying to
+  add an XSS-sink ban). A hand-written `eslint.config.mjs` without the
+  next preset would let real lint rules land. ~1h scope.
 
 ## User feedback pending clarification
 
@@ -59,6 +91,94 @@ _Nothing right now._
   Yjs server is available.
 - **Tab navigation inside markdown tables** (insert helper shipped
   2026-05-23; navigation between cells is the follow-up).
+
+## Recently shipped (2026-05-25 → 2026-05-30)
+
+Six days of post-roadmap-refresh work, in approximate order.
+
+### Launch tranche (2026-05-30)
+
+The whole-day Saturday push tied to the first r/ObsidianMD launch post:
+
+- **Five welcome-page demo GIFs** under the hero (connect flow + git
+  interface + calendar + tasks query + iPhone layout). All recorded
+  via Playwright against live noteser.app with `__noteser_test.stores`
+  setState seeds, then ffmpeg webm → GIF with `crop=1280:720:0:0`
+  before scale (kills the bottom-80px grey strip Playwright records
+  but noteser does not paint).
+- **Hero rebrand** to "Your second brain in the browser, synced to
+  GitHub..." while keeping the "Coming from Obsidian?" CTA below the
+  hero (Jon reverted my over-rebrand on this section).
+- **Feature-tour attachments self-heal** in `AttachmentImage`. If the
+  bundled `<attachmentsFolder>/feature-tour/<bundled.png>` is missing
+  from IDB (fresh device, post-reset, never clicked the welcome card),
+  the renderer now re-fetches the public asset, paints it, and writes
+  it back to IDB for the next paint.
+- **Mobile keyboard journey.** Built a `useKeyboardInset` VisualViewport
+  hook + Obsidian-parity pill toolbar (undo / redo / [[wikilink]] /
+  template / #tag / attach / H / B + dismiss). Iterated twice trying
+  to clear the iOS Safari input-accessory pill, then REMOVED the bar
+  entirely on Jon's call — the iOS pill cannot be hidden from a web
+  app, so stacking our own on top was strictly worse. Component file
+  retained at `src/components/editor/MobileFormattingToolbar.tsx` for a
+  future native wrap (see Tauri item above).
+- **Chrome autofill suppression.** `autocomplete="off"` on the CM
+  contenteditable — kills Chrome Android's "key / card / pin / ✓"
+  autofill row that was overlaying the bottom of the page.
+- **Vault change-passphrase flow.** Three-commit feature that had
+  been sitting on `feat/backup-encryption-phase-b`; merged, tested,
+  shipped this day.
+- **Gist publish hook-order fix** (one-commit branch `feat/gist-publish`)
+  + **zipball lazyload test coverage** + **GitHub sync hardening plan
+  doc** all merged and shipped in the same dev → main tranche.
+- **Security: git-proxy guards.** External review (received via
+  Telegram on 2026-05-30) flagged `/api/git-proxy/[...path]` as the
+  only proxy route without `isOriginAllowed` + `checkRateLimit`. Added
+  both. Severity bound (per the review): infra-abuse / bandwidth-amp
+  risk, not token-theft, not SSRF. See SECURITY.md audit log.
+- **markdownXssGuard expanded** to pin direct `.innerHTML =` setter
+  assignments (the last unguarded DOM-level raw-HTML sink, alongside
+  the existing `dangerouslySetInnerHTML` / `rehype-raw` /
+  `rehypePlugins` pins). The ESLint-rule path was attempted first but
+  abandoned — FlatCompat + `next/core-web-vitals` silently drops
+  custom rule blocks. The test-time guard has the same blast radius.
+- **SECURITY.md** gains an append-only Audit log section with entries
+  for the git-proxy fix and the static-source expansion.
+
+### Stability + UX polish (2026-05-25 → 2026-05-30)
+
+- **Tab restore on reload** — the previous-session vault opens its
+  recent tabs back up. `vaultReady` gate + defense-in-depth guard +
+  `reopenTabsOnStartup` settings toggle (default on). Fixed the startup
+  race where `pruneStaleTabs` ran before async repo-scoped notes loaded
+  and silently dropped the just-restored tabs.
+- **Editor autocorrect setting.** Phone keyboards now show predictive
+  text + autocorrect on the CodeMirror surface when the user opts in
+  via Settings → Editor → "Autocorrect & word suggestions". CM disables
+  these by default; the setting toggles them live via a Compartment
+  reconfigure.
+- **Tooltip system rebuild** (closes Issue #26). The 117 native
+  `title=""` flicker / sticky / flash-of-empty-tooltip behaviours on
+  icon-only controls were replaced with a single app-root `TooltipLayer`
+  scoped to icon-only interactive controls.
+- **Keyboard shortcuts batch.** `Ctrl+W` → default `Alt+W` for close-tab
+  (browsers eat the Ctrl+W). `Ctrl+D` deletes the current line (was
+  bookmark before). Enter on an empty `- [ ] ` checkbox exits the list
+  (Obsidian style), Enter on a non-empty checkbox carries the `- [ ]`
+  prefix with a space ready for the next item.
+- **Double-reload on first SW install** fixed. `clients.claim()` was
+  firing `controllerchange` on first-install, which `PwaProvider`
+  interpreted as a service-worker update takeover and reloaded the page
+  — once on install, once on intended startup. New
+  `shouldReloadOnControllerChange(alreadyReloaded, isUpdateTakeover)`
+  predicate distinguishes.
+- **Flaky CI fix.** `largeVaultPerf.test.ts` "warm faster than cold"
+  was failing intermittently on main, passing on dev for the same
+  commit. Replaced wall-clock ratio assertions with deterministic
+  array-reference identity checks. 8 tests still pass.
+- **Repo hygiene pass.** 92 merged-into-main branches deleted in one
+  sweep. Eight remained after; six of those were resurrected /
+  finished / deleted on 2026-05-30, leaving just `dev` and `main`.
 
 ## Recently shipped (2026-05-22 → 2026-05-23)
 
