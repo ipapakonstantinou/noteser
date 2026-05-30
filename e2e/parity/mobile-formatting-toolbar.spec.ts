@@ -1,8 +1,10 @@
 import { test, expect } from '@playwright/test'
 
-// Mobile formatting toolbar (Bold / Italic / Heading / Bullet / Task).
-// Verifies the strip is mobile-only and that each button transforms
-// the document the way Obsidian's mobile toolbar does.
+// Mobile formatting toolbar — Obsidian-mobile parity bar:
+// Undo / Redo / [[Wikilink]] / Template / #Tag / Attach / Heading / Bold,
+// plus a separated keyboard-dismiss pill on the right. Verifies the strip
+// is mobile-only and that the action buttons transform the document the
+// same way Obsidian's mobile bar does.
 
 type TestHooks = {
   stores: {
@@ -82,14 +84,16 @@ async function selectAll(page: import('@playwright/test').Page): Promise<void> {
 test.describe('mobile viewport', () => {
   test.use(MOBILE_VIEWPORT)
 
-  test('toolbar renders below the editor on mobile', async ({ page }) => {
+  test('toolbar renders below the editor on mobile with the Obsidian-parity button set', async ({ page }) => {
     await seedNote(page, 'hello')
     await expect(page.getByTestId('mobile-formatting-toolbar')).toBeVisible()
-    await expect(page.getByTestId('format-bold')).toBeVisible()
-    await expect(page.getByTestId('format-italic')).toBeVisible()
-    await expect(page.getByTestId('format-heading')).toBeVisible()
-    await expect(page.getByTestId('format-bullet')).toBeVisible()
-    await expect(page.getByTestId('format-task')).toBeVisible()
+    for (const id of [
+      'format-undo', 'format-redo', 'format-wikilink', 'format-template',
+      'format-tag', 'format-attach', 'format-heading', 'format-bold',
+      'format-dismiss-keyboard',
+    ]) {
+      await expect(page.getByTestId(id)).toBeVisible()
+    }
   })
 
   test('Bold button wraps the selection in **', async ({ page }) => {
@@ -97,13 +101,6 @@ test.describe('mobile viewport', () => {
     await selectAll(page)
     await page.getByTestId('format-bold').click()
     expect(await getDocContent(page)).toBe('**hello world**')
-  })
-
-  test('Italic button wraps the selection in _', async ({ page }) => {
-    await seedNote(page, 'hello world')
-    await selectAll(page)
-    await page.getByTestId('format-italic').click()
-    expect(await getDocContent(page)).toBe('_hello world_')
   })
 
   test('Heading button cycles # / ## / ### / plain', async ({ page }) => {
@@ -119,21 +116,55 @@ test.describe('mobile viewport', () => {
     expect(await getDocContent(page)).toBe('title')
   })
 
-  test('Bullet button toggles `- ` prefix on each selected line', async ({ page }) => {
-    await seedNote(page, 'first\nsecond')
-    await selectAll(page)
-    await page.getByTestId('format-bullet').click()
-    expect(await getDocContent(page)).toBe('- first\n- second')
-    await selectAll(page)
-    await page.getByTestId('format-bullet').click()
-    expect(await getDocContent(page)).toBe('first\nsecond')
+  test('Wikilink button inserts [[]] and parks the caret between the brackets', async ({ page }) => {
+    await seedNote(page, '')
+    await page.locator('.cm-content').click()
+    await page.getByTestId('format-wikilink').click()
+    expect(await getDocContent(page)).toBe('[[]]')
+    // Cursor should sit between the brackets — typing now appends inside.
+    await page.locator('.cm-content').pressSequentially('hi')
+    expect(await getDocContent(page)).toBe('[[hi]]')
   })
 
-  test('Task button toggles `- [ ] ` prefix on each selected line', async ({ page }) => {
-    await seedNote(page, 'todo')
+  test('Tag button inserts a `#` at the caret', async ({ page }) => {
+    await seedNote(page, '')
     await page.locator('.cm-content').click()
-    await page.getByTestId('format-task').click()
-    expect(await getDocContent(page)).toBe('- [ ] todo')
+    await page.getByTestId('format-tag').click()
+    expect(await getDocContent(page)).toBe('#')
+  })
+
+  test('Undo + Redo step through the CodeMirror history', async ({ page }) => {
+    await seedNote(page, '')
+    await page.locator('.cm-content').click()
+    await page.locator('.cm-content').pressSequentially('alpha')
+    expect(await getDocContent(page)).toBe('alpha')
+    await page.getByTestId('format-undo').click()
+    expect(await getDocContent(page)).toBe('')
+    await page.getByTestId('format-redo').click()
+    expect(await getDocContent(page)).toBe('alpha')
+  })
+
+  test('Template button opens the template-picker modal', async ({ page }) => {
+    await seedNote(page, '')
+    await page.getByTestId('format-template').click()
+    // SettingsModal / TemplatesModal share the dialog role; rely on test-id
+    // if available, otherwise fall back to role=dialog.
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 4000 })
+  })
+
+  test('Dismiss-keyboard button blurs the CodeMirror surface', async ({ page }) => {
+    await seedNote(page, 'hi')
+    await page.locator('.cm-content').click()
+    // Confirm focus is on the editor before pressing dismiss.
+    const focusedBefore = await page.evaluate(() =>
+      document.activeElement?.classList.contains('cm-content')
+    )
+    expect(focusedBefore).toBe(true)
+    await page.getByTestId('format-dismiss-keyboard').click()
+    const focusedAfter = await page.evaluate(() =>
+      document.activeElement?.classList.contains('cm-content')
+    )
+    expect(focusedAfter).toBe(false)
   })
 })
 
