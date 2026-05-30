@@ -15,7 +15,6 @@ import {
 } from '@heroicons/react/24/outline'
 import { saveAttachment } from '@/utils/attachments'
 import { useUIStore } from '@/stores/uiStore'
-import { useKeyboardInset } from '@/hooks'
 
 // Mobile-only formatting strip below the editor. Matches Obsidian-mobile's
 // compact pill: undo / redo / [[wikilink]] / template / #tag / attach / H / B,
@@ -25,9 +24,14 @@ import { useKeyboardInset } from '@/hooks'
 // selection survives the tap — without it, focus would jump to the button
 // and the selection would collapse.
 //
-// The whole bar lifts above the keyboard via `useKeyboardInset` so it docks
-// flush above iOS Safari's input-accessory pill / Chrome Android's autofill
-// row. See `src/hooks/useKeyboardInset.ts` for the math.
+// The bar stays in flex flow without any JS-driven lift. On iOS 16+ Safari
+// and modern Chrome Android, the mobile container's `h-dvh` shrinks to the
+// visual viewport when the keyboard opens, so the bottom of the flex tree
+// (this toolbar, then EditorFooter) rides up naturally. An earlier attempt
+// added a `transform: translateY(-keyboardInset)` from a VisualViewport hook
+// — that double-counted with `dvh` and floated the bar ~80px above its
+// resting position. iOS Safari's input-accessory pill sits between us and
+// the keyboard regardless and cannot be suppressed from the web.
 
 interface Props {
   viewRef: RefObject<EditorView | null>
@@ -107,7 +111,6 @@ function dismissKeyboard(view: EditorView | null): void {
 export function MobileFormattingToolbar({ viewRef }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const openModal = useUIStore(s => s.openModal)
-  const keyboardInset = useKeyboardInset()
 
   const run = (fn: (view: EditorView) => void) => () => {
     const view = viewRef.current
@@ -151,10 +154,7 @@ export function MobileFormattingToolbar({ viewRef }: Props) {
 
   return (
     <div
-      className="md:hidden flex items-center gap-2 px-2 py-2 will-change-transform"
-      style={{
-        transform: keyboardInset > 0 ? `translateY(-${keyboardInset}px)` : undefined,
-      }}
+      className="md:hidden flex items-center gap-2 px-2 py-2"
       data-testid="mobile-formatting-toolbar"
     >
       {/* Main pill — 8 actions side by side in a rounded container. */}
