@@ -12,21 +12,23 @@ import { useUIStore, useSettingsStore } from '@/stores'
 import {
   generateSalt,
   saltToString,
+  saltFromString,
   makeCanary,
+  verifyCanary,
+  deriveKey,
 } from '@/utils/vaultCrypto'
 import {
-  unlockVault,
   verifyAndUnlockVault,
   lockVault,
+  setVaultKey,
 } from '@/utils/vaultKey'
-import { deriveKey } from '@/utils/vaultCrypto'
 
 // Vault encryption UI — Phase B of the backup-encryption feature.
 // Phase A shipped the crypto module + push/pull integration; this is
 // the user-facing surface for enabling, unlocking, locking, and
 // disabling vault encryption.
 //
-// Three modes, all driven by `data: { mode }` passed via openModal:
+// Four modes, all driven by `data: { mode }` passed via openModal:
 //   - 'enable'         — first-time setup. Asks for a new passphrase
 //                        twice, generates a salt, encrypts a canary,
 //                        and writes salt + canary to settings.
@@ -35,6 +37,13 @@ import { deriveKey } from '@/utils/vaultCrypto'
 //                        design — the key lives only in vaultKey's
 //                        closure). Verifies passphrase against the
 //                        stored canary before committing the key.
+//   - 'change'         — rotate the passphrase. Verifies the OLD
+//                        passphrase against the stored canary, derives
+//                        a NEW key from a fresh salt + new passphrase,
+//                        re-encrypts the canary, swaps the cached key.
+//                        Notes on remote re-encrypt naturally on the
+//                        next push (encryption uses a random IV, so
+//                        every push re-uploads regardless of salt).
 //   - 'confirm-disable' — confirms before turning encryption off. The
 //                        next push will write plaintext; existing
 //                        remote blobs stay encrypted until overwritten.
@@ -45,7 +54,7 @@ import { deriveKey } from '@/utils/vaultCrypto'
 const MIN_PASSPHRASE_LENGTH = 12
 
 interface VaultEncryptionModalData {
-  mode: 'enable' | 'unlock' | 'confirm-disable'
+  mode: 'enable' | 'unlock' | 'change' | 'confirm-disable'
   // When set, the close handler re-opens that modal type instead of
   // leaving the user staring at the editor. Used by Settings → GitHub
   // sync's encryption row so the user lands back in Settings after
@@ -78,6 +87,9 @@ export const VaultEncryptionModal = () => {
 
   const [passphrase, setPassphrase] = useState('')
   const [confirm, setConfirm] = useState('')
+  // Current passphrase, only used by the 'change' mode. Stored separately
+  // so the 'enable' / 'unlock' paths don't carry a stale value.
+  const [current, setCurrent] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -88,6 +100,7 @@ export const VaultEncryptionModal = () => {
     if (!isOpen) return
     setPassphrase('')
     setConfirm('')
+    setCurrent('')
     setError(null)
     setBusy(false)
   }, [isOpen, mode])
@@ -114,9 +127,11 @@ export const VaultEncryptionModal = () => {
         // part that can fail), we don't end up with enabled=true
         // and canary=null.
         setVaultEncryption(true, saltStr, newCanary)
-        // Cache the key in memory so the next sync push works
-        // without prompting again.
-        await unlockVault(passphrase, saltStr)
+        // Cache the key in memory so the next sync push works without
+        // prompting again. Reuse the already-derived key via setVaultKey
+        // so the enable and rotate paths share one cache-swap helper and
+        // we never derive the key twice.
+        setVaultKey(key, saltStr)
         dismiss()
       } catch (err) {
         setError(`Couldn't enable encryption: ${(err as Error).message}`)
@@ -253,6 +268,122 @@ export const VaultEncryptionModal = () => {
             >
               <LockOpenIcon className="w-4 h-4" />
               {busy ? 'Unlocking…' : 'Unlock'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    )
+  }
+
+  // ── change passphrase ───────────────────────────────────────────────────
+  if (mode === 'change') {
+    const valid =
+      current.length > 0 &&
+      passphrase.length >= MIN_PASSPHRASE_LENGTH &&
+      passphrase === confirm &&
+      passphrase !== current
+
+    const handleChange = async () => {
+      if (!valid) return
+      if (!salt) {
+        setError('Vault is missing its encryption salt — re-enable encryption in Settings → GitHub sync.')
+        return
+      }
+      setBusy(true)
+      setError(null)
+      try {
+        // Verify the OLD passphrase first. If a wrong "current" slipped
+        // through we would lose access to the existing encrypted blobs.
+        const oldSalt = saltFromString(salt)
+        const oldKey = await deriveKey(current, oldSalt)
+        const oldOk = await verifyCanary(canary, oldKey)
+        if (!oldOk) {
+          setError('Current passphrase is wrong.')
+          return
+        }
+        // Derive a fresh key from the new passphrase + new salt, build
+        // the new canary, persist, swap the cached key.
+        const freshSalt = generateSalt()
+        const freshSaltStr = saltToString(freshSalt)
+        const newKey = await deriveKey(passphrase, freshSalt)
+        const newCanary = await makeCanary(newKey)
+        setVaultEncryption(true, freshSaltStr, newCanary)
+        setVaultKey(newKey, freshSaltStr)
+        dismiss()
+      } catch (err) {
+        setError(`Couldn't change passphrase: ${(err as Error).message}`)
+      } finally {
+        setBusy(false)
+      }
+    }
+
+    return (
+      <Modal isOpen={isOpen} onClose={dismiss} title="Change vault passphrase" size="md">
+        <div className="space-y-4 text-sm">
+          <div className="flex items-start gap-2 p-3 rounded bg-amber-900/20 border border-amber-900/40 text-amber-200">
+            <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <div className="space-y-1 text-xs">
+              <div className="font-medium">Before you change it.</div>
+              <ul className="list-disc pl-4 space-y-0.5 text-amber-200/80">
+                <li>Your new passphrase is never stored anywhere.</li>
+                <li><span className="font-medium text-amber-200">There is no recovery</span> if you forget it.</li>
+                <li>Existing notes re-encrypt with the new key on the next push.</li>
+                <li>Until that push lands, other devices still need the OLD passphrase to read remote blobs.</li>
+              </ul>
+            </div>
+          </div>
+
+          <PassphraseField
+            label="Current passphrase"
+            value={current}
+            onChange={setCurrent}
+            placeholder="Your existing passphrase"
+            autoFocus
+            data-testid="vault-encryption-change-current"
+          />
+          <PassphraseField
+            label="New passphrase"
+            value={passphrase}
+            onChange={setPassphrase}
+            placeholder={`At least ${MIN_PASSPHRASE_LENGTH} characters`}
+            data-testid="vault-encryption-change-new"
+          />
+          <PassphraseField
+            label="Confirm new passphrase"
+            value={confirm}
+            onChange={setConfirm}
+            placeholder="Type it again"
+            data-testid="vault-encryption-change-confirm"
+          />
+          {passphrase.length > 0 && passphrase.length < MIN_PASSPHRASE_LENGTH && (
+            <div className="text-xs text-obsidianSecondaryText">
+              {MIN_PASSPHRASE_LENGTH - passphrase.length} more character(s) needed.
+            </div>
+          )}
+          {passphrase.length >= MIN_PASSPHRASE_LENGTH && confirm.length > 0 && passphrase !== confirm && (
+            <div className="text-xs text-red-300">New passphrases don&apos;t match.</div>
+          )}
+          {passphrase.length >= MIN_PASSPHRASE_LENGTH && passphrase === current && (
+            <div className="text-xs text-red-300">New passphrase must differ from the current one.</div>
+          )}
+
+          {error && (
+            <div className="flex items-start gap-2 p-3 rounded bg-red-900/20 border border-red-900/40 text-xs text-red-300">
+              <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-obsidianBorder">
+            <Button variant="ghost" onClick={dismiss} disabled={busy}>Cancel</Button>
+            <Button
+              variant="primary"
+              onClick={handleChange}
+              disabled={!valid || busy}
+              data-testid="vault-encryption-change-submit"
+            >
+              <KeyIcon className="w-4 h-4" />
+              {busy ? 'Updating…' : 'Change passphrase'}
             </Button>
           </div>
         </div>
