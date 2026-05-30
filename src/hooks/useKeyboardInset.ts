@@ -3,34 +3,25 @@
 import { useEffect, useState } from 'react'
 
 // Pixels between the bottom of the layout viewport and the top of the
-// soft keyboard (plus any OS chrome the browser stacks above it: iOS
-// Safari's "^ ∨ ✓" input-accessory pill, Chrome Android's autofill row,
-// any predictive-text strip). 0 when nothing is open.
+// visual viewport when the soft keyboard is open. 0 when closed.
 //
-// Derived from VisualViewport: the layout viewport is the full window,
-// the visual viewport is what's painted above the keyboard. The delta
-// is the inset that hides anything docked at the layout-viewport bottom.
+// `window.innerHeight - visualViewport.height - visualViewport.offsetTop`
+// gives the inset directly. iOS Safari and Chrome Android both already
+// subtract their input-accessory chrome (the "^ ∨ ✓" pill, the autofill
+// row) from visualViewport.height, so the raw value is what we want —
+// no per-platform offset, no double-counting.
 //
-// iOS adds its own input-accessory view ABOVE the visualViewport — that
-// pill with prev/next arrows + Done cannot be suppressed from the web.
-// To clear it we add a constant guess (~50px) on iOS only. Worst case
-// the toolbar sits a few extra pixels higher than strictly necessary,
-// which is preferable to it being hidden behind the accessory bar.
+// Earlier revision added an iOS-only +50px constant on the assumption
+// that the accessory pill overlaid visualViewport. Testing on Jon's
+// iPhone showed the opposite: the constant lifts the bar so high it
+// floats well above the keyboard with a visible gap. Dropped.
 //
-// Returns 0 below a small jitter threshold so the toolbar doesn't twitch
-// for URL-bar collapse animations.
+// Returns 0 below a small jitter threshold so the bar doesn't twitch for
+// URL-bar collapse animations.
 //
 // SSR-safe: returns 0 until `useEffect` runs.
 
 const JITTER_THRESHOLD_PX = 80
-const IOS_ACCESSORY_BAR_GUESS_PX = 50
-
-function isIOS(): boolean {
-  if (typeof navigator === 'undefined') return false
-  // iPadOS reports as Mac with touch; covers iPhone + iPad.
-  return /iPad|iPhone|iPod/.test(navigator.userAgent)
-    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-}
 
 export function useKeyboardInset(): number {
   const [inset, setInset] = useState(0)
@@ -40,14 +31,9 @@ export function useKeyboardInset(): number {
     const vv = window.visualViewport
     if (!vv) return
 
-    const ios = isIOS()
     const update = () => {
       const raw = window.innerHeight - vv.height - vv.offsetTop
-      if (raw <= JITTER_THRESHOLD_PX) {
-        setInset(0)
-        return
-      }
-      setInset(raw + (ios ? IOS_ACCESSORY_BAR_GUESS_PX : 0))
+      setInset(raw > JITTER_THRESHOLD_PX ? raw : 0)
     }
 
     update()
