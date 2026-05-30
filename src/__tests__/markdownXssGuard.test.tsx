@@ -78,6 +78,28 @@ test('react-markdown is only configured with remark-gfm — no rehype plugins an
   expect(offenders).toEqual([])
 })
 
+test('no source file assigns to .innerHTML (DOM-level raw-HTML sink)', () => {
+  // Banned alongside dangerouslySetInnerHTML — same XSS surface, just
+  // reached via document/element handles instead of React's escape hatch.
+  // Pattern: `<anything>.innerHTML = <anything>` or
+  // `<anything>.innerHTML +=` (cumulative assignment). textContent is
+  // the safe alternative; React state is the better one. Added
+  // 2026-05-30 after an external security review flagged this as the
+  // last unguarded sink (the lint-rule path was abandoned because
+  // FlatCompat with next/core-web-vitals silently drops custom rule
+  // blocks; this static-source check has the same blast radius).
+  const offenders: { file: string; line: string }[] = []
+  for (const file of FILES) {
+    const text = readFileSync(file, 'utf8')
+    for (const line of text.split('\n')) {
+      if (/\.innerHTML\s*[+]?=/.test(line) && !line.includes('// eslint-disable')) {
+        offenders.push({ file, line: line.trim() })
+      }
+    }
+  }
+  expect(offenders).toEqual([])
+})
+
 test('share page renders user content through react-markdown (not raw)', () => {
   const sharePage = readFileSync(join(SRC_ROOT, 'app/share/page.tsx'), 'utf8')
   // Sanity: the page uses ReactMarkdown to render. If a future
