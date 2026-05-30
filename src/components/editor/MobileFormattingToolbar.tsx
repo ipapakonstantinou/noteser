@@ -9,6 +9,7 @@ import {
   ListBulletIcon,
   CheckCircleIcon,
 } from '@heroicons/react/24/outline'
+import { useKeyboardInset } from '@/hooks'
 
 // Mobile-only formatting strip below the editor. Phones don't have
 // keyboard shortcuts for **bold** / _italic_ / lists, so the toolbar
@@ -18,6 +19,15 @@ import {
 // `onMouseDown` calls `preventDefault()` to keep CodeMirror's focus —
 // without that, tapping the button steals focus and the selection
 // collapses to a point.
+//
+// When the soft keyboard opens, mobile browsers stack OS chrome above
+// it (iOS Safari's "^ ∨ ✓" accessory pill, Chrome Android's autofill
+// row) that overlays the visualViewport bottom. We lift the toolbar
+// above all of that with `transform: translateY(-keyboardInset)` so it
+// sits flush above the keyboard the way Obsidian's compact bar does.
+// Translation (not absolute positioning) keeps the toolbar in the flex
+// flow — `EditorFooter` continues to render below it when the keyboard
+// is closed, with no fixed-position fighting between the two.
 
 interface Props {
   viewRef: RefObject<EditorView | null>
@@ -93,9 +103,21 @@ export function MobileFormattingToolbar({ viewRef }: Props) {
     fn(view)
   }
   const preventBlur = (e: React.MouseEvent) => e.preventDefault()
+  // 0 when the soft keyboard is closed (no lift, normal flex bottom).
+  // Non-zero while it is open: pixels to lift the toolbar above whatever
+  // the OS stacked above the keyboard.
+  const keyboardInset = useKeyboardInset()
+
   return (
     <div
-      className="md:hidden flex items-center justify-around gap-1 px-2 py-1.5 border-t border-obsidianBorder bg-obsidianBlack"
+      className="md:hidden flex items-center justify-around gap-1 px-2 py-1.5 border-t border-obsidianBorder bg-obsidianBlack will-change-transform"
+      style={{
+        transform: keyboardInset > 0 ? `translateY(-${keyboardInset}px)` : undefined,
+        // Force a paint layer so the GPU drives the translate; without this
+        // iOS Safari sometimes leaves the bar a frame behind the keyboard
+        // animation.
+        ...(keyboardInset > 0 ? { willChange: 'transform' } : null),
+      }}
       data-testid="mobile-formatting-toolbar"
     >
       <ToolbarBtn label="Bold" onMouseDown={preventBlur} onClick={run(v => wrapInline(v, '**'))} testId="format-bold">

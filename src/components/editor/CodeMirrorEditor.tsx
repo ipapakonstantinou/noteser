@@ -362,10 +362,14 @@ const obsidianTheme = EditorView.theme({
 // its predictive-text strip. Returns an explicit off-state too, so the
 // compartment flips deterministically rather than relying on browser defaults.
 function autocorrectAttrs(enabled: boolean) {
+  // `autocomplete: 'off'` is separate from the autocorrect/predict toggle:
+  // it suppresses Chrome Android's password / payment / address autofill row
+  // that otherwise stacks above the keyboard and hides our mobile formatting
+  // toolbar. The contenteditable isn't fillable anyway, so the row is noise.
   return EditorView.contentAttributes.of(
     enabled
-      ? { autocorrect: 'on', autocapitalize: 'sentences', spellcheck: 'true' }
-      : { autocorrect: 'off', autocapitalize: 'off', spellcheck: 'false' }
+      ? { autocorrect: 'on', autocapitalize: 'sentences', spellcheck: 'true', autocomplete: 'off' }
+      : { autocorrect: 'off', autocapitalize: 'off', spellcheck: 'false', autocomplete: 'off' }
   )
 }
 

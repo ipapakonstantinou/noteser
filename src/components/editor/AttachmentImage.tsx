@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { getAttachmentUrl, isAttachmentPath, isKnownAttachmentPath } from '@/utils/attachments'
+import { getAttachmentUrl, isAttachmentPath, isKnownAttachmentPath, putAttachmentAtPath } from '@/utils/attachments'
+import { TUTORIAL_ASSETS_SUBDIR, TUTORIAL_IMAGES } from '@/utils/featureTourNote'
 
 interface AttachmentImageProps {
   // ReactMarkdown widens src to `string | Blob`; we only handle string paths.
@@ -32,6 +33,44 @@ function decodeAttachmentSrc(s: string): string {
   }
 }
 
+// Feature-tour images live under `<attachmentsFolder>/feature-tour/<file>.png`
+// and ship as static assets in `/public/feature-tour/`. The tour note is
+// seeded once (clicking the Feature tour card on the welcome screen seeds
+// the PNGs into IDB), but if the IDB is cleared by a reset or the user
+// opens the note on a fresh device before clicking the card, the images
+// resolve as "Missing attachment". Detecting that pattern lets us heal
+// on-the-fly: fetch the public asset, write it back into IDB so subsequent
+// paints are instant, and return its URL for this paint.
+const TUTORIAL_FILES = new Set<string>(TUTORIAL_IMAGES)
+
+function tourFallbackUrl(path: string): string | null {
+  // Match `<anything>/feature-tour/<filename>.png` where filename is a
+  // bundled tutorial image. Anchor on the segment to avoid matching user
+  // attachments that happen to share a filename.
+  const segments = path.split('/')
+  const len = segments.length
+  if (len < 2) return null
+  if (segments[len - 2] !== TUTORIAL_ASSETS_SUBDIR) return null
+  const filename = segments[len - 1]
+  if (!TUTORIAL_FILES.has(filename)) return null
+  return `/${TUTORIAL_ASSETS_SUBDIR}/${filename}`
+}
+
+// Heal by re-fetching the public asset and writing it into IDB at the
+// expected attachment path. Best-effort: a failed write still lets the
+// caller paint the public URL directly.
+async function healTourAttachment(path: string, filename: string): Promise<string | null> {
+  try {
+    const res = await fetch(`/${TUTORIAL_ASSETS_SUBDIR}/${filename}`)
+    if (!res.ok) return null
+    const blob = await res.blob()
+    void putAttachmentAtPath(path, blob, filename).catch(() => { /* fire-and-forget */ })
+    return URL.createObjectURL(blob)
+  } catch {
+    return null
+  }
+}
+
 export const AttachmentImage = ({ src: srcProp, alt, title }: AttachmentImageProps) => {
   const rawSrc = typeof srcProp === 'string' ? srcProp : undefined
   // Decoded form used for the attachment index + IDB lookup (literal spaces).
@@ -48,10 +87,27 @@ export const AttachmentImage = ({ src: srcProp, alt, title }: AttachmentImagePro
       return
     }
     setMissing(false)
-    getAttachmentUrl(src).then(url => {
+    getAttachmentUrl(src).then(async url => {
       if (cancelled) return
-      if (url) setResolved(url)
-      else setMissing(true)
+      if (url) {
+        setResolved(url)
+        return
+      }
+      // IDB miss — if this looks like a Feature tour image, fetch the
+      // bundled public asset, repaint with that, and write it back into
+      // IDB so the next paint hits the fast path. Falls through to the
+      // "Missing attachment" callout if the heal also fails.
+      const fallback = tourFallbackUrl(src)
+      if (fallback) {
+        const filename = fallback.split('/').pop()!
+        const healedUrl = await healTourAttachment(src, filename)
+        if (cancelled) return
+        if (healedUrl) {
+          setResolved(healedUrl)
+          return
+        }
+      }
+      setMissing(true)
     })
     return () => { cancelled = true }
   }, [src, isStored])

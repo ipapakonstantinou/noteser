@@ -91,6 +91,19 @@ export function lockVault(): void {
 }
 
 /**
+ * Swap the in-memory key after a passphrase rotation. Used by the
+ * Change-passphrase flow: caller has already verified the OLD passphrase
+ * against the existing canary, derived the NEW key from a fresh salt,
+ * and re-encrypted the canary. This call replaces the cached key without
+ * firing a lock transition (the vault stays unlocked across the rotate).
+ */
+export function setVaultKey(key: CryptoKey, saltBase64: string): void {
+  holder.key = key
+  holder.saltKey = saltBase64
+  notify()
+}
+
+/**
  * If the vault's salt has changed (e.g. a remote sync brought in a new
  * vault-settings file whose salt differs from what we unlocked with),
  * the cached key is now wrong. Call this after applying remote vault

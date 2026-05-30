@@ -82,9 +82,9 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
             noteser
           </h1>
           <p className="text-base text-obsidianSecondaryText leading-relaxed">
-            A markdown notes workspace with the Obsidian feel, in the browser,
-            synced to GitHub. Wikilinks, tags, tasks, live preview, panes,
-            templates — and a calm dark UI you can theme.
+            Your second brain in the browser, synced to GitHub. Markdown notes
+            with wikilinks, tags, tasks, live preview, panes, templates, and a
+            calm dark UI you can theme.
           </p>
         </div>
 
@@ -124,6 +124,55 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
               <span className="text-obsidianAccentPurple text-sm">→</span>
             </div>
           </button>
+        </section>
+
+        {/* Feature demo GIFs. One per surface so a new user scrolls through
+            the whole product in 30 seconds. Plain <img> on purpose: next/image
+            does not animate GIFs. All lazy-loaded so weight is fine on mobile. */}
+        <section aria-labelledby="welcome-git">
+          <h2 id="welcome-git" className="text-sm font-medium text-obsidianText/90 uppercase tracking-wide mb-2">
+            GitHub source control
+          </h2>
+          <p className="text-sm text-obsidianSecondaryText mb-3">
+            Commit and sync, browse recent commits, see what is pending. Your vault is a git history you can scroll.
+          </p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/demo/noteser-git-demo.gif" alt="The source-control panel: Commit & Sync, vault clean, and the recent commits list" className="w-full rounded-lg border border-obsidianBorder shadow-obsidian" loading="lazy" />
+        </section>
+
+        <section aria-labelledby="welcome-calendar">
+          <h2 id="welcome-calendar" className="text-sm font-medium text-obsidianText/90 uppercase tracking-wide mb-2">
+            Daily notes calendar
+          </h2>
+          <p className="text-sm text-obsidianSecondaryText mb-3">
+            Click a date, jump to the daily note. Dots mark days that already have a note.
+          </p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/demo/noteser-calendar-demo.gif" alt="Calendar grid: clicking a date opens the daily note for that day" className="w-full rounded-lg border border-obsidianBorder shadow-obsidian" loading="lazy" />
+        </section>
+
+        <section aria-labelledby="welcome-tasks">
+          <h2 id="welcome-tasks" className="text-sm font-medium text-obsidianText/90 uppercase tracking-wide mb-2">
+            Live task queries
+          </h2>
+          <p className="text-sm text-obsidianSecondaryText mb-3">
+            Drop a <code className="font-mono text-xs">tasks</code> code block and it renders a live list. Filter by done today, by path, by tag. Group by folder.
+          </p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/demo/noteser-tasks-demo.gif" alt="A tasks code block rendering &quot;done today&quot; aggregated across the vault" className="w-full rounded-lg border border-obsidianBorder shadow-obsidian" loading="lazy" />
+        </section>
+
+        <section aria-labelledby="welcome-mobile">
+          <h2 id="welcome-mobile" className="text-sm font-medium text-obsidianText/90 uppercase tracking-wide mb-2">
+            On your phone
+          </h2>
+          <p className="text-sm text-obsidianSecondaryText mb-3">
+            Same notes, same repo, mobile layout. Drawer sidebar, full editor, install as a home-screen app.
+          </p>
+          <div className="flex justify-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/demo/noteser-mobile-demo.gif" alt="Noteser on iPhone: tap the drawer, navigate the file tree, open a note" className="w-[260px] rounded-lg border border-obsidianBorder shadow-obsidian" loading="lazy" />
+          </div>
         </section>
 
         {/* Learn — moved to the top so a first-time user lands directly
