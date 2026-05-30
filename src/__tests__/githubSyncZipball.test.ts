@@ -72,11 +72,18 @@ async function buildZipBuffer(
 
 // jsdom under this suite doesn't expose the Fetch `Response` constructor, so we
 // hand back a minimal duck-typed stand-in carrying only what the callees touch:
-// `ok` (ensureOk), `json()` (getBranchRefSha), `arrayBuffer()` (fetchZipball).
+// `ok` (ensureOk), `json()` (getBranchRefSha), `arrayBuffer()` (fetchZipball),
+// and `headers.get('content-length')` (size-mismatch guard added 2026-05-24).
 type FakeResponse = Pick<Response, 'ok'> & {
   json(): Promise<unknown>
   arrayBuffer(): Promise<ArrayBuffer>
+  headers: { get(name: string): string | null }
 }
+
+// Returning null for content-length tells the size-mismatch guard to fall
+// through to JSZip (proxy stripped the header / chunked transfer path),
+// which is the right behaviour for these mocked responses.
+const noHeaders = { get: (_name: string) => null }
 
 function refResponse(): FakeResponse {
   const body = { ref: `refs/heads/${REPO.branch}`, object: { sha: HEAD_SHA } }
@@ -84,6 +91,7 @@ function refResponse(): FakeResponse {
     ok: true,
     json: async () => body,
     arrayBuffer: async () => new ArrayBuffer(0),
+    headers: noHeaders,
   }
 }
 
@@ -92,6 +100,7 @@ function zipResponse(buf: ArrayBuffer): FakeResponse {
     ok: true,
     json: async () => ({}),
     arrayBuffer: async () => buf,
+    headers: noHeaders,
   }
 }
 
