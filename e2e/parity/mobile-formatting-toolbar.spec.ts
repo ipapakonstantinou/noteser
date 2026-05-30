@@ -81,7 +81,10 @@ async function selectAll(page: import('@playwright/test').Page): Promise<void> {
   await page.keyboard.press('Control+a')
 }
 
-test.describe('mobile viewport', () => {
+// Skipped (2026-05-30): MobileFormattingToolbar render-site removed from
+// EditorContent per Jon — the iOS Safari input-accessory pill made our own
+// bar feel redundant. Component file remains for possible future re-enable.
+test.describe.skip('mobile viewport', () => {
   test.use(MOBILE_VIEWPORT)
 
   test('toolbar renders below the editor on mobile with the Obsidian-parity button set', async ({ page }) => {
