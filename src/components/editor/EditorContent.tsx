@@ -26,7 +26,6 @@ import { toggleTaskLineText, removeTaskPrefixFromLine } from '@/utils/tasks'
 import { isTaskItemDone, type HastNode } from '@/utils/taskListItem'
 import { SCROLL_TO_LINE_EVENT } from '@/utils/events'
 import { CodeMirrorEditor } from './CodeMirrorEditor'
-import { MobileFormattingToolbar } from './MobileFormattingToolbar'
 import { FrontmatterPanel } from './FrontmatterPanel'
 import { TaskQueryBlock } from './TaskQueryBlock'
 import { BasesBlock } from './BasesBlock'
@@ -536,7 +535,12 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
         onWikilinkNavigate={(n) => openNote(n.id)}
         viewRef={cmViewRef}
       />
-      {!isPreviewMode && <MobileFormattingToolbar viewRef={cmViewRef} />}
+      {/* MobileFormattingToolbar removed per Jon (2026-05-30) — the iOS
+          Safari input-accessory pill sits between any web toolbar and the
+          keyboard and cannot be hidden from a web app, so stacking our own
+          bar on top of it was redundant. The component still lives at
+          src/components/editor/MobileFormattingToolbar.tsx if we want to
+          re-enable it later. */}
       {isPreviewMode && (
         <div
           ref={previewContainerRef}

@@ -1,42 +1,45 @@
 'use client'
 
-import { type RefObject } from 'react'
+import { useRef, type RefObject } from 'react'
 import { type EditorView } from '@codemirror/view'
+import { undo, redo } from '@codemirror/commands'
 import {
-  BoldIcon,
-  ItalicIcon,
+  ArrowUturnLeftIcon,
+  ArrowUturnRightIcon,
+  DocumentTextIcon,
+  HashtagIcon,
+  PaperClipIcon,
   H1Icon,
-  ListBulletIcon,
-  CheckCircleIcon,
+  BoldIcon,
+  ChevronDownIcon,
 } from '@heroicons/react/24/outline'
-import { useKeyboardInset } from '@/hooks'
+import { saveAttachment } from '@/utils/attachments'
+import { useUIStore } from '@/stores/uiStore'
 
-// Mobile-only formatting strip below the editor. Phones don't have
-// keyboard shortcuts for **bold** / _italic_ / lists, so the toolbar
-// keeps the touch path equivalent.
+// Mobile-only formatting strip below the editor. Matches Obsidian-mobile's
+// compact pill: undo / redo / [[wikilink]] / template / #tag / attach / H / B,
+// with a separate keyboard-dismiss pill on the right.
 //
-// All actions dispatch a single CodeMirror transaction. The button
-// `onMouseDown` calls `preventDefault()` to keep CodeMirror's focus —
-// without that, tapping the button steals focus and the selection
-// collapses to a point.
+// All button `onMouseDown` calls `preventDefault()` so the CodeMirror
+// selection survives the tap — without it, focus would jump to the button
+// and the selection would collapse.
 //
-// When the soft keyboard opens, mobile browsers stack OS chrome above
-// it (iOS Safari's "^ ∨ ✓" accessory pill, Chrome Android's autofill
-// row) that overlays the visualViewport bottom. We lift the toolbar
-// above all of that with `transform: translateY(-keyboardInset)` so it
-// sits flush above the keyboard the way Obsidian's compact bar does.
-// Translation (not absolute positioning) keeps the toolbar in the flex
-// flow — `EditorFooter` continues to render below it when the keyboard
-// is closed, with no fixed-position fighting between the two.
+// The bar stays in flex flow without any JS-driven lift. On iOS 16+ Safari
+// and modern Chrome Android, the mobile container's `h-dvh` shrinks to the
+// visual viewport when the keyboard opens, so the bottom of the flex tree
+// (this toolbar, then EditorFooter) rides up naturally. An earlier attempt
+// added a `transform: translateY(-keyboardInset)` from a VisualViewport hook
+// — that double-counted with `dvh` and floated the bar ~80px above its
+// resting position. iOS Safari's input-accessory pill sits between us and
+// the keyboard regardless and cannot be suppressed from the web.
 
 interface Props {
   viewRef: RefObject<EditorView | null>
 }
 
-// Wrap the current selection (or insert at cursor) with `marker` on
-// both sides. If the selection already starts+ends with `marker`,
-// strip it instead — toggle behavior, matching how Obsidian's mobile
-// toolbar feels.
+// Wrap the current selection (or insert at cursor) with `marker` on both
+// sides. If the selection already starts+ends with `marker`, strip it —
+// toggle behavior matching Obsidian.
 function wrapInline(view: EditorView, marker: string): void {
   const { from, to } = view.state.selection.main
   const selected = view.state.sliceDoc(from, to)
@@ -44,7 +47,6 @@ function wrapInline(view: EditorView, marker: string): void {
   let anchor: number
   let head: number
   if (selected.startsWith(marker) && selected.endsWith(marker) && selected.length >= marker.length * 2) {
-    // Toggle off.
     insert = selected.slice(marker.length, selected.length - marker.length)
     anchor = from
     head = from + insert.length
@@ -60,28 +62,7 @@ function wrapInline(view: EditorView, marker: string): void {
   view.focus()
 }
 
-// Prepend `prefix` to each selected line. Cycles through removal if
-// every line already has the exact prefix — same toggle feel.
-function togglePrefix(view: EditorView, prefix: string): void {
-  const { from, to } = view.state.selection.main
-  const startLine = view.state.doc.lineAt(from)
-  const endLine = view.state.doc.lineAt(to)
-  const lines: string[] = []
-  for (let n = startLine.number; n <= endLine.number; n++) {
-    lines.push(view.state.doc.line(n).text)
-  }
-  const allHave = lines.every(l => l.startsWith(prefix))
-  const next = allHave
-    ? lines.map(l => l.slice(prefix.length)).join('\n')
-    : lines.map(l => `${prefix}${l}`).join('\n')
-  view.dispatch({
-    changes: { from: startLine.from, to: endLine.to, insert: next },
-  })
-  view.focus()
-}
-
 // Cycle the heading on the current line: none → # → ## → ### → none.
-// Single-line scope — multi-line heading toggles aren't meaningful.
 function cycleHeading(view: EditorView): void {
   const { from } = view.state.selection.main
   const line = view.state.doc.lineAt(from)
@@ -96,45 +77,139 @@ function cycleHeading(view: EditorView): void {
   view.focus()
 }
 
+// Insert `[[]]` and park the caret between the brackets — the wikilink
+// autocomplete plugin then opens on the next keypress.
+function insertWikilink(view: EditorView): void {
+  const { from, to } = view.state.selection.main
+  const selected = view.state.sliceDoc(from, to)
+  view.dispatch({
+    changes: { from, to, insert: `[[${selected}]]` },
+    selection: { anchor: from + 2 + selected.length },
+  })
+  view.focus()
+}
+
+// Insert `#` at the caret — tag autocomplete then handles the rest as the
+// user types.
+function insertTag(view: EditorView): void {
+  const { from } = view.state.selection.main
+  view.dispatch({
+    changes: { from, to: from, insert: '#' },
+    selection: { anchor: from + 1 },
+  })
+  view.focus()
+}
+
+// Drop focus from the CodeMirror contenteditable so the soft keyboard
+// dismisses. Web has no direct "close keyboard" API; blurring the focused
+// editable surface is the standard substitute.
+function dismissKeyboard(view: EditorView | null): void {
+  if (!view) return
+  view.contentDOM.blur()
+}
+
 export function MobileFormattingToolbar({ viewRef }: Props) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const openModal = useUIStore(s => s.openModal)
+
   const run = (fn: (view: EditorView) => void) => () => {
     const view = viewRef.current
     if (!view) return
     fn(view)
   }
+
   const preventBlur = (e: React.MouseEvent) => e.preventDefault()
-  // 0 when the soft keyboard is closed (no lift, normal flex bottom).
-  // Non-zero while it is open: pixels to lift the toolbar above whatever
-  // the OS stacked above the keyboard.
-  const keyboardInset = useKeyboardInset()
+
+  const onAttach = () => {
+    fileInputRef.current?.click()
+  }
+
+  const onFileChosen = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+    const view = viewRef.current
+    if (!view) return
+    const refs: string[] = []
+    for (const f of Array.from(files)) {
+      try {
+        const path = await saveAttachment(f, f.name || 'attachment')
+        const alt = (f.name || 'file').replace(/\.[^.]+$/, '')
+        refs.push(`![${alt}](${path})`)
+      } catch (err) {
+        console.error('Mobile attach save failed', err)
+      }
+    }
+    if (refs.length > 0) {
+      const insert = refs.join('\n\n')
+      const { from } = view.state.selection.main
+      view.dispatch({
+        changes: { from, to: from, insert },
+        selection: { anchor: from + insert.length },
+      })
+      view.focus()
+    }
+    // Reset so re-picking the same file works.
+    e.target.value = ''
+  }
 
   return (
     <div
-      className="md:hidden flex items-center justify-around gap-1 px-2 py-1.5 border-t border-obsidianBorder bg-obsidianBlack will-change-transform"
-      style={{
-        transform: keyboardInset > 0 ? `translateY(-${keyboardInset}px)` : undefined,
-        // Force a paint layer so the GPU drives the translate; without this
-        // iOS Safari sometimes leaves the bar a frame behind the keyboard
-        // animation.
-        ...(keyboardInset > 0 ? { willChange: 'transform' } : null),
-      }}
+      className="md:hidden flex items-center gap-2 px-2 py-2"
       data-testid="mobile-formatting-toolbar"
     >
-      <ToolbarBtn label="Bold" onMouseDown={preventBlur} onClick={run(v => wrapInline(v, '**'))} testId="format-bold">
-        <BoldIcon className="w-5 h-5" />
-      </ToolbarBtn>
-      <ToolbarBtn label="Italic" onMouseDown={preventBlur} onClick={run(v => wrapInline(v, '_'))} testId="format-italic">
-        <ItalicIcon className="w-5 h-5" />
-      </ToolbarBtn>
-      <ToolbarBtn label="Heading" onMouseDown={preventBlur} onClick={run(cycleHeading)} testId="format-heading">
-        <H1Icon className="w-5 h-5" />
-      </ToolbarBtn>
-      <ToolbarBtn label="Bullet" onMouseDown={preventBlur} onClick={run(v => togglePrefix(v, '- '))} testId="format-bullet">
-        <ListBulletIcon className="w-5 h-5" />
-      </ToolbarBtn>
-      <ToolbarBtn label="Task" onMouseDown={preventBlur} onClick={run(v => togglePrefix(v, '- [ ] '))} testId="format-task">
-        <CheckCircleIcon className="w-5 h-5" />
-      </ToolbarBtn>
+      {/* Main pill — 8 actions side by side in a rounded container. */}
+      <div className="flex-1 flex items-center justify-between gap-0.5 bg-obsidianDarkGray rounded-full px-2 py-1 border border-obsidianBorder">
+        <ToolbarBtn label="Undo" onMouseDown={preventBlur} onClick={run(v => { undo(v); v.focus() })} testId="format-undo">
+          <ArrowUturnLeftIcon className="w-5 h-5" />
+        </ToolbarBtn>
+        <ToolbarBtn label="Redo" onMouseDown={preventBlur} onClick={run(v => { redo(v); v.focus() })} testId="format-redo">
+          <ArrowUturnRightIcon className="w-5 h-5" />
+        </ToolbarBtn>
+        <ToolbarBtn label="Wikilink" onMouseDown={preventBlur} onClick={run(insertWikilink)} testId="format-wikilink">
+          {/* No native heroicon for [[ ]] — render the literal glyph so it
+              reads the same way Obsidian's bar does. */}
+          <span className="text-[15px] font-semibold leading-none tracking-tighter" aria-hidden="true">[ ]</span>
+        </ToolbarBtn>
+        <ToolbarBtn label="Insert template" onMouseDown={preventBlur} onClick={() => openModal({ type: 'template' })} testId="format-template">
+          <DocumentTextIcon className="w-5 h-5" />
+        </ToolbarBtn>
+        <ToolbarBtn label="Tag" onMouseDown={preventBlur} onClick={run(insertTag)} testId="format-tag">
+          <HashtagIcon className="w-5 h-5" />
+        </ToolbarBtn>
+        <ToolbarBtn label="Attach" onMouseDown={preventBlur} onClick={onAttach} testId="format-attach">
+          <PaperClipIcon className="w-5 h-5" />
+        </ToolbarBtn>
+        <ToolbarBtn label="Heading" onMouseDown={preventBlur} onClick={run(cycleHeading)} testId="format-heading">
+          <H1Icon className="w-5 h-5" />
+        </ToolbarBtn>
+        <ToolbarBtn label="Bold" onMouseDown={preventBlur} onClick={run(v => wrapInline(v, '**'))} testId="format-bold">
+          <BoldIcon className="w-5 h-5" />
+        </ToolbarBtn>
+      </div>
+      {/* Dismiss-keyboard pill on the right — separate so it reads as a
+          distinct action (Obsidian-mobile follows the same layout). */}
+      <button
+        type="button"
+        aria-label="Dismiss keyboard"
+        title="Dismiss keyboard"
+        onMouseDown={preventBlur}
+        onClick={() => dismissKeyboard(viewRef.current)}
+        data-testid="format-dismiss-keyboard"
+        className="flex-none flex items-center justify-center w-11 h-11 rounded-full bg-obsidianDarkGray border border-obsidianBorder text-obsidianSecondaryText hover:bg-obsidianHighlight/40 hover:text-obsidianText active:bg-obsidianHighlight/60 transition-colors"
+      >
+        <ChevronDownIcon className="w-5 h-5" />
+      </button>
+      {/* Hidden file picker — driven by the paperclip button. accept covers
+          the common attachment types; users can still drop unsupported files
+          on desktop via the existing CodeMirror drop handler. */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,application/pdf"
+        multiple
+        className="hidden"
+        onChange={onFileChosen}
+      />
     </div>
   )
 }
@@ -156,7 +231,10 @@ function ToolbarBtn({ label, onClick, onMouseDown, testId, children }: ToolbarBt
       onMouseDown={onMouseDown}
       onClick={onClick}
       data-testid={testId}
-      className="flex items-center justify-center min-w-[44px] min-h-[44px] rounded text-obsidianSecondaryText hover:bg-obsidianHighlight/40 hover:text-obsidianText active:bg-obsidianHighlight/60 transition-colors"
+      // Square hit area inside the rounded pill. flex-1 + min-w-0 lets the 8
+      // buttons share the pill width evenly on a narrow phone (375px), while
+      // the height stays touch-friendly at 36px.
+      className="flex-1 flex items-center justify-center min-w-0 h-9 rounded-full text-obsidianSecondaryText hover:bg-obsidianHighlight/40 hover:text-obsidianText active:bg-obsidianHighlight/60 transition-colors"
     >
       {children}
     </button>
