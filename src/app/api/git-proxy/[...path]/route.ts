@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { checkRateLimit, getClientIp } from '@/utils/rateLimit'
+import { isOriginAllowed } from '@/utils/originAllowlist'
 
 // Smart HTTP CORS proxy for isomorphic-git pushes.
 //
@@ -16,6 +18,13 @@ import { NextRequest, NextResponse } from 'next/server'
 // (push + fetch pack-files). Body, query-string, and the relevant
 // headers (Authorization, User-Agent, Content-Type, Accept) are
 // passed through.
+//
+// Guarded by the same two checks every other proxy route here runs —
+// origin allowlist (so it can't be turned into an open anonymising CORS
+// proxy from any web page) and a per-IP rate limit (so it can't be
+// turned into bandwidth amplification). One git push fans out into a
+// handful of round-trips, so the bucket is more generous than the OAuth
+// routes; a comfortable upper bound that still trips on serious abuse.
 
 // We only forward to a tight allow-list of hosts so the proxy can't
 // be turned into an open relay. Add hosts here if a user reports
@@ -42,6 +51,27 @@ const FORWARD_RESPONSE_HEADERS = [
 // Single handler used for both GET and POST — the only difference is
 // whether we forward a body.
 async function handle(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  // Same-origin guard: refuse calls that didn't originate from the
+  // noteser app itself. Without this the route is an open CORS+anon
+  // proxy to GitHub for anyone on the internet.
+  const origin = isOriginAllowed(req)
+  if (!origin.ok) {
+    return NextResponse.json(
+      { error: 'forbidden', message: origin.reason },
+      { status: 403 },
+    )
+  }
+  // Per-IP rate limit. One sync = a few round-trips, so we allow a
+  // comfortable headroom for active editing/auto-sync. The cap trips
+  // bandwidth-amplification abuse without affecting normal users.
+  const limit = checkRateLimit(`git-proxy:${getClientIp(req)}`, { max: 120, windowMs: 60_000 })
+  if (!limit.ok) {
+    return NextResponse.json(
+      { error: 'rate_limited', message: 'Too many git-proxy requests. Please wait and try again.' },
+      { status: 429, headers: { 'Retry-After': Math.ceil(limit.retryAfterMs / 1000).toString() } },
+    )
+  }
+
   const resolved = await params
   const segments = resolved.path ?? []
   if (segments.length < 2) {
