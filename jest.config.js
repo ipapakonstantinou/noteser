@@ -12,6 +12,12 @@ const customJestConfig = {
   // test files; ignore them too so the main repo's `npm test` doesn't
   // re-run every worktree's copy.
   testPathIgnorePatterns: ['/node_modules/', '/.next/', '/e2e/', '/.claude/worktrees/'],
+  // @vercel/analytics ships ESM-only and trips Jest's CJS loader. Tests
+  // never need real analytics calls; stub the module to a no-op track().
+  moduleNameMapper: {
+    '^@vercel/analytics$': '<rootDir>/jest.stubs/vercel-analytics.js',
+    '^@vercel/analytics/next$': '<rootDir>/jest.stubs/vercel-analytics.js',
+  },
 }
 
 module.exports = createJestConfig(customJestConfig)
