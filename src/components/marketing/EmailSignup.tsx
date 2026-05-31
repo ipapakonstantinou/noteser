@@ -61,19 +61,8 @@ export const EmailSignup = ({ source = 'site-landing', compact = false }: Props)
     )
   }
 
-  return (
-    <form onSubmit={submit} className={compact ? 'flex flex-col gap-2' : 'flex flex-col gap-3'}>
-      {!compact && (
-        <div>
-          <h3 className="text-base font-semibold text-obsidianText flex items-center gap-2">
-            <EnvelopeIcon className="w-5 h-5 text-obsidianAccentPurple" />
-            Get launch updates
-          </h3>
-          <p className="text-xs text-obsidianSecondaryText mt-1">
-            Drop your email and I will send a short note when sync, mobile, and the next features land. No spam, no daily digest.
-          </p>
-        </div>
-      )}
+  const formInner = (
+    <>
       <div className="flex flex-col sm:flex-row gap-2">
         <input
           type="email"
@@ -84,21 +73,48 @@ export const EmailSignup = ({ source = 'site-landing', compact = false }: Props)
           placeholder="you@example.com"
           disabled={status.kind === 'submitting'}
           aria-label="Email address"
-          className="flex-1 px-3 py-2 rounded-md bg-obsidianHighlight/40 border border-obsidianBorder text-sm text-obsidianText placeholder:text-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple/60 disabled:opacity-60"
+          className="flex-1 px-3 py-2 rounded-md bg-obsidianBlack/40 border border-obsidianBorder text-sm text-obsidianText placeholder:text-obsidianSecondaryText focus:outline-none focus:border-noteserAccent disabled:opacity-60"
         />
         <button
           type="submit"
           disabled={status.kind === 'submitting'}
-          className="px-4 py-2 rounded-md bg-obsidianAccentPurple/80 hover:bg-obsidianAccentPurple text-white text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-progress"
+          style={{ backgroundColor: 'var(--obsidian-accent-purple, hsl(217, 88%, 50%))' }}
+          className="w-full sm:w-auto px-5 py-2 rounded-md text-white text-sm font-semibold hover:brightness-110 transition disabled:opacity-60 disabled:cursor-progress"
         >
           {status.kind === 'submitting' ? 'Subscribing…' : 'Subscribe'}
         </button>
       </div>
       {status.kind === 'error' && (
-        <div role="alert" className="text-xs text-red-300">
+        <div role="alert" className="text-xs text-red-300 mt-2">
           {status.message}
         </div>
       )}
+    </>
+  )
+
+  if (compact) {
+    return (
+      <form onSubmit={submit} className="flex flex-col gap-2">
+        {formInner}
+      </form>
+    )
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="flex flex-col gap-3 p-4 rounded-lg border border-noteserAccent/40 bg-noteserAccent/[0.06]"
+    >
+      <div>
+        <h3 className="text-base font-semibold text-obsidianText flex items-center gap-2">
+          <EnvelopeIcon className="w-5 h-5 text-noteserAccent" />
+          Get launch updates
+        </h3>
+        <p className="text-xs text-obsidianSecondaryText mt-1">
+          A short email when sync, mobile, and the next features land. No spam, no daily digest.
+        </p>
+      </div>
+      {formInner}
     </form>
   )
 }

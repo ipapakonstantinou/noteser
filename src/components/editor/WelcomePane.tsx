@@ -205,6 +205,14 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
           </ul>
         </section>
 
+        {/* Email signup — promoted to second slot so launch visitors see
+            it on the first screen, not after scrolling past every
+            starter vault and recent note. */}
+        <section aria-labelledby="welcome-subscribe">
+          <h2 id="welcome-subscribe" className="sr-only">Get launch updates</h2>
+          <EmailSignup source="site-landing" />
+        </section>
+
         {/* Start */}
         <section aria-labelledby="welcome-start">
           <h2 id="welcome-start" className="text-sm font-medium text-obsidianText/90 uppercase tracking-wide mb-3">
@@ -294,11 +302,6 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
             </ul>
           </section>
         )}
-
-        <section aria-labelledby="welcome-subscribe" className="pt-2">
-          <h2 id="welcome-subscribe" className="sr-only">Get launch updates</h2>
-          <EmailSignup source="site-landing" />
-        </section>
 
         <div className="pt-4 border-t border-obsidianBorder text-xs text-obsidianSecondaryText">
           Close this tab to dismiss the welcome view. You can always reopen it from
