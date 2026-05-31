@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { GitHubUser, SyncRepo } from '@/types'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
+import { trackEventOncePerSession } from '@/utils/analytics'
 
 // Stores the user's GitHub OAuth token + identity + chosen sync repo.
 // SECURITY NOTE: localStorage is readable by any script on the page; any XSS
@@ -141,6 +142,7 @@ export const useGitHubStore = create<GitHubState>()(
           }
         }
         const restored = nextKey ? repoSyncStates[nextKey] : undefined
+        if (repo) trackEventOncePerSession('sync-configured')
         return {
           syncRepo: repo,
           lastSyncedAt: restored?.lastSyncedAt ?? null,
@@ -154,6 +156,7 @@ export const useGitHubStore = create<GitHubState>()(
         const repoSyncStates = key
           ? { ...state.repoSyncStates, [key]: { lastSyncedAt: now, lastCommitSha: commitSha } }
           : state.repoSyncStates
+        trackEventOncePerSession('sync-success')
         return { lastSyncedAt: now, lastCommitSha: commitSha, repoSyncStates }
       }),
       disconnect: () => set({

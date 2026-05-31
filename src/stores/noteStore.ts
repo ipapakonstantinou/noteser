@@ -11,6 +11,7 @@ import {
 import { STORAGE_KEYS } from '@/utils/storageKeys'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useFolderStore } from '@/stores/folderStore'
+import { trackEventOncePerSession } from '@/utils/analytics'
 
 // Module-scoped memoisation for the active / deleted getters. Keyed by
 // the `notes` ARRAY IDENTITY — Zustand's set() always replaces the
@@ -89,6 +90,8 @@ export const useNoteStore = create<NoteState>()(
           notes: [...state.notes, newNote],
           selectedNoteId: newNote.id
         }))
+
+        trackEventOncePerSession('note-created')
 
         return newNote
       },
@@ -274,6 +277,8 @@ export const useNoteStore = create<NoteState>()(
           notes: [...state.notes, newNote],
           selectedNoteId: newNote.id
         }))
+
+        trackEventOncePerSession('note-created')
 
         return newNote
       },
