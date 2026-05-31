@@ -40,6 +40,7 @@ import {
   SettingsTextInput,
   SettingsFooter,
 } from './settings'
+import { EmailSignup } from '@/components/marketing/EmailSignup'
 
 // One row in the left-side category navigator. Order here drives the
 // rendering order of the list AND the keyboard up/down nav (later).
@@ -545,6 +546,8 @@ function normalizeForPicker(value: string, fallback: string): string {
 function EditorPanel() {
   const taskListDensity = useSettingsStore(s => s.taskListDensity)
   const setTaskListDensity = useSettingsStore(s => s.setTaskListDensity)
+  const taskQueryLenientDoneToday = useSettingsStore(s => s.taskQueryLenientDoneToday)
+  const setTaskQueryLenientDoneToday = useSettingsStore(s => s.setTaskQueryLenientDoneToday)
   const notesOpenInPreviewMode = useSettingsStore(s => s.notesOpenInPreviewMode)
   const setNotesOpenInPreviewMode = useSettingsStore(s => s.setNotesOpenInPreviewMode)
   const editorAutocorrect = useSettingsStore(s => s.editorAutocorrect)
@@ -593,6 +596,15 @@ function EditorPanel() {
             { value: 'compact', label: 'Compact' },
             { value: 'comfortable', label: 'Comfortable' },
           ]}
+        />
+      </Field>
+      <Field
+        label="Match completed tasks without a ✅ YYYY-MM-DD stamp as done today"
+        description='When ON, "done today" also matches completed tasks without a completion date if their note was updated today. Leave OFF to require an explicit completion date.'
+      >
+        <SettingsCheckbox
+          checked={taskQueryLenientDoneToday}
+          onChange={setTaskQueryLenientDoneToday}
         />
       </Field>
     </div>
@@ -1633,6 +1645,13 @@ function AboutPanel() {
         >
           Report a bug
         </button>
+      </div>
+      <div className="pt-4 border-t border-obsidianBorder">
+        <div className="text-sm text-obsidianText mb-2">Get launch updates</div>
+        <p className="text-xs text-obsidianSecondaryText mb-3">
+          A short email when sync, mobile, and the next features land. No spam.
+        </p>
+        <EmailSignup source="settings-about" compact />
       </div>
     </div>
   )

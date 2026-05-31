@@ -35,6 +35,7 @@ export const DEFAULT_AI_MODEL: Record<Exclude<AIProvider, 'off'>, string> = {
 export interface SettingsState {
   folderSortMode: FolderSortMode
   taskListDensity: TaskListDensity
+  taskQueryLenientDoneToday: boolean
   // Show folders flagged as hidden (currently: the synthetic `attachments/`
   // folder). When false, those folders are suppressed from the sidebar.
   showHiddenFolders: boolean
@@ -284,6 +285,7 @@ export interface SettingsState {
 
   setFolderSortMode: (mode: FolderSortMode) => void
   setTaskListDensity: (density: TaskListDensity) => void
+  setTaskQueryLenientDoneToday: (value: boolean) => void
   setShowHiddenFolders: (value: boolean) => void
   setAttachmentsFolder: (folder: string) => void
   setAutoSyncOnStart: (value: boolean) => void
@@ -399,6 +401,7 @@ export type VaultSettingKey = (typeof VAULT_SETTING_KEYS)[number]
 const DEFAULTS = {
   folderSortMode: 'alphabetical' as FolderSortMode,
   taskListDensity: 'comfortable' as TaskListDensity,
+  taskQueryLenientDoneToday: false,
   showHiddenFolders: true,
   attachmentsFolder: 'Files',
   autoSyncOnStart: true,
@@ -476,6 +479,7 @@ export const useSettingsStore = create<SettingsState>()(
         ...DEFAULTS,
         setFolderSortMode: (folderSortMode) => setVault({ folderSortMode }),
         setTaskListDensity: (taskListDensity) => setVault({ taskListDensity }),
+        setTaskQueryLenientDoneToday: (taskQueryLenientDoneToday) => set({ taskQueryLenientDoneToday }),
         setShowHiddenFolders: (showHiddenFolders) => setVault({ showHiddenFolders }),
         setAttachmentsFolder: (attachmentsFolder) => setVault({ attachmentsFolder }),
         setAutoSyncOnStart: (autoSyncOnStart) => set({ autoSyncOnStart }),

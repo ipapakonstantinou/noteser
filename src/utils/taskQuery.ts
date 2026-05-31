@@ -221,6 +221,17 @@ export interface ExecuteContext {
   notes: TaskSourceNote[]
   folders: Folder[]
   today?: string
+  lenientDoneToday?: boolean
+}
+
+function isSameLocalDay(timestamp: number | undefined, isoDate: string): boolean {
+  if (typeof timestamp !== 'number') return false
+  const d = new Date(timestamp)
+  if (Number.isNaN(d.getTime())) return false
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}` === isoDate
 }
 
 function buildFolderPath(folderId: string | null, folderById: Map<string, Folder>): string {
@@ -249,14 +260,18 @@ export function executeTaskQuery(query: TaskQuery, ctx: ExecuteContext): Execute
   for (const note of ctx.notes) {
     if (note.isDeleted) continue
     const noteTasks = extractTasks([note])
-    const meta = note as { folderId?: string | null; title?: string; createdAt?: number; content?: string }
+    const meta = note as { folderId?: string | null; title?: string; createdAt?: number; updatedAt?: number; content?: string }
     const folderPath = buildFolderPath(meta.folderId ?? null, folderById)
     const title = meta.title || 'Untitled'
     const path = folderPath ? `${folderPath}/${title}` : title
     const noteCreatedAt = typeof meta.createdAt === 'number' ? meta.createdAt : 0
     const tags = extractTags(meta.content ?? '')
     for (const t of noteTasks) {
-      all.push({ ...t, path, noteTitle: title, folderPath, noteCreatedAt, tags })
+      const completedDate =
+        ctx.lenientDoneToday && t.completed && !t.completedDate && isSameLocalDay(meta.updatedAt, today)
+          ? today
+          : t.completedDate
+      all.push({ ...t, completedDate, path, noteTitle: title, folderPath, noteCreatedAt, tags })
     }
   }
 
