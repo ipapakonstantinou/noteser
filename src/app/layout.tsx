@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { headers } from 'next/headers'
+import { Analytics } from '@vercel/analytics/next'
 import { PwaProvider } from '@/components/pwa/PwaProvider'
 import { TooltipLayer } from '@/components/ui/TooltipLayer'
 import '@/styles/globals.css'
@@ -63,6 +64,14 @@ export default async function RootLayout({
         {children}
         <PwaProvider />
         <TooltipLayer />
+        {/* Vercel Web Analytics — referrer + visitor count for launch
+            attribution. Free up to 2,500 events/mo on the Hobby plan.
+            Needs the dashboard toggle (Project → Analytics → Enable)
+            to actually record; the script is harmless until then. The
+            @vercel/analytics/next entrypoint is automatically nonced
+            by Next, so it satisfies the strict-dynamic CSP without
+            extra wiring. */}
+        <Analytics />
       </body>
     </html>
   )
