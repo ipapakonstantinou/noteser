@@ -47,9 +47,10 @@ function makeNote(
   title: string,
   content: string,
   folderId: string | null = null,
-  isDeleted = false
+  isDeleted = false,
+  updatedAt?: number
 ) {
-  return { id, title, content, folderId, isDeleted }
+  return { id, title, content, folderId, isDeleted, updatedAt }
 }
 
 // ── parseTaskQuery ────────────────────────────────────────────────────────────
@@ -356,6 +357,29 @@ describe('executeTaskQuery', () => {
       today: '2026-05-18',
     })
     expect(result).toHaveLength(0)
+  })
+
+  test('doneToday lenient mode includes undated completed tasks from notes updated today', () => {
+    const updatedToday = new Date(2026, 4, 18, 10, 30).getTime()
+    const updatedYesterday = new Date(2026, 4, 17, 23, 30).getTime()
+    const notes = [
+      makeNote('n1', 'Today', '- [x] unstamped today', null, false, updatedToday),
+      makeNote('n2', 'Yesterday', '- [x] unstamped old', null, false, updatedYesterday),
+      makeNote('n3', 'Open', '- [ ] open task', null, false, updatedToday),
+    ]
+    const q = parseTaskQuery('done today')
+    const strict = executeTaskQuery(q, { notes, folders: [], today: '2026-05-18' })
+    const lenient = executeTaskQuery(q, {
+      notes,
+      folders: [],
+      today: '2026-05-18',
+      lenientDoneToday: true,
+    })
+
+    expect(strict).toHaveLength(0)
+    expect(lenient).toHaveLength(1)
+    expect(lenient[0].text).toBe('unstamped today')
+    expect(lenient[0].completedDate).toBe('2026-05-18')
   })
 
   test('pathIncludes filter is case-insensitive (folder name)', () => {
