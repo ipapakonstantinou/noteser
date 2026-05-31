@@ -545,6 +545,8 @@ function normalizeForPicker(value: string, fallback: string): string {
 function EditorPanel() {
   const taskListDensity = useSettingsStore(s => s.taskListDensity)
   const setTaskListDensity = useSettingsStore(s => s.setTaskListDensity)
+  const taskQueryLenientDoneToday = useSettingsStore(s => s.taskQueryLenientDoneToday)
+  const setTaskQueryLenientDoneToday = useSettingsStore(s => s.setTaskQueryLenientDoneToday)
   const notesOpenInPreviewMode = useSettingsStore(s => s.notesOpenInPreviewMode)
   const setNotesOpenInPreviewMode = useSettingsStore(s => s.setNotesOpenInPreviewMode)
   const editorAutocorrect = useSettingsStore(s => s.editorAutocorrect)
@@ -593,6 +595,15 @@ function EditorPanel() {
             { value: 'compact', label: 'Compact' },
             { value: 'comfortable', label: 'Comfortable' },
           ]}
+        />
+      </Field>
+      <Field
+        label="Match completed tasks without a `✅ YYYY-MM-DD` stamp as done today"
+        description="When ON, `done today` also matches completed tasks without a completion date if their note was updated today. Leave OFF to require an explicit completion date."
+      >
+        <SettingsCheckbox
+          checked={taskQueryLenientDoneToday}
+          onChange={setTaskQueryLenientDoneToday}
         />
       </Field>
     </div>

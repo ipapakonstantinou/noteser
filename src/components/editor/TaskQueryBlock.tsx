@@ -23,13 +23,14 @@ export const TaskQueryBlock = ({ source }: { source: string }) => {
   const updateNote = useNoteStore(s => s.updateNote)
   const openNote = useWorkspaceStore(s => s.openNote)
   const density = useSettingsStore(s => s.taskListDensity)
+  const lenientDoneToday = useSettingsStore(s => s.taskQueryLenientDoneToday)
   const isComfortable = density === 'comfortable'
 
   const { query, groups } = useMemo(() => {
     const query = parseTaskQuery(source)
-    const tasks = executeTaskQuery(query, { notes, folders })
+    const tasks = executeTaskQuery(query, { notes, folders, lenientDoneToday })
     return { query, groups: groupTasks(tasks, query.groupBy, query.sortBy) }
-  }, [source, notes, folders])
+  }, [source, notes, folders, lenientDoneToday])
 
   const handleToggle = (task: ExecutedTask) => {
     const note = notes.find(n => n.id === task.noteId)
