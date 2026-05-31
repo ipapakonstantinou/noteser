@@ -40,6 +40,7 @@ import {
   SettingsTextInput,
   SettingsFooter,
 } from './settings'
+import { EmailSignup } from '@/components/marketing/EmailSignup'
 
 // One row in the left-side category navigator. Order here drives the
 // rendering order of the list AND the keyboard up/down nav (later).
@@ -598,8 +599,8 @@ function EditorPanel() {
         />
       </Field>
       <Field
-        label="Match completed tasks without a `✅ YYYY-MM-DD` stamp as done today"
-        description="When ON, `done today` also matches completed tasks without a completion date if their note was updated today. Leave OFF to require an explicit completion date."
+        label="Match completed tasks without a ✅ YYYY-MM-DD stamp as done today"
+        description='When ON, "done today" also matches completed tasks without a completion date if their note was updated today. Leave OFF to require an explicit completion date.'
       >
         <SettingsCheckbox
           checked={taskQueryLenientDoneToday}
@@ -1644,6 +1645,13 @@ function AboutPanel() {
         >
           Report a bug
         </button>
+      </div>
+      <div className="pt-4 border-t border-obsidianBorder">
+        <div className="text-sm text-obsidianText mb-2">Get launch updates</div>
+        <p className="text-xs text-obsidianSecondaryText mb-3">
+          A short email when sync, mobile, and the next features land. No spam.
+        </p>
+        <EmailSignup source="settings-about" compact />
       </div>
     </div>
   )

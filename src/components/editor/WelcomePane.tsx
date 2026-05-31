@@ -20,6 +20,7 @@ import {
 } from '@/stores'
 import { STARTER_VAULTS, seedStarterVault, type StarterVault } from '@/utils/starterVaults'
 import { seedFeatureTourNote } from '@/utils/featureTourNote'
+import { EmailSignup } from '@/components/marketing/EmailSignup'
 
 // VS Code-style "Welcome" tab content. Replaces the old OnboardingModal
 // popup with an in-workspace landing view that feels like a note —
@@ -293,6 +294,11 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
             </ul>
           </section>
         )}
+
+        <section aria-labelledby="welcome-subscribe" className="pt-2">
+          <h2 id="welcome-subscribe" className="sr-only">Get launch updates</h2>
+          <EmailSignup source="site-landing" />
+        </section>
 
         <div className="pt-4 border-t border-obsidianBorder text-xs text-obsidianSecondaryText">
           Close this tab to dismiss the welcome view. You can always reopen it from
