@@ -17,6 +17,17 @@ const securityHeaders = [
     key: 'Permissions-Policy',
     value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
   },
+  // HSTS — 2 years + includeSubDomains. Vercel already sets a bare
+  // max-age=63072000 by platform default; setting our own here adds the
+  // includeSubDomains directive (every noteser.app subdomain must serve
+  // HTTPS, which they do). The `preload` directive is intentionally OFF:
+  // enrolling at hstspreload.org is a one-way commitment, hard to reverse,
+  // and offers little practical gain for an existing site over plain HSTS
+  // with includeSubDomains.
+  {
+    key: 'Strict-Transport-Security',
+    value: 'max-age=63072000; includeSubDomains',
+  },
 ]
 
 // Per-build identifier exposed to the client. The service worker is
@@ -27,6 +38,11 @@ const securityHeaders = [
 const BUILD_ID = process.env.VERCEL_GIT_COMMIT_SHA || String(Date.now())
 
 const nextConfig = {
+  // Suppress the `X-Powered-By: Next.js` response header. Pure
+  // fingerprint suppression — no security benefit beyond making the
+  // stack harder to identify in passive scans. Vercel still emits
+  // `Server: Vercel`, which we cannot strip from the platform.
+  poweredByHeader: false,
   env: {
     NEXT_PUBLIC_BUILD_ID: BUILD_ID,
   },
