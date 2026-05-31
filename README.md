@@ -53,6 +53,13 @@ Right-click any note or folder for rename, move, delete, or new subfolder.
 
 See [`docs/roadmap.md`](./docs/roadmap.md) for what is planned (Now / Next / Later).
 
+
+## Contributing
+
+Want to help? We'd love your contribution. Check out the [good first issues](https://github.com/ipapakonstantinou/noteser/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) to get started.
+
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full workflow.
+
 ---
 
 ## For developers
