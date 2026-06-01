@@ -73,7 +73,11 @@ export const EmailSignup = ({ source = 'site-landing', compact = false }: Props)
           placeholder="you@example.com"
           disabled={status.kind === 'submitting'}
           aria-label="Email address"
-          className="flex-1 px-3 py-2 rounded-md bg-obsidianBlack/40 border border-obsidianBorder text-sm text-obsidianText placeholder:text-obsidianSecondaryText focus:outline-none focus:border-noteserAccent disabled:opacity-60"
+          // Inline style overrides iOS Safari's forced white background on
+          // text inputs, which would otherwise leave the light obsidianText
+          // colour unreadable on top of it.
+          style={{ backgroundColor: 'var(--obsidian-black, #1b1b1b)', color: 'var(--obsidian-text, #dadada)' }}
+          className="flex-1 appearance-none px-3 py-2 rounded-md border border-obsidianBorder text-sm placeholder:text-obsidianSecondaryText focus:outline-none focus:border-noteserAccent disabled:opacity-60"
         />
         <button
           type="submit"
