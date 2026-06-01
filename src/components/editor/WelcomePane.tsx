@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState, useEffect } from 'react'
+import Link from 'next/link'
 import {
   DocumentPlusIcon,
   FolderPlusIcon,
@@ -383,16 +384,23 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
           </section>
         )}
 
-        <div className="pt-4 border-t border-obsidianBorder text-xs text-obsidianSecondaryText">
-          Close this tab to dismiss the welcome view. You can always reopen it from
-          {' '}<button
-            type="button"
-            onClick={() => openModal({ type: 'shortcuts' })}
-            className="text-obsidianAccentPurple hover:underline"
-          >
-            the keyboard shortcuts list
-          </button>
-          {' '}or by clearing onboarding in Settings → General.
+        <div className="pt-4 border-t border-obsidianBorder text-xs text-obsidianSecondaryText space-y-2">
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            <Link href="/help/getting-started" className="text-obsidianAccentPurple hover:underline">Docs</Link>
+            <Link href="/changelog" className="text-obsidianAccentPurple hover:underline">Changelog</Link>
+            <a href="https://github.com/ipapakonstantinou/noteser" target="_blank" rel="noopener noreferrer" className="text-obsidianAccentPurple hover:underline">GitHub</a>
+          </div>
+          <div>
+            Close this tab to dismiss the welcome view. You can always reopen it from
+            {' '}<button
+              type="button"
+              onClick={() => openModal({ type: 'shortcuts' })}
+              className="text-obsidianAccentPurple hover:underline"
+            >
+              the keyboard shortcuts list
+            </button>
+            {' '}or by clearing onboarding in Settings → General.
+          </div>
         </div>
       </div>
     </div>
