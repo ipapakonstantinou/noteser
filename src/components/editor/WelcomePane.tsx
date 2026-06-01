@@ -76,12 +76,24 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
 
         {/* Hero */}
         <div>
-          <div className="text-xs uppercase tracking-wider text-obsidianAccentPurple mb-2">
-            Welcome
+          <div className="flex items-center gap-3 mb-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/apple-icon.png"
+              alt="Noteser"
+              width={56}
+              height={56}
+              className="w-14 h-14 rounded-2xl shadow-obsidian"
+            />
+            <div>
+              <div className="text-xs uppercase tracking-wider text-obsidianAccentPurple mb-1">
+                Welcome
+              </div>
+              <h1 className="text-3xl font-semibold text-obsidianText leading-none">
+                noteser
+              </h1>
+            </div>
           </div>
-          <h1 className="text-3xl font-semibold text-obsidianText mb-3">
-            noteser
-          </h1>
           <p className="text-base text-obsidianSecondaryText leading-relaxed">
             Your second brain in the browser, synced to GitHub. Markdown notes
             with wikilinks, tags, tasks, live preview, panes, templates, and a
