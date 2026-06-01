@@ -288,15 +288,18 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
               onClick={() => openModal({ type: 'github-auth' })}
               testId="welcome-github"
             />
-            {localFolderSupported && (
-              <WelcomeAction
-                icon={<FolderOpenIcon className="w-5 h-5" />}
-                label="Load from folder"
-                hint="Open an existing markdown vault from your disk"
-                onClick={handleLoadLocalFolder}
-                testId="welcome-local-folder"
-              />
-            )}
+            <WelcomeAction
+              icon={<FolderOpenIcon className="w-5 h-5" />}
+              label="Load from folder"
+              hint={
+                localFolderSupported
+                  ? 'Open an existing markdown vault from your disk'
+                  : 'Desktop Chrome, Edge, or Brave only — iOS does not allow folder access'
+              }
+              onClick={handleLoadLocalFolder}
+              disabled={!localFolderSupported}
+              testId="welcome-local-folder"
+            />
             <WelcomeAction
               icon={<SwatchIcon className="w-5 h-5" />}
               label="Open settings"
@@ -382,14 +385,20 @@ interface WelcomeActionProps {
   hint: string
   onClick: () => void
   testId?: string
+  disabled?: boolean
 }
 
-const WelcomeAction = ({ icon, label, hint, onClick, testId }: WelcomeActionProps) => (
+const WelcomeAction = ({ icon, label, hint, onClick, testId, disabled = false }: WelcomeActionProps) => (
   <button
     type="button"
     onClick={onClick}
+    disabled={disabled}
     data-testid={testId}
-    className="text-left p-3 rounded-lg border border-obsidianBorder hover:border-obsidianAccentPurple/60 hover:bg-obsidianHighlight/40 transition-colors"
+    className={
+      disabled
+        ? 'text-left p-3 rounded-lg border border-obsidianBorder/60 opacity-50 cursor-not-allowed'
+        : 'text-left p-3 rounded-lg border border-obsidianBorder hover:border-obsidianAccentPurple/60 hover:bg-obsidianHighlight/40 transition-colors'
+    }
   >
     <div className="flex items-center gap-2 text-sm font-medium text-obsidianText">
       <span className="text-obsidianAccentPurple">{icon}</span>
