@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import {
   DocumentPlusIcon,
   FolderPlusIcon,
@@ -10,6 +10,7 @@ import {
   BookOpenIcon,
   SwatchIcon,
   SparklesIcon,
+  FolderOpenIcon,
 } from '@heroicons/react/24/outline'
 import {
   useNoteStore,
@@ -61,6 +62,41 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
     // Closing the welcome tab marks onboardingShown so the user
     // doesn't bounce back here on reload.
     closeTab(tabId)
+  }
+
+  // File System Access API is not on iOS Safari or some Firefox builds;
+  // only render the "Load from folder" CTA when the browser actually
+  // exposes window.showDirectoryPicker. Check client-side via useEffect
+  // so SSR doesn't render based on `window`.
+  const [localFolderSupported, setLocalFolderSupported] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const { isLocalFolderSupported } = await import('@/utils/localFolderSync')
+      if (!cancelled) setLocalFolderSupported(isLocalFolderSupported())
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  const handleLoadLocalFolder = async () => {
+    try {
+      const { pickLocalFolder, saveLocalFolderHandle } = await import('@/utils/localFolderSync')
+      const { useLocalFolderStore } = await import('@/stores')
+      const handle = await pickLocalFolder()
+      await saveLocalFolderHandle(handle)
+      useLocalFolderStore.getState().setHandle(handle, handle.name)
+      useLocalFolderStore.getState().setStatus('connected')
+      openModal({ type: 'local-folder-import' })
+    } catch (err) {
+      // pickLocalFolder rejects with AbortError when the user cancels;
+      // treat that as silent. Other errors bubble up to console for the
+      // moment — the Settings → Local folder panel has the proper UI for
+      // the rare permission-denied case.
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!msg.toLowerCase().includes('abort')) {
+        console.error('Load from folder failed:', err)
+      }
+    }
   }
 
   const handlePickStarter = (vault: StarterVault) => {
@@ -252,6 +288,15 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
               onClick={() => openModal({ type: 'github-auth' })}
               testId="welcome-github"
             />
+            {localFolderSupported && (
+              <WelcomeAction
+                icon={<FolderOpenIcon className="w-5 h-5" />}
+                label="Load from folder"
+                hint="Open an existing markdown vault from your disk"
+                onClick={handleLoadLocalFolder}
+                testId="welcome-local-folder"
+              />
+            )}
             <WelcomeAction
               icon={<SwatchIcon className="w-5 h-5" />}
               label="Open settings"
