@@ -137,6 +137,38 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
           </p>
         </div>
 
+        {/* Open-vault hero CTA. Top-of-page slot so any first-time visitor
+            who already has a markdown vault on disk sees the one-click
+            path before scrolling. Disabled + dimmed on browsers that lack
+            window.showDirectoryPicker so iOS users still know the option
+            exists and what would unlock it. */}
+        <button
+          type="button"
+          onClick={handleLoadLocalFolder}
+          disabled={!localFolderSupported}
+          data-testid="welcome-open-vault-hero"
+          className={
+            localFolderSupported
+              ? 'w-full text-left p-4 rounded-lg border border-obsidianAccentPurple/40 bg-obsidianAccentPurple/10 hover:bg-obsidianAccentPurple/20 hover:border-obsidianAccentPurple transition-colors'
+              : 'w-full text-left p-4 rounded-lg border border-obsidianBorder/60 bg-obsidianHighlight/20 opacity-60 cursor-not-allowed'
+          }
+        >
+          <div className="flex items-center gap-3">
+            <FolderOpenIcon className={`w-6 h-6 flex-shrink-0 ${localFolderSupported ? 'text-obsidianAccentPurple' : 'text-obsidianSecondaryText'}`} />
+            <div className="flex-1 min-w-0">
+              <div className="text-base font-semibold text-obsidianText">
+                Open your existing vault
+              </div>
+              <div className="text-xs text-obsidianSecondaryText mt-0.5">
+                {localFolderSupported
+                  ? 'Point at a folder of markdown files on your disk. Two-way sync, no upload, no account.'
+                  : 'Desktop Chrome, Edge, or Brave only — iOS does not allow folder access from the browser.'}
+              </div>
+            </div>
+            {localFolderSupported && <span className="text-obsidianAccentPurple text-sm">→</span>}
+          </div>
+        </button>
+
         {/* Demo clip: the live-preview editing experience. Plain <img> on
             purpose — next/image does not animate GIFs. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -287,18 +319,6 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
               hint="Sync notes as a git repo — your data, your repo"
               onClick={() => openModal({ type: 'github-auth' })}
               testId="welcome-github"
-            />
-            <WelcomeAction
-              icon={<FolderOpenIcon className="w-5 h-5" />}
-              label="Load from folder"
-              hint={
-                localFolderSupported
-                  ? 'Open an existing markdown vault from your disk'
-                  : 'Desktop Chrome, Edge, or Brave only — iOS does not allow folder access'
-              }
-              onClick={handleLoadLocalFolder}
-              disabled={!localFolderSupported}
-              testId="welcome-local-folder"
             />
             <WelcomeAction
               icon={<SwatchIcon className="w-5 h-5" />}
