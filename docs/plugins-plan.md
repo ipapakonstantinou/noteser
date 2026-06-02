@@ -1,8 +1,8 @@
 # Plugins v1 — design plan
 
-Status: DRAFT for review. Locked once Jon approves the surface list +
-sandboxing model. After that, `feat/plugins-v1` opens as a long-running
-branch.
+Status: LOCKED 2026-06-02. The 5 open questions were resolved (see
+[Decisions made](#decisions-made)). `feat/plugins-v1` opens as a
+long-running branch on the same date.
 
 ## Goal
 
@@ -256,18 +256,24 @@ reload needed.
 - [ ] One CSP audit pass before shipping (the Worker must NOT be
   excepted from the existing nonce CSP).
 
-## Open questions for Jon
+## Decisions made
 
-1. Should the SDK be MIT or AGPL-licensed? (noteser core is MIT;
-   does the plugin SDK match?)
-2. Should we curate the awesome-noteser list, or let it be community-
-   moderated from day one? Curated == quality signal, community ==
-   scale.
-3. Mermaid renderer — fine to depend on the `mermaid` npm package
-   (huge, ~600 KB), or do we ship a smaller subset?
-4. Naming: `@noteser/plugin-sdk` vs `noteser-plugin` vs `noteser-sdk`?
-5. Should plugins be allowed to use their own React components in
-   v1 (we ship a curated component set), or in v2 only?
+Resolved 2026-06-02:
+
+1. **SDK license: MIT.** Matches noteser core. Friendly to plugin
+   authors, including commercial ones.
+2. **awesome-noteser list: curated by Jon.** Tight quality signal
+   for the first six months. Open to community submissions later,
+   once the ecosystem is healthy.
+3. **Mermaid renderer ships the full `mermaid` npm package
+   (~600 KB).** One-time install cost, all diagram types work.
+4. **SDK package name: `@noteser/plugin-sdk`.** Scoped under the
+   `@noteser` npm org (needs registering before week 4 publish).
+   Opens room for `@noteser/cli`, `@noteser/themes`, etc. later.
+5. **Plugin-defined React components: v2 only.** v1 plugins use the
+   host-provided component set (button / text / list / link /
+   input). Custom React was a security risk that did not need to
+   be in scope for v1.
 
 ## Out-of-scope but worth noting
 
