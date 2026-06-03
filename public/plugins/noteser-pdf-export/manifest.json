@@ -1,0 +1,11 @@
+{
+  "id": "noteser-pdf-export",
+  "name": "PDF export",
+  "version": "0.1.0",
+  "author": "Noteser",
+  "main": "./main.js",
+  "permissions": ["file-save"],
+  "surfaces": {
+    "commands": [{ "id": "export", "title": "Export note as PDF" }]
+  }
+}
