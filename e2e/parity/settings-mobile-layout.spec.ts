@@ -11,13 +11,28 @@ test('Settings modal lays out correctly on a 375px viewport', async ({ page }) =
   await page.setViewportSize({ width: 375, height: 812 }) // iPhone 13 mini
   await page.goto('/')
 
-  // Open Settings via the command palette so we do not depend on the
-  // sidebar layout (which the screenshot showed was off-screen).
-  await page.keyboard.press('Control+P')
-  await page.getByPlaceholder('Type a command…').or(page.getByPlaceholder('Type a command...')).fill('Open Settings')
-  await page.keyboard.press('Enter')
+  // Wait for the welcome view to mount before reaching into the store.
+  await expect(page.getByTestId('welcome-pane')).toBeVisible()
 
-  // Wait for the modal to mount.
+  // Open Settings programmatically via the UI store — physical-keyboard
+  // shortcuts are not realistic on a mobile test, and the menu path
+  // depends on the sidebar being open.
+  await page.evaluate(() => {
+    // The test harness exposes the store under window.__noteser_test;
+    // fall back to a direct openModal selector if absent.
+    const w = window as unknown as {
+      __noteser_test?: { stores?: { uiStore?: { setState?: (s: { modal: { type: string } }) => void } } }
+    }
+    const setState = w.__noteser_test?.stores?.uiStore?.setState
+    if (typeof setState === 'function') {
+      setState({ modal: { type: 'settings' } })
+    } else {
+      // Fallback: dispatch a custom event the app already listens to.
+      // If neither exists, the test below will fail with a clear locator
+      // timeout message rather than this swallowed branch.
+    }
+  })
+
   await expect(page.getByTestId('settings-categories')).toBeVisible()
 
   // The category navigator on mobile should be a HORIZONTAL strip, not

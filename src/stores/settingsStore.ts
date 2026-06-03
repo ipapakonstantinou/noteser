@@ -162,6 +162,13 @@ export interface SettingsState {
   // it's intentional that re-installs see the modal again.
   onboardingShown: boolean
 
+  // ── Startup note ───────────────────────────────────────────────────────
+  // If set to a known note id, that note opens automatically on app
+  // boot instead of (or before) the Welcome view. null = no startup
+  // note → existing welcome-vs-empty behaviour. Persisted per-vault
+  // alongside the other VAULT settings below.
+  startupNoteId: string | null
+
   // ── Beta features ──────────────────────────────────────────────────────
   // Master switch. When false, every named flag in `betaFlags` is treated
   // as off regardless of its stored value. UI: a single toggle in Settings
@@ -331,6 +338,7 @@ export interface SettingsState {
   // in its persisted `sidebarTabOrder` slot (or default order if absent).
   showSidebarTab: (id: string) => void
   setOnboardingShown: (value: boolean) => void
+  setStartupNoteId: (id: string | null) => void
   setSettingsFolderPath: (path: string) => void
   setVaultSettingsLastPushedHash: (hash: string) => void
   setLocalGitignoreOverlay: (text: string) => void
@@ -448,6 +456,7 @@ const DEFAULTS = {
   // Settings → Sidebar. Default empty.
   hiddenSidebarTabs: [] as string[],
   onboardingShown: false,
+  startupNoteId: null as string | null,
   settingsFolderPath: '.noteser',
   vaultSettingsUpdatedAt: 0,
   vaultSettingsLastPushedHash: '',
@@ -551,6 +560,7 @@ export const useSettingsStore = create<SettingsState>()(
             hiddenSidebarTabs: state.hiddenSidebarTabs.filter(t => t !== id),
           })),
         setOnboardingShown: (onboardingShown) => set({ onboardingShown }),
+        setStartupNoteId: (startupNoteId) => set({ startupNoteId }),
         setSettingsFolderPath: (path) => set({ settingsFolderPath: path }),
         setVaultSettingsLastPushedHash: (hash) => set({ vaultSettingsLastPushedHash: hash }),
         setLocalGitignoreOverlay: (localGitignoreOverlay) => set({ localGitignoreOverlay }),

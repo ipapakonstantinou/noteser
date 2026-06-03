@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { Sidebar, RightSidebar, Ribbon, MobileTopBar, DrawerHandle, SidebarResizeHandle } from '@/components/sidebar'
 import { Editor } from '@/components/editor'
@@ -246,6 +246,22 @@ export default function Home() {
     }
     useWorkspaceStore.getState().openWelcome()
   }, [hydrated, onboardingShown, githubToken, noteCount])
+
+  // Startup note: when Settings → General → "Open on launch" is set to
+  // a real note id, open that note as the active tab on first hydration.
+  // Fires once per page load; subsequent state changes do not re-open
+  // (a user closing the tab should NOT have it bounce back).
+  const startupNoteOpenedRef = useRef(false)
+  useEffect(() => {
+    if (!hydrated) return
+    if (startupNoteOpenedRef.current) return
+    const startupNoteId = useSettingsStore.getState().startupNoteId
+    if (!startupNoteId) return
+    const note = useNoteStore.getState().notes.find(n => n.id === startupNoteId && !n.isDeleted)
+    if (!note) return
+    startupNoteOpenedRef.current = true
+    useWorkspaceStore.getState().openNote(note.id, { preview: false })
+  }, [hydrated])
 
   // Import-from-share: when the URL has `?import=<fragment>`, decode it
   // (same format as /share), prompt the user, and add the note to their
