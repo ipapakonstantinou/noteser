@@ -187,16 +187,46 @@ function GeneralPanel() {
   const confirmBulkDelete = useSettingsStore(s => s.confirmBulkDelete)
   const shareDefaultExpiryDays = useSettingsStore(s => s.shareDefaultExpiryDays)
   const shareDefaultBurn = useSettingsStore(s => s.shareDefaultBurn)
+  const startupNoteId = useSettingsStore(s => s.startupNoteId)
   const setFolderSortMode = useSettingsStore(s => s.setFolderSortMode)
   const setShowHiddenFolders = useSettingsStore(s => s.setShowHiddenFolders)
   const setTrashMode = useSettingsStore(s => s.setTrashMode)
   const setConfirmBulkDelete = useSettingsStore(s => s.setConfirmBulkDelete)
   const setShareDefaultExpiryDays = useSettingsStore(s => s.setShareDefaultExpiryDays)
   const setShareDefaultBurn = useSettingsStore(s => s.setShareDefaultBurn)
+  const setStartupNoteId = useSettingsStore(s => s.setStartupNoteId)
+
+  // Note picker options: every non-deleted note sorted by title.
+  // Capped at 500 so the dropdown stays usable on huge vaults — power
+  // users can still pin via the API if needed.
+  const notesForPicker = useNoteStore(s => s.notes)
+  const startupOptions = useMemo(() => {
+    const active = notesForPicker.filter(n => !n.isDeleted)
+    const sorted = active.slice().sort((a, b) => {
+      const at = (a.title || 'Untitled').toLowerCase()
+      const bt = (b.title || 'Untitled').toLowerCase()
+      return at.localeCompare(bt)
+    })
+    const capped = sorted.slice(0, 500)
+    return [
+      { value: '', label: 'Welcome view (default)' },
+      ...capped.map(n => ({ value: n.id, label: n.title || 'Untitled' })),
+    ]
+  }, [notesForPicker])
 
   return (
     <div className="space-y-4">
       <PanelHeading>General</PanelHeading>
+      <Field
+        label="Open on launch"
+        description="Which note opens automatically when Noteser starts. Leave on `Welcome view` to keep the current behaviour."
+      >
+        <SettingsSelect<string>
+          value={startupNoteId ?? ''}
+          onChange={(v) => setStartupNoteId(v === '' ? null : v)}
+          options={startupOptions}
+        />
+      </Field>
       <Field
         label="Sort notes within folders"
         description="How notes are ordered in the sidebar. Manual = insertion order."
