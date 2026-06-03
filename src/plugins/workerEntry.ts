@@ -197,13 +197,10 @@ async function handleUnmountPanel(seq: number, panelId: string): Promise<void> {
 
 async function handleActiveNoteChanged(
   seq: number,
-  note: { id: string; title: string; folderPath: string } | null,
+  note: { id: string; title: string; folderPath: string; content: string } | null,
 ): Promise<void> {
   if (state === null) return
-  // The activeNoteChanged event carries the title+path of the active
-  // note but NOT its content — content travels via a separate read in
-  // a future protocol revision. For now, content is the empty string.
-  state.activeNote = note ? { id: note.id, title: note.title, content: '' } : null
+  state.activeNote = note ? { id: note.id, title: note.title, content: note.content } : null
   if (typeof state.def.onActiveNoteChange === 'function') {
     await state.def.onActiveNoteChange(state.activeNote, buildCtx(seq))
   }

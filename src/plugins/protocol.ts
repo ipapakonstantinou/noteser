@@ -80,11 +80,15 @@ export interface HostRenderCodeBlock {
 }
 
 /** Sent whenever the user switches between notes. Plugins use this to
- *  re-render any panel that depends on the active note. */
+ *  re-render any panel that depends on the active note.
+ *
+ *  `content` is the FULL body of the active note. The v1 capability
+ *  model allows plugins to read the active note's body in full but
+ *  NOT the bodies of any other note. */
 export interface HostActiveNoteChanged {
   type: 'host:activeNoteChanged'
   seq: number
-  note: { id: string; title: string; folderPath: string } | null
+  note: { id: string; title: string; folderPath: string; content: string } | null
 }
 
 // ─── Worker → Host ─────────────────────────────────────────────────────────

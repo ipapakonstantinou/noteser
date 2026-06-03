@@ -20,6 +20,9 @@ import { PluginHost, type MinimalWorker } from './PluginHost'
 import { usePluginStore } from '@/stores/pluginStore'
 import { usePluginInstallStore, type InstalledPluginRecord } from '@/stores/pluginInstallStore'
 import { useToastStore } from '@/stores/toastStore'
+import { useNoteStore } from '@/stores/noteStore'
+import { useFolderStore } from '@/stores/folderStore'
+import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { fetchPluginFromUrl, sha256Hex } from './installer'
 
 let instance: PluginHost | null = null
@@ -31,6 +34,7 @@ export function getPluginHost(): PluginHost | null {
   if (instance === null) {
     instance = new PluginHost({ createWorker: spawnPluginWorker })
     wireListener(instance)
+    wireActiveNoteTracker(instance)
   }
   return instance
 }
@@ -139,6 +143,96 @@ export function uninstallPlugin(pluginId: string): void {
   if (host) host.unload(pluginId)
   usePluginInstallStore.getState().uninstall(pluginId)
   usePluginStore.getState().remove(pluginId)
+}
+
+/**
+ * Subscribe to workspace + note stores and push host:activeNoteChanged
+ * to every loaded plugin whenever the active note changes.
+ *
+ * Without this, the worker boots with ctx.activeNote = null forever:
+ * the user can switch notes all day and no plugin onActiveNoteChange
+ * handler fires. Caught when Jon installed the word-count plugin and
+ * the panel sat on its empty-state message.
+ *
+ * Cheap: we only call host.activeNoteChanged when the resolved id
+ * actually changes OR when its content changes. No diffing per
+ * plugin — every loaded plugin gets the same event.
+ */
+function wireActiveNoteTracker(host: PluginHost): void {
+  // Resolve "the currently-active note" from workspace + note stores.
+  // Mirrors the same logic getAllCommands uses.
+  const computeActiveNote = ():
+    | { id: string; title: string; folderPath: string; content: string }
+    | null => {
+    const ws = useWorkspaceStore.getState()
+    const activePane = ws.panes.find((p) => p.id === ws.activePaneId) ?? ws.panes[0]
+    const activeTab = activePane?.tabs.find((t) => t.id === activePane?.activeTabId)
+    const noteId = activeTab?.kind === 'note' ? activeTab.noteId : null
+    if (!noteId) return null
+
+    const note = useNoteStore.getState().notes.find((n) => n.id === noteId)
+    if (!note || note.isDeleted) return null
+
+    const folders = useFolderStore.getState().folders
+    const folderPath = buildFolderPath(note.folderId ?? null, folders)
+    return {
+      id: note.id,
+      title: note.title ?? 'Untitled',
+      folderPath,
+      content: note.content ?? '',
+    }
+  }
+
+  // Last snapshot, used to dedupe. id + content length + a short prefix
+  // is enough — content equality is unlikely to false-positive at this
+  // granularity, and stringifying full bodies for every keystroke is
+  // wasteful.
+  let lastKey: string | null = null
+  const keyOf = (n: ReturnType<typeof computeActiveNote>): string | null =>
+    n === null ? null : `${n.id}|${n.content.length}|${n.content.slice(0, 64)}`
+
+  const broadcast = (): void => {
+    const note = computeActiveNote()
+    const key = keyOf(note)
+    if (key === lastKey) return
+    lastKey = key
+    for (const plugin of host.listReady()) {
+      host.activeNoteChanged(plugin.manifest.id, note)
+    }
+  }
+
+  // Subscribe to all three stores. Each fires on every store mutation;
+  // broadcast() is the dedupe.
+  useWorkspaceStore.subscribe(broadcast)
+  useNoteStore.subscribe(broadcast)
+  useFolderStore.subscribe(broadcast)
+
+  // Also broadcast on every plugin-ready event so a freshly-loaded
+  // plugin gets the current note immediately instead of waiting for
+  // the next user switch.
+  host.on((event) => {
+    if (event.type === 'ready') {
+      const note = computeActiveNote()
+      host.activeNoteChanged(event.pluginId, note)
+    }
+  })
+}
+
+function buildFolderPath(
+  folderId: string | null,
+  folders: ReadonlyArray<{ id: string; name: string; parentId: string | null }>,
+): string {
+  if (!folderId) return ''
+  const parts: string[] = []
+  const byId = new Map(folders.map((f) => [f.id, f] as const))
+  let cur: string | null = folderId
+  while (cur) {
+    const f = byId.get(cur)
+    if (!f) break
+    parts.unshift(f.name)
+    cur = f.parentId
+  }
+  return parts.join('/')
 }
 
 function wireListener(host: PluginHost): void {

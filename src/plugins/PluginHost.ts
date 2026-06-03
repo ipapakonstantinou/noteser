@@ -213,10 +213,12 @@ export class PluginHost {
     })
   }
 
-  /** Editor switched to a new note (or no note). */
+  /** Editor switched to a new note (or no note). The full body is
+   *  forwarded since the v1 capability model allows plugins to read
+   *  the active note's content. */
   activeNoteChanged(
     pluginId: string,
-    note: { id: string; title: string; folderPath: string } | null,
+    note: { id: string; title: string; folderPath: string; content: string } | null,
   ): void {
     this.send(pluginId, {
       type: 'host:activeNoteChanged',
