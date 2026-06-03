@@ -1578,10 +1578,14 @@ function BetaPanel() {
 }
 
 function AboutPanel() {
-  // Version is best-effort: at dev time we don't have a real SHA, so this
-  // is intentionally a placeholder. Build-time injection via
-  // process.env.NEXT_PUBLIC_BUILD_SHA can replace it later.
-  const version = process.env.NEXT_PUBLIC_BUILD_SHA ?? 'dev'
+  // Semver from package.json, paired with the short build id Vercel
+  // injects per deploy (commit SHA in prod, ms timestamp on local
+  // builds — see next.config.mjs). Local dev has no SHA so the
+  // build id falls back to the millisecond stamp.
+  const semver = process.env.NEXT_PUBLIC_NOTESER_VERSION ?? 'dev'
+  const buildIdRaw = process.env.NEXT_PUBLIC_BUILD_ID ?? ''
+  const buildId = buildIdRaw && buildIdRaw.length > 7 ? buildIdRaw.slice(0, 7) : buildIdRaw
+  const version = buildId ? `${semver} (${buildId})` : semver
   const openModal = useUIStore(s => s.openModal)
   return (
     <div className="space-y-4">
