@@ -283,6 +283,17 @@ export default function Home() {
     migrateOldData()
   }, [])
 
+  // Self-hosted client-error capture. Installs window.onerror +
+  // unhandledrejection handlers that POST to /api/errors, which logs
+  // to Vercel Runtime Logs. Dynamic import keeps the reporter off the
+  // synchronous first-paint path; the eager useEffect still runs before
+  // most user interaction, so anything thrown post-hydration is caught.
+  useEffect(() => {
+    void import('@/utils/errorReporter').then(({ installErrorReporter }) => {
+      installErrorReporter()
+    })
+  }, [])
+
   // Bootstrap any plugins the user has installed (Settings → Plugins).
   // Each enabled plugin spawns its own Web Worker and boots; hash
   // mismatches are surfaced as a toast and the load skipped.

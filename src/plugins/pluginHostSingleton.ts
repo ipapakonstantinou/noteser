@@ -264,6 +264,11 @@ function wireListener(host: PluginHost): void {
 
       case 'workerError':
         store.appendError(event.pluginId, event.message)
+        // Also forward into the global error reporter so prod logs
+        // capture the failure, not just the per-plugin error list.
+        void import('@/utils/errorReporter').then(({ reportError }) => {
+          reportError(new Error(`Plugin worker error: ${event.message}`), { pluginId: event.pluginId })
+        })
         return
 
       case 'rateLimited':
