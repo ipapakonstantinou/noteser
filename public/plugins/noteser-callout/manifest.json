@@ -1,0 +1,16 @@
+{
+  "id": "noteser-callout",
+  "name": "Callouts",
+  "version": "0.1.0",
+  "author": "Noteser",
+  "main": "./main.js",
+  "surfaces": {
+    "codeBlockRenderers": [
+      { "language": "note" },
+      { "language": "info" },
+      { "language": "tip" },
+      { "language": "warn" },
+      { "language": "danger" }
+    ]
+  }
+}

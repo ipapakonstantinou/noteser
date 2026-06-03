@@ -12,6 +12,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { getPluginHost } from '@/plugins/pluginHostSingleton'
+import { PluginNode } from '@/plugins/PluginVNode'
 import type { PluginHostEvent } from '@/plugins/PluginHost'
 
 interface Props {
@@ -68,30 +69,6 @@ export const PluginCodeBlock = ({ pluginId, language, source }: Props) => {
     <div className="my-2 rounded-lg border border-obsidianBorder bg-obsidianDarkGray p-3 text-sm text-obsidianText overflow-x-auto">
       <PluginNode node={node} />
     </div>
-  )
-}
-
-/**
- * Minimal virtual-DOM renderer matching the same shape PluginsPanel
- * understands today. Recognises `{ tag: 'text', value: string }` (the
- * test plugin's payload). Falls through to a JSON dump for anything
- * else so the developer can see what came across the wire.
- *
- * Week 4 swaps this in favour of the full curated VNode set (button /
- * text / list / link / input) and a shared mapper.
- */
-function PluginNode({ node }: { node: unknown }) {
-  if (typeof node === 'string') return <span>{node}</span>
-  if (typeof node === 'object' && node !== null && 'tag' in node && 'value' in node) {
-    const v = node as { tag: unknown; value: unknown }
-    if (v.tag === 'text' && typeof v.value === 'string') {
-      return <span>{v.value}</span>
-    }
-  }
-  return (
-    <pre className="text-xs font-mono text-obsidianSecondaryText whitespace-pre-wrap">
-      {JSON.stringify(node, null, 2)}
-    </pre>
   )
 }
 
