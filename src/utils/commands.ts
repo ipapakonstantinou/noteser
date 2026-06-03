@@ -26,6 +26,8 @@ import { useFolderStore } from '@/stores/folderStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useGitHubStore } from '@/stores/githubStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { usePluginStore, selectAllPluginCommands } from '@/stores/pluginStore'
+import { getPluginHost } from '@/plugins/pluginHostSingleton'
 import {
   SHORTCUTS,
   activeComboFor,
@@ -329,7 +331,29 @@ export function getAllCommands(): Command[] {
     run: () => useSettingsStore.getState().reset(),
   })
 
-  // ── 3. Notes as "Open: <title>" commands ──────────────────────────────
+  // ── 3. Plugin-registered commands ─────────────────────────────────────
+  // Each entry comes from a loaded plugin's manifest.surfaces.commands.
+  // Invoking runs the plugin's onCommand handler inside its Worker; the
+  // host does NOT block on the result, so the palette closes immediately
+  // and the plugin's notify / setPanelContent / insertText calls land
+  // asynchronously via the singleton listener.
+  const pluginCommands = selectAllPluginCommands(usePluginStore.getState())
+  for (const pc of pluginCommands) {
+    out.push({
+      id: `plugin.${pc.pluginId}.${pc.commandId}`,
+      label: pc.title,
+      description: `From plugin "${pc.pluginName}"`,
+      keywords: [pc.pluginName, pc.pluginId],
+      ...(pc.shortcut !== undefined ? { combo: pc.shortcut } : {}),
+      group: 'Plugins',
+      run: () => {
+        const host = getPluginHost()
+        if (host) host.invokeCommand(pc.pluginId, pc.commandId)
+      },
+    })
+  }
+
+  // ── 4. Notes as "Open: <title>" commands ──────────────────────────────
   const activeNotes = useNoteStore.getState().notes.filter(n => !n.isDeleted)
   // Most-recently-updated first — that's likely what the user wants when
   // they don't type a query yet.

@@ -415,6 +415,91 @@ Useful first-launch landing surface.
 `,
 }
 
+const PLUGINS: HelpPage = {
+  slug: 'plugins',
+  title: 'Plugins',
+  summary: 'Install a third-party plugin from a URL, or write your own. The plugin SDK + capability model.',
+  body: `# Plugins
+
+Noteser plugins extend the app at three surfaces:
+
+1. **Commands.** Show up in the command palette (Ctrl+P).
+2. **Sidebar panels.** Stack inside the new "Plugins" tab in the sidebar.
+3. **Code-block renderers.** Claim a fenced-code language (e.g. \`\`\`chart) and turn its body into rendered output.
+
+Plugin code runs in an isolated Web Worker. It has no DOM access, cannot read your GitHub token, and cannot see the bodies of notes you are not currently viewing. Titles + folder paths of every note are visible; that is the only cross-vault read.
+
+## Installing a plugin
+
+1. Open **Settings → Plugins**
+2. Paste the URL of the plugin's \`manifest.json\` (must be HTTPS, except localhost in dev)
+3. Click **Add**
+
+Noteser fetches the manifest, validates the v1 schema, fetches the bundle, SHA-256 hashes it, and boots the plugin in a worker. The hash is stored alongside the bundle so a tampered or swapped bundle gets caught on the next page load.
+
+## Writing a plugin
+
+Install the SDK:
+
+\`\`\`bash
+npm install @noteser/plugin-sdk
+\`\`\`
+
+Minimum plugin:
+
+\`\`\`ts
+import { definePlugin } from '@noteser/plugin-sdk'
+
+export default definePlugin({
+  id: 'my-plugin',
+  name: 'My plugin',
+  version: '1.0.0',
+  surfaces: {
+    commands: [{ id: 'hello', title: 'Say hello' }],
+  },
+  onCommand(id, ctx) {
+    if (id === 'hello') ctx.notify('Hello from my plugin')
+  },
+})
+\`\`\`
+
+Bundle to a single ES module (esbuild, rollup, vite — any will do), host \`main.js\` + \`manifest.json\` at any HTTPS URL, then paste the manifest URL into Settings → Plugins.
+
+## The PluginCtx capability surface
+
+Your handlers receive a \`ctx\` object. v1 capabilities:
+
+- \`ctx.activeNote\` — the currently-open note: \`{ id, title, content }\` or null
+- \`ctx.notes\` — every non-deleted note: \`{ id, title, folderPath }\` (titles + paths only, NOT bodies)
+- \`ctx.setPanelContent(panelId, node)\` — replace the content of one of your declared sidebar panels
+- \`ctx.renderCodeBlock(blockId, node)\` — return the rendered output of a code block
+- \`ctx.insertText(text)\` — insert text at the cursor in the active editor
+- \`ctx.notify(message)\` — show a toast
+- \`ctx.getSetting(key)\` / \`ctx.setSetting(key, value)\` — per-plugin namespaced storage
+
+The \`node\` parameter to \`setPanelContent\` and \`renderCodeBlock\` is a virtual-DOM shape. v1 recognises \`{ tag: 'text', value: string }\`; the full curated component set lands in v2.
+
+## What is intentionally NOT in v1
+
+- Custom React components from plugins (security audit per component)
+- Editor extensions (CodeMirror keybindings, lint)
+- Sync hooks (custom export formats, commit hooks)
+- Network access (\`fetch\` from inside the worker)
+- Background tasks while no panel is open
+- Plugin-to-plugin communication
+
+See the [v1 design plan](https://github.com/ipapakonstantinou/noteser/blob/main/docs/plugins-plan.md) for the full roadmap and the reasoning.
+
+## Troubleshooting
+
+**"Plugin failed to load: HTTPS only"** — the manifest or main URL is plain HTTP. Use HTTPS, or develop against \`http://localhost\` (dev mode).
+
+**"Plugin failed an integrity check"** — the stored SHA-256 hash does not match the stored bundle. Uninstall + reinstall.
+
+**Plugin is installed but does not show up in the command palette or sidebar** — open Settings → Plugins and confirm the Enabled toggle is on, then reload the page.
+`,
+}
+
 export const HELP_PAGES: ReadonlyArray<HelpPage> = [
   GETTING_STARTED,
   EDITOR_POWER,
@@ -422,6 +507,7 @@ export const HELP_PAGES: ReadonlyArray<HelpPage> = [
   GITHUB_SYNC,
   LOCAL_FOLDER,
   SHORTCUTS_PINS,
+  PLUGINS,
   FAQ,
 ]
 

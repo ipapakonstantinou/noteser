@@ -18,7 +18,7 @@ import { resolveTabOrder } from '../components/sidebar/SidebarStack'
 
 // Full source order when nothing is pinned.
 const SOURCE_ORDER = [
-  'calendar', 'files', 'outline', 'source-control', 'search', 'bookmarks', 'related',
+  'calendar', 'files', 'outline', 'source-control', 'search', 'bookmarks', 'related', 'plugins',
 ] as const
 
 test('empty saved + empty pinned returns the full source order', () => {
@@ -27,15 +27,15 @@ test('empty saved + empty pinned returns the full source order', () => {
 
 test('pinned ids are filtered out of the main strip', () => {
   expect(resolveTabOrder([], ['calendar'])).toEqual([
-    'files', 'outline', 'source-control', 'search', 'bookmarks', 'related',
+    'files', 'outline', 'source-control', 'search', 'bookmarks', 'related', 'plugins',
   ])
   expect(resolveTabOrder([], ['calendar', 'outline'])).toEqual([
-    'files', 'source-control', 'search', 'bookmarks', 'related',
+    'files', 'source-control', 'search', 'bookmarks', 'related', 'plugins',
   ])
 })
 
 test('respects the user-saved order verbatim when complete + unpinned', () => {
-  const saved = ['related', 'bookmarks', 'search', 'source-control', 'outline', 'files', 'calendar']
+  const saved = ['related', 'bookmarks', 'search', 'source-control', 'outline', 'files', 'calendar', 'plugins']
   expect(resolveTabOrder(saved)).toEqual(saved)
 })
 
@@ -43,25 +43,25 @@ test('saved order with pinned ids drops the pinned entries', () => {
   // User saved [calendar, files, outline]; calendar is now pinned →
   // strip only shows files + outline + (anything missing).
   expect(resolveTabOrder(['calendar', 'files', 'outline'], ['calendar'])).toEqual([
-    'files', 'outline', 'source-control', 'search', 'bookmarks', 'related',
+    'files', 'outline', 'source-control', 'search', 'bookmarks', 'related', 'plugins',
   ])
 })
 
 test('appends missing ids in source-order at the tail', () => {
   expect(resolveTabOrder(['outline', 'files'])).toEqual([
-    'outline', 'files', 'calendar', 'source-control', 'search', 'bookmarks', 'related',
+    'outline', 'files', 'calendar', 'source-control', 'search', 'bookmarks', 'related', 'plugins',
   ])
 })
 
 test('drops unknown ids', () => {
   expect(resolveTabOrder(['files', 'ancient-deleted-tab', 'outline'])).toEqual([
-    'files', 'outline', 'calendar', 'source-control', 'search', 'bookmarks', 'related',
+    'files', 'outline', 'calendar', 'source-control', 'search', 'bookmarks', 'related', 'plugins',
   ])
 })
 
 test('de-duplicates repeated ids', () => {
   expect(resolveTabOrder(['files', 'outline', 'files', 'outline'])).toEqual([
-    'files', 'outline', 'calendar', 'source-control', 'search', 'bookmarks', 'related',
+    'files', 'outline', 'calendar', 'source-control', 'search', 'bookmarks', 'related', 'plugins',
   ])
 })
 

@@ -41,6 +41,7 @@ import {
   SettingsFooter,
 } from './settings'
 import { EmailSignup } from '@/components/marketing/EmailSignup'
+import { PluginsSettingsPanel } from './PluginsSettingsPanel'
 
 // One row in the left-side category navigator. Order here drives the
 // rendering order of the list AND the keyboard up/down nav (later).
@@ -57,6 +58,7 @@ type CategoryId =
   | 'ai'
   | 'shortcuts'
   | 'export'
+  | 'plugins'
   | 'beta'
   | 'about'
 
@@ -80,6 +82,7 @@ const CATEGORIES: readonly CategoryDef[] = [
   { id: 'ai',          label: 'AI',          Icon: SparklesIcon },
   { id: 'shortcuts',   label: 'Shortcuts',   Icon: CommandLineIcon },
   { id: 'export',      label: 'Export',      Icon: ArrowDownTrayIcon },
+  { id: 'plugins',     label: 'Plugins',     Icon: BeakerIcon },
   { id: 'beta',        label: 'Beta',        Icon: BeakerIcon },
   { id: 'about',       label: 'About',       Icon: InformationCircleIcon },
 ]
@@ -163,6 +166,7 @@ function CategoryPanel({ id }: { id: CategoryId }): ReactNode {
     case 'ai':          return <AISection />
     case 'shortcuts':   return <ShortcutsSection />
     case 'export':      return <ExportSection />
+    case 'plugins':     return <PluginsSettingsPanel />
     case 'beta':        return <BetaPanel />
     case 'about':       return <AboutPanel />
   }
