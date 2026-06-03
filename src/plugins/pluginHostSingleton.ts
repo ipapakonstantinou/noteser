@@ -290,6 +290,162 @@ function wireListener(host: PluginHost): void {
         // Routed by the surface adapters themselves, not by this glue.
         // Adapters subscribe directly to the host via `host.on(...)`.
         return
+
+      case 'fileSaveRequested':
+        void handleFileSaveRequest(host, event)
+        return
+
+      case 'fileOpenRequested':
+        void handleFileOpenRequest(host, event)
+        return
     }
   })
+}
+
+/** Open the native save dialog, write the plugin's bytes to it.
+ *  Falls back to a `<a download>` link when the browser does not
+ *  expose `showSaveFilePicker` (Safari, Firefox). The fallback path
+ *  cannot let the user pick a directory — the browser saves to the
+ *  default downloads location with the suggested name.
+ */
+async function handleFileSaveRequest(
+  host: PluginHost,
+  event: Extract<import('./PluginHost').PluginHostEvent, { type: 'fileSaveRequested' }>,
+): Promise<void> {
+  const { pluginId, requestSeq, suggestedName, mimeType, bytesBase64 } = event
+  try {
+    const bytes = base64ToBytes(bytesBase64)
+    // Cast through ArrayBuffer to satisfy TS's strict BlobPart typing —
+    // Uint8Array<ArrayBufferLike> is not narrowed to <ArrayBuffer> in
+    // some lib targets.
+    const blob = new Blob([bytes.buffer as ArrayBuffer], { type: mimeType })
+    const w = window as unknown as {
+      showSaveFilePicker?: (opts: { suggestedName?: string; types?: unknown[] }) => Promise<FileSystemFileHandle>
+    }
+    if (typeof w.showSaveFilePicker === 'function') {
+      const handle = await w.showSaveFilePicker({
+        suggestedName,
+        types: [{ description: 'File', accept: { [mimeType]: extensionFromName(suggestedName) } }],
+      })
+      const writable = await (handle as FileSystemFileHandle & { createWritable: () => Promise<FileSystemWritableFileStream> }).createWritable()
+      await writable.write(blob)
+      await writable.close()
+      host.respondFileSave(pluginId, requestSeq, { ok: true })
+      return
+    }
+    // Fallback: anchor download.
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = suggestedName
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    host.respondFileSave(pluginId, requestSeq, { ok: true })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (message.includes('aborted') || message.includes('Abort')) {
+      host.respondFileSave(pluginId, requestSeq, { ok: false, error: 'User cancelled the save dialog.' })
+    } else {
+      host.respondFileSave(pluginId, requestSeq, { ok: false, error: message })
+    }
+  }
+}
+
+async function handleFileOpenRequest(
+  host: PluginHost,
+  event: Extract<import('./PluginHost').PluginHostEvent, { type: 'fileOpenRequested' }>,
+): Promise<void> {
+  const { pluginId, requestSeq, accept } = event
+  try {
+    const w = window as unknown as {
+      showOpenFilePicker?: (opts: { types?: unknown[]; multiple?: boolean }) => Promise<FileSystemFileHandle[]>
+    }
+    let file: File
+    if (typeof w.showOpenFilePicker === 'function') {
+      const handles = await w.showOpenFilePicker({
+        multiple: false,
+        ...(accept && accept.length > 0
+          ? { types: [{ description: 'File', accept: acceptToTypes(accept) }] }
+          : {}),
+      })
+      file = await handles[0].getFile()
+    } else {
+      // Fallback: an <input type=file> that resolves when the user picks.
+      file = await pickFileViaInput(accept)
+    }
+    const arrayBuf = await file.arrayBuffer()
+    const bytes = new Uint8Array(arrayBuf)
+    host.respondFileOpen(pluginId, requestSeq, {
+      ok: true,
+      bytesBase64: bytesToBase64(bytes),
+      filename: file.name,
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (message.includes('aborted') || message.includes('Abort') || message === 'cancelled') {
+      // Cancellation is not an error from the plugin's view — return null.
+      host.respondFileOpen(pluginId, requestSeq, { ok: true })
+    } else {
+      host.respondFileOpen(pluginId, requestSeq, { ok: false, error: message })
+    }
+  }
+}
+
+function pickFileViaInput(accept: string[] | undefined): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    if (accept && accept.length > 0) input.accept = accept.join(',')
+    input.style.position = 'fixed'
+    input.style.left = '-9999px'
+    input.onchange = () => {
+      const f = input.files?.[0]
+      input.remove()
+      if (f) resolve(f)
+      else reject(new Error('cancelled'))
+    }
+    // Cancellation has no DOM signal; treat blur as cancel after a tick.
+    input.addEventListener('cancel', () => {
+      input.remove()
+      reject(new Error('cancelled'))
+    })
+    document.body.appendChild(input)
+    input.click()
+  })
+}
+
+function acceptToTypes(accept: string[]): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  for (const a of accept) {
+    if (a.startsWith('.')) {
+      // Group all extensions under a generic mime; File System Access
+      // API requires types as { mime: ['.ext'] } pairs.
+      const key = '*/*'
+      if (!out[key]) out[key] = []
+      out[key].push(a)
+    } else {
+      out[a] = []
+    }
+  }
+  return out
+}
+
+function extensionFromName(name: string): string[] {
+  const idx = name.lastIndexOf('.')
+  return idx >= 0 ? [name.slice(idx)] : []
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+  return btoa(binary)
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64)
+  const out = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i)
+  return out
 }
