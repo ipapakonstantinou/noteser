@@ -39,6 +39,26 @@ interface PluginState {
 
 let state: PluginState | null = null
 
+/** Pending file-I/O requests waiting for the host's reply. Keyed by
+ *  the request seq the worker emitted; resolved when the matching
+ *  host:fileSaveResult / host:fileOpenResult arrives. */
+interface PendingFileSave {
+  kind: 'save'
+  resolve: () => void
+  reject: (err: Error) => void
+}
+interface PendingFileOpen {
+  kind: 'open'
+  resolve: (v: { bytes: Uint8Array; filename: string } | null) => void
+  reject: (err: Error) => void
+}
+const pending = new Map<number, PendingFileSave | PendingFileOpen>()
+
+let nextRequestSeq = 0
+function allocRequestSeq(): number {
+  return ++nextRequestSeq
+}
+
 self.onmessage = async (event: MessageEvent<HostToWorker>) => {
   const msg = event.data
   try {
@@ -67,6 +87,33 @@ self.onmessage = async (event: MessageEvent<HostToWorker>) => {
         await handleRenderCodeBlock(msg.seq, msg.language, msg.source, msg.blockId)
         return
 
+      case 'host:fileSaveResult': {
+        const p = pending.get(msg.requestSeq)
+        if (p && p.kind === 'save') {
+          pending.delete(msg.requestSeq)
+          if (msg.ok) p.resolve()
+          else p.reject(new Error(msg.error ?? 'File save failed.'))
+        }
+        return
+      }
+
+      case 'host:fileOpenResult': {
+        const p = pending.get(msg.requestSeq)
+        if (p && p.kind === 'open') {
+          pending.delete(msg.requestSeq)
+          if (msg.ok) {
+            if (msg.bytesBase64 === undefined || msg.filename === undefined) {
+              p.resolve(null)
+            } else {
+              p.resolve({ bytes: base64ToBytes(msg.bytesBase64), filename: msg.filename })
+            }
+          } else {
+            p.reject(new Error(msg.error ?? 'File open failed.'))
+          }
+        }
+        return
+      }
+
       default:
         // Exhaustiveness — TypeScript will catch missed cases at build,
         // this branch is the runtime tripwire if the protocol changes
@@ -84,6 +131,20 @@ self.onmessage = async (event: MessageEvent<HostToWorker>) => {
       message: err instanceof Error ? err.message : String(err),
     })
   }
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+  // btoa is available in Workers.
+  return btoa(binary)
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64)
+  const out = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i)
+  return out
 }
 
 async function handleBoot(msg: HostBootMessage): Promise<void> {
@@ -245,6 +306,34 @@ function buildCtx(parentSeq: number): PluginCtx {
     },
     setSetting<T = unknown>(key: string, value: T): void {
       s.settings.set(key, value)
+    },
+    requestFileSave({ suggestedName, mimeType, bytes }) {
+      const requestSeq = allocRequestSeq()
+      const promise = new Promise<void>((resolve, reject) => {
+        pending.set(requestSeq, { kind: 'save', resolve, reject })
+      })
+      emit({
+        type: 'worker:requestFileSave',
+        seq: requestSeq,
+        suggestedName,
+        mimeType,
+        bytesBase64: bytesToBase64(bytes),
+      })
+      return promise
+    },
+    requestFileOpen(opts) {
+      const requestSeq = allocRequestSeq()
+      const promise = new Promise<{ bytes: Uint8Array; filename: string } | null>(
+        (resolve, reject) => {
+          pending.set(requestSeq, { kind: 'open', resolve, reject })
+        },
+      )
+      emit({
+        type: 'worker:requestFileOpen',
+        seq: requestSeq,
+        ...(opts?.accept ? { accept: opts.accept } : {}),
+      })
+      return promise
     },
   }
 }

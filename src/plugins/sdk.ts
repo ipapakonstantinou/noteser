@@ -43,6 +43,26 @@ export interface PluginCtx {
    *  cannot read another plugin's settings. */
   getSetting<T = unknown>(key: string): T | undefined
   setSetting<T = unknown>(key: string, value: T): void
+
+  /**
+   * v1.1 capability: open the native save dialog and write `bytes` to
+   * the user-picked file. Requires the manifest to declare
+   * `permissions: ['file-save']` AND the user to grant it at install.
+   *
+   * Rejects if the permission was not granted, the user cancelled, or
+   * the browser does not support the File System Access API.
+   */
+  requestFileSave(args: { suggestedName: string; mimeType: string; bytes: Uint8Array }): Promise<void>
+
+  /**
+   * v1.1 capability: open the native file picker. Resolves with the
+   * picked file's bytes + filename, or null when the user cancelled.
+   * Requires `permissions: ['file-open']`.
+   *
+   * `accept` filters the picker by MIME type or extension, e.g.
+   * `['.pdf', 'application/pdf']`.
+   */
+  requestFileOpen(args?: { accept?: string[] }): Promise<{ bytes: Uint8Array; filename: string } | null>
 }
 
 export interface PluginHandlers {

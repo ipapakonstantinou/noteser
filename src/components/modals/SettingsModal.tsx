@@ -14,6 +14,7 @@ import {
   ArrowDownTrayIcon,
   InformationCircleIcon,
   BeakerIcon,
+  PuzzlePieceIcon,
   SwatchIcon,
   ViewColumnsIcon,
   EyeIcon,
@@ -82,7 +83,7 @@ const CATEGORIES: readonly CategoryDef[] = [
   { id: 'ai',          label: 'AI',          Icon: SparklesIcon },
   { id: 'shortcuts',   label: 'Shortcuts',   Icon: CommandLineIcon },
   { id: 'export',      label: 'Export',      Icon: ArrowDownTrayIcon },
-  { id: 'plugins',     label: 'Plugins',     Icon: BeakerIcon },
+  { id: 'plugins',     label: 'Plugins',     Icon: PuzzlePieceIcon },
   { id: 'beta',        label: 'Beta',        Icon: BeakerIcon },
   { id: 'about',       label: 'About',       Icon: InformationCircleIcon },
 ]
@@ -104,11 +105,14 @@ export const SettingsModal = () => {
       size="3xl"
       bodyless
     >
-      <div className="flex flex-row h-[70dvh] min-h-[480px]">
-        {/* ── Left rail: category navigator ─────────────────────────── */}
+      <div className="flex flex-col md:flex-row h-[80dvh] md:h-[70dvh] min-h-[480px]">
+        {/* ── Mobile (≤md): horizontal scroll strip of category chips
+                across the top. Desktop: vertical left rail.
+            Same buttons, different container; only the wrapper class
+            changes by breakpoint. */}
         <nav
           aria-label="Settings categories"
-          className="w-52 flex-none border-r border-obsidianBorder bg-obsidianBlack/40 overflow-y-auto py-2"
+          className="md:w-52 md:flex-none md:border-r border-b md:border-b-0 border-obsidianBorder bg-obsidianBlack/40 overflow-x-auto md:overflow-x-visible md:overflow-y-auto py-1 md:py-2 flex md:block flex-row gap-1 md:gap-0 px-2 md:px-0 flex-none"
           data-testid="settings-categories"
         >
           {CATEGORIES.map(cat => {
@@ -121,10 +125,12 @@ export const SettingsModal = () => {
                 aria-current={isActive ? 'page' : undefined}
                 data-testid={`settings-cat-${cat.id}`}
                 className={[
-                  'w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left transition-colors',
+                  // Mobile: rounded chip; desktop: full-width row.
+                  'flex items-center gap-2 text-sm text-left transition-colors flex-none',
+                  'px-3 py-1.5 rounded md:rounded-none md:w-full md:px-3 md:py-1.5',
                   isActive
-                    ? 'bg-obsidianAccentPurple/15 text-obsidianText border-l-2 border-obsidianAccentPurple pl-[10px]'
-                    : 'text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText border-l-2 border-transparent pl-[10px]',
+                    ? 'bg-obsidianAccentPurple/15 text-obsidianText md:border-l-2 md:border-obsidianAccentPurple md:pl-[10px]'
+                    : 'text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText md:border-l-2 md:border-transparent md:pl-[10px]',
                 ].join(' ')}
               >
                 <cat.Icon className="w-4 h-4 flex-none" />
@@ -137,7 +143,7 @@ export const SettingsModal = () => {
         {/* ── Right pane: selected category content ─────────────────── */}
         <div className="flex-1 min-w-0 flex flex-col">
           <div
-            className="flex-1 min-h-0 overflow-y-auto p-5"
+            className="flex-1 min-h-0 overflow-y-auto p-4 md:p-5"
             data-testid={`settings-panel-${active}`}
           >
             <CategoryPanel id={active} />
