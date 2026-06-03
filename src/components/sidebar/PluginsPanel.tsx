@@ -21,6 +21,7 @@
 import { useEffect, useState } from 'react'
 import { usePluginStore, selectAllPluginPanels, type PluginPanelEntry } from '@/stores/pluginStore'
 import { getPluginHost } from '@/plugins/pluginHostSingleton'
+import { PluginNode } from '@/plugins/PluginVNode'
 import type { PluginHostEvent } from '@/plugins/PluginHost'
 
 export const PluginsPanel = () => {
@@ -82,39 +83,15 @@ export const PluginsPanel = () => {
               </span>
             </header>
             <div className="px-3 py-2 text-sm text-obsidianText whitespace-pre-wrap break-words">
-              <PanelContent node={node} />
+              {node === undefined ? (
+                <span className="text-obsidianSecondaryText">(awaiting first render…)</span>
+              ) : (
+                <PluginNode node={node} />
+              )}
             </div>
           </section>
         )
       })}
     </div>
-  )
-}
-
-/**
- * Week-2 renderer: stringify the plugin's emitted node for visibility.
- * Week 4 will replace this with a curated VNode → React component map
- * (button / text / list / input / link) per the v1 plan.
- *
- * Falls back to the empty string when the plugin has not emitted yet
- * (mount → first setPanelContent round-trip).
- */
-function PanelContent({ node }: { node: unknown }) {
-  if (node === undefined) {
-    return <span className="text-obsidianSecondaryText">(awaiting first render…)</span>
-  }
-  if (typeof node === 'string') return <span>{node}</span>
-  if (typeof node === 'object' && node !== null && 'tag' in node && 'value' in node) {
-    // Recognise the minimal { tag: 'text', value: string } shape that
-    // the test plugin uses. Anything else falls through to JSON below.
-    const v = (node as { tag: unknown; value: unknown })
-    if (v.tag === 'text' && typeof v.value === 'string') {
-      return <span>{v.value}</span>
-    }
-  }
-  return (
-    <pre className="text-xs font-mono text-obsidianSecondaryText">
-      {JSON.stringify(node, null, 2)}
-    </pre>
   )
 }
