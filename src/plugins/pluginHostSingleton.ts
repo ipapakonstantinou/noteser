@@ -65,19 +65,21 @@ export function resetPluginHostForTests(): void {
 }
 
 /**
- * Fetch + validate + persist a plugin from a manifest URL, then
- * boot it. Throws on any failure; toast notifications come via the
- * existing host event listener.
+ * v1.1 install flow — two-step:
  *
- * The PluginsSettingsPanel calls this after the user confirms the
- * install in the preview modal.
+ *   1. fetchPluginForInstall(url) → returns a "candidate" record the
+ *      caller can show in a confirmation modal (manifest summary +
+ *      requested permissions). NO side effects.
+ *   2. confirmAndInstallPlugin(candidate) → persists + boots.
+ *
+ * For backwards compat the original installPluginFromUrl() still
+ * exists as a one-shot helper (skips the modal); test code uses it.
  */
-export async function installPluginFromUrl(manifestUrl: string): Promise<void> {
-  const host = getPluginHost()
-  if (host === null) throw new Error('Plugins are unavailable during server-side rendering.')
-
+export async function fetchPluginForInstall(
+  manifestUrl: string,
+): Promise<InstalledPluginRecord> {
   const fetched = await fetchPluginFromUrl(manifestUrl)
-  const record: InstalledPluginRecord = {
+  return {
     manifest: fetched.manifest,
     mainSource: fetched.mainSource,
     hash: fetched.hash,
@@ -85,13 +87,28 @@ export async function installPluginFromUrl(manifestUrl: string): Promise<void> {
     addedAt: Date.now(),
     enabled: true,
   }
-  usePluginInstallStore.getState().install(record)
+}
 
+export async function confirmAndInstallPlugin(record: InstalledPluginRecord): Promise<void> {
+  const host = getPluginHost()
+  if (host === null) throw new Error('Plugins are unavailable during server-side rendering.')
+  usePluginInstallStore.getState().install(record)
   if (host.isLoaded(record.manifest.id)) host.unload(record.manifest.id)
   await host.load({
     pluginId: record.manifest.id,
     pluginSource: record.mainSource,
   })
+}
+
+/**
+ * One-shot install (legacy / programmatic use). Skips the
+ * confirmation modal entirely — UI callers should use
+ * fetchPluginForInstall + confirmAndInstallPlugin instead so the
+ * user gets a chance to see what they are installing.
+ */
+export async function installPluginFromUrl(manifestUrl: string): Promise<void> {
+  const candidate = await fetchPluginForInstall(manifestUrl)
+  await confirmAndInstallPlugin(candidate)
 }
 
 /**
