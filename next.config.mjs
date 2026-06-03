@@ -1,5 +1,15 @@
 /** @type {import('next').NextConfig} */
 
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+
+// Read the semver from package.json once at build time so the About
+// panel can show "0.2.0 (8eabc99)" without a separate source of truth.
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const pkg = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8'))
+const NOTESER_VERSION = pkg.version
+
 // Security headers applied to every response.
 //
 // NOTE: the Content-Security-Policy is intentionally NOT here. As of the
@@ -45,6 +55,7 @@ const nextConfig = {
   poweredByHeader: false,
   env: {
     NEXT_PUBLIC_BUILD_ID: BUILD_ID,
+    NEXT_PUBLIC_NOTESER_VERSION: NOTESER_VERSION,
   },
   async headers() {
     return [

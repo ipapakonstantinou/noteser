@@ -1,0 +1,10 @@
+{
+  "id": "noteser-word-count",
+  "name": "Word count",
+  "version": "0.1.0",
+  "author": "Noteser",
+  "main": "./main.js",
+  "surfaces": {
+    "sidebarPanels": [{ "id": "panel", "title": "Word count" }]
+  }
+}

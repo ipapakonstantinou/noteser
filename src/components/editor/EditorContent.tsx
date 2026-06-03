@@ -30,6 +30,9 @@ import { FrontmatterPanel } from './FrontmatterPanel'
 import { TaskQueryBlock } from './TaskQueryBlock'
 import { BasesBlock } from './BasesBlock'
 import { AttachmentImage } from './AttachmentImage'
+import { PluginCodeBlock } from './PluginCodeBlock'
+import { useShallow } from 'zustand/react/shallow'
+import { usePluginStore, selectAllPluginRenderers } from '@/stores/pluginStore'
 import type { Note } from '@/types'
 
 interface EditorContentProps {
@@ -387,7 +390,20 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
     return start != null && end != null && cursorLine >= start && cursorLine <= end
   }
 
-  // Custom code block renderer with syntax highlighting
+  // Custom code block renderer with syntax highlighting + plugin
+  // pass-through. Languages claimed by an installed plugin are routed
+  // into the plugin Worker via PluginCodeBlock; everything else falls
+  // back to the built-in renderers below.
+  //
+  // selectAllPluginRenderers builds a fresh array on every call, so we
+  // wrap it in useShallow — without that, Zustand v5's default Object.is
+  // equality compares two fresh arrays as unequal and the hook
+  // re-renders forever (React error #185).
+  const pluginRenderers = usePluginStore(useShallow(selectAllPluginRenderers))
+  const pluginRendererByLang = new Map(
+    pluginRenderers.map((r) => [r.language.toLowerCase(), r] as const),
+  )
+
   const CodeBlock = ({
     inline,
     className,
@@ -407,6 +423,16 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
       return <BasesBlock source={String(children).replace(/\n$/, '')} />
     }
     if (!inline && language) {
+      const plugin = pluginRendererByLang.get(language.toLowerCase())
+      if (plugin) {
+        return (
+          <PluginCodeBlock
+            pluginId={plugin.pluginId}
+            language={language}
+            source={String(children).replace(/\n$/, '')}
+          />
+        )
+      }
       return (
         <PrismHighlighter
           language={language}

@@ -1,0 +1,102 @@
+// @noteser/plugin-sdk — seed.
+//
+// This file is the runtime entrypoint plugin authors import. Once the
+// plugin platform stabilises (week 4 of the v1 plan), we extract it
+// into a standalone npm package `@noteser/plugin-sdk` so plugins can
+// `import { definePlugin } from '@noteser/plugin-sdk'` and publish
+// without depending on noteser's repo.
+//
+// For now, plugins authored in this repo (the test plugin under
+// `plugins/test-plugin/`) import from `@/plugins/sdk` instead. Same
+// surface, same types — only the import specifier changes when we
+// graduate.
+
+import type { PluginManifest } from './manifest'
+
+/** Narrow capability surface exposed to plugin handlers. The plugin
+ *  never sees `localStorage`, the GitHub token, or the bodies of notes
+ *  it is not currently viewing. v1 read scope is intentionally tight:
+ *  active note + titles/paths of every other note. */
+export interface PluginCtx {
+  /** Currently-open note, or null when the welcome view is showing. */
+  readonly activeNote: { id: string; title: string; content: string } | null
+  /** All non-deleted notes — TITLES + PATHS only, not bodies. */
+  readonly notes: ReadonlyArray<{ id: string; title: string; folderPath: string }>
+
+  /** Replace the contents of one of this plugin's registered sidebar
+   *  panels. The `node` is a curated virtual DOM (see week 2). */
+  setPanelContent(panelId: string, node: unknown): void
+
+  /** Render a code-block this plugin was asked to handle. Plugin calls
+   *  this from inside `onRenderCodeBlock` to push the rendered tree
+   *  back to the host. */
+  renderCodeBlock(blockId: string, node: unknown): void
+
+  /** Insert text into the active editor at the cursor. No-op when no
+   *  note is open. */
+  insertText(text: string): void
+
+  /** Show a transient toast message to the user. */
+  notify(message: string): void
+
+  /** Per-plugin key/value storage. Namespaced by pluginId; one plugin
+   *  cannot read another plugin's settings. */
+  getSetting<T = unknown>(key: string): T | undefined
+  setSetting<T = unknown>(key: string, value: T): void
+}
+
+export interface PluginHandlers {
+  /** Optional — fires after the worker boots and the manifest validates. */
+  onActivate?: (ctx: PluginCtx) => void | Promise<void>
+
+  /** Fires when a registered command is invoked from the palette or
+   *  via shortcut. `id` is the local command id, not the namespaced
+   *  `<pluginId>.<commandId>` form the host uses internally. */
+  onCommand?: (id: string, ctx: PluginCtx) => void | Promise<void>
+
+  /** Fires when one of this plugin's sidebar panels is opened. The
+   *  plugin should set up state + call ctx.setPanelContent. */
+  onPanelMount?: (panelId: string, ctx: PluginCtx) => void | Promise<void>
+
+  /** Fires when a previously-mounted panel is closed. */
+  onPanelUnmount?: (panelId: string, ctx: PluginCtx) => void | Promise<void>
+
+  /** Fires when the active note changes. Plugins can re-render any
+   *  note-dependent panel here. */
+  onActiveNoteChange?: (
+    note: { id: string; title: string; content: string } | null,
+    ctx: PluginCtx,
+  ) => void | Promise<void>
+
+  /** Fires when a markdown render encounters a code block in one of
+   *  this plugin's claimed languages. The handler must call
+   *  `ctx.renderCodeBlock(blockId, vdom)` synchronously OR within an
+   *  async block that resolves quickly; the host shows a placeholder
+   *  while it waits. */
+  onRenderCodeBlock?: (
+    args: { language: string; source: string; blockId: string },
+    ctx: PluginCtx,
+  ) => void | Promise<void>
+}
+
+export interface PluginDefinition extends PluginManifest, PluginHandlers {}
+
+/** The single public function plugin authors call from their main
+ *  module. Pass-through at runtime — the host re-validates the
+ *  manifest before honouring anything.
+ *
+ *  Plugin entry pattern:
+ *
+ *    import { definePlugin } from '@noteser/plugin-sdk'
+ *
+ *    export default definePlugin({
+ *      id: 'word-count',
+ *      name: 'Word count',
+ *      version: '1.0.0',
+ *      surfaces: { sidebarPanels: [{ id: 'wc', title: 'Word count' }] },
+ *      onPanelMount(panelId, ctx) { ... },
+ *    })
+ */
+export function definePlugin(def: PluginDefinition): PluginDefinition {
+  return def
+}

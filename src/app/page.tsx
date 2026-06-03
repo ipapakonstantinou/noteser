@@ -283,6 +283,16 @@ export default function Home() {
     migrateOldData()
   }, [])
 
+  // Bootstrap any plugins the user has installed (Settings → Plugins).
+  // Each enabled plugin spawns its own Web Worker and boots; hash
+  // mismatches are surfaced as a toast and the load skipped.
+  // Dynamic import keeps the plugin code off the first-paint bundle.
+  useEffect(() => {
+    void import('@/plugins/pluginHostSingleton').then(({ bootstrapInstalledPlugins }) => {
+      void bootstrapInstalledPlugins()
+    })
+  }, [])
+
   // Recovery: `?reset=1` URL flag wipes all noteser-* storage + IDB.
   // Strip the param FIRST (via history.replaceState — doesn't navigate),
   // then run the async wipe, then reload cleanly. The previous order

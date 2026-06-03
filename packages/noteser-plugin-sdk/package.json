@@ -1,0 +1,44 @@
+{
+  "name": "@noteser/plugin-sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for writing Noteser plugins. Exposes definePlugin(), the manifest schema, and the PluginCtx capability surface.",
+  "license": "MIT",
+  "author": "Noteser",
+  "homepage": "https://noteser.app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ipapakonstantinou/noteser.git",
+    "directory": "packages/noteser-plugin-sdk"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json"
+  },
+  "keywords": [
+    "noteser",
+    "plugin",
+    "sdk",
+    "markdown",
+    "notes"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
