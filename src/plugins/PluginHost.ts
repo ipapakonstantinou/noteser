@@ -31,13 +31,12 @@ export interface PluginHostOptions {
    *  echoes messages back synchronously. Production uses the real
    *  global Worker.
    *
-   *  The factory receives the worker entry source as a string and
-   *  must return something that conforms to the Worker interface
-   *  (postMessage + onmessage + terminate). */
-  createWorker?: (entrySource: string) => MinimalWorker
-  /** Override `URL.createObjectURL` / revokeObjectURL pair for tests
-   *  where Blob URLs are not available. */
-  blobUrlFor?: (source: string) => string
+   *  The factory takes no arguments and must return something that
+   *  conforms to the MinimalWorker interface (postMessage +
+   *  onmessage + terminate). In production this points at the
+   *  bundled `workerEntry.ts` module via `new URL(..., import.meta.url)`
+   *  — see `pluginHostSingleton.ts`. */
+  createWorker?: () => MinimalWorker
 }
 
 export interface MinimalWorker {
@@ -104,25 +103,26 @@ export class PluginHost {
    * Load and boot a plugin from its source. Resolves once worker:ready
    * arrives, rejects on bootError or timeout.
    *
-   * `entrySource` is the bundled output of `src/plugins/workerEntry.ts`,
-   * NOT the plugin source. The plugin source is shipped as the
-   * `host:boot` payload. We expect the caller (PluginInstaller, week 3)
-   * to fetch both.
+   * The Worker is constructed via `opts.createWorker`. In production
+   * that points at the bundled `workerEntry.ts` module; in tests it
+   * returns a FakeWorker that echoes canned replies.
+   *
+   * The plugin source is shipped to the worker as the `host:boot`
+   * payload — the worker dynamic-imports it via a Blob URL.
    */
   async load(args: {
     pluginId: string
     pluginSource: string
-    entrySource: string
     timeoutMs?: number
   }): Promise<PluginManifest> {
-    const { pluginId, pluginSource, entrySource } = args
+    const { pluginId, pluginSource } = args
     const timeoutMs = args.timeoutMs ?? 5000
 
     if (this.workers.has(pluginId)) {
       throw new Error(`Plugin "${pluginId}" already loaded.`)
     }
 
-    const worker = (this.opts.createWorker ?? defaultCreateWorker)(entrySource)
+    const worker = (this.opts.createWorker ?? defaultCreateWorker)()
     const plugin: InstalledPlugin = {
       manifest: { id: pluginId, name: pluginId, version: '0.0.0', surfaces: {} },
       lastMessageWindowStart: nowMs(),
@@ -345,14 +345,16 @@ export class PluginHost {
   }
 }
 
-function defaultCreateWorker(entrySource: string): MinimalWorker {
-  const blob = new Blob([entrySource], { type: 'text/javascript' })
-  const url = URL.createObjectURL(blob)
-  const worker = new Worker(url, { type: 'module' })
-  // Revoke the URL once the worker boots — the browser keeps the
-  // Blob alive for the worker's lifetime even after revoke.
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-  return worker as MinimalWorker
+function defaultCreateWorker(): MinimalWorker {
+  // The bundled-workerEntry URL is wired in `pluginHostSingleton.ts`
+  // via `opts.createWorker`. If we land here it means PluginHost was
+  // constructed without a createWorker override AND we are running
+  // in the browser — surface a clear message instead of letting the
+  // Worker call below throw cryptically.
+  throw new Error(
+    'PluginHost.createWorker must be provided. Construct the host through ' +
+      'getPluginHost() so the workerEntry URL is wired automatically.',
+  )
 }
 
 function nowMs(): number {

@@ -118,7 +118,6 @@ describe('PluginHost', () => {
     const manifest = await host.load({
       pluginId: 'echo',
       pluginSource: '/* unused */',
-      entrySource: '/* unused */',
     })
 
     expect(manifest.id).toBe('echo')
@@ -133,7 +132,7 @@ describe('PluginHost', () => {
     host.on((e) => events.push(e))
 
     await expect(
-      host.load({ pluginId: 'echo', pluginSource: '', entrySource: '' }),
+      host.load({ pluginId: 'echo', pluginSource: '' }),
     ).rejects.toThrow(/manifest invalid/)
 
     expect(events.some((e) => e.type === 'bootError')).toBe(true)
@@ -156,7 +155,6 @@ describe('PluginHost', () => {
       host.load({
         pluginId: 'slow',
         pluginSource: '',
-        entrySource: '',
         timeoutMs: 50,
       }),
     ).rejects.toThrow(/boot timed out/)
@@ -170,7 +168,7 @@ describe('PluginHost', () => {
     const events: PluginHostEvent[] = []
     host.on((e) => events.push(e))
 
-    await host.load({ pluginId: 'echo', pluginSource: '', entrySource: '' })
+    await host.load({ pluginId: 'echo', pluginSource: '' })
     host.invokeCommand('echo', 'say')
 
     await flushMicrotasks()
@@ -196,7 +194,7 @@ describe('PluginHost', () => {
     const events: PluginHostEvent[] = []
     host.on((e) => events.push(e))
 
-    await host.load({ pluginId: 'echo', pluginSource: '', entrySource: '' })
+    await host.load({ pluginId: 'echo', pluginSource: '' })
     host.invokeCommand('echo', 'say')
     await flushMicrotasks()
 
@@ -213,7 +211,7 @@ describe('PluginHost', () => {
     const events: PluginHostEvent[] = []
     host.on((e) => events.push(e))
 
-    await host.load({ pluginId: 'echo', pluginSource: '', entrySource: '' })
+    await host.load({ pluginId: 'echo', pluginSource: '' })
 
     fake.inject({ type: 'bogus', seq: 99 })
     expect(events.some((e) => e.type === 'workerError')).toBe(true)
@@ -229,7 +227,7 @@ describe('PluginHost', () => {
     }
 
     const host = new PluginHost({ createWorker: () => fake.worker })
-    await host.load({ pluginId: 'echo', pluginSource: '', entrySource: '' })
+    await host.load({ pluginId: 'echo', pluginSource: '' })
     expect(host.isLoaded('echo')).toBe(true)
 
     host.unload('echo')
