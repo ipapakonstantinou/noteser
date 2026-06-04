@@ -106,14 +106,14 @@ export const RightSidebarResizeHandle = () => {
       onKeyDown={onKeyDown}
       data-testid="right-sidebar-resize-handle"
       className={`group relative z-10 -mr-[3px] w-[6px] flex-none cursor-col-resize self-stretch outline-none ${
-        dragging ? 'bg-obsidianAccentPurple/40' : 'hover:bg-obsidianAccentPurple/20'
-      } transition-colors focus-visible:bg-obsidianAccentPurple/30`}
+        dragging ? 'bg-obsidianHighlight/40' : 'hover:bg-obsidianHighlight/20'
+      } transition-colors focus-visible:bg-obsidianHighlight/30`}
     >
       <span
         className={`pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 ${
           dragging
-            ? 'bg-obsidianAccentPurple'
-            : 'bg-transparent group-hover:bg-obsidianAccentPurple/70 group-focus-visible:bg-obsidianAccentPurple/70'
+            ? 'bg-obsidianHighlight'
+            : 'bg-transparent group-hover:bg-obsidianHighlight/70 group-focus-visible:bg-obsidianHighlight/70'
         } transition-colors`}
       />
     </div>
