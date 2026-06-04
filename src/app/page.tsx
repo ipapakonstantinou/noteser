@@ -551,24 +551,22 @@ export default function Home() {
 
   return (
     <div className="flex h-dvh w-screen bg-obsidianBlack text-obsidianText overflow-hidden">
-      {/* Ribbon (Activity Bar). Per user feedback 2026-06-04, the bar
-          disappears entirely when the sidebar is collapsed — matches
-          Obsidian's behaviour, gives the editor the full viewport
-          width. A thin edge handle on the left (rendered below) is the
-          single re-expand affordance. */}
-      {!isSidebarCollapsed && (
-        <div className="flex-none">
-          <Ribbon />
-        </div>
-      )}
+      {/* Ribbon (Activity Bar). Always visible on desktop — when the
+          sidebar is collapsed only the panel CONTENT hides, the bar
+          stays so you can re-open or switch panels with one click.
+          Matches Obsidian's behaviour where the activity bar persists
+          when the sidebar collapses. */}
+      <div className="flex-none">
+        <Ribbon />
+      </div>
 
-      {/* Sidebar column. Hidden entirely when collapsed (the activity
-          bar above is hidden too, so the editor goes full-width).
-          Expanded → the user-set, drag-resizable width from useUIStore
-          (defaults to 256 = the old w-64). We DROP the width transition
-          while expanded so the drag tracks the pointer 1:1 instead of
-          lagging behind a 300ms ease. Pre-hydration we render the
-          default width to avoid an SSR/client mismatch. */}
+      {/* Sidebar panel column. Hidden entirely when collapsed (the
+          activity bar above remains as the entry point). Expanded → the
+          user-set, drag-resizable width from useUIStore (defaults to
+          256). We DROP the width transition while expanded so the drag
+          tracks the pointer 1:1 instead of lagging behind a 300ms ease.
+          Pre-hydration we render the default width to avoid an
+          SSR/client mismatch. */}
       {!isSidebarCollapsed && (
         <div
           className="flex-none"
@@ -577,11 +575,6 @@ export default function Home() {
           <Sidebar />
         </div>
       )}
-
-      {/* Re-expand handle — only when collapsed on desktop. Reuses
-          the same DrawerHandle that opens the mobile drawer (a thin
-          pill on the left edge with a hover chevron). */}
-      {isSidebarCollapsed && <DrawerHandle />}
 
       {/* Drag-to-resize handle — sits between the sidebar and the
           editor. Only meaningful when the sidebar is expanded. */}
