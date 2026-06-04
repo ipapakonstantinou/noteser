@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSettingsStore, type SidebarTabId, type SidebarGroupState } from '@/stores'
 import { SIDEBAR_PANEL_DRAG_MIME } from './SidebarSection'
 import { InterGroupDropZone } from './InterGroupDropZone'
 import { SidebarGroup } from './SidebarGroup'
+import { GroupResizeHandle } from './GroupResizeHandle'
 import { TabContextMenu } from './TabContextMenu'
 import {
   KNOWN_IDS,
@@ -29,11 +30,13 @@ interface Props {
 // Activity-bar (Ribbon) handles the icon column on the far left and
 // implements the "add panel to last-focused group" logic; this
 // component is purely a renderer of the persisted state plus the
-// inter-group drop zones for drag-to-new-group.
+// inter-group drop zones for drag-to-new-group + the inter-group
+// resize handles.
 export const SidebarStack = ({ onRightClick }: Props) => {
   const sidebarGroupsSaved = useSettingsStore(s => s.sidebarGroups)
   const hiddenSidebarTabs = useSettingsStore(s => s.hiddenSidebarTabs)
   const hideSidebarTab = useSettingsStore(s => s.hideSidebarTab)
+  const setGroupHeight = useSettingsStore(s => s.setGroupHeight)
 
   // Sanitise persisted groups: drop unknown ids, drop hidden ids,
   // drop empty groups. De-dupe across the stack (a panel can only
@@ -61,6 +64,7 @@ export const SidebarStack = ({ onRightClick }: Props) => {
         tabs: cleanedTabs,
         activeTab,
         collapsed: Boolean(g.collapsed),
+        height: g.height ?? null,
       })
     }
     return out
@@ -110,6 +114,35 @@ export const SidebarStack = ({ onRightClick }: Props) => {
   }
   const closeTabMenu = () => setTabMenu(null)
 
+  // ── Inter-group resize state ─────────────────────────────────────────
+  // Refs onto each group's outer wrapper so we can read the actual
+  // pixel height before a drag starts (works whether the group is
+  // currently using flex-1 or an explicit height — both flow through
+  // the DOM). Stored as a record keyed by group id so reorders /
+  // group-id changes don't leak stale refs.
+  const groupRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const setGroupRef = useCallback((id: string) => (el: HTMLDivElement | null) => {
+    if (el) groupRefs.current[id] = el
+    else delete groupRefs.current[id]
+  }, [])
+
+  // Draft heights — live snapshot of what the user is dragging towards.
+  // We update these on every mousemove so the layout tracks the pointer
+  // 1:1; on mouseup we commit to settingsStore.setGroupHeight (cheaper
+  // than hammering persist + re-running every store subscriber each
+  // frame). Keyed by group id.
+  const [draftHeights, setDraftHeights] = useState<Record<string, number>>({})
+
+  // Helper: read the current rendered height of a group. Falls back to
+  // the persisted `height` field, then to 0 if the ref isn't mounted
+  // yet (defensive — the handle never mounts before its neighbours).
+  const measureGroupHeight = useCallback((groupId: string): number => {
+    const el = groupRefs.current[groupId]
+    if (el) return el.getBoundingClientRect().height
+    const persisted = groups.find(g => g.id === groupId)?.height
+    return typeof persisted === 'number' ? persisted : 0
+  }, [groups])
+
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-y-auto" data-testid="sidebar-stack">
       {groups.length === 0 && (
@@ -120,19 +153,87 @@ export const SidebarStack = ({ onRightClick }: Props) => {
           No panels in the sidebar. Click an icon in the activity bar to add one.
         </div>
       )}
-      {groups.map((g, idx) => (
-        <div key={g.id}>
-          <InterGroupDropZone
-            active={dragActive}
-            onDropId={(id) => createGroupWithTab(idx, id)}
-          />
-          <SidebarGroup
-            group={g}
-            onTabContextMenu={(id, e) => openTabMenu(id, g.id, e)}
-            onRightClick={onRightClick}
-          />
-        </div>
-      ))}
+      {groups.map((g, idx) => {
+        // Layout assignment:
+        //   - A group with an explicit `height` (or in-flight draft) is
+        //     'fixed' so the user's drag value wins.
+        //   - The LAST expanded group with no explicit height is
+        //     'fill' so leftover vertical space lands there cleanly.
+        //   - Everything else is 'auto' (size to content / flex-shrink).
+        // Collapsed groups always size to content; the SidebarGroup
+        // component ignores the layoutMode in that branch.
+        const hasExplicit = (g.height != null) || (g.id in draftHeights)
+        // Find the index of the LAST expanded group (the trailing fill
+        // target). We treat both explicit and auto groups as candidates
+        // but prefer auto + last so explicit-height users see their
+        // values respected.
+        const lastExpandedIdx = (() => {
+          for (let i = groups.length - 1; i >= 0; i--) {
+            if (!groups[i].collapsed && groups[i].height == null && !(groups[i].id in draftHeights)) {
+              return i
+            }
+          }
+          return -1
+        })()
+        const layoutMode: 'fill' | 'fixed' | 'auto' = hasExplicit
+          ? 'fixed'
+          : (idx === lastExpandedIdx ? 'fill' : 'auto')
+        const draft = draftHeights[g.id]
+
+        // The resize handle between THIS group and the next one only
+        // mounts when both are expanded — collapsed groups have no
+        // body to grow into, so resizing them would just shuffle the
+        // chrome. Also skip the handle after the last group.
+        const next = groups[idx + 1]
+        const showHandleBelow =
+          next != null && !g.collapsed && !next.collapsed
+
+        return (
+          <div key={g.id} ref={setGroupRef(g.id)}>
+            <InterGroupDropZone
+              active={dragActive}
+              onDropId={(id) => createGroupWithTab(idx, id)}
+            />
+            <SidebarGroup
+              group={g}
+              layoutMode={layoutMode}
+              draftHeight={draft}
+              onTabContextMenu={(id, e) => openTabMenu(id, g.id, e)}
+              onRightClick={onRightClick}
+            />
+            {showHandleBelow && (
+              <GroupResizeHandle
+                ariaLabel={`Resize group ${g.activeTab ?? g.id}`}
+                aboveHeight={draft ?? measureGroupHeight(g.id)}
+                belowHeight={draftHeights[next.id] ?? measureGroupHeight(next.id)}
+                onResize={(nextAbove, nextBelow) => {
+                  setDraftHeights(prev => ({
+                    ...prev,
+                    [g.id]: nextAbove,
+                    [next.id]: nextBelow,
+                  }))
+                  // Commit to the store too — the store's same-ref
+                  // short-circuit drops no-op writes, so this is
+                  // cheap. Doing it inline (instead of on mouseup)
+                  // means a refresh mid-drag won't lose state.
+                  setGroupHeight(g.id, nextAbove)
+                  setGroupHeight(next.id, nextBelow)
+                }}
+                onReset={() => {
+                  setDraftHeights(prev => {
+                    const copy = { ...prev }
+                    delete copy[g.id]
+                    delete copy[next.id]
+                    return copy
+                  })
+                  setGroupHeight(g.id, null)
+                  setGroupHeight(next.id, null)
+                }}
+              />
+            )}
+          </div>
+        )
+      })}
       {/* Trailing zone — drop here to spawn a new group at the very
           bottom of the stack. */}
       {groups.length > 0 && (

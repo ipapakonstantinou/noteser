@@ -191,6 +191,48 @@ describe('Cross-group move via mini-strip drop', () => {
   })
 })
 
+describe('setGroupHeight', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({
+      sidebarGroups: [
+        { id: 'g1', tabs: ['calendar'], activeTab: 'calendar', collapsed: false },
+        { id: 'g2', tabs: ['outline'], activeTab: 'outline', collapsed: false },
+      ],
+    })
+  })
+
+  test('sets a pixel height on the target group only', () => {
+    useSettingsStore.getState().setGroupHeight('g1', 240)
+    const groups = useSettingsStore.getState().sidebarGroups
+    expect(groups[0].height).toBe(240)
+    expect(groups[1].height ?? null).toBeNull()
+  })
+
+  test('clamps below the MIN_GROUP_HEIGHT floor', () => {
+    useSettingsStore.getState().setGroupHeight('g1', 12)
+    expect(useSettingsStore.getState().sidebarGroups[0].height).toBe(80)
+  })
+
+  test('null releases the explicit height back to flex distribution', () => {
+    useSettingsStore.getState().setGroupHeight('g1', 240)
+    useSettingsStore.getState().setGroupHeight('g1', null)
+    expect(useSettingsStore.getState().sidebarGroups[0].height).toBeNull()
+  })
+
+  test('is a no-op when the value is unchanged', () => {
+    useSettingsStore.getState().setGroupHeight('g1', 240)
+    const before = useSettingsStore.getState().sidebarGroups
+    useSettingsStore.getState().setGroupHeight('g1', 240)
+    const after = useSettingsStore.getState().sidebarGroups
+    expect(after).toBe(before)
+  })
+
+  test('round-trips through a string value (Math.round)', () => {
+    useSettingsStore.getState().setGroupHeight('g1', 240.6)
+    expect(useSettingsStore.getState().sidebarGroups[0].height).toBe(241)
+  })
+})
+
 describe('Close tab via store action', () => {
   test('removing the last tab in a group drops the group', () => {
     useSettingsStore.setState({

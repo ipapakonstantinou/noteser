@@ -37,12 +37,24 @@ export const DEFAULT_AI_MODEL: Record<Exclude<AIProvider, 'off'>, string> = {
 // `activeTab`). Multiple groups stack vertically. `id` is a stable
 // random string so collapse state survives composition changes (the
 // old `group.join(',')` key reset on every pin/unpin).
+//
+// `height` (px) is set by the user dragging the inter-group resize
+// handle. `null` (or absent) means "use flex distribution" — the group
+// fills remaining space. By convention the LAST group in the stack
+// keeps height=null so any leftover space lands somewhere predictable.
+// Clamped to >= MIN_GROUP_HEIGHT so a runaway drag can't hide a group.
 export interface SidebarGroupState {
   id: string
   tabs: string[]
   activeTab: string | null
   collapsed: boolean
+  height?: number | null
 }
+
+// Minimum height (in px) a sidebar group can be resized to. Matches the
+// 80px floor used by SidebarSection — small enough to be useful, large
+// enough that the strip + a sliver of body always stay visible.
+export const MIN_GROUP_HEIGHT = 80
 
 // Crypto-strong random group id. Falls back to Math.random in the rare
 // SSR/Node-without-crypto path (tests). Exported so the migration +
@@ -356,6 +368,11 @@ export interface SettingsState {
   // group it was in so the same panel never lives in two places.
   createGroupAt: (insertAt: number, tabId: string) => void
   toggleGroupCollapsed: (groupId: string) => void
+  // Resize a group to a specific pixel height. Pass `null` to release
+  // the explicit height and let flex distribution take over (used when
+  // the user double-clicks the divider to "snap back"). Clamped to >=
+  // MIN_GROUP_HEIGHT.
+  setGroupHeight: (groupId: string, height: number | null) => void
   // Adds an id to `hiddenSidebarTabs` if not present. The tab disappears
   // from every group it lived in (auto-unpin); empty groups are dropped.
   hideSidebarTab: (id: string) => void
@@ -710,6 +727,20 @@ export const useSettingsStore = create<SettingsState>()(
               g.id === groupId ? { ...g, collapsed: !g.collapsed } : g,
             ),
           })),
+        setGroupHeight: (groupId, height) =>
+          set((state) => {
+            const clamped =
+              height == null
+                ? null
+                : Math.max(MIN_GROUP_HEIGHT, Math.round(height))
+            const next = state.sidebarGroups.map(g => {
+              if (g.id !== groupId) return g
+              if ((g.height ?? null) === clamped) return g
+              return { ...g, height: clamped }
+            })
+            if (next.every((g, i) => g === state.sidebarGroups[i])) return state
+            return { sidebarGroups: next }
+          }),
         hideSidebarTab: (id) =>
           set((state) => {
             if (state.hiddenSidebarTabs.includes(id)) return state

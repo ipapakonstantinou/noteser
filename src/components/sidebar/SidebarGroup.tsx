@@ -17,9 +17,24 @@ export interface SidebarGroupProps {
   group: SidebarGroupState
   onTabContextMenu: (id: SidebarTabId, e: React.MouseEvent) => void
   onRightClick: PanelRightClick
+  // Layout mode set by the stack:
+  //   - 'fill'   → flex-1 (fills remaining space). The last expanded
+  //                group in the stack always uses this so leftover
+  //                vertical space lands somewhere.
+  //   - 'fixed'  → height taken from `group.height` (user-resized
+  //                or transient draft).
+  //   - 'auto'   → no explicit height; flex-shrink-0 so the strip + body
+  //                size to content. Used for groups that haven't been
+  //                resized yet AND aren't the trailing fill target.
+  // When `draftHeight` is set, it overrides group.height for the duration
+  // of an in-flight drag (smooth feedback without committing every frame).
+  layoutMode?: 'fill' | 'fixed' | 'auto'
+  draftHeight?: number
 }
 
-export const SidebarGroup = ({ group, onTabContextMenu, onRightClick }: SidebarGroupProps) => {
+export const SidebarGroup = ({
+  group, onTabContextMenu, onRightClick, layoutMode = 'auto', draftHeight,
+}: SidebarGroupProps) => {
   const setGroupActiveTab = useSettingsStore(s => s.setGroupActiveTab)
   const removeTabFromGroup = useSettingsStore(s => s.removeTabFromGroup)
   const setSidebarGroups = useSettingsStore(s => s.setSidebarGroups)
@@ -49,9 +64,21 @@ export const SidebarGroup = ({ group, onTabContextMenu, onRightClick }: SidebarG
     setLastFocusedGroupId(group.id)
   }
 
+  // Resolve layout. Collapsed groups always shrink to content (no body
+  // is rendered, so explicit height would just leave a vertical gap).
+  // Otherwise the layoutMode prop steers between flex-fill and an
+  // explicit pixel height.
+  const explicitHeight = !isCollapsed && layoutMode === 'fixed'
+    ? (draftHeight ?? group.height ?? undefined)
+    : undefined
+  const wrapperClass = !isCollapsed && layoutMode === 'fill'
+    ? 'flex-1 min-h-0 flex flex-col border-t border-obsidianBorder'
+    : 'flex-shrink-0 flex flex-col border-t border-obsidianBorder'
+
   return (
     <div
-      className="flex-shrink-0 flex flex-col border-t border-obsidianBorder"
+      className={wrapperClass}
+      style={explicitHeight != null ? { height: explicitHeight } : undefined}
       data-testid="sidebar-group"
       data-group-id={group.id}
       data-collapsed={isCollapsed ? 'true' : 'false'}
