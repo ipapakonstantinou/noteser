@@ -24,7 +24,7 @@ jest.mock('idb-keyval', () => ({
 
 import { resolveRibbonOrder } from '../components/sidebar/Ribbon'
 
-const DEFAULT_ORDER = ['new-note', 'daily-note', 'command-palette', 'templates', 'random-note'] as const
+const DEFAULT_ORDER = ['new-note', 'daily-note', 'command-palette', 'templates'] as const
 
 describe('resolveRibbonOrder', () => {
   test('empty saved list returns default order', () => {
@@ -32,7 +32,7 @@ describe('resolveRibbonOrder', () => {
   })
 
   test('passes through a fully-specified valid order verbatim', () => {
-    const saved = ['daily-note', 'templates', 'new-note', 'command-palette', 'random-note']
+    const saved = ['daily-note', 'templates', 'new-note', 'command-palette']
     expect(resolveRibbonOrder(saved)).toEqual(saved)
   })
 
@@ -44,18 +44,18 @@ describe('resolveRibbonOrder', () => {
     // render phantom items.
     expect(
       resolveRibbonOrder(['new-note', 'banana', 'notes', 'recent', 'tags', 'calendar']),
-    ).toEqual(['new-note', 'daily-note', 'command-palette', 'templates', 'random-note'])
+    ).toEqual(['new-note', 'daily-note', 'command-palette', 'templates'])
   })
 
   test('appends new items (not in saved list) at the end', () => {
     expect(resolveRibbonOrder(['templates', 'new-note'])).toEqual([
-      'templates', 'new-note', 'daily-note', 'command-palette', 'random-note',
+      'templates', 'new-note', 'daily-note', 'command-palette',
     ])
   })
 
   test('de-duplicates a saved list', () => {
     expect(resolveRibbonOrder(['new-note', 'new-note', 'daily-note'])).toEqual([
-      'new-note', 'daily-note', 'command-palette', 'templates', 'random-note',
+      'new-note', 'daily-note', 'command-palette', 'templates',
     ])
   })
 })
