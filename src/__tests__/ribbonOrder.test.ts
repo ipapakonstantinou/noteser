@@ -58,12 +58,4 @@ describe('resolveRibbonOrder', () => {
       'new-note', 'daily-note', 'command-palette', 'templates',
     ])
   })
-
-  test('drops the now-removed random-note id silently (2026-06-04 cleanup)', () => {
-    // random-note moved to command-palette-only; saved orders that
-    // include it should NOT render a phantom entry.
-    expect(resolveRibbonOrder(['new-note', 'random-note', 'daily-note'])).toEqual([
-      'new-note', 'daily-note', 'command-palette', 'templates',
-    ])
-  })
 })

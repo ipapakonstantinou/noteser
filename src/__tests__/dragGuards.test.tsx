@@ -197,13 +197,46 @@ describe('SidebarSection — dragstart primary-button guard', () => {
 
 // ── 4. TabSwitcher ────────────────────────────────────────────────────────────
 
-// TabSwitcher's horizontal icon strip was removed 2026-06-04 in the
-// "one bar, like VS Code" refactor — panel switching moved to the
-// Ribbon on the far left. The drag-from-strip-icon path no longer
-// exists, so this section's primary-button guard is obsolete. Keeping
-// the describe block as a tombstone for git-archaeology purposes.
-describe.skip('TabSwitcher — dragstart primary-button guard (removed 2026-06-04)', () => {
-  test('placeholder', () => {})
+describe('TabSwitcher — dragstart primary-button guard', () => {
+  const TABS: SidebarTabId[] = ['files']
+
+  beforeEach(() => {
+    useUIStore.setState({ sidebarTabId: 'files' })
+    useSettingsStore.setState({ sidebarTabOrder: [] })
+  })
+
+  test('button=0: dragstart on tab icon sets MIME data', () => {
+    render(
+      <TabSwitcher
+        pinnedIds={[]}
+        tabOrderSaved={TABS}
+        hiddenIds={new Set()}
+        onRightClick={jest.fn()}
+        onTabContextMenu={jest.fn()}
+        onUnpinPanel={jest.fn()}
+      />
+    )
+    const tabIcon = screen.getByTestId('sidebar-tab-files').closest('[draggable]') as HTMLElement
+    expect(tabIcon).not.toBeNull()
+    fireDragStartWithButton(tabIcon, 0)
+    expect(setDataCalls.length).toBeGreaterThan(0)
+  })
+
+  test('button=2: dragstart on tab icon does NOT set MIME data', () => {
+    render(
+      <TabSwitcher
+        pinnedIds={[]}
+        tabOrderSaved={TABS}
+        hiddenIds={new Set()}
+        onRightClick={jest.fn()}
+        onTabContextMenu={jest.fn()}
+        onUnpinPanel={jest.fn()}
+      />
+    )
+    const tabIcon = screen.getByTestId('sidebar-tab-files').closest('[draggable]') as HTMLElement
+    fireDragStartWithButton(tabIcon, 2)
+    expect(setDataCalls.length).toBe(0)
+  })
 })
 
 // ── 5. PinnedMiniStrip ────────────────────────────────────────────────────────
