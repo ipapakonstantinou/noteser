@@ -125,23 +125,26 @@ export const Ribbon = () => {
     hideSidebarTab: s.hideSidebarTab,
   })))
 
-  // Active-state map: which panel ids are currently the activeTab of
-  // some group? The Ribbon icon for those ids gets the highlighted
-  // (`active`) treatment.
-  const activePanelIds = useMemo(() => {
+  // Set of panel ids currently parked in ANY sidebar group. Per user
+  // feedback (2026-06-04): a panel that is already showing in the
+  // sidebar should NOT also have an icon in the activity bar — the
+  // group's own mini-strip is its switcher. The activity bar becomes
+  // a list of "panels you can OPEN", not "all panels everywhere".
+  const inAnyGroup = useMemo(() => {
     const set = new Set<string>()
     for (const g of sidebarGroups) {
-      if (g.activeTab) set.add(g.activeTab)
+      for (const t of g.tabs) set.add(t)
     }
     return set
   }, [sidebarGroups])
 
   // Hidden set — panels in `hiddenSidebarTabs` are filtered out of the
   // activity bar entirely (Settings → Sidebar can restore them).
+  // Combined filter: exclude hidden + already-in-a-group.
   const hiddenSet = useMemo(() => new Set(hiddenSidebarTabs), [hiddenSidebarTabs])
   const visiblePanels = useMemo(
-    () => PANELS.filter(p => !hiddenSet.has(p.id)),
-    [hiddenSet],
+    () => PANELS.filter(p => !hiddenSet.has(p.id) && !inAnyGroup.has(p.id)),
+    [hiddenSet, inAnyGroup],
   )
 
   const orderedIds = useMemo(() => resolveRibbonOrder(ribbonOrder), [ribbonOrder])
@@ -251,7 +254,8 @@ export const Ribbon = () => {
       >
         {visiblePanels.map(def => {
           const Icon = def.Icon
-          const active = activePanelIds.has(def.id)
+          // No `active` state — visiblePanels excludes anything already
+          // in a group, so the bar only shows panels available to OPEN.
           return (
             <div
               key={`panel-${def.id}`}
@@ -263,7 +267,6 @@ export const Ribbon = () => {
                 onClick={() => onPanelClick(def.id)}
                 onContextMenu={(e) => openPanelMenu(def.id, e)}
                 title={`${def.title} — drag to a sidebar group, right-click for options`}
-                active={active}
               >
                 <Icon className="w-5 h-5" />
               </RibbonButton>

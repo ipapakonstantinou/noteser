@@ -89,15 +89,28 @@ describe('Activity bar click — leaf model', () => {
     expect(groups[0].activeTab).toBe('outline')
   })
 
-  test('clicking an icon for a panel ALREADY in a group focuses it (no duplicate add)', () => {
+  test('a panel ALREADY in a group does NOT render an icon in the activity bar', () => {
+    // Per the 2026-06-04 rule: icons for in-group panels are hidden
+    // from the bar (the group's own mini-strip is its switcher).
     useSettingsStore.setState({
       sidebarGroups: [{ id: 'g1', tabs: ['calendar', 'outline'], activeTab: 'calendar', collapsed: false }],
       hiddenSidebarTabs: [],
     })
     useUIStore.setState({ sidebarCollapsed: false, lastFocusedGroupId: 'g1' })
     render(<Ribbon />)
-    const button = screen.getByTestId('activity-bar-panel-outline').querySelector('button')!
-    fireEvent.click(button)
+    expect(screen.queryByTestId('activity-bar-panel-outline')).toBeNull()
+    expect(screen.queryByTestId('activity-bar-panel-calendar')).toBeNull()
+    // But a NOT-in-group panel still gets an icon.
+    expect(screen.getByTestId('activity-bar-panel-files')).toBeTruthy()
+  })
+
+  test('calling activatePanelFromActivityBar for an in-group panel focuses it (via drag/mobile entry points)', () => {
+    useSettingsStore.setState({
+      sidebarGroups: [{ id: 'g1', tabs: ['calendar', 'outline'], activeTab: 'calendar', collapsed: false }],
+      hiddenSidebarTabs: [],
+    })
+    useUIStore.setState({ sidebarCollapsed: false, lastFocusedGroupId: 'g1' })
+    activatePanelFromActivityBar('outline')
     const groups = useSettingsStore.getState().sidebarGroups
     expect(groups).toHaveLength(1)
     expect(groups[0].tabs).toEqual(['calendar', 'outline'])
