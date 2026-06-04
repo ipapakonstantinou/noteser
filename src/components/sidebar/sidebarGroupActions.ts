@@ -25,22 +25,27 @@ export function findGroupWithTab(
   return null
 }
 
-// Activity-bar click handler. Implements the four cases from the spec:
+// Activity-bar click handler. Per user feedback (2026-06-04), clicking
+// an activity-bar icon switches the FOCUSED group's active panel — it
+// does NOT add a tab alongside existing ones (which was the previous
+// Obsidian-add semantic). The user expects "VS Code switch" behaviour:
+// click an icon, see THAT panel, the previous one steps out of the way.
+//
+// Concretely, the four cases are now:
 //   1. `tabId` is the activeTab of some group → focus the sidebar
-//      (uncollapse if collapsed), no state change otherwise.
+//      (uncollapse if collapsed), no other state change.
 //   2. `tabId` is a non-active tab in some group → set that group's
-//      activeTab, open sidebar.
-//   3. `tabId` is NOT in any group → add to the LAST-focused group's
-//      tabs and set it as active. Fall back to the LAST group in the
-//      stack when no group has been focused yet (fresh boot).
+//      activeTab to `tabId`, focus the sidebar.
+//   3. `tabId` is NOT in any group → REPLACE the focused group's
+//      activeTab with this tab. The previously-active panel is
+//      removed from the group entirely (returns to the activity bar).
+//      Other tabs in the group remain.
 //   4. `tabId` is in `hiddenSidebarTabs` → unhide it AND apply rule 3.
 //
-// All four cases also open the sidebar if it's collapsed, matching
-// Obsidian's behaviour ("click ribbon icon → sidebar wakes up").
+// All four cases open the sidebar if it's collapsed.
 export function activatePanelFromActivityBar(tabId: SidebarTabId): void {
   const settings = useSettingsStore.getState()
   const ui = useUIStore.getState()
-  const groups = settings.sidebarGroups
 
   // Case 4 first: an id may live in `hiddenSidebarTabs` (in which case
   // it's filtered out of every group by hideSidebarTab itself, so the
@@ -55,7 +60,7 @@ export function activatePanelFromActivityBar(tabId: SidebarTabId): void {
   const owner = findGroupWithTab(updatedGroups, tabId)
 
   if (owner) {
-    // Case 1 or 2: tab already in a group somewhere.
+    // Case 1 or 2: tab already in a group somewhere → just focus it.
     if (owner.activeTab !== tabId) {
       settings.setGroupActiveTab(owner.id, tabId)
     }
@@ -64,17 +69,27 @@ export function activatePanelFromActivityBar(tabId: SidebarTabId): void {
     return
   }
 
-  // Case 3 (and 4): tab not in any group → add to last-focused or
-  // bottom-most group. If the stack is empty (theoretically — the
-  // default seeds at least one group, and migrations fall back too)
-  // create a fresh group instead so we never silently swallow a click.
+  // Case 3 (and 4): tab not in any group → REPLACE focused group's
+  // activeTab with this id. Falls back to the last group in the stack
+  // when nothing has been focused yet. If the stack is empty, create
+  // a fresh group instead so we never silently swallow a click.
   if (updatedGroups.length === 0) {
     settings.createGroupAt(0, tabId)
   } else {
     const target =
       updatedGroups.find(g => g.id === ui.lastFocusedGroupId)
       ?? updatedGroups[updatedGroups.length - 1]
-    settings.addTabToGroup(target.id, tabId)
+    const oldActive = target.activeTab
+    // Compute the new tab list: filter out the old active, append the
+    // new one. Then commit both the tab list AND the activeTab via the
+    // settings store. setSidebarGroups is the cheapest one-shot setter
+    // for "replace this group wholesale".
+    const groups = useSettingsStore.getState().sidebarGroups
+    settings.setSidebarGroups(groups.map(g => {
+      if (g.id !== target.id) return g
+      const tabs = g.tabs.filter(t => t !== oldActive).concat(tabId)
+      return { ...g, tabs, activeTab: tabId }
+    }))
     ui.setLastFocusedGroupId(target.id)
   }
   if (ui.sidebarCollapsed) ui.toggleSidebar()

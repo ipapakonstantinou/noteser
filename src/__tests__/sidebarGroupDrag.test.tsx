@@ -78,14 +78,36 @@ function seedOneGroup(id = 'g1', tabs: string[] = ['calendar']) {
 describe('Activity bar click — leaf model', () => {
   beforeEach(() => seedOneGroup())
 
-  test('clicking an icon for a panel NOT in any group adds it to last-focused group', () => {
+  test('clicking an icon for a panel NOT in any group REPLACES focused group activeTab (VS Code switch)', () => {
+    // Seed has [calendar] active. After clicking outline, the focused
+    // group's activeTab is REPLACED — calendar is evicted (returns to
+    // the activity bar), outline becomes the sole active tab. Per the
+    // 2026-06-04 rule: activity-bar click is "switch", not "add tab".
     render(<Ribbon />)
-    // `outline` isn't in any group yet — click should add it.
     const button = screen.getByTestId('activity-bar-panel-outline').querySelector('button')!
     fireEvent.click(button)
     const groups = useSettingsStore.getState().sidebarGroups
     expect(groups).toHaveLength(1)
-    expect(groups[0].tabs).toContain('outline')
+    expect(groups[0].tabs).toEqual(['outline'])
+    expect(groups[0].activeTab).toBe('outline')
+  })
+
+  test('clicking an icon when group has 2 tabs replaces the activeTab only (other tab survives)', () => {
+    // Group [calendar, files] with calendar active. Click outline →
+    // calendar (the activeTab) is evicted; files survives; outline
+    // becomes the new activeTab.
+    useSettingsStore.setState({
+      sidebarGroups: [{ id: 'g1', tabs: ['calendar', 'files'], activeTab: 'calendar', collapsed: false }],
+      hiddenSidebarTabs: [],
+      ribbonOrder: [],
+    })
+    useUIStore.setState({ sidebarCollapsed: false, lastFocusedGroupId: 'g1' })
+    render(<Ribbon />)
+    const button = screen.getByTestId('activity-bar-panel-outline').querySelector('button')!
+    fireEvent.click(button)
+    const groups = useSettingsStore.getState().sidebarGroups
+    expect(groups).toHaveLength(1)
+    expect(groups[0].tabs).toEqual(['files', 'outline'])
     expect(groups[0].activeTab).toBe('outline')
   })
 
