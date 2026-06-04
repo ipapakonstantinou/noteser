@@ -1,18 +1,25 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { useSettingsStore, type SidebarTabId } from '@/stores'
+import { useSettingsStore, useUIStore, type SidebarTabId } from '@/stores'
 import { SIDEBAR_PANEL_DRAG_MIME } from './SidebarSection'
 import { InterGroupDropZone } from './InterGroupDropZone'
 import { PinnedGroup } from './PinnedGroup'
-import { TabSwitcher } from './TabSwitcher'
 import { TabContextMenu, type TabContextMenuLocation } from './TabContextMenu'
 import {
   KNOWN_IDS,
+  PanelBody,
   TAB_DRAG_MIME,
   resolveTabOrder,
   type PanelRightClick,
 } from './sidebarPanelRegistry'
+import {
+  pinAsNewGroup,
+  pinAsNewGroupAt,
+  pinIntoGroup,
+  unpinPanel,
+  reorderGroup,
+} from './pinningActions'
 
 // Re-export resolveTabOrder so older callers (the unit test, future
 // consumers) keep their existing `from './SidebarStack'` import path.
@@ -24,14 +31,14 @@ interface Props {
 
 export const SidebarStack = ({ onRightClick }: Props) => {
   const pinnedSaved = useSettingsStore(s => s.pinnedPanels)
-  const setPinnedPanels = useSettingsStore(s => s.setPinnedPanels)
   const tabOrderSaved = useSettingsStore(s => s.sidebarTabOrder)
   const hiddenSidebarTabs = useSettingsStore(s => s.hiddenSidebarTabs)
   const hideSidebarTab = useSettingsStore(s => s.hideSidebarTab)
+  const activeSidebarTabId = useUIStore(s => s.sidebarTabId)
 
   // Hidden-tab filter: any id the user has hidden via right-click is
-  // dropped from BOTH the pinned strips and the bottom switcher at
-  // render time. Settings → Sidebar exposes the unhide UI.
+  // dropped from BOTH the pinned strips and the unpinned panel body
+  // at render time. Settings → Sidebar exposes the unhide UI.
   const hiddenSet = useMemo(() => new Set(hiddenSidebarTabs), [hiddenSidebarTabs])
 
   // Sanitise pinnedPanels: outer array = groups, each inner array =
@@ -61,85 +68,36 @@ export const SidebarStack = ({ onRightClick }: Props) => {
     [pinnedGroups],
   )
 
-  // ── Pin/unpin / group ops ────────────────────────────────────────────
-  // pinAsNewGroup creates a NEW group at the bottom of the pinned
-  // stack containing just `id`. Used by right-click-on-main-strip and
-  // drag-to-pin-drop-zone.
-  const pinAsNewGroup = (id: SidebarTabId) => {
-    if (pinnedFlat.includes(id)) return
-    setPinnedPanels([...pinnedGroups, [id]])
-  }
-  // pinIntoGroup adds `id` to an existing group at `groupIndex`. Used
-  // when the user drops a tab onto an existing pinned mini-strip.
-  // If `id` is already pinned elsewhere, it's moved (removed from
-  // its previous group first).
-  const pinIntoGroup = (id: SidebarTabId, groupIndex: number) => {
-    const next: SidebarTabId[][] = pinnedGroups
-      .map(g => g.filter(p => p !== id))
-      .filter(g => g.length > 0)
-    // groupIndex may have shifted if we just removed an empty group
-    // before it. Re-find the target by panel set (use any remaining
-    // id from the original target group as an anchor).
-    const targetAnchor = pinnedGroups[groupIndex]?.find(p => p !== id) ?? null
-    const realIndex = targetAnchor == null
-      ? Math.min(groupIndex, next.length - 1)
-      : next.findIndex(g => g.includes(targetAnchor))
-    if (realIndex < 0 || realIndex >= next.length) {
-      // Target group disappeared (it only contained the dragged id);
-      // re-pin as a new solo group at the original spot.
-      const insertAt = Math.min(groupIndex, next.length)
-      next.splice(insertAt, 0, [id])
-    } else {
-      next[realIndex] = [...next[realIndex], id]
-    }
-    setPinnedPanels(next)
-  }
-  // unpinPanel removes `id` from whatever group it lives in. Empty
-  // groups are dropped so we don't leave phantom strips.
-  const unpinPanel = (id: SidebarTabId) => {
-    if (!pinnedFlat.includes(id)) return
-    const next = pinnedGroups
-      .map(g => g.filter(p => p !== id))
-      .filter(g => g.length > 0)
-    setPinnedPanels(next)
-  }
-  // pinAsNewGroupAt creates a NEW solo group at a specific position
-  // in the stack. Used by the inter-group drop zones so the user
-  // can insert a new pane between two existing ones precisely.
-  const pinAsNewGroupAt = (id: SidebarTabId, insertAt: number) => {
-    const next = pinnedGroups
-      .map(g => g.filter(p => p !== id))
-      .filter(g => g.length > 0)
-    next.splice(Math.max(0, Math.min(insertAt, next.length)), 0, [id])
-    setPinnedPanels(next)
-  }
-  // reorderGroup replaces ONE group's id list with a new order — used
-  // by intra-strip drag-reorder inside a PinnedMiniStrip.
-  const reorderGroup = (groupIndex: number, newIds: SidebarTabId[]) => {
-    if (groupIndex < 0 || groupIndex >= pinnedGroups.length) return
-    if (newIds.length === 0) return
-    const next = pinnedGroups.map((g, i) => i === groupIndex ? newIds : g)
-    setPinnedPanels(next)
-  }
+  // Unpinned tab order — same merger as the old TabSwitcher used. The
+  // ActivityBar (Ribbon) handles the icon row; this component just
+  // renders the body of whichever unpinned panel is active.
+  const unpinnedIds = useMemo<SidebarTabId[]>(
+    () => resolveTabOrder(tabOrderSaved, pinnedFlat).filter(id => !hiddenSet.has(id)),
+    [tabOrderSaved, pinnedFlat, hiddenSet],
+  )
+  // If the active tab is currently pinned (so its body lives inside a
+  // pinned group above), fall back to the first unpinned id so the
+  // bottom area isn't blank.
+  const effectiveTabId: SidebarTabId | null = pinnedFlat.includes(activeSidebarTabId)
+    ? (unpinnedIds[0] ?? null)
+    : activeSidebarTabId
 
   // Track whether a sidebar drag is in flight. Used to inflate the
-  // drop zones (main pin-zone + inter-group zones) so the user can
-  // hit them more easily. Window-level dragstart / dragend listener
-  // so we react regardless of which child started the drag.
+  // inter-group drop zones so the user can hit them more easily. Window-
+  // level dragstart / dragend listener so we react regardless of which
+  // child started the drag.
   //
   // Defensive: HTML5 dnd can drop dragend if the user releases the
   // drag outside the browser (window blur, alt-tab, devtools focus,
   // etc.). When that happens the dragActive flag gets stuck true and
-  // the "↑ PIN TO TOP" bar sticks around forever. We layer extra
-  // clears on `mouseup` and `blur` so any mouse release / window
-  // de-focus also resets it.
+  // the drop bars stick around. We layer extra clears on `mouseup`
+  // and `blur` so any mouse release / window de-focus also resets it.
   const [dragActive, setDragActive] = useState(false)
 
-  // Right-click context-menu state for sidebar tab icons. The menu
-  // replaces the old "right-click = instant pin/unpin" behaviour
-  // (Telegram feedback 2026-05-22). Both TabSwitcher (bottom strip)
-  // and PinnedMiniStrip (top strips) route through this single
-  // instance so we get consistent positioning + outside-click semantics.
+  // Right-click context-menu state for pinned-strip tab icons. The
+  // ActivityBar handles its own icon clicks directly (drag-to-pin /
+  // drag-to-unpin); only the in-group PinnedMiniStrip routes through
+  // here for per-tab Unpin / Hide.
   const [tabMenu, setTabMenu] = useState<{
     id: SidebarTabId
     x: number
@@ -181,8 +139,8 @@ export const SidebarStack = ({ onRightClick }: Props) => {
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       {/* Scrollable pinned area — lets the user stack arbitrarily
-          many groups without crowding out the main tab strip below.
-          max-h-[60%] caps it so the bottom switcher stays reachable;
+          many groups without crowding out the active panel below.
+          max-h-[60%] caps it so the lower area stays reachable;
           internal scroll handles the rest. */}
       {pinnedGroups.length > 0 && (
         <div className="flex-shrink min-h-0 overflow-y-auto" style={{ maxHeight: '60%' }}>
@@ -192,13 +150,13 @@ export const SidebarStack = ({ onRightClick }: Props) => {
                   it's tall + visibly highlighted; otherwise zero-height. */}
               <InterGroupDropZone
                 active={dragActive}
-                onDropId={(id) => pinAsNewGroupAt(id, groupIndex)}
+                onDropId={(id) => pinAsNewGroupAt(pinnedGroups, id, groupIndex)}
               />
               <PinnedGroup
                 group={group}
-                onUnpin={unpinPanel}
-                onAddToThisGroup={(otherId) => pinIntoGroup(otherId, groupIndex)}
-                onReorder={(newIds) => reorderGroup(groupIndex, newIds)}
+                onUnpin={(id) => unpinPanel(pinnedGroups, id)}
+                onAddToThisGroup={(otherId) => pinIntoGroup(pinnedGroups, otherId, groupIndex)}
+                onReorder={(newIds) => reorderGroup(pinnedGroups, groupIndex, newIds)}
                 onRightClick={onRightClick}
                 onTabContextMenu={(id, e) => openTabMenu(id, e, 'pinned')}
               />
@@ -207,37 +165,43 @@ export const SidebarStack = ({ onRightClick }: Props) => {
           {/* Trailing zone — insert a new group at the end. */}
           <InterGroupDropZone
             active={dragActive}
-            onDropId={(id) => pinAsNewGroupAt(id, pinnedGroups.length)}
+            onDropId={(id) => pinAsNewGroupAt(pinnedGroups, id, pinnedGroups.length)}
           />
         </div>
       )}
       {/* When there are no pinned groups yet, render a single drop
-          zone ABOVE the bottom switcher so the user can pin via
-          drag-up from the empty state (otherwise the only way in
-          is the right-click → Pin menu). Inactive height collapses
-          to zero, so we don't introduce extra padding when no drag
+          zone ABOVE the unpinned panel body so users can pin via a
+          drag-up from the ActivityBar's unpinned icons. Inactive
+          height collapses to zero, so no extra padding when no drag
           is in flight. */}
       {pinnedGroups.length === 0 && (
         <InterGroupDropZone
           active={dragActive}
-          onDropId={(id) => pinAsNewGroupAt(id, 0)}
+          onDropId={(id) => pinAsNewGroupAt(pinnedGroups, id, 0)}
         />
       )}
-      <TabSwitcher
-        pinnedIds={pinnedFlat}
-        tabOrderSaved={tabOrderSaved}
-        hiddenIds={hiddenSet}
-        onRightClick={onRightClick}
-        onTabContextMenu={(id, e) => openTabMenu(id, e, 'bottom')}
-        onUnpinPanel={unpinPanel}
-      />
+      {/* Active unpinned panel body. The icon strip lives in the
+          ActivityBar now (formerly Ribbon); this is just the content
+          surface. border-t keeps the visual separation from any
+          pinned group above. */}
+      {effectiveTabId && (
+        <div
+          className="flex-1 min-h-0 flex flex-col border-t border-obsidianBorder"
+          data-testid="sidebar-active-panel"
+          data-panel-id={effectiveTabId}
+        >
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <PanelBody id={effectiveTabId} onRightClick={onRightClick} />
+          </div>
+        </div>
+      )}
       {tabMenu && (
         <TabContextMenu
           x={tabMenu.x}
           y={tabMenu.y}
           location={tabMenu.location}
-          onPin={() => { pinAsNewGroup(tabMenu.id); closeTabMenu() }}
-          onUnpin={() => { unpinPanel(tabMenu.id); closeTabMenu() }}
+          onPin={() => { pinAsNewGroup(pinnedGroups, tabMenu.id); closeTabMenu() }}
+          onUnpin={() => { unpinPanel(pinnedGroups, tabMenu.id); closeTabMenu() }}
           onHide={() => { hideSidebarTab(tabMenu.id); closeTabMenu() }}
           onClose={closeTabMenu}
         />
