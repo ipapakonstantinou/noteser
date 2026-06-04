@@ -248,7 +248,9 @@ const livePreviewTheme = EditorView.baseTheme({
   },
   '.cm-lp-strike': { textDecoration: 'line-through', opacity: '0.7' },
   '.cm-lp-blockquote': {
-    borderLeft: '3px solid hsl(217, 88%, 50%)',
+    // Left bar removed per user feedback (2026-06-04, option 2γ).
+    // Italic + dim colour still differentiates quoted content; the
+    // 3px blue accent read as visual noise.
     paddingLeft: '12px',
     fontStyle: 'italic',
     color: '#a8a8a8',

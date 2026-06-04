@@ -12,6 +12,7 @@
 // and so the activity-bar 4-case click logic has one canonical home.
 
 import { useSettingsStore, useUIStore, type SidebarTabId, type SidebarGroupState, newSidebarGroupId } from '@/stores'
+import { applyAddTabToGroup, applyRemoveTabFromGroup, applyCreateGroupAt } from '@/stores/settingsStore'
 
 // Find which group (if any) currently contains `tabId`. Returns the
 // group object or null. Pure — does not touch the store.
@@ -124,6 +125,88 @@ export function moveTabToNewGroup(tabId: SidebarTabId): void {
   const sourceIdx = owner ? groups.findIndex(g => g.id === owner.id) : -1
   const insertAt = sourceIdx >= 0 ? sourceIdx + 1 : groups.length
   useSettingsStore.getState().createGroupAt(insertAt, tabId)
+}
+
+// Cross-sidebar move (2026-06-04). Yanks `tabId` out of whichever
+// side currently owns it (left `sidebarGroups` or right
+// `rightSidebarGroups`) and drops it onto the other side. The drop
+// destination is one of:
+//
+//   • `targetGroupId` non-null → add to that existing group on the
+//     `targetSide`. Uses applyAddTabToGroup so the activeTab flips
+//     to the moved tab automatically.
+//   • `targetGroupId` null + `insertAt` provided → spawn a brand-new
+//     group on the target side at that index. Uses applyCreateGroupAt
+//     which already de-dupes the same tab out of every other group on
+//     the target side.
+//
+// Both store writes happen in one set() pass — the helper reads the
+// current state, computes the next snapshot for each side, then commits
+// both in a single setState. Atomic from the React/Zustand perspective:
+// subscribers see either both writes or neither.
+//
+// No-op when the tab isn't on the OTHER side (use moveTabToGroup /
+// createGroupWithTab / the right-side equivalents for same-side moves).
+export function moveTabAcrossSidebars(
+  tabId: string,
+  targetSide: 'left' | 'right',
+  targetGroupId: string | null,
+  insertAt?: number,
+): void {
+  const state = useSettingsStore.getState()
+  const sourceSide = targetSide === 'left' ? 'right' : 'left'
+  const sourceGroups = sourceSide === 'left' ? state.sidebarGroups : state.rightSidebarGroups
+  const owner = sourceGroups.find(g => g.tabs.includes(tabId))
+  if (!owner) return // not on the other side — nothing to move
+
+  // Remove from source side first.
+  const nextSourceGroups = applyRemoveTabFromGroup(sourceGroups, owner.id, tabId)
+
+  // Add to target side.
+  const targetGroups = targetSide === 'left' ? state.sidebarGroups : state.rightSidebarGroups
+  let nextTargetGroups: SidebarGroupState[]
+  if (targetGroupId != null) {
+    // Drop into an existing target group. The target side may not have
+    // had this tab before, so applyAddTabToGroup handles the append +
+    // makes it active.
+    nextTargetGroups = applyAddTabToGroup(targetGroups, targetGroupId, tabId)
+  } else {
+    const idx = typeof insertAt === 'number' ? insertAt : targetGroups.length
+    nextTargetGroups = applyCreateGroupAt(targetGroups, idx, tabId)
+  }
+
+  // Commit both sides in a single setState so subscribers see the
+  // post-move world in one render pass.
+  if (targetSide === 'left') {
+    useSettingsStore.setState({
+      sidebarGroups: nextTargetGroups,
+      rightSidebarGroups: nextSourceGroups,
+    })
+    useUIStore.getState().setLastFocusedGroupId(
+      targetGroupId ?? (nextTargetGroups.find(g => g.tabs.includes(tabId))?.id ?? null),
+    )
+  } else {
+    useSettingsStore.setState({
+      sidebarGroups: nextSourceGroups,
+      rightSidebarGroups: nextTargetGroups,
+    })
+    useUIStore.getState().setLastFocusedRightGroupId(
+      targetGroupId ?? (nextTargetGroups.find(g => g.tabs.includes(tabId))?.id ?? null),
+    )
+  }
+}
+
+// Helper used by drop handlers: is `tabId` currently in any group on
+// the OTHER side? Pure — does not touch the store. The caller decides
+// the source by passing in the right-side groups array.
+export function findRightGroupWithTabFromLeft(
+  rightGroups: SidebarGroupState[],
+  tabId: string,
+): SidebarGroupState | null {
+  for (const g of rightGroups) {
+    if (g.tabs.includes(tabId)) return g
+  }
+  return null
 }
 
 // Re-export the id factory + state type so call sites can build groups

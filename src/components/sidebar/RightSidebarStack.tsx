@@ -16,6 +16,7 @@ import {
   closeTabInRightGroup,
   moveTabToNewRightGroup,
 } from './rightSidebarGroupActions'
+import { moveTabAcrossSidebars } from './sidebarGroupActions'
 
 // Right-side stack — mirror of `SidebarStack`. Renders the right
 // sidebar's stacked groups plus inter-group drop zones (drag a panel
@@ -39,7 +40,10 @@ export const RightSidebarStack = () => {
       if (!g || !Array.isArray(g.tabs)) continue
       const cleanedTabs: RightSidebarTabId[] = []
       for (const id of g.tabs) {
-        if (RIGHT_KNOWN_IDS.has(id as RightSidebarTabId) && !seen.has(id)) {
+        // RIGHT_KNOWN_IDS now spans every left + right panel id so a
+        // cross-sidebar drag from the left activity bar (e.g. Plugins)
+        // lands cleanly on the right without being filtered out here.
+        if (RIGHT_KNOWN_IDS.has(id) && !seen.has(id)) {
           seen.add(id)
           cleanedTabs.push(id as RightSidebarTabId)
         }
@@ -144,7 +148,17 @@ export const RightSidebarStack = () => {
           <div key={g.id} ref={setGroupRef(g.id)} className={wrapperClass}>
             <RightInterGroupDropZone
               active={dragActive}
-              onDropId={(id) => createRightGroupWithTab(idx, id)}
+              onDropId={(id) => {
+                // Cross-sidebar: id may currently live in a left-side
+                // group. Route through moveTabAcrossSidebars so the
+                // left group loses the tab atomically.
+                const left = useSettingsStore.getState().sidebarGroups
+                if (left.some(g => g.tabs.includes(id))) {
+                  moveTabAcrossSidebars(id, 'right', null, idx)
+                } else {
+                  createRightGroupWithTab(idx, id)
+                }
+              }}
             />
             <RightSidebarGroup
               group={g}
@@ -184,7 +198,14 @@ export const RightSidebarStack = () => {
       {groups.length > 0 && (
         <RightInterGroupDropZone
           active={dragActive}
-          onDropId={(id) => createRightGroupWithTab(groups.length, id)}
+          onDropId={(id) => {
+            const left = useSettingsStore.getState().sidebarGroups
+            if (left.some(g => g.tabs.includes(id))) {
+              moveTabAcrossSidebars(id, 'right', null, groups.length)
+            } else {
+              createRightGroupWithTab(groups.length, id)
+            }
+          }}
         />
       )}
       {tabMenu && (
@@ -193,6 +214,16 @@ export const RightSidebarStack = () => {
           y={tabMenu.y}
           onClose={() => { closeTabInRightGroup(tabMenu.groupId, tabMenu.id); closeTabMenu() }}
           onMoveToNewGroup={() => { moveTabToNewRightGroup(tabMenu.id); closeTabMenu() }}
+          onMoveToOtherSidebar={() => {
+            // Right → left: moveTabAcrossSidebars removes from the
+            // right groups + creates a singleton left group in one
+            // setState pass. lastFocusedGroupId is updated to the
+            // new left group so the next activity-bar click lands
+            // there.
+            moveTabAcrossSidebars(tabMenu.id, 'left', null)
+            closeTabMenu()
+          }}
+          moveToOtherSidebarLabel="Move to left sidebar"
           // Right side has no hidden-tabs list yet — hide is wired
           // to a no-op + close so the menu still works without
           // surprising the user with a hidden panel they can't find.

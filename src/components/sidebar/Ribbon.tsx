@@ -115,28 +115,34 @@ export const Ribbon = () => {
     ribbonOrder,
     setRibbonOrder,
     sidebarGroups,
+    rightSidebarGroups,
     hiddenSidebarTabs,
     hideSidebarTab,
   } = useSettingsStore(useShallow(s => ({
     ribbonOrder: s.ribbonOrder,
     setRibbonOrder: s.setRibbonOrder,
     sidebarGroups: s.sidebarGroups,
+    rightSidebarGroups: s.rightSidebarGroups,
     hiddenSidebarTabs: s.hiddenSidebarTabs,
     hideSidebarTab: s.hideSidebarTab,
   })))
 
-  // Set of panel ids currently parked in ANY sidebar group. Per user
-  // feedback (2026-06-04): a panel that is already showing in the
-  // sidebar should NOT also have an icon in the activity bar — the
-  // group's own mini-strip is its switcher. The activity bar becomes
-  // a list of "panels you can OPEN", not "all panels everywhere".
+  // Set of panel ids currently parked in ANY sidebar group on EITHER
+  // side. Per user feedback (2026-06-04): a panel showing somewhere in
+  // the UI should NOT also have an icon in the activity bar — the
+  // group's own mini-strip is its switcher. So a left-side panel that
+  // was dragged to the right (e.g. Plugins) disappears from BOTH bars
+  // until it's evicted via the tab context menu.
   const inAnyGroup = useMemo(() => {
     const set = new Set<string>()
     for (const g of sidebarGroups) {
       for (const t of g.tabs) set.add(t)
     }
+    for (const g of rightSidebarGroups) {
+      for (const t of g.tabs) set.add(t)
+    }
     return set
-  }, [sidebarGroups])
+  }, [sidebarGroups, rightSidebarGroups])
 
   // Hidden set — panels in `hiddenSidebarTabs` are filtered out of the
   // activity bar entirely (Settings → Sidebar can restore them).

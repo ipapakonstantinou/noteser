@@ -31,6 +31,12 @@ export interface CalendarDayContextMenuProps {
   y: number
   hasDailyNote: boolean
   isBookmarked: boolean
+  // Cell mode (2026-06-04). Drives the open / delete / create labels
+  // so a right-click on the new W-column week cell reads naturally
+  // ("Open weekly note" / "Delete weekly note") without forking the
+  // whole menu component. Defaults to 'day' for back-compat with the
+  // existing call site.
+  mode?: 'day' | 'week'
   onOpenDailyNote: () => void
   onOpenInNewPane: () => void
   onCopyWikilink: () => void
@@ -45,6 +51,7 @@ export const CalendarDayContextMenu = ({
   y,
   hasDailyNote,
   isBookmarked,
+  mode = 'day',
   onOpenDailyNote,
   onOpenInNewPane,
   onCopyWikilink,
@@ -53,6 +60,10 @@ export const CalendarDayContextMenu = ({
   onCreateDailyNote,
   onDismiss,
 }: CalendarDayContextMenuProps) => {
+  // Reads more naturally on the W column without forking the menu.
+  // 'note' is the noun ("daily note" vs "weekly note"); we drop in
+  // the appropriate one for the open/delete/create labels.
+  const noun = mode === 'week' ? 'weekly note' : 'daily note'
   const menuRef = useRef<HTMLDivElement>(null)
 
   // Outside-click + Escape dismiss. Item-clicks call their own action
@@ -108,7 +119,7 @@ export const CalendarDayContextMenu = ({
             data-testid="calendar-day-context-open"
           >
             <DocumentTextIcon className="w-4 h-4" />
-            Open daily note
+            Open {noun}
           </button>
           <button
             type="button"
@@ -149,7 +160,7 @@ export const CalendarDayContextMenu = ({
             data-testid="calendar-day-context-delete"
           >
             <TrashIcon className="w-4 h-4" />
-            Delete daily note
+            Delete {noun}
           </button>
         </>
       ) : (
@@ -161,7 +172,7 @@ export const CalendarDayContextMenu = ({
           data-testid="calendar-day-context-create"
         >
           <DocumentPlusIcon className="w-4 h-4" />
-          Create daily note
+          Create {noun}
         </button>
       )}
     </div>
