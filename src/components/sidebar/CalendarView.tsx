@@ -272,11 +272,11 @@ export const CalendarView = () => {
           headers. `[auto_repeat(7,_1fr)]` keeps the W column tight to
           its content while the 7 day columns share the remaining
           width equally — same per-row layout as the day grid below. */}
-      {/* Headers row. The W column gets an explicit 18px width so the
-          7 day columns keep their breathing room. (User feedback
-          2026-06-04: the previous auto-sized W column squeezed the
-          day cells.) */}
-      <div className="grid grid-cols-[18px_repeat(7,_1fr)] mb-1">
+      {/* Headers row. The W column gets an explicit 18px width AND an
+          extra 4px right margin (via gap-x-1) so the day columns get
+          breathing room from the week numbers. User feedback 2026-06-04
+          flagged the previous flush layout as "squeezed". */}
+      <div className="grid grid-cols-[18px_repeat(7,_1fr)] gap-x-1 mb-1">
         <div
           className="text-center text-[9px] text-obsidianSecondaryText/60 py-1"
           aria-label="ISO week number"
@@ -298,7 +298,7 @@ export const CalendarView = () => {
           start with a leading blank still anchor on the row's first
           REAL day (the Monday derived from that day is always the
           row's ISO-week Monday). */}
-      <div className="grid grid-cols-[18px_repeat(7,_1fr)] gap-y-0.5">
+      <div className="grid grid-cols-[18px_repeat(7,_1fr)] gap-x-1 gap-y-0.5">
         {Array.from({ length: Math.ceil(cells.length / 7) }, (_, rowIdx) => {
           const rowStart = rowIdx * 7
           const rowCells = cells.slice(rowStart, rowStart + 7)
