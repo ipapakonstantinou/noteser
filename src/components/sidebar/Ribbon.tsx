@@ -18,44 +18,30 @@ import {
   useNoteStore,
   type SidebarTabId,
 } from '@/stores'
-import { SIDEBAR_PANEL_DRAG_MIME } from './SidebarSection'
-import {
-  PANELS,
-  KNOWN_IDS,
-  TAB_DRAG_MIME,
-  resolveTabOrder,
-} from './sidebarPanelRegistry'
-import {
-  pinAsNewGroup,
-  unpinPanel,
-} from './pinningActions'
+import { TabContextMenu } from './TabContextMenu'
+import { PANELS, TAB_DRAG_MIME } from './sidebarPanelRegistry'
+import { activatePanelFromActivityBar, findGroupWithTab } from './sidebarGroupActions'
 
-// Obsidian-style "Activity Bar" — the single vertical icon column on
-// the far left. From top to bottom it hosts:
+// Obsidian-style Activity Bar — the single vertical icon column on the
+// far left. Leaf model (2026-06-04): NO "pinned vs unpinned" zones.
+// Top to bottom:
 //
-//   1. Collapse-sidebar toggle (replaces the chevron that used to sit
-//      in the Sidebar header).
-//   2. PINNED panel icons — one per pinned group; clicking opens that
-//      panel + the sidebar. Drag DOWN past the separator → unpin.
-//   3. UNPINNED panel icons — every visible panel not currently pinned.
-//      Clicking activates that panel + opens the sidebar. Drag UP past
-//      the separator (or onto a pinned icon) → pin as new group.
-//   4. Quick-launch ACTIONS (new-note, daily-note, command-palette,
-//      templates) — user-reorderable via drag, order persists in
-//      `useSettingsStore.ribbonOrder`. These don't write to the sidebar
-//      tab state; they each fire a discrete action.
-//   5. Settings at the bottom (mt-auto).
+//   1. Collapse-sidebar toggle.
+//   2. PANEL icons — every panel in PANELS order (filtered by
+//      hiddenSidebarTabs). Active state = "this panel is the activeTab
+//      of any group". Click implements the 4-case logic from
+//      activatePanelFromActivityBar (see sidebarGroupActions.ts).
+//   3. Quick-launch ACTIONS (new-note, daily-note, command-palette,
+//      templates, search) — drag-orderable; saved in
+//      useSettingsStore.ribbonOrder.
+//   4. Settings at the bottom (mt-auto).
 //
-// The PRE-2026-06 separate horizontal tab strip inside the sidebar (TabSwitcher
-// icons row) is gone — panel switching now happens here, single-source-of-truth.
-// Pinned groups still render their PinnedMiniStrip above their content
-// for choosing the active tab WITHIN a group. The "ActivityBar" name
-// mirrors VS Code; we keep the export named `Ribbon` so existing tests
-// and callers stay green without a rename pass.
+// Drag/drop: panel icons emit TAB_DRAG_MIME. Drops onto a sidebar
+// group's mini-strip move the tab there; drops onto an inter-group
+// drop zone create a new group at that index. Drops back onto the
+// activity bar do NOTHING (no implicit "remove from sidebar" — that
+// lives on the tab right-click menu).
 
-// Action ids. Adding a new id requires extending this union AND adding
-// an entry to `ITEMS` below. The ordering inside `ITEMS` is the default
-// rendering order when the user has no saved customisation.
 type ItemId =
   | 'new-note'
   | 'daily-note'
@@ -66,14 +52,9 @@ interface ItemDef {
   id: ItemId
   Icon: typeof DocumentPlusIcon
   title: string
-  // Fired on click. Pulls from store getState() inside the action to
-  // avoid prop drilling — the bar doesn't need to re-render when
-  // unrelated store fields change.
   action: () => void
 }
 
-// Source-of-truth list. New ids get appended here; resolveRibbonOrder
-// merges with the user's saved order at render time.
 const ITEMS: readonly ItemDef[] = [
   {
     id: 'new-note',
@@ -89,9 +70,6 @@ const ITEMS: readonly ItemDef[] = [
     Icon: CalendarDaysIcon,
     title: "Open today's daily note",
     action: () => {
-      // Lazy import keeps the bar free of a hard daily-notes
-      // dependency at module load (same pattern useKeyboardShortcuts
-      // uses for the Ctrl+Alt+D shortcut).
       void import('@/utils/dailyNotes').then(({ openTodayNote }) => openTodayNote())
     },
   },
@@ -109,8 +87,6 @@ const ITEMS: readonly ItemDef[] = [
   },
 ]
 
-// Merge the user's saved order with the source order, dropping ids that
-// no longer exist and appending any new ids. Pure function — easy to test.
 export function resolveRibbonOrder(saved: string[]): ItemId[] {
   const known = new Set(ITEMS.map(i => i.id))
   const seen = new Set<string>()
@@ -134,80 +110,88 @@ export const Ribbon = () => {
   const openModal = useUIStore(s => s.openModal)
   const sidebarCollapsed = useUIStore(s => s.sidebarCollapsed)
   const toggleSidebar = useUIStore(s => s.toggleSidebar)
-  const setSidebarTab = useUIStore(s => s.setSidebarTab)
-  const activeSidebarTab = useUIStore(s => s.sidebarTabId)
 
-  // Settings-store slice for the panel layout. useShallow avoids a
-  // re-render on every unrelated settings change.
   const {
     ribbonOrder,
     setRibbonOrder,
-    pinnedPanels,
-    sidebarTabOrder,
+    sidebarGroups,
     hiddenSidebarTabs,
+    hideSidebarTab,
   } = useSettingsStore(useShallow(s => ({
     ribbonOrder: s.ribbonOrder,
     setRibbonOrder: s.setRibbonOrder,
-    pinnedPanels: s.pinnedPanels,
-    sidebarTabOrder: s.sidebarTabOrder,
+    sidebarGroups: s.sidebarGroups,
     hiddenSidebarTabs: s.hiddenSidebarTabs,
+    hideSidebarTab: s.hideSidebarTab,
   })))
 
-  // Same sanitisation SidebarStack does on the raw value — drop unknown
-  // ids, drop empties, de-dup, drop hidden. Keeps the activity bar in
-  // sync with what the sidebar renders.
-  const hiddenSet = useMemo(() => new Set(hiddenSidebarTabs), [hiddenSidebarTabs])
-  const pinnedGroups = useMemo<SidebarTabId[][]>(() => {
-    const seen = new Set<string>()
-    const out: SidebarTabId[][] = []
-    for (const group of pinnedPanels) {
-      if (!Array.isArray(group)) continue
-      const cleaned: SidebarTabId[] = []
-      for (const id of group) {
-        if (KNOWN_IDS.has(id as SidebarTabId) && !seen.has(id) && !hiddenSet.has(id)) {
-          seen.add(id)
-          cleaned.push(id as SidebarTabId)
-        }
-      }
-      if (cleaned.length > 0) out.push(cleaned)
+  // Active-state map: which panel ids are currently the activeTab of
+  // some group? The Ribbon icon for those ids gets the highlighted
+  // (`active`) treatment.
+  const activePanelIds = useMemo(() => {
+    const set = new Set<string>()
+    for (const g of sidebarGroups) {
+      if (g.activeTab) set.add(g.activeTab)
     }
-    return out
-  }, [pinnedPanels, hiddenSet])
-  const pinnedFlat = useMemo(() => pinnedGroups.flat(), [pinnedGroups])
+    return set
+  }, [sidebarGroups])
 
-  // One icon per pinned group — using the group's first id as the
-  // visual. Clicking the icon focuses that panel + opens the sidebar.
-  const pinnedIconIds = useMemo<SidebarTabId[]>(
-    () => pinnedGroups.map(g => g[0]),
-    [pinnedGroups],
-  )
-  const unpinnedIds = useMemo<SidebarTabId[]>(
-    () => resolveTabOrder(sidebarTabOrder, pinnedFlat).filter(id => !hiddenSet.has(id)),
-    [sidebarTabOrder, pinnedFlat, hiddenSet],
+  // Hidden set — panels in `hiddenSidebarTabs` are filtered out of the
+  // activity bar entirely (Settings → Sidebar can restore them).
+  const hiddenSet = useMemo(() => new Set(hiddenSidebarTabs), [hiddenSidebarTabs])
+  const visiblePanels = useMemo(
+    () => PANELS.filter(p => !hiddenSet.has(p.id)),
+    [hiddenSet],
   )
 
   const orderedIds = useMemo(() => resolveRibbonOrder(ribbonOrder), [ribbonOrder])
   const itemsById = useMemo(() => new Map(ITEMS.map(i => [i.id, i])), [])
-  const panelsById = useMemo(() => new Map(PANELS.map(p => [p.id, p])), [])
 
-  // Open `id` as the active panel + uncollapse sidebar if collapsed.
-  // Pinned icons that already correspond to a pinned group activate by
-  // simply setting the sidebar tab; the PinnedGroup component reads its
-  // own activeTab so this is mostly a "make sure the sidebar is open"
-  // affordance for pinned icons.
-  const activatePanel = (id: SidebarTabId) => {
-    setSidebarTab(id)
-    if (sidebarCollapsed) toggleSidebar()
+  const onPanelClick = (id: SidebarTabId) => {
+    activatePanelFromActivityBar(id)
   }
 
-  // ── Ribbon-action drag (unchanged behaviour) ─────────────────────────
+  // Drag handler: emit TAB_DRAG_MIME so sidebar drop zones accept the
+  // payload. The receiver's drop handler (e.g. SidebarGroup's strip,
+  // InterGroupDropZone) decides whether to move or spawn a group.
+  const onPanelDragStart = (id: SidebarTabId) => (e: React.DragEvent) => {
+    // Primary-button guard — keeps right-click from ghost-dragging
+    // (Firefox + Chromium-Linux quirk reproduced via dragGuards.test).
+    if (e.nativeEvent && e.nativeEvent.button !== 0) return
+    e.dataTransfer.setData(TAB_DRAG_MIME, id)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  // Right-click on a panel icon → mini context menu. The "Close"
+  // option here removes the panel from whichever group it's in; if
+  // it isn't in any group yet, the menu shows a single "Hide" entry.
+  const [panelMenu, setPanelMenu] = useState<{ id: SidebarTabId; x: number; y: number } | null>(null)
+  const openPanelMenu = (id: SidebarTabId, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setPanelMenu({ id, x: e.clientX, y: e.clientY })
+  }
+  const closePanelMenu = () => setPanelMenu(null)
+  const handleMenuClose = () => {
+    if (!panelMenu) return
+    const owner = findGroupWithTab(useSettingsStore.getState().sidebarGroups, panelMenu.id)
+    if (owner) {
+      useSettingsStore.getState().removeTabFromGroup(owner.id, panelMenu.id)
+    }
+    closePanelMenu()
+  }
+  const handleMenuHide = () => {
+    if (!panelMenu) return
+    hideSidebarTab(panelMenu.id)
+    closePanelMenu()
+  }
+
+  // ── Ribbon-action drag (unchanged) ─────────────────────────────────
   const [draggingId, setDraggingId] = useState<ItemId | null>(null)
   const [dropTargetId, setDropTargetId] = useState<ItemId | null>(null)
   const dropPos = useRef<'before' | 'after'>('before')
 
   const handleDragStart = (id: ItemId) => (e: React.DragEvent) => {
-    // Primary-button guard — keeps right-click from ghost-dragging
-    // ribbon icons (Firefox + Chromium-Linux quirk).
     if (e.nativeEvent && e.nativeEvent.button !== 0) return
     e.dataTransfer.setData(RIBBON_DRAG_MIME, id)
     e.dataTransfer.effectAllowed = 'move'
@@ -242,72 +226,9 @@ export const Ribbon = () => {
     setDraggingId(null); setDropTargetId(null)
   }
 
-  // ── Panel-icon drag (pin / unpin) ────────────────────────────────────
-  // Pinned icons emit SIDEBAR_PANEL_DRAG_MIME (same as the mini-strip)
-  // so PinnedMiniStrip + InterGroupDropZone can still receive them.
-  // Unpinned icons emit TAB_DRAG_MIME (same as the old TabSwitcher
-  // icons), so the same drop targets accept them.
-  const onPinnedDragStart = (id: SidebarTabId) => (e: React.DragEvent) => {
-    if (e.nativeEvent && e.nativeEvent.button !== 0) return
-    e.dataTransfer.setData(SIDEBAR_PANEL_DRAG_MIME, id)
-    e.dataTransfer.effectAllowed = 'move'
-  }
-  const onUnpinnedDragStart = (id: SidebarTabId) => (e: React.DragEvent) => {
-    if (e.nativeEvent && e.nativeEvent.button !== 0) return
-    e.dataTransfer.setData(TAB_DRAG_MIME, id)
-    e.dataTransfer.effectAllowed = 'move'
-  }
-
-  // Drop zones inside the bar:
-  //   * The pinned-section accepts drops of TAB_DRAG_MIME (unpinned →
-  //     pinned). Drops of SIDEBAR_PANEL_DRAG_MIME are passthrough (the
-  //     panel is already pinned).
-  //   * The unpinned-section accepts drops of SIDEBAR_PANEL_DRAG_MIME
-  //     (pinned → unpinned). Drops of TAB_DRAG_MIME are passthrough.
-  const [pinDropHot, setPinDropHot] = useState(false)
-  const [unpinDropHot, setUnpinDropHot] = useState(false)
-
-  const onPinSectionDragOver = (e: React.DragEvent) => {
-    const t = e.dataTransfer.types
-    if (!t.includes(TAB_DRAG_MIME) && !t.includes(SIDEBAR_PANEL_DRAG_MIME)) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    if (t.includes(TAB_DRAG_MIME)) setPinDropHot(true)
-  }
-  const onPinSectionDragLeave = () => setPinDropHot(false)
-  const onPinSectionDrop = (e: React.DragEvent) => {
-    setPinDropHot(false)
-    const dropped = (e.dataTransfer.getData(TAB_DRAG_MIME) || '') as SidebarTabId
-    if (!dropped) return
-    e.preventDefault()
-    pinAsNewGroup(pinnedGroups, dropped)
-  }
-
-  const onUnpinSectionDragOver = (e: React.DragEvent) => {
-    const t = e.dataTransfer.types
-    if (!t.includes(SIDEBAR_PANEL_DRAG_MIME) && !t.includes(TAB_DRAG_MIME)) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    if (t.includes(SIDEBAR_PANEL_DRAG_MIME)) setUnpinDropHot(true)
-  }
-  const onUnpinSectionDragLeave = () => setUnpinDropHot(false)
-  const onUnpinSectionDrop = (e: React.DragEvent) => {
-    setUnpinDropHot(false)
-    const dropped = (e.dataTransfer.getData(SIDEBAR_PANEL_DRAG_MIME) || '') as SidebarTabId
-    if (!dropped) return
-    e.preventDefault()
-    unpinPanel(pinnedGroups, dropped)
-  }
-
   return (
     <div className="h-full w-[44px] max-md:w-12 flex flex-col items-center gap-1 py-2 bg-obsidianBlack border-r border-obsidianBorder">
-      {/* Collapse-sidebar toggle. Moved from the Sidebar header so the
-          activity bar owns the chrome that survives a collapsed
-          sidebar. Visible on every viewport — on mobile the same flag
-          drives the drawer-open state, so the icon doubles as
-          open/close. A small bottom-margin gives the pinned/unpinned
-          section a hair of breathing room (Obsidian uses spacing, not
-          divider lines, to group these). */}
+      {/* Collapse-sidebar toggle. */}
       <div className="mb-1.5">
         <RibbonButton
           onClick={toggleSidebar}
@@ -320,79 +241,28 @@ export const Ribbon = () => {
         </RibbonButton>
       </div>
 
-      {/* Pinned panel icons. Single icon per group. Right-click pops
-          a tiny native-style context menu via the existing approach
-          would require lifting state up — instead we keep this minimal
-          and let the in-sidebar PinnedMiniStrip own per-tab right-click
-          (it already does). Dragging this icon DOWN onto the unpinned
-          drop zone unpins it. */}
+      {/* Panel icons — single unified section (leaf model has no
+          pinned/unpinned distinction). One icon per visible panel in
+          PANELS order; click adds to last-focused group (or focuses
+          existing). */}
       <div
-        className={`flex flex-col items-center gap-1 w-full ${
-          pinnedIconIds.length === 0 ? 'min-h-0' : ''
-        } ${pinDropHot ? 'bg-obsidianAccentPurple/15' : ''}`}
-        onDragOver={onPinSectionDragOver}
-        onDragLeave={onPinSectionDragLeave}
-        onDrop={onPinSectionDrop}
-        data-testid="activity-bar-pinned-section"
+        className="flex flex-col items-center gap-1 w-full"
+        data-testid="activity-bar-panels"
       >
-        {pinnedIconIds.map(id => {
-          const def = panelsById.get(id)
-          if (!def) return null
+        {visiblePanels.map(def => {
           const Icon = def.Icon
-          const active = activeSidebarTab === id
+          const active = activePanelIds.has(def.id)
           return (
             <div
-              key={`pinned-${id}`}
+              key={`panel-${def.id}`}
               draggable
-              onDragStart={onPinnedDragStart(id)}
-              data-testid={`activity-bar-pinned-${id}`}
+              onDragStart={onPanelDragStart(def.id)}
+              data-testid={`activity-bar-panel-${def.id}`}
             >
               <RibbonButton
-                onClick={() => activatePanel(id)}
-                title={`${def.title} (pinned) — drag down to unpin`}
-                active={active}
-              >
-                <Icon className="w-5 h-5" />
-              </RibbonButton>
-            </div>
-          )
-        })}
-        {pinnedIconIds.length === 0 && pinDropHot && (
-          // Tiny visual breadcrumb during a drag-to-pin into the
-          // empty pinned section so the user has a target.
-          <div className="text-[10px] text-obsidianAccentPurple/80 px-1 text-center" data-testid="activity-bar-pin-hint">
-            Pin
-          </div>
-        )}
-      </div>
-
-      {/* Unpinned panel icons. Drag UP onto the pinned drop zone to
-          pin (the unpinned icon emits TAB_DRAG_MIME which the pin
-          section accepts). */}
-      <div
-        className={`flex flex-col items-center gap-1 w-full ${
-          unpinDropHot ? 'bg-obsidianAccentPurple/15' : ''
-        }`}
-        onDragOver={onUnpinSectionDragOver}
-        onDragLeave={onUnpinSectionDragLeave}
-        onDrop={onUnpinSectionDrop}
-        data-testid="activity-bar-unpinned-section"
-      >
-        {unpinnedIds.map(id => {
-          const def = panelsById.get(id)
-          if (!def) return null
-          const Icon = def.Icon
-          const active = activeSidebarTab === id
-          return (
-            <div
-              key={`unpinned-${id}`}
-              draggable
-              onDragStart={onUnpinnedDragStart(id)}
-              data-testid={`activity-bar-unpinned-${id}`}
-            >
-              <RibbonButton
-                onClick={() => activatePanel(id)}
-                title={`${def.title} — drag up to pin`}
+                onClick={() => onPanelClick(def.id)}
+                onContextMenu={(e) => openPanelMenu(def.id, e)}
+                title={`${def.title} — drag to a sidebar group, right-click for options`}
                 active={active}
               >
                 <Icon className="w-5 h-5" />
@@ -402,43 +272,41 @@ export const Ribbon = () => {
         })}
       </div>
 
-      {/* Quick-launch ACTIONS — search + new-note + daily-note + ...
-          A small top-margin separates these from the panel-switcher
-          section above (spacing, not a divider line, per Obsidian). */}
+      {/* Quick-launch ACTIONS. */}
       <div className="mt-2 w-full flex flex-col items-center gap-1">
-      <RibbonButton onClick={openSearch} title="Search (Ctrl+K)">
-        <MagnifyingGlassIcon className="w-5 h-5" />
-      </RibbonButton>
+        <RibbonButton onClick={openSearch} title="Search (Ctrl+K)">
+          <MagnifyingGlassIcon className="w-5 h-5" />
+        </RibbonButton>
 
-      {orderedIds.map(id => {
-        const item = itemsById.get(id)
-        if (!item) return null
-        const Icon = item.Icon
-        const dragging = draggingId === id
-        const isDropTarget = dropTargetId === id
-        return (
-          <div
-            key={id}
-            data-testid={`ribbon-item-${id}`}
-            draggable
-            onDragStart={handleDragStart(id)}
-            onDragOver={handleDragOver(id)}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop(id)}
-            onDragEnd={handleDragEnd}
-            className={[
-              'relative',
-              dragging ? 'opacity-40' : '',
-              isDropTarget && dropPos.current === 'before' ? 'border-t-2 border-obsidianAccentPurple -mt-[2px]' : '',
-              isDropTarget && dropPos.current === 'after'  ? 'border-b-2 border-obsidianAccentPurple -mb-[2px]' : '',
-            ].join(' ')}
-          >
-            <RibbonButton onClick={item.action} title={item.title}>
-              <Icon className="w-5 h-5" />
-            </RibbonButton>
-          </div>
-        )
-      })}
+        {orderedIds.map(id => {
+          const item = itemsById.get(id)
+          if (!item) return null
+          const Icon = item.Icon
+          const dragging = draggingId === id
+          const isDropTarget = dropTargetId === id
+          return (
+            <div
+              key={id}
+              data-testid={`ribbon-item-${id}`}
+              draggable
+              onDragStart={handleDragStart(id)}
+              onDragOver={handleDragOver(id)}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop(id)}
+              onDragEnd={handleDragEnd}
+              className={[
+                'relative',
+                dragging ? 'opacity-40' : '',
+                isDropTarget && dropPos.current === 'before' ? 'border-t-2 border-obsidianAccentPurple -mt-[2px]' : '',
+                isDropTarget && dropPos.current === 'after'  ? 'border-b-2 border-obsidianAccentPurple -mb-[2px]' : '',
+              ].join(' ')}
+            >
+              <RibbonButton onClick={item.action} title={item.title}>
+                <Icon className="w-5 h-5" />
+              </RibbonButton>
+            </div>
+          )
+        })}
       </div>
 
       <div className="mt-auto">
@@ -446,14 +314,34 @@ export const Ribbon = () => {
           <Cog6ToothIcon className="w-5 h-5" />
         </RibbonButton>
       </div>
+
+      {panelMenu && (
+        <TabContextMenu
+          x={panelMenu.x}
+          y={panelMenu.y}
+          onClose={handleMenuClose}
+          onMoveToNewGroup={() => {
+            if (!panelMenu) return
+            // From the activity bar, "move to new group" creates a
+            // fresh group at the BOTTOM of the stack (no source
+            // position to anchor on). The action helper already
+            // handles the move-from-existing-group case.
+            void import('./sidebarGroupActions').then(m => m.moveTabToNewGroup(panelMenu.id))
+            closePanelMenu()
+          }}
+          onHide={handleMenuHide}
+          onDismiss={closePanelMenu}
+        />
+      )}
     </div>
   )
 }
 
 const RibbonButton = ({
-  onClick, title, children, active, testId,
+  onClick, onContextMenu, title, children, active, testId,
 }: {
   onClick: () => void
+  onContextMenu?: (e: React.MouseEvent) => void
   title: string
   children: React.ReactNode
   active?: boolean
@@ -461,6 +349,7 @@ const RibbonButton = ({
 }) => (
   <button
     onClick={onClick}
+    onContextMenu={onContextMenu}
     title={title}
     data-testid={testId}
     aria-pressed={active}

@@ -40,7 +40,8 @@ type TestHooks = {
       }>) => { id: string }
     } }
     workspaceStore: { getState(): { openNote: (id: string, opt: { preview: boolean }) => void } }
-    uiStore: { getState(): { setSidebarTab: (id: string) => void } }
+    uiStore: { getState(): { setLastFocusedGroupId: (id: string | null) => void } }
+    settingsStore: { getState(): { setSidebarGroups: (groups: Array<{ id: string; tabs: string[]; activeTab: string | null; collapsed: boolean }>) => void } }
     githubStore: { getState(): {
       setSyncRepo: (r: { owner: string; name: string; branch: string; isPrivate: boolean }) => void
       setSession: (token: string, user: { id: number; login: string; name: string | null; avatar_url: string }) => void
@@ -141,7 +142,9 @@ test('source-control panel groups changes by folder', async ({ page }) => {
     ns.addNote({ title: 'D20', content: 'daily 20', gitPath: 'Notes/Daily/2026-05-20.md', updatedAt: Date.now() })
     ns.addNote({ title: 'README', content: 'readme', gitPath: 'README.md', updatedAt: Date.now() })
     // Switch the sidebar to the source-control tab.
-    hooks.stores.uiStore.getState().setSidebarTab('source-control')
+    hooks.stores.settingsStore.getState().setSidebarGroups([
+      { id: 'scm-g', tabs: ['source-control'], activeTab: 'source-control', collapsed: false },
+    ])
   })
 
   await expect(page.getByTestId('source-control-panel')).toBeVisible({ timeout: 5000 })
@@ -180,7 +183,9 @@ test('source-control panel shows "clean" when no pending changes', async ({ page
     // Record a recent sync so any future-added notes would be "pending"
     // but since we haven't added any, total should be 0.
     hooks.stores.githubStore.getState().recordSync('sha-abc')
-    hooks.stores.uiStore.getState().setSidebarTab('source-control')
+    hooks.stores.settingsStore.getState().setSidebarGroups([
+      { id: 'scm-g', tabs: ['source-control'], activeTab: 'source-control', collapsed: false },
+    ])
   })
 
   await expect(page.getByTestId('source-control-panel')).toBeVisible({ timeout: 5000 })

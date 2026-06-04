@@ -75,31 +75,8 @@ export type PanelRightClick = (
   id: string,
 ) => void
 
-// Pure: merge the saved tab order with the source order, filtering
-// out anything in `pinned` so the main bottom strip doesn't
-// duplicate the per-pinned mini-strips above. Each pinned panel
-// gets its OWN tab strip at the top of the sidebar (Obsidian pane
-// model), so seeing the same icon down here too would be noise.
-// Exported for the unit test.
-export function resolveTabOrder(saved: string[], pinned: string[] = []): SidebarTabId[] {
-  const pinnedSet = new Set(pinned)
-  const seen = new Set<string>()
-  const out: SidebarTabId[] = []
-  for (const id of saved) {
-    if (KNOWN_IDS.has(id as SidebarTabId) && !seen.has(id) && !pinnedSet.has(id)) {
-      seen.add(id)
-      out.push(id as SidebarTabId)
-    }
-  }
-  for (const p of PANELS) {
-    if (pinnedSet.has(p.id)) continue
-    if (!seen.has(p.id)) out.push(p.id)
-  }
-  return out
-}
-
-// Render the panel body for a given id — used by both zones so the
-// pinned section and the tab strip's active content stay in sync.
+// Render the panel body for a given id — used by every group's
+// active-tab content area.
 export const PanelBody = ({
   id, onRightClick,
 }: { id: SidebarTabId; onRightClick: PanelRightClick }) => {

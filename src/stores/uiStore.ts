@@ -3,21 +3,20 @@ import { persist } from 'zustand/middleware'
 import type { ContextMenuState, ModalState } from '@/types'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
 
-// Sidebar layout (s4r3 v2 — Obsidian model):
+// Sidebar layout (leaf model, 2026-06-04):
 //
 //   ┌──────────────────┐
-//   │ Calendar (pinned)│ ← resizable, can collapse
+//   │ [F][O] (strip)   │ ← group 1 strip
+//   │ Files content    │
 //   ├──────────────────┤
-//   │ [F][O][G][S][B]  │ ← tab strip
-//   ├──────────────────┤
-//   │ Active tab body  │ ← flex-fill
+//   │ [C] (strip)      │ ← group 2 strip
+//   │ Calendar content │
 //   └──────────────────┘
 //
-// `sidebarSections` stores collapse + height state for ANY panel that
-// can be pinned at the top of the sidebar. The union mirrors
-// SidebarTabId — when a panel is in the tab strip its section state is
-// ignored. 'backlinks' remains in the union for backwards compat with
-// old persisted entries.
+// Each group has its own horizontal mini-strip + content body. No
+// "pinned vs unpinned" distinction. State lives in
+// settingsStore.sidebarGroups; this store only holds the chrome-level
+// flags (collapsed, width, last-focused group id).
 export type SidebarSectionId =
   | 'calendar'
   | 'outline'
@@ -29,11 +28,9 @@ export type SidebarSectionId =
   | 'related'
   | 'plugins'
 
-// IDs of panels that can live in either the pinned-top zone OR the
-// lower tab switcher. settingsStore.pinnedPanels controls which zone
-// each panel belongs to; the rest fall into the tab strip in
-// sidebarTabOrder order. Calendar defaults to pinned; the rest to
-// tabs.
+// IDs of panels available in the sidebar. settingsStore.sidebarGroups
+// decides which group(s) each one lives in; the activity bar shows
+// every panel as an icon (filtered by hiddenSidebarTabs).
 export type SidebarTabId =
   | 'files'
   | 'outline'
@@ -78,8 +75,13 @@ interface UIState {
   // old entries for outline/backlinks/source-control are kept for
   // backwards compat but ignored.
   sidebarSections: Partial<Record<SidebarSectionId, SidebarSectionState>>
-  // Which lower-switcher tab is active. Default 'files'.
-  sidebarTabId: SidebarTabId
+  // ID of the group the user most recently interacted with. Used by
+  // the activity-bar click handler to decide where to drop a newly-
+  // added tab when the clicked panel doesn't live in any group yet.
+  // Null on first load — the handler then targets the LAST group in
+  // the stack, which is the bottom-most group the user is likely
+  // looking at after a fresh boot.
+  lastFocusedGroupId: string | null
 
   // Search
   isSearchOpen: boolean
@@ -111,7 +113,7 @@ interface UIState {
   setSidebarSectionCollapsed: (id: SidebarSectionId, collapsed: boolean) => void
   setSidebarSectionHeight: (id: SidebarSectionId, height: number) => void
   expandSidebarSection: (id: SidebarSectionId) => void
-  setSidebarTab: (id: SidebarTabId) => void
+  setLastFocusedGroupId: (id: string | null) => void
   openSearch: () => void
   closeSearch: () => void
   setSearchQuery: (query: string) => void
@@ -135,7 +137,7 @@ export const useUIStore = create<UIState>()(
       rightSidebarOpen: false,
       rightSidebarTab: 'properties',
       sidebarSections: {},
-      sidebarTabId: 'files',
+      lastFocusedGroupId: null,
       isSearchOpen: false,
       searchQuery: '',
       isPreviewMode: false,
@@ -208,8 +210,8 @@ export const useUIStore = create<UIState>()(
         })
       },
 
-      setSidebarTab: (id) => {
-        set(state => state.sidebarTabId === id ? state : { sidebarTabId: id })
+      setLastFocusedGroupId: (id) => {
+        set(state => state.lastFocusedGroupId === id ? state : { lastFocusedGroupId: id })
       },
 
       // Convenience: ribbon icons call this to open the matching panel
@@ -272,15 +274,39 @@ export const useUIStore = create<UIState>()(
     }),
     {
       name: STORAGE_KEYS.ui,
+      version: 1,
       partialize: (state) => ({
         sidebarCollapsed: state.sidebarCollapsed,
         sidebarWidth: state.sidebarWidth,
         rightSidebarOpen: state.rightSidebarOpen,
         rightSidebarTab: state.rightSidebarTab,
         sidebarSections: state.sidebarSections,
-        sidebarTabId: state.sidebarTabId,
+        lastFocusedGroupId: state.lastFocusedGroupId,
         isPreviewMode: state.isPreviewMode,
-      })
+      }),
+      // v0→v1 (2026-06-04): remove the legacy `sidebarTabId` field.
+      // The new leaf model tracks active tab PER GROUP inside
+      // settingsStore.sidebarGroups, so this slice no longer carries
+      // an "active sidebar tab". Before discarding it, stash the value
+      // in a temporary localStorage key so the settingsStore migration
+      // (which runs independently when its own slice rehydrates) can
+      // promote it into a trailing group via
+      // `legacyToSidebarGroups(..., legacyActive)`.
+      migrate: (persistedState: unknown, version: number) => {
+        const state = (persistedState ?? {}) as Record<string, unknown>
+        if (version < 1) {
+          const legacy = typeof state.sidebarTabId === 'string' ? state.sidebarTabId : null
+          if (legacy) {
+            try {
+              if (typeof window !== 'undefined') {
+                window.localStorage.setItem('__noteser_legacy_sidebar_tab_id', legacy)
+              }
+            } catch { /* ignore */ }
+          }
+          delete state.sidebarTabId
+        }
+        return state as unknown as UIState
+      },
     }
   )
 )

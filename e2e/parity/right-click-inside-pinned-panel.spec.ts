@@ -25,18 +25,18 @@ test('right-clicking a folder inside a pinned Files panel does NOT unpin the pan
   // folder we can right-click on.
   const folderId = await page.evaluate(() => {
     const s = window.__noteser_test!.stores.settingsStore.getState()
-    s.setPinnedPanels([['files']])
+    s.setSidebarGroups([{ id: 'rc-g', tabs: ['files'], activeTab: 'files', collapsed: false }])
     const fs = window.__noteser_test!.stores.folderStore.getState()
     return fs.ensureFolderPath(['Right-click target'])
   })
   expect(folderId).toBeTruthy()
   await page.waitForTimeout(200)
 
-  // Confirm files is pinned (one group, one panel).
-  const pinnedBefore = await page.evaluate(() =>
-    window.__noteser_test!.stores.settingsStore.getState().pinnedPanels,
+  // Confirm files lives in one group.
+  const before = await page.evaluate(() =>
+    window.__noteser_test!.stores.settingsStore.getState().sidebarGroups,
   )
-  expect(pinnedBefore).toEqual([['files']])
+  expect(before[0]?.tabs).toEqual(['files'])
 
   // Right-click the folder row inside the pinned panel.
   await page.getByTestId('folder-row').first().click({ button: 'right' })
@@ -45,9 +45,9 @@ test('right-clicking a folder inside a pinned Files panel does NOT unpin the pan
   // 1. The folder context menu appears (with at least the Rename option).
   await expect(page.getByRole('button', { name: 'Rename' })).toBeVisible()
 
-  // 2. The Files panel STAYS pinned — it did not get bubbled-unpinned.
-  const pinnedAfter = await page.evaluate(() =>
-    window.__noteser_test!.stores.settingsStore.getState().pinnedPanels,
+  // 2. The Files panel STAYS in its group — it did not bubble-close.
+  const after = await page.evaluate(() =>
+    window.__noteser_test!.stores.settingsStore.getState().sidebarGroups,
   )
-  expect(pinnedAfter).toEqual([['files']])
+  expect(after[0]?.tabs).toEqual(['files'])
 })

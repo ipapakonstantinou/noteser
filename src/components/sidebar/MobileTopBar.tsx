@@ -16,7 +16,8 @@ import {
   CodeBracketIcon,
 } from '@heroicons/react/24/outline'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
-import { useUIStore, useNoteStore, useWorkspaceStore } from '@/stores'
+import { useUIStore, useNoteStore, useWorkspaceStore, useSettingsStore } from '@/stores'
+import { activatePanelFromActivityBar } from './sidebarGroupActions'
 
 // Mobile chrome bar that replaces the desktop ribbon below
 // MOBILE_BREAKPOINT. Obsidian-mobile-style: tiny hamburger on the left,
@@ -36,8 +37,12 @@ export const MobileTopBar = () => {
   const openModal = useUIStore(s => s.openModal)
   const setCurrentView = useUIStore(s => s.setCurrentView)
   const currentView = useUIStore(s => s.currentView)
-  const sidebarTabId = useUIStore(s => s.sidebarTabId)
-  const setSidebarTab = useUIStore(s => s.setSidebarTab)
+  const sidebarGroups = useSettingsStore(s => s.sidebarGroups)
+  // Mobile "active panel" indicator = which panel is the activeTab of
+  // any group? Lookup is cheap enough to inline.
+  const activePanelIds = new Set(
+    sidebarGroups.map(g => g.activeTab).filter((id): id is string => Boolean(id))
+  )
   const requestRename = useUIStore(s => s.requestRename)
   const togglePinNote = useNoteStore(s => s.togglePinNote)
   // Resolve the active note (if any) so the overflow menu can offer
@@ -75,13 +80,11 @@ export const MobileTopBar = () => {
   }
 
   // Switch to a sidebar PANEL (calendar, source-control) and open the
-  // drawer. Phase B mobile dropped the panel mini-strip entirely so
-  // these panels were unreachable on mobile — this is the bridge
-  // back per the user's Telegram feedback (#23).
+  // drawer. Leaf model: focusing a panel = activatePanelFromActivityBar
+  // (focuses an existing group or adds to last-focused). The drawer
+  // toggle is handled by the helper too.
   const goPanel = (id: 'calendar' | 'source-control') => {
-    setSidebarTab(id)
-    const uiState = useUIStore.getState()
-    if (uiState.sidebarCollapsed) toggleSidebar()
+    activatePanelFromActivityBar(id)
     setMenuOpen(false)
   }
 
@@ -189,13 +192,13 @@ export const MobileTopBar = () => {
             <MenuItem
               icon={<CalendarIcon className="w-4 h-4" />}
               label="Calendar"
-              active={sidebarTabId === 'calendar'}
+              active={activePanelIds.has('calendar')}
               onClick={() => goPanel('calendar')}
             />
             <MenuItem
               icon={<CodeBracketIcon className="w-4 h-4" />}
               label="Git / Source control"
-              active={sidebarTabId === 'source-control'}
+              active={activePanelIds.has('source-control')}
               onClick={() => goPanel('source-control')}
             />
             <div className="border-t border-obsidianBorder my-1" />

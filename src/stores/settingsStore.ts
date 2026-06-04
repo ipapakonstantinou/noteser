@@ -32,6 +32,30 @@ export const DEFAULT_AI_MODEL: Record<Exclude<AIProvider, 'off'>, string> = {
   openai: 'gpt-4o-mini',
 }
 
+// One leaf-style "group" inside the sidebar (Obsidian model). A group
+// owns a horizontal tab strip + a single visible panel body (the
+// `activeTab`). Multiple groups stack vertically. `id` is a stable
+// random string so collapse state survives composition changes (the
+// old `group.join(',')` key reset on every pin/unpin).
+export interface SidebarGroupState {
+  id: string
+  tabs: string[]
+  activeTab: string | null
+  collapsed: boolean
+}
+
+// Crypto-strong random group id. Falls back to Math.random in the rare
+// SSR/Node-without-crypto path (tests). Exported so the migration +
+// the runtime "create group" helper can use the same generator.
+export function newSidebarGroupId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID()
+    }
+  } catch { /* fall through */ }
+  return `g-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`
+}
+
 export interface SettingsState {
   folderSortMode: FolderSortMode
   taskListDensity: TaskListDensity
@@ -132,28 +156,24 @@ export interface SettingsState {
   // Empty array = default order.
   ribbonOrder: string[]
 
-  // ── Sidebar tab strip order (s4r3 v2) ──────────────────────────────────
-  // Order of panels in the lower switcher. Same merge semantics as
-  // ribbonOrder — unknown ids dropped, new ids appended, empty = source
-  // order. The strings here are SidebarTabId values, but we widen to
-  // string[] so the store stays portable and a future-added tab id
-  // doesn't break old persisted state.
-  sidebarTabOrder: string[]
-
-  // Panels pinned at the TOP of the sidebar, grouped into one mini
-  // tab strip per group (Obsidian pane model). The outer array is
-  // the top-to-bottom order of groups; each inner array is the tabs
-  // inside that group. A single-element group renders a strip with
-  // one icon; a multi-element group lets the user switch between
-  // tabs in that group via icon clicks.
-  // Default: [] (no pinned groups; every panel lives in the main
-  // bottom strip). Users drag tabs UP to pin into a new group or
-  // ONTO an existing mini-strip to join that group.
-  pinnedPanels: string[][]
-  // See `DEFAULTS.collapsedPinnedGroups`. Keys are `group.join(',')`.
-  collapsedPinnedGroups: string[]
+  // ── Sidebar groups (leaf model, 2026-06-04 v3) ─────────────────────────
+  // Obsidian-style "every panel is a tab in a group" model. The sidebar
+  // is a vertical stack of groups; each group has a horizontal tab strip
+  // (always rendered, even for 1-tab groups) plus the active tab's body
+  // below. Replaces the previous "pinned groups + one floating active
+  // unpinned panel" two-zone model.
+  //
+  // Each group carries a STABLE random `id` (used as a drag/drop anchor
+  // + collapse key) so renaming the group or reordering its tabs
+  // doesn't reset collapse state the way the old `group.join(',')`
+  // composite key did. `activeTab` defaults to the first tab on group
+  // creation; `collapsed` defaults false.
+  //
+  // Default: one group with the first PANEL id ('calendar') so a fresh
+  // install sees content on first load.
+  sidebarGroups: SidebarGroupState[]
   // Sidebar tab ids hidden via the right-click context menu. Filtered
-  // out at render time in both strips. Restored via Settings → Sidebar.
+  // out at render time. Restored via Settings → Sidebar.
   hiddenSidebarTabs: string[]
 
   // ── Onboarding ─────────────────────────────────────────────────────────
@@ -324,18 +344,23 @@ export interface SettingsState {
   setBetaEnabled: (value: boolean) => void
   setBetaFlag: (id: string, value: boolean) => void
   setRibbonOrder: (order: string[]) => void
-  setSidebarTabOrder: (order: string[]) => void
-  setPinnedPanels: (panels: string[][]) => void
-  togglePinnedGroupCollapsed: (key: string) => void
+  // Replace the entire groups array. Callers that need finer-grained
+  // edits should prefer the dedicated setters below; this one is the
+  // escape hatch for bulk migrations / tests.
+  setSidebarGroups: (groups: SidebarGroupState[]) => void
+  setGroupActiveTab: (groupId: string, tabId: string) => void
+  addTabToGroup: (groupId: string, tabId: string) => void
+  removeTabFromGroup: (groupId: string, tabId: string) => void
+  // Insert a brand-new group containing only `tabId` at position
+  // `insertAt` (0 = top of stack). Removes the tab from any other
+  // group it was in so the same panel never lives in two places.
+  createGroupAt: (insertAt: number, tabId: string) => void
+  toggleGroupCollapsed: (groupId: string) => void
   // Adds an id to `hiddenSidebarTabs` if not present. The tab disappears
-  // from both strips immediately. Auto-unpins as a side effect — keeping
-  // a hidden tab in `pinnedPanels` would resurrect it the next time the
-  // user shows it, which is fine, but it would leak through the pinned-
-  // group key (`group.join(',')`) and reset collapse state. Cleaner to
-  // detach.
+  // from every group it lived in (auto-unpin); empty groups are dropped.
   hideSidebarTab: (id: string) => void
-  // Removes from `hiddenSidebarTabs`. The tab rejoins the bottom strip
-  // in its persisted `sidebarTabOrder` slot (or default order if absent).
+  // Removes from `hiddenSidebarTabs`. Does NOT auto-restore to a group
+  // — restoring is a separate user gesture (activity-bar click).
   showSidebarTab: (id: string) => void
   setOnboardingShown: (value: boolean) => void
   setStartupNoteId: (id: string | null) => void
@@ -439,21 +464,19 @@ const DEFAULTS = {
   betaEnabled: false,
   betaFlags: {} as Record<string, boolean>,
   ribbonOrder: [] as string[],
-  sidebarTabOrder: [] as string[],
-  // Empty by default — every panel lives as an icon in the main
-  // tab strip. Users drag tabs UP to pin into a new group, or onto
-  // an existing mini-strip to join that group (Obsidian pane model).
-  pinnedPanels: [] as string[][],
-  // Pinned-group keys (group.join(',')) that the user has collapsed —
-  // their mini-strip is still visible, but the panel body is hidden.
-  // Entries here are dropped naturally when group composition changes
-  // (the key no longer matches), so collapse state resets on pin/unpin
-  // — that's intentional, the new group is a new entity.
-  collapsedPinnedGroups: [] as string[],
+  // Default leaf state — one group with calendar pre-loaded so a fresh
+  // install sees something on first paint. The id is a stable string
+  // (NOT a random UUID) so the SSR snapshot and the client snapshot
+  // match — random ids would trigger a hydration warning on the
+  // very first render before persist rehydrates with the same default.
+  // Once the user touches anything, real UUIDs take over via the
+  // helpers in sidebarGroupActions.ts.
+  sidebarGroups: [
+    { id: 'default', tabs: ['calendar'], activeTab: 'calendar', collapsed: false },
+  ] as SidebarGroupState[],
   // Sidebar tab ids the user has hidden via the right-click context
-  // menu. Hidden tabs are filtered out of BOTH the bottom strip and
-  // any pinned mini-strip at render time. They can be restored via
-  // Settings → Sidebar. Default empty.
+  // menu. Hidden tabs are filtered out of every group's strip at
+  // render time. They can be restored via Settings → Sidebar.
   hiddenSidebarTabs: [] as string[],
   onboardingShown: false,
   startupNoteId: null as string | null,
@@ -474,6 +497,67 @@ const DEFAULTS = {
   vaultEncryptionEnabled: false,
   vaultEncryptionSalt: null as string | null,
   vaultEncryptionCanary: null as string | null,
+}
+
+// Migration helper — exported so the migration test and the uiStore's
+// own migration (which knows about the legacy sidebarTabId) can call
+// it directly. Maps the old "pinned groups + floating unpinned panel"
+// model onto the new leaf-model groups array.
+//
+//   - Each entry in `pinnedPanels` becomes one SidebarGroupState.
+//     The group's `activeTab` defaults to its first tab (Obsidian's
+//     same default).
+//   - `collapsedPinnedGroups` entries map via `group.join(',')` — if
+//     the migrated group's key matches, set `collapsed: true`.
+//   - Stable random ids per group so subsequent collapse toggles
+//     don't reset state.
+//
+// The optional `extraTrailingTab` lets the uiStore migration pass in
+// `sidebarTabId` (the old "active unpinned panel") so it survives as a
+// trailing group. We skip it when it already lives in some pinned
+// group or in the hidden list to avoid duplicates.
+export function legacyToSidebarGroups(
+  pinnedPanels: string[][] | undefined,
+  collapsedPinnedGroups: string[] | undefined,
+  extraTrailingTab?: string | null,
+  hiddenSidebarTabs?: string[],
+): SidebarGroupState[] {
+  const collapsedKeys = new Set(collapsedPinnedGroups ?? [])
+  const groups: SidebarGroupState[] = []
+  const seen = new Set<string>()
+  if (Array.isArray(pinnedPanels)) {
+    for (const group of pinnedPanels) {
+      if (!Array.isArray(group)) continue
+      const tabs: string[] = []
+      for (const id of group) {
+        if (typeof id === 'string' && !seen.has(id)) {
+          tabs.push(id)
+          seen.add(id)
+        }
+      }
+      if (tabs.length === 0) continue
+      groups.push({
+        id: newSidebarGroupId(),
+        tabs,
+        activeTab: tabs[0],
+        collapsed: collapsedKeys.has(tabs.join(',')),
+      })
+    }
+  }
+  const hidden = new Set(hiddenSidebarTabs ?? [])
+  if (extraTrailingTab && !seen.has(extraTrailingTab) && !hidden.has(extraTrailingTab)) {
+    groups.push({
+      id: newSidebarGroupId(),
+      tabs: [extraTrailingTab],
+      activeTab: extraTrailingTab,
+      collapsed: false,
+    })
+  }
+  // Empty-source guard: a fresh install with no legacy fields would
+  // produce zero groups, which is fine — DEFAULTS.sidebarGroups
+  // covers that path via the persist default merge. We return [] so
+  // the caller can decide whether to fall back to the default.
+  return groups
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -533,26 +617,121 @@ export const useSettingsStore = create<SettingsState>()(
             vaultSettingsUpdatedAt: Date.now(),
           })),
         setRibbonOrder: (ribbonOrder) => set({ ribbonOrder }),
-        setSidebarTabOrder: (sidebarTabOrder) => set({ sidebarTabOrder }),
-        setPinnedPanels: (pinnedPanels) => set({ pinnedPanels }),
-        togglePinnedGroupCollapsed: (key) =>
+        setSidebarGroups: (sidebarGroups) => set({ sidebarGroups }),
+        setGroupActiveTab: (groupId, tabId) =>
           set((state) => {
-            const set_ = new Set(state.collapsedPinnedGroups)
-            if (set_.has(key)) set_.delete(key)
-            else set_.add(key)
-            return { collapsedPinnedGroups: Array.from(set_) }
+            const next = state.sidebarGroups.map(g =>
+              g.id === groupId && g.tabs.includes(tabId) && g.activeTab !== tabId
+                ? { ...g, activeTab: tabId }
+                : g,
+            )
+            // Same-ref short-circuit so subscribers don't re-render on
+            // a no-op (clicking an already-active tab).
+            if (next.every((g, i) => g === state.sidebarGroups[i])) return state
+            return { sidebarGroups: next }
           }),
+        addTabToGroup: (groupId, tabId) =>
+          set((state) => {
+            // Idempotent: bail if the tab already lives in this group.
+            const target = state.sidebarGroups.find(g => g.id === groupId)
+            if (!target) return state
+            if (target.tabs.includes(tabId)) {
+              // Already there — just focus it.
+              return {
+                sidebarGroups: state.sidebarGroups.map(g =>
+                  g.id === groupId ? { ...g, activeTab: tabId } : g,
+                ),
+              }
+            }
+            // Move semantics: a tab can only live in one group, so
+            // remove from any other group first. Drop empty groups.
+            const withRemoved = state.sidebarGroups
+              .map(g => g.id === groupId ? g : { ...g, tabs: g.tabs.filter(t => t !== tabId) })
+              .map(g => g.tabs.length === 0 && g.id !== groupId
+                ? null
+                : g.activeTab && !g.tabs.includes(g.activeTab) && g.id !== groupId
+                  ? { ...g, activeTab: g.tabs[0] ?? null }
+                  : g)
+              .filter((g): g is SidebarGroupState => g !== null)
+            return {
+              sidebarGroups: withRemoved.map(g =>
+                g.id === groupId
+                  ? { ...g, tabs: [...g.tabs, tabId], activeTab: tabId }
+                  : g,
+              ),
+            }
+          }),
+        removeTabFromGroup: (groupId, tabId) =>
+          set((state) => {
+            const target = state.sidebarGroups.find(g => g.id === groupId)
+            if (!target || !target.tabs.includes(tabId)) return state
+            const nextTabs = target.tabs.filter(t => t !== tabId)
+            // If the group is now empty, drop the group entirely.
+            // Otherwise, if the removed tab was active, fall back to
+            // the first remaining tab.
+            const sidebarGroups = state.sidebarGroups
+              .map(g => {
+                if (g.id !== groupId) return g
+                if (nextTabs.length === 0) return null
+                return {
+                  ...g,
+                  tabs: nextTabs,
+                  activeTab: g.activeTab === tabId ? (nextTabs[0] ?? null) : g.activeTab,
+                }
+              })
+              .filter((g): g is SidebarGroupState => g !== null)
+            return { sidebarGroups }
+          }),
+        createGroupAt: (insertAt, tabId) =>
+          set((state) => {
+            // Move semantics — yank the tab from whatever group it was
+            // in first (drop empty groups). Then splice a brand-new
+            // single-tab group at the requested index.
+            const withoutTab = state.sidebarGroups
+              .map(g => ({ ...g, tabs: g.tabs.filter(t => t !== tabId) }))
+              .map(g => g.activeTab && !g.tabs.includes(g.activeTab)
+                ? { ...g, activeTab: g.tabs[0] ?? null }
+                : g)
+              .filter(g => g.tabs.length > 0)
+            const newGroup: SidebarGroupState = {
+              id: newSidebarGroupId(),
+              tabs: [tabId],
+              activeTab: tabId,
+              collapsed: false,
+            }
+            const clamped = Math.max(0, Math.min(insertAt, withoutTab.length))
+            const next = [...withoutTab]
+            next.splice(clamped, 0, newGroup)
+            return { sidebarGroups: next }
+          }),
+        toggleGroupCollapsed: (groupId) =>
+          set((state) => ({
+            sidebarGroups: state.sidebarGroups.map(g =>
+              g.id === groupId ? { ...g, collapsed: !g.collapsed } : g,
+            ),
+          })),
         hideSidebarTab: (id) =>
           set((state) => {
             if (state.hiddenSidebarTabs.includes(id)) return state
-            // Auto-unpin: remove the id from any pinned group it lives
-            // in, then drop empty groups. Keeps pinnedPanels honest.
-            const nextPinned = state.pinnedPanels
-              .map(g => g.filter(p => p !== id))
-              .filter(g => g.length > 0)
+            // Auto-unpin: remove the id from every group it lives in,
+            // dropping empty groups. Keeps sidebarGroups honest so
+            // re-showing the tab later doesn't resurrect it in a
+            // half-baked group.
+            const sidebarGroups = state.sidebarGroups
+              .map(g => {
+                if (!g.tabs.includes(id)) return g
+                const nextTabs = g.tabs.filter(t => t !== id)
+                if (nextTabs.length === 0) return null
+                return {
+                  ...g,
+                  tabs: nextTabs,
+                  activeTab: g.activeTab === id ? (nextTabs[0] ?? null) : g.activeTab,
+                }
+              })
+              .filter((g): g is SidebarGroupState => g !== null)
             return {
               hiddenSidebarTabs: [...state.hiddenSidebarTabs, id],
-              pinnedPanels: nextPinned,
+              sidebarGroups,
             }
           }),
         showSidebarTab: (id) =>
@@ -597,7 +776,7 @@ export const useSettingsStore = create<SettingsState>()(
     },
     {
       name: STORAGE_KEYS.settings,
-      version: 2,
+      version: 3,
       // Migration ladder:
       //   v0→v1 (2026-05-20): pinnedPanels used to default to
       //     ['calendar'] so Calendar showed as a header-less pinned
@@ -609,13 +788,25 @@ export const useSettingsStore = create<SettingsState>()(
       //     (drag onto a mini-strip joins it as a group). Old flat
       //     entries get wrapped as their own single-panel groups so
       //     existing pins survive.
+      //   v2→v3 (2026-06-04): switched to the Obsidian leaf model.
+      //     pinnedPanels + sidebarTabId + sidebarTabOrder +
+      //     collapsedPinnedGroups collapse into a single
+      //     sidebarGroups: SidebarGroupState[] field. Each old pinned
+      //     group becomes one entry with a fresh stable id; collapse
+      //     state migrates via the old `group.join(',')` lookup. If
+      //     the old `sidebarTabId` (held in uiStore localStorage, NOT
+      //     this slice) named a panel that wasn't pinned and isn't
+      //     hidden, callers can append it as a trailing group — but
+      //     that field lives in a different persisted key, so the
+      //     migration here only covers what's in THIS slice.
       migrate: (persistedState: unknown, version: number) => {
         const state = (persistedState ?? {}) as Partial<SettingsState> & {
           pinnedPanels?: unknown
+          sidebarTabOrder?: unknown
+          collapsedPinnedGroups?: unknown
+          sidebarGroups?: unknown
         }
         if (version < 1) {
-          // v0 had pp: string[]; we cast to unknown here so TS lets us
-          // inspect the legacy shape.
           const pp = state.pinnedPanels as unknown
           if (Array.isArray(pp) && pp.length === 1 && pp[0] === 'calendar') {
             state.pinnedPanels = []
@@ -623,11 +814,46 @@ export const useSettingsStore = create<SettingsState>()(
         }
         if (version < 2) {
           const pp = state.pinnedPanels
-          // Wrap a flat string[] into string[][] (one group per panel).
-          // An already-nested array passes through untouched.
           if (Array.isArray(pp) && pp.every(item => typeof item === 'string')) {
             state.pinnedPanels = (pp as string[]).map(id => [id])
           }
+        }
+        if (version < 3) {
+          // The uiStore migration writes the legacy `sidebarTabId`
+          // into window.localStorage[__noteser_legacy_sidebar_tab_id]
+          // before this slice rehydrates (best-effort — the two
+          // stores rehydrate independently). Read it here so the
+          // floating active unpinned panel survives as a trailing
+          // group; clear it after consumption.
+          let legacyActive: string | null = null
+          try {
+            if (typeof window !== 'undefined') {
+              legacyActive = window.localStorage.getItem('__noteser_legacy_sidebar_tab_id') || null
+              if (legacyActive) {
+                window.localStorage.removeItem('__noteser_legacy_sidebar_tab_id')
+              }
+            }
+          } catch { /* ignore — non-browser env */ }
+          const groups = legacyToSidebarGroups(
+            state.pinnedPanels as string[][] | undefined,
+            state.collapsedPinnedGroups as string[] | undefined,
+            legacyActive,
+            state.hiddenSidebarTabs as string[] | undefined,
+          )
+          // Fall back to the default group if migration produced
+          // nothing — a totally blank sidebar would be a worse
+          // experience than the new-install default of a Calendar
+          // group.
+          state.sidebarGroups = groups.length > 0
+            ? groups
+            : [{ id: 'default', tabs: ['calendar'], activeTab: 'calendar', collapsed: false }]
+          // Wipe the legacy fields. They were never vault-synced, so
+          // forgetting them here is safe — the user just loses the
+          // device-only "saved tab order" for the now-defunct bottom
+          // strip, which is intentional (there is no bottom strip).
+          delete (state as Record<string, unknown>).pinnedPanels
+          delete (state as Record<string, unknown>).sidebarTabOrder
+          delete (state as Record<string, unknown>).collapsedPinnedGroups
         }
         return state as SettingsState
       },

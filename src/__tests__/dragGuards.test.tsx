@@ -38,10 +38,10 @@ jest.mock('../components/sidebar/sidebarPanelRegistry', () => {
         Icon: () => React.createElement('span', { 'aria-label': 'files-icon' }),
       },
     ],
+    KNOWN_IDS: new Set(['files']),
     PanelBody: ({ id }: { id: string }) =>
       React.createElement('div', { 'data-testid': `panel-body-${id}` }, `body:${id}`),
     TAB_DRAG_MIME: 'application/x-noteser-sidebar-tab',
-    resolveTabOrder: (saved: string[]) => saved,
   }
 })
 

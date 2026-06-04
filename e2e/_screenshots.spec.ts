@@ -238,12 +238,14 @@ test('02 — live preview', async ({ page }) => {
 
 test('03 — sidebar pane model', async ({ page }) => {
   await seed(page)
-  // Pin Calendar to the top so the screenshot demonstrates the Obsidian-
-  // style stacked pane layout (top mini-strip + bottom tab strip).
+  // Two groups so the screenshot demonstrates the Obsidian leaf-model
+  // stacked pane layout (one mini-strip + body per group).
   await page.evaluate(() => {
     window.__noteser_test!.stores.settingsStore.setState({
-      pinnedPanels: [['calendar']],
-      sidebarTabOrder: ['files', 'outline', 'search', 'tags', 'bookmarks'],
+      sidebarGroups: [
+        { id: 'g-shot-1', tabs: ['calendar'], activeTab: 'calendar', collapsed: false },
+        { id: 'g-shot-2', tabs: ['files'], activeTab: 'files', collapsed: false },
+      ],
     })
   })
   await page.waitForTimeout(300)
