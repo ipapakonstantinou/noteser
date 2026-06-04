@@ -8,9 +8,9 @@ import {
   CommandLineIcon,
   RectangleStackIcon,
   Cog6ToothIcon,
-  SparklesIcon,
 } from '@heroicons/react/24/outline'
 import { useUIStore, useSettingsStore, useWorkspaceStore, useNoteStore } from '@/stores'
+import { PANELS } from './sidebarPanelRegistry'
 
 // Obsidian-style far-left ribbon. Permanent, always visible.
 //
@@ -36,7 +36,6 @@ type ItemId =
   | 'daily-note'
   | 'command-palette'
   | 'templates'
-  | 'random-note'
 
 interface ItemDef {
   id: ItemId
@@ -83,14 +82,6 @@ const ITEMS: readonly ItemDef[] = [
     title: 'Templates',
     action: () => useUIStore.getState().openModal({ type: 'template' }),
   },
-  {
-    id: 'random-note',
-    Icon: SparklesIcon,
-    title: 'Open a random note (Alt+R)',
-    action: () => {
-      void import('@/utils/randomNote').then(({ openRandomNote }) => openRandomNote())
-    },
-  },
 ]
 
 // Merge the user's saved order with the source order, dropping ids that
@@ -118,6 +109,29 @@ export const Ribbon = () => {
   const openModal = useUIStore(s => s.openModal)
   const ribbonOrder = useSettingsStore(s => s.ribbonOrder)
   const setRibbonOrder = useSettingsStore(s => s.setRibbonOrder)
+
+  // Panel-switcher state: the active sidebar tab id + setter, and the
+  // ability to expand the sidebar from collapsed when the user clicks
+  // a panel icon.
+  const activeTabId = useUIStore(s => s.sidebarTabId)
+  const setSidebarTab = useUIStore(s => s.setSidebarTab)
+  const sidebarCollapsed = useUIStore(s => s.sidebarCollapsed)
+  const toggleSidebar = useUIStore(s => s.toggleSidebar)
+  const hiddenSidebarTabs = useSettingsStore(s => s.hiddenSidebarTabs)
+  const hiddenSet = useMemo(() => new Set(hiddenSidebarTabs), [hiddenSidebarTabs])
+
+  // Visible panel switchers — filter out hidden-by-user panels.
+  // PANELS source order is the default; hiddenSidebarTabs is the
+  // existing per-vault customisation surface in Settings → Sidebar.
+  const visiblePanels = useMemo(
+    () => PANELS.filter(p => !hiddenSet.has(p.id)),
+    [hiddenSet],
+  )
+
+  const handlePanelClick = (panelId: typeof PANELS[number]['id']) => () => {
+    setSidebarTab(panelId)
+    if (sidebarCollapsed) toggleSidebar()
+  }
 
   const orderedIds = useMemo(() => resolveRibbonOrder(ribbonOrder), [ribbonOrder])
   const itemsById = useMemo(() => new Map(ITEMS.map(i => [i.id, i])), [])
@@ -203,6 +217,27 @@ export const Ribbon = () => {
         )
       })}
 
+      {/* Divider between ACTIONS (above) and PANEL SWITCHERS (below) */}
+      <div className="w-6 my-2 border-t border-obsidianBorder" aria-hidden />
+
+      {/* Panel switchers — click highlights + opens the sidebar to that
+          panel. Hidden panels (via Settings → Sidebar) are filtered out. */}
+      {visiblePanels.map(panel => {
+        const Icon = panel.Icon
+        const isActive = activeTabId === panel.id && !sidebarCollapsed
+        return (
+          <RibbonButton
+            key={panel.id}
+            onClick={handlePanelClick(panel.id)}
+            title={panel.title}
+            active={isActive}
+            testId={`ribbon-panel-${panel.id}`}
+          >
+            <Icon className="w-5 h-5" />
+          </RibbonButton>
+        )
+      })}
+
       <div className="mt-auto">
         <RibbonButton onClick={() => openModal({ type: 'settings' })} title="Settings">
           <Cog6ToothIcon className="w-5 h-5" />
@@ -213,13 +248,32 @@ export const Ribbon = () => {
 }
 
 const RibbonButton = ({
-  onClick, title, children,
-}: { onClick: () => void; title: string; children: React.ReactNode }) => (
+  onClick, title, children, active = false, testId,
+}: {
+  onClick: () => void
+  title: string
+  children: React.ReactNode
+  active?: boolean
+  testId?: string
+}) => (
   <button
     onClick={onClick}
     title={title}
-    className="p-2 max-md:p-2.5 rounded text-obsidianSecondaryText hover:bg-obsidianDarkGray hover:text-obsidianText transition-colors inline-flex items-center justify-center max-md:min-w-[44px] max-md:min-h-[44px]"
+    data-testid={testId}
+    className={[
+      'relative p-2 max-md:p-2.5 rounded transition-colors inline-flex items-center justify-center max-md:min-w-[44px] max-md:min-h-[44px]',
+      active
+        ? 'text-obsidianText'
+        : 'text-obsidianSecondaryText hover:bg-obsidianDarkGray hover:text-obsidianText',
+    ].join(' ')}
   >
+    {/* VS Code-style left accent for the active panel. */}
+    {active && (
+      <span
+        aria-hidden
+        className="absolute left-0 top-1 bottom-1 w-[2px] rounded-sm bg-obsidianAccentPurple"
+      />
+    )}
     {children}
   </button>
 )
