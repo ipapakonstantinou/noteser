@@ -275,37 +275,21 @@
 
 /* Completed task (`- [x]`) — strike through the item's own content (links,
    bold, text inside a wrapping <p>) at any nesting depth, WITHOUT bleeding the
-   strike onto its nested sub-tasks. A blanket `.preview-task-done *` would also
-   strike every descendant list item, so an UN-done subtask under a done parent
-   would wrongly look complete. Instead we:
-     1. strike the item's own non-list children (and their inline content), but
-        never descend into a nested <ul>/<ol>;
-     2. reset decoration inside any nested list at any depth, so each child
-        decides for itself;
-     3. re-apply the strike to nested items that carry the done class.
-   The checkbox input is always kept readable. */
-.preview-task-done {
+   strike onto its nested sub-tasks.
+   ListItem in EditorContent.tsx wraps the done item's own (non-list) children
+   in a `.preview-task-done-line` span and keeps any nested <ul>/<ol> as a
+   sibling of that span. We therefore decorate the SPAN only — never the outer
+   <li> — so the line-through never paints across nested rows. Older versions
+   put text-decoration on `.preview-task-done` itself, but browsers still draw
+   the ancestor's strike across descendant text even when the descendant sets
+   `text-decoration: none`, so an UN-done child under a done parent looked
+   completed. The span sibling boundary is the only reliable fix. The checkbox
+   input is kept readable. */
+.preview-task-done-line {
   text-decoration: line-through;
   opacity: 0.55;
 }
-.preview-task-done > :not(ul):not(ol),
-.preview-task-done > :not(ul):not(ol) * {
-  text-decoration: line-through;
-  opacity: 0.55;
-}
-.preview-task-done ul,
-.preview-task-done ol,
-.preview-task-done :is(ul, ol) * {
-  text-decoration: none;
-  opacity: 1;
-}
-.preview-task-done .preview-task-done,
-.preview-task-done .preview-task-done > :not(ul):not(ol),
-.preview-task-done .preview-task-done > :not(ul):not(ol) * {
-  text-decoration: line-through;
-  opacity: 0.55;
-}
-.preview-task-done input[type='checkbox'] {
+.preview-task-done-line input[type='checkbox'] {
   text-decoration: none;
   opacity: 1;
 }
