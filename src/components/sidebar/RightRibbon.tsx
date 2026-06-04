@@ -92,7 +92,7 @@ export const RightRibbon = () => {
 
   return (
     <div
-      className="h-full w-[44px] max-md:w-12 flex flex-col items-center gap-1 py-2 bg-obsidianBlack"
+      className="h-full w-[44px] max-md:w-12 flex flex-col items-center gap-1 py-2 bg-obsidianBlack border-l border-obsidianBorder"
       data-testid="right-activity-bar"
     >
       {/* Collapse toggle — mirror of the left ribbon's first button.

@@ -13,7 +13,12 @@
   --obsidian-dark-gray: #333333;
   --obsidian-accent: #3a3a3a;
   --obsidian-highlight: #4d4d4d;
-  --obsidian-border: #444444;
+  /* Softer divider lines per user feedback (2026-06-04). Was
+     #444444 against the #1b1b1b background — too high contrast for
+     a calm UI. Dropped to #2e2e2e for a more Obsidian-like subtlety
+     across every `border-obsidianBorder` usage (sidebar boundaries,
+     mini-strip border-b, group border-t, modal divider, etc.). */
+  --obsidian-border: #2e2e2e;
   --obsidian-text: #dadada;
   --obsidian-secondary-text: #bababa;
   /* Historical name (--obsidian-accent-purple) kept so existing
