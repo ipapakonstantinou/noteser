@@ -272,9 +272,13 @@ export const CalendarView = () => {
           headers. `[auto_repeat(7,_1fr)]` keeps the W column tight to
           its content while the 7 day columns share the remaining
           width equally — same per-row layout as the day grid below. */}
-      <div className="grid grid-cols-[auto_repeat(7,_1fr)] mb-1">
+      {/* Headers row. The W column gets an explicit 18px width so the
+          7 day columns keep their breathing room. (User feedback
+          2026-06-04: the previous auto-sized W column squeezed the
+          day cells.) */}
+      <div className="grid grid-cols-[18px_repeat(7,_1fr)] mb-1">
         <div
-          className="text-center text-[10px] text-obsidianSecondaryText/60 py-1 pr-1"
+          className="text-center text-[9px] text-obsidianSecondaryText/60 py-1"
           aria-label="ISO week number"
         >
           W
@@ -294,7 +298,7 @@ export const CalendarView = () => {
           start with a leading blank still anchor on the row's first
           REAL day (the Monday derived from that day is always the
           row's ISO-week Monday). */}
-      <div className="grid grid-cols-[auto_repeat(7,_1fr)] gap-y-0.5">
+      <div className="grid grid-cols-[18px_repeat(7,_1fr)] gap-y-0.5">
         {Array.from({ length: Math.ceil(cells.length / 7) }, (_, rowIdx) => {
           const rowStart = rowIdx * 7
           const rowCells = cells.slice(rowStart, rowStart + 7)
@@ -319,7 +323,7 @@ export const CalendarView = () => {
                 <button
                   onClick={() => openWeek(weekMonday)}
                   onContextMenu={(e) => onWeekContextMenu(e, weekMonday)}
-                  className="flex items-center justify-center rounded py-1 pr-1 text-[10px] text-obsidianSecondaryText/70 hover:bg-obsidianHighlight hover:text-obsidianText transition-colors"
+                  className="flex items-center justify-center rounded py-1 text-[9px] text-obsidianSecondaryText/70 hover:bg-obsidianHighlight hover:text-obsidianText transition-colors"
                   data-testid={`calendar-week-${weekMonday.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`}
                   title={`Week ${weekNumber} — open or create weekly note`}
                   aria-label={`Open weekly note for week ${weekNumber}`}
