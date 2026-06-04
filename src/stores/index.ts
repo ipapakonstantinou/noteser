@@ -9,6 +9,10 @@ export {
   MIN_SIDEBAR_WIDTH,
   MAX_SIDEBAR_WIDTH,
   clampSidebarWidth,
+  DEFAULT_RIGHT_SIDEBAR_WIDTH,
+  MIN_RIGHT_SIDEBAR_WIDTH,
+  MAX_RIGHT_SIDEBAR_WIDTH,
+  clampRightSidebarWidth,
 } from './uiStore'
 export type { SidebarSectionId, SidebarSectionState, SidebarTabId } from './uiStore'
 export { useGitHubStore } from './githubStore'

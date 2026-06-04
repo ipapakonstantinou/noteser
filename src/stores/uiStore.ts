@@ -61,6 +61,16 @@ export const MAX_SIDEBAR_WIDTH = 500
 export const clampSidebarWidth = (width: number): number =>
   Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, Math.round(width)))
 
+// Right-sidebar width bounds (px). Mirror of the left sidebar's
+// constants — different default but the same min/max bounds so it
+// can't eat the editor on either edge.
+export const DEFAULT_RIGHT_SIDEBAR_WIDTH = 280
+export const MIN_RIGHT_SIDEBAR_WIDTH = 200
+export const MAX_RIGHT_SIDEBAR_WIDTH = 500
+
+export const clampRightSidebarWidth = (width: number): number =>
+  Math.max(MIN_RIGHT_SIDEBAR_WIDTH, Math.min(MAX_RIGHT_SIDEBAR_WIDTH, Math.round(width)))
+
 interface UIState {
   // Sidebar (left)
   sidebarCollapsed: boolean
@@ -70,7 +80,20 @@ interface UIState {
   // opt-in via the PanelRightIcon toggle on the right edge.
   rightSidebarOpen: boolean
   // Which tab is active in the right sidebar. Defaults to Properties.
+  // RETAINED for back-compat with code paths (and tests) that pre-date
+  // the leaf-model right sidebar (2026-06-04). The new layout reads
+  // active tab per-group from `settingsStore.rightSidebarGroups`; this
+  // field is no longer consulted by the runtime UI but is kept in the
+  // persisted shape so older snapshots load cleanly.
   rightSidebarTab: 'properties' | 'backlinks'
+  // Right sidebar parity (2026-06-04): collapsed flag + width + last-
+  // focused group id mirror the left side's setup. `rightSidebarOpen`
+  // is the legacy "open the strip" flag; `rightSidebarCollapsed` is
+  // the leaf-model equivalent (true = activity bar only, false = bar
+  // + panel column).
+  rightSidebarCollapsed: boolean
+  rightSidebarWidth: number
+  lastFocusedRightGroupId: string | null
   // Per-section collapse + height state. In v2 only Calendar uses this;
   // old entries for outline/backlinks/source-control are kept for
   // backwards compat but ignored.
@@ -109,6 +132,14 @@ interface UIState {
   toggleRightSidebar: () => void
   setRightSidebarTab: (tab: 'properties' | 'backlinks') => void
   setRightSidebarOpen: (open: boolean) => void
+  // Leaf-model right sidebar (2026-06-04) — separate from
+  // toggleRightSidebar to avoid colliding with the legacy strip's
+  // open/closed flag while persisted snapshots from the old layout are
+  // still in circulation. Mobile / legacy code paths can keep calling
+  // toggleRightSidebar; the new layout uses these.
+  setRightSidebarWidth: (width: number) => void
+  setRightSidebarCollapsed: (collapsed: boolean) => void
+  setLastFocusedRightGroupId: (id: string | null) => void
   toggleSidebarSection: (id: SidebarSectionId) => void
   setSidebarSectionCollapsed: (id: SidebarSectionId, collapsed: boolean) => void
   setSidebarSectionHeight: (id: SidebarSectionId, height: number) => void
@@ -136,6 +167,17 @@ export const useUIStore = create<UIState>()(
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       rightSidebarOpen: false,
       rightSidebarTab: 'properties',
+      // Leaf-model right sidebar defaults OPEN (collapsed:false) so
+      // first-run users see Properties + Backlinks alongside the
+      // editor — same affordance as Obsidian's default workspace.
+      // Diverges intentionally from the legacy `rightSidebarOpen`
+      // default (which was false because the old strip was visually
+      // noisy in its collapsed state); the new layout always shows
+      // at least the activity bar even when collapsed, so opening
+      // by default is cheap.
+      rightSidebarCollapsed: false,
+      rightSidebarWidth: DEFAULT_RIGHT_SIDEBAR_WIDTH,
+      lastFocusedRightGroupId: null,
       sidebarSections: {},
       lastFocusedGroupId: null,
       isSearchOpen: false,
@@ -156,7 +198,18 @@ export const useUIStore = create<UIState>()(
       },
 
       toggleRightSidebar: () => {
-        set(state => ({ rightSidebarOpen: !state.rightSidebarOpen }))
+        // Legacy flag — kept for back-compat with the old
+        // RightSidebar component (still imported but not mounted by
+        // page.tsx after the leaf-model refactor). The new layout
+        // mirrors this onto `rightSidebarCollapsed`; we flip both so
+        // either store consumer reads a consistent value.
+        set(state => {
+          const nextOpen = !state.rightSidebarOpen
+          return {
+            rightSidebarOpen: nextOpen,
+            rightSidebarCollapsed: !nextOpen,
+          }
+        })
       },
 
       setRightSidebarTab: (rightSidebarTab) => {
@@ -165,6 +218,18 @@ export const useUIStore = create<UIState>()(
 
       setRightSidebarOpen: (open) => {
         set({ rightSidebarOpen: open })
+      },
+
+      setRightSidebarWidth: (width) => {
+        set({ rightSidebarWidth: clampRightSidebarWidth(width) })
+      },
+
+      setRightSidebarCollapsed: (rightSidebarCollapsed) => {
+        set({ rightSidebarCollapsed })
+      },
+
+      setLastFocusedRightGroupId: (id) => {
+        set(state => state.lastFocusedRightGroupId === id ? state : { lastFocusedRightGroupId: id })
       },
 
       toggleSidebarSection: (id) => {
@@ -280,6 +345,9 @@ export const useUIStore = create<UIState>()(
         sidebarWidth: state.sidebarWidth,
         rightSidebarOpen: state.rightSidebarOpen,
         rightSidebarTab: state.rightSidebarTab,
+        rightSidebarCollapsed: state.rightSidebarCollapsed,
+        rightSidebarWidth: state.rightSidebarWidth,
+        lastFocusedRightGroupId: state.lastFocusedRightGroupId,
         sidebarSections: state.sidebarSections,
         lastFocusedGroupId: state.lastFocusedGroupId,
         isPreviewMode: state.isPreviewMode,

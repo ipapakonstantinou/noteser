@@ -56,6 +56,111 @@ export interface SidebarGroupState {
 // enough that the strip + a sliver of body always stay visible.
 export const MIN_GROUP_HEIGHT = 80
 
+// Pure helpers shared between the left + right group setters. Each
+// returns a new groups array (or the original ref when the change is a
+// no-op so subscribers don't re-render). Extracted so the right-side
+// setters don't re-implement the move/drop-empty logic that the left
+// side has been carrying since the 2026-06-04 refactor.
+
+export function applySetGroupActiveTab(
+  groups: SidebarGroupState[], groupId: string, tabId: string,
+): SidebarGroupState[] {
+  const next = groups.map(g =>
+    g.id === groupId && g.tabs.includes(tabId) && g.activeTab !== tabId
+      ? { ...g, activeTab: tabId }
+      : g,
+  )
+  if (next.every((g, i) => g === groups[i])) return groups
+  return next
+}
+
+export function applyAddTabToGroup(
+  groups: SidebarGroupState[], groupId: string, tabId: string,
+): SidebarGroupState[] {
+  const target = groups.find(g => g.id === groupId)
+  if (!target) return groups
+  if (target.tabs.includes(tabId)) {
+    return groups.map(g =>
+      g.id === groupId ? { ...g, activeTab: tabId } : g,
+    )
+  }
+  const withRemoved = groups
+    .map(g => g.id === groupId ? g : { ...g, tabs: g.tabs.filter(t => t !== tabId) })
+    .map(g => g.tabs.length === 0 && g.id !== groupId
+      ? null
+      : g.activeTab && !g.tabs.includes(g.activeTab) && g.id !== groupId
+        ? { ...g, activeTab: g.tabs[0] ?? null }
+        : g)
+    .filter((g): g is SidebarGroupState => g !== null)
+  return withRemoved.map(g =>
+    g.id === groupId
+      ? { ...g, tabs: [...g.tabs, tabId], activeTab: tabId }
+      : g,
+  )
+}
+
+export function applyRemoveTabFromGroup(
+  groups: SidebarGroupState[], groupId: string, tabId: string,
+): SidebarGroupState[] {
+  const target = groups.find(g => g.id === groupId)
+  if (!target || !target.tabs.includes(tabId)) return groups
+  const nextTabs = target.tabs.filter(t => t !== tabId)
+  return groups
+    .map(g => {
+      if (g.id !== groupId) return g
+      if (nextTabs.length === 0) return null
+      return {
+        ...g,
+        tabs: nextTabs,
+        activeTab: g.activeTab === tabId ? (nextTabs[0] ?? null) : g.activeTab,
+      }
+    })
+    .filter((g): g is SidebarGroupState => g !== null)
+}
+
+export function applyCreateGroupAt(
+  groups: SidebarGroupState[], insertAt: number, tabId: string,
+): SidebarGroupState[] {
+  const withoutTab = groups
+    .map(g => ({ ...g, tabs: g.tabs.filter(t => t !== tabId) }))
+    .map(g => g.activeTab && !g.tabs.includes(g.activeTab)
+      ? { ...g, activeTab: g.tabs[0] ?? null }
+      : g)
+    .filter(g => g.tabs.length > 0)
+  const newGroup: SidebarGroupState = {
+    id: newSidebarGroupId(),
+    tabs: [tabId],
+    activeTab: tabId,
+    collapsed: false,
+  }
+  const clamped = Math.max(0, Math.min(insertAt, withoutTab.length))
+  const next = [...withoutTab]
+  next.splice(clamped, 0, newGroup)
+  return next
+}
+
+export function applyToggleGroupCollapsed(
+  groups: SidebarGroupState[], groupId: string,
+): SidebarGroupState[] {
+  return groups.map(g =>
+    g.id === groupId ? { ...g, collapsed: !g.collapsed } : g,
+  )
+}
+
+export function applySetGroupHeight(
+  groups: SidebarGroupState[], groupId: string, height: number | null,
+): SidebarGroupState[] {
+  const clamped =
+    height == null ? null : Math.max(MIN_GROUP_HEIGHT, Math.round(height))
+  const next = groups.map(g => {
+    if (g.id !== groupId) return g
+    if ((g.height ?? null) === clamped) return g
+    return { ...g, height: clamped }
+  })
+  if (next.every((g, i) => g === groups[i])) return groups
+  return next
+}
+
 // Crypto-strong random group id. Falls back to Math.random in the rare
 // SSR/Node-without-crypto path (tests). Exported so the migration +
 // the runtime "create group" helper can use the same generator.
@@ -187,6 +292,14 @@ export interface SettingsState {
   // Sidebar tab ids hidden via the right-click context menu. Filtered
   // out at render time. Restored via Settings → Sidebar.
   hiddenSidebarTabs: string[]
+
+  // ── Right sidebar groups (parity with left, 2026-06-04) ────────────────
+  // Same shape as `sidebarGroups`, but holds the RIGHT-side panel ids
+  // (properties, backlinks). The right registry lives in
+  // components/sidebar/rightPanelRegistry.tsx. Default: one group with
+  // properties so the right sidebar always has something to show on
+  // first open.
+  rightSidebarGroups: SidebarGroupState[]
 
   // ── Onboarding ─────────────────────────────────────────────────────────
   // True once the first-run onboarding modal has been dismissed (either by
@@ -373,6 +486,18 @@ export interface SettingsState {
   // the user double-clicks the divider to "snap back"). Clamped to >=
   // MIN_GROUP_HEIGHT.
   setGroupHeight: (groupId: string, height: number | null) => void
+  // ── Right sidebar group setters — mirror the left-side ones above.
+  // Same semantics (move tab between groups, drop empty groups, etc.)
+  // applied to `rightSidebarGroups`. No `hiddenRightSidebarTabs`
+  // counterpart yet — the right side has so few panels that hiding
+  // them would be more confusing than useful.
+  setRightSidebarGroups: (groups: SidebarGroupState[]) => void
+  setRightGroupActiveTab: (groupId: string, tabId: string) => void
+  addTabToRightGroup: (groupId: string, tabId: string) => void
+  removeTabFromRightGroup: (groupId: string, tabId: string) => void
+  createRightGroupAt: (insertAt: number, tabId: string) => void
+  toggleRightGroupCollapsed: (groupId: string) => void
+  setRightGroupHeight: (groupId: string, height: number | null) => void
   // Adds an id to `hiddenSidebarTabs` if not present. The tab disappears
   // from every group it lived in (auto-unpin); empty groups are dropped.
   hideSidebarTab: (id: string) => void
@@ -495,6 +620,12 @@ const DEFAULTS = {
   // menu. Hidden tabs are filtered out of every group's strip at
   // render time. They can be restored via Settings → Sidebar.
   hiddenSidebarTabs: [] as string[],
+  // Default RIGHT-side stack — one group containing Properties so the
+  // right sidebar shows note metadata as soon as the user opens it.
+  // Stable id so SSR + first-client render match.
+  rightSidebarGroups: [
+    { id: 'right-default', tabs: ['properties'], activeTab: 'properties', collapsed: false },
+  ] as SidebarGroupState[],
   onboardingShown: false,
   startupNoteId: null as string | null,
   settingsFolderPath: '.noteser',
@@ -637,109 +768,65 @@ export const useSettingsStore = create<SettingsState>()(
         setSidebarGroups: (sidebarGroups) => set({ sidebarGroups }),
         setGroupActiveTab: (groupId, tabId) =>
           set((state) => {
-            const next = state.sidebarGroups.map(g =>
-              g.id === groupId && g.tabs.includes(tabId) && g.activeTab !== tabId
-                ? { ...g, activeTab: tabId }
-                : g,
-            )
+            const next = applySetGroupActiveTab(state.sidebarGroups, groupId, tabId)
             // Same-ref short-circuit so subscribers don't re-render on
             // a no-op (clicking an already-active tab).
-            if (next.every((g, i) => g === state.sidebarGroups[i])) return state
-            return { sidebarGroups: next }
+            return next === state.sidebarGroups ? state : { sidebarGroups: next }
           }),
         addTabToGroup: (groupId, tabId) =>
           set((state) => {
-            // Idempotent: bail if the tab already lives in this group.
-            const target = state.sidebarGroups.find(g => g.id === groupId)
-            if (!target) return state
-            if (target.tabs.includes(tabId)) {
-              // Already there — just focus it.
-              return {
-                sidebarGroups: state.sidebarGroups.map(g =>
-                  g.id === groupId ? { ...g, activeTab: tabId } : g,
-                ),
-              }
-            }
-            // Move semantics: a tab can only live in one group, so
-            // remove from any other group first. Drop empty groups.
-            const withRemoved = state.sidebarGroups
-              .map(g => g.id === groupId ? g : { ...g, tabs: g.tabs.filter(t => t !== tabId) })
-              .map(g => g.tabs.length === 0 && g.id !== groupId
-                ? null
-                : g.activeTab && !g.tabs.includes(g.activeTab) && g.id !== groupId
-                  ? { ...g, activeTab: g.tabs[0] ?? null }
-                  : g)
-              .filter((g): g is SidebarGroupState => g !== null)
-            return {
-              sidebarGroups: withRemoved.map(g =>
-                g.id === groupId
-                  ? { ...g, tabs: [...g.tabs, tabId], activeTab: tabId }
-                  : g,
-              ),
-            }
+            const next = applyAddTabToGroup(state.sidebarGroups, groupId, tabId)
+            return next === state.sidebarGroups ? state : { sidebarGroups: next }
           }),
         removeTabFromGroup: (groupId, tabId) =>
           set((state) => {
-            const target = state.sidebarGroups.find(g => g.id === groupId)
-            if (!target || !target.tabs.includes(tabId)) return state
-            const nextTabs = target.tabs.filter(t => t !== tabId)
-            // If the group is now empty, drop the group entirely.
-            // Otherwise, if the removed tab was active, fall back to
-            // the first remaining tab.
-            const sidebarGroups = state.sidebarGroups
-              .map(g => {
-                if (g.id !== groupId) return g
-                if (nextTabs.length === 0) return null
-                return {
-                  ...g,
-                  tabs: nextTabs,
-                  activeTab: g.activeTab === tabId ? (nextTabs[0] ?? null) : g.activeTab,
-                }
-              })
-              .filter((g): g is SidebarGroupState => g !== null)
-            return { sidebarGroups }
+            const next = applyRemoveTabFromGroup(state.sidebarGroups, groupId, tabId)
+            return next === state.sidebarGroups ? state : { sidebarGroups: next }
           }),
         createGroupAt: (insertAt, tabId) =>
-          set((state) => {
-            // Move semantics — yank the tab from whatever group it was
-            // in first (drop empty groups). Then splice a brand-new
-            // single-tab group at the requested index.
-            const withoutTab = state.sidebarGroups
-              .map(g => ({ ...g, tabs: g.tabs.filter(t => t !== tabId) }))
-              .map(g => g.activeTab && !g.tabs.includes(g.activeTab)
-                ? { ...g, activeTab: g.tabs[0] ?? null }
-                : g)
-              .filter(g => g.tabs.length > 0)
-            const newGroup: SidebarGroupState = {
-              id: newSidebarGroupId(),
-              tabs: [tabId],
-              activeTab: tabId,
-              collapsed: false,
-            }
-            const clamped = Math.max(0, Math.min(insertAt, withoutTab.length))
-            const next = [...withoutTab]
-            next.splice(clamped, 0, newGroup)
-            return { sidebarGroups: next }
-          }),
+          set((state) => ({
+            sidebarGroups: applyCreateGroupAt(state.sidebarGroups, insertAt, tabId),
+          })),
         toggleGroupCollapsed: (groupId) =>
           set((state) => ({
-            sidebarGroups: state.sidebarGroups.map(g =>
-              g.id === groupId ? { ...g, collapsed: !g.collapsed } : g,
-            ),
+            sidebarGroups: applyToggleGroupCollapsed(state.sidebarGroups, groupId),
           })),
         setGroupHeight: (groupId, height) =>
           set((state) => {
-            const clamped =
-              height == null
-                ? null
-                : Math.max(MIN_GROUP_HEIGHT, Math.round(height))
-            const next = state.sidebarGroups.map(g => {
-              if (g.id !== groupId) return g
-              if ((g.height ?? null) === clamped) return g
-              return { ...g, height: clamped }
-            })
-            if (next.every((g, i) => g === state.sidebarGroups[i])) return state
-            return { sidebarGroups: next }
+            const next = applySetGroupHeight(state.sidebarGroups, groupId, height)
+            return next === state.sidebarGroups ? state : { sidebarGroups: next }
+          }),
+        // Right-side setters — mirror the left-side ones, swapping the
+        // target field. Same helpers so behaviour (move semantics,
+        // drop empty groups, …) stays in lockstep without copy-paste.
+        setRightSidebarGroups: (rightSidebarGroups) => set({ rightSidebarGroups }),
+        setRightGroupActiveTab: (groupId, tabId) =>
+          set((state) => {
+            const next = applySetGroupActiveTab(state.rightSidebarGroups, groupId, tabId)
+            return next === state.rightSidebarGroups ? state : { rightSidebarGroups: next }
+          }),
+        addTabToRightGroup: (groupId, tabId) =>
+          set((state) => {
+            const next = applyAddTabToGroup(state.rightSidebarGroups, groupId, tabId)
+            return next === state.rightSidebarGroups ? state : { rightSidebarGroups: next }
+          }),
+        removeTabFromRightGroup: (groupId, tabId) =>
+          set((state) => {
+            const next = applyRemoveTabFromGroup(state.rightSidebarGroups, groupId, tabId)
+            return next === state.rightSidebarGroups ? state : { rightSidebarGroups: next }
+          }),
+        createRightGroupAt: (insertAt, tabId) =>
+          set((state) => ({
+            rightSidebarGroups: applyCreateGroupAt(state.rightSidebarGroups, insertAt, tabId),
+          })),
+        toggleRightGroupCollapsed: (groupId) =>
+          set((state) => ({
+            rightSidebarGroups: applyToggleGroupCollapsed(state.rightSidebarGroups, groupId),
+          })),
+        setRightGroupHeight: (groupId, height) =>
+          set((state) => {
+            const next = applySetGroupHeight(state.rightSidebarGroups, groupId, height)
+            return next === state.rightSidebarGroups ? state : { rightSidebarGroups: next }
           }),
         hideSidebarTab: (id) =>
           set((state) => {
