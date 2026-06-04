@@ -330,7 +330,9 @@
 .cm-editor .cm-scroller,
 .cm-editor .cm-content,
 .cm-editor .cm-line,
-.cm-editor .cm-gutters {
+.cm-editor .cm-gutters,
+.cm-editor .cm-gutterElement,
+.cm-editor .cm-activeLineGutter {
   background-color: transparent !important;
   color: inherit;
   border-right: none !important;
