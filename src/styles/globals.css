@@ -48,10 +48,12 @@
     font-family: var(--font-interface);
   }
 
-  /* Scrollbar styling */
+  /* Scrollbar styling. obsidianBorder thumb matches the soft palette
+     introduced 2026-06-04 — it blends into the near-black bg until
+     hover. */
   * {
     scrollbar-width: thin;
-    scrollbar-color: theme('colors.obsidianAccent') transparent;
+    scrollbar-color: theme('colors.obsidianBorder') transparent;
   }
 
   ::-webkit-scrollbar {
@@ -63,8 +65,13 @@
     background: transparent;
   }
 
+  /* Darker thumb (user feedback 2026-06-04, option 1α): the previous
+     obsidianAccent (#3a3a3a) read as a bright vertical line against the
+     near-black sidebar; obsidianBorder (#2e2e2e) is closer to bg so it
+     blends in until you actually need it. Hover keeps a more visible
+     highlight so the thumb is still findable. */
   ::-webkit-scrollbar-thumb {
-    background-color: theme('colors.obsidianAccent');
+    background-color: theme('colors.obsidianBorder');
     border-radius: 3px;
   }
 
@@ -186,8 +193,12 @@
     @apply bg-transparent p-0;
   }
 
+  /* Blockquote: bar removed per user feedback (2026-06-04, option 2γ).
+     The italic + secondary-text colour still differentiates quoted
+     content from regular prose; the previous 4px blue accent read as
+     visual noise. */
   .prose blockquote {
-    @apply border-l-4 border-obsidianAccentPurple pl-4 italic text-obsidianSecondaryText my-4;
+    @apply pl-4 italic text-obsidianSecondaryText my-4;
   }
 
   .prose ul,
