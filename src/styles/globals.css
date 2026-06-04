@@ -89,11 +89,11 @@
 /* Components */
 @layer components {
   .obsidian-sidebar {
-    /* User feedback 2026-06-04: remove the right border entirely so
-       the sidebar → editor seam is invisible. The SidebarResizeHandle
-       still occupies the 6px gap as the draggable boundary; it stays
-       transparent at rest and tints purple on hover/drag. */
-    @apply bg-obsidianBlack h-full overflow-y-auto;
+    /* User feedback 2026-06-04 (round 2): "I need a soft white line
+       to separate notes from activity panel". Soft #2e2e2e border on
+       the right edge — visible enough to bound the sidebar but quiet
+       against the dark surfaces on either side. */
+    @apply bg-obsidianBlack border-r border-obsidianBorder h-full overflow-y-auto;
   }
 
   .obsidian-button {
@@ -320,13 +320,20 @@
   font-size: 0.92em;
 }
 
-/* CodeMirror container — force dark background regardless of default theme */
+/* CodeMirror container — force dark background regardless of default
+   theme. Includes `.cm-gutters` (where the diff gutter mounts) so the
+   default light-mode bg + 1px border-right don't paint a visible
+   vertical band between the sidebar and the editor (user feedback
+   2026-06-04). The diff markers themselves still render via their own
+   absolute-positioned `.cm-diff-marker` spans. */
 .cm-editor,
 .cm-editor .cm-scroller,
 .cm-editor .cm-content,
-.cm-editor .cm-line {
+.cm-editor .cm-line,
+.cm-editor .cm-gutters {
   background-color: transparent !important;
   color: inherit;
+  border-right: none !important;
 }
 
 /* Utilities */

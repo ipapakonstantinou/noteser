@@ -91,7 +91,7 @@ export const TabBar = ({ pane }: Props) => {
               onClick={() => handleTabClick(tab.id)}
               onDoubleClick={() => promoteTab(tab.id)}
               onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); closeTab(tab.id) } }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 max-md:py-2.5 text-sm border-r border-obsidianBorder cursor-pointer max-w-[200px] flex-shrink-0 select-none min-h-[36px] max-md:min-h-[44px] ${
+              className={`flex items-center gap-1.5 px-3 py-2 text-sm border-r border-obsidianBorder cursor-pointer max-w-[200px] flex-shrink-0 select-none min-h-[44px] ${
                 active
                   ? 'bg-obsidianBlack text-obsidianText border-t-2 border-t-obsidianAccentPurple'
                   : 'text-obsidianSecondaryText hover:bg-obsidianHighlight'
