@@ -330,6 +330,17 @@ export interface SettingsState {
   // built muscle memory.
   confirmBulkDelete: boolean
 
+  // ── Single-note trash warning ─────────────────────────────────────────
+  // Show the "Move to Trash" confirm dialog when deleting a single note.
+  // Defaults on (the historical behaviour). Users who delete a lot — and
+  // already trust the Trash safety net — can flip this off in Settings →
+  // General so a Delete keystroke (or a context-menu Delete click) moves
+  // straight to trash. Bulk-delete keeps its OWN toggle
+  // (`confirmBulkDelete`) so muscle memory for "Ctrl+Click selects, then
+  // Delete kills the lot" doesn't accidentally graduate to "one
+  // mis-keystroke nukes 47 notes".
+  confirmBeforeTrash: boolean
+
   // ── Trash ──────────────────────────────────────────────────────────────
   // Controls what `deleteNote` / `cascadeDeleteFolder` do. 'trash' = the
   // existing soft-delete (recoverable via the Trash view). 'hardDelete' =
@@ -466,6 +477,7 @@ export interface SettingsState {
   resetShortcutOverrides: () => void
   setTrashMode: (mode: TrashMode) => void
   setConfirmBulkDelete: (value: boolean) => void
+  setConfirmBeforeTrash: (value: boolean) => void
   setBetaEnabled: (value: boolean) => void
   setBetaFlag: (id: string, value: boolean) => void
   setRibbonOrder: (order: string[]) => void
@@ -603,6 +615,7 @@ const DEFAULTS = {
   shortcutOverrides: {} as Record<string, string>,
   trashMode: 'trash' as TrashMode,
   confirmBulkDelete: true,
+  confirmBeforeTrash: true,
   betaEnabled: false,
   betaFlags: {} as Record<string, boolean>,
   ribbonOrder: [] as string[],
@@ -775,6 +788,11 @@ export const useSettingsStore = create<SettingsState>()(
         resetShortcutOverrides: () => set({ shortcutOverrides: {} }),
         setTrashMode: (trashMode) => setVault({ trashMode }),
         setConfirmBulkDelete: (confirmBulkDelete) => setVault({ confirmBulkDelete }),
+        // Device-only — same logic as `confirmBulkDelete` lives in the
+        // vault slice, but the single-note toggle is per-DEVICE because
+        // muscle memory is a property of how the user uses THIS device's
+        // keyboard, not a shared vault preference. Skip the vault bump.
+        setConfirmBeforeTrash: (confirmBeforeTrash) => set({ confirmBeforeTrash }),
         setBetaEnabled: (betaEnabled) => setVault({ betaEnabled }),
         setBetaFlag: (id, value) =>
           set((state) => ({

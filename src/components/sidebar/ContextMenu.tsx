@@ -200,6 +200,18 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   const isTrashedNote = isNote && item && 'isDeleted' in item && item.isDeleted
 
   const handleDelete = () => {
+    // Single-note soft-delete only: honour the "Confirm before moving
+    // notes to trash" toggle. Folders, trashed notes (PERMANENT delete),
+    // and hardDelete mode all keep their confirm because they're either
+    // irreversible or cascade-y enough to be worth a second look.
+    const { confirmBeforeTrash, trashMode } = useSettingsStore.getState()
+    const isSingleNoteSoftDelete =
+      isNote && !isTrashedNote && trashMode !== 'hardDelete'
+    if (isSingleNoteSoftDelete && !confirmBeforeTrash) {
+      deleteNote(contextMenu.id)
+      onClose()
+      return
+    }
     openModal({
       type: 'delete',
       // A trashed note's "Delete" means PERMANENTLY delete (it's already
