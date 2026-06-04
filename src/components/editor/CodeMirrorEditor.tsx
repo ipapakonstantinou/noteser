@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import { EditorView, keymap, type Command } from '@codemirror/view'
+import { EditorView, keymap, drawSelection, type Command } from '@codemirror/view'
 import { Prec, Compartment } from '@codemirror/state'
 import { moveLineUp, moveLineDown, deleteLine } from '@codemirror/commands'
 import { search, searchKeymap, openSearchPanel } from '@codemirror/search'
@@ -639,6 +639,13 @@ export function CodeMirrorEditor({
     ])),
     obsidianTheme,
     EditorView.lineWrapping,
+    // Explicit drawSelection() so the .cm-selectionBackground layer is
+    // guaranteed to render regardless of basicSetup defaults. We already paint
+    // that layer with var(--obsidian-highlight) (see obsidianTheme above), and
+    // globals.css carries a `::selection` fallback for the native path —
+    // belt-and-suspenders so a future @uiw basicSetup change that drops
+    // drawSelection() from defaults can't leave the selection invisible again.
+    drawSelection(),
     renumberOnEdit,
     // Prec.highest ensures our bindings win over any conflicting default keymap.
     Prec.highest(keymap.of([
