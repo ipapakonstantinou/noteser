@@ -89,11 +89,11 @@
 /* Components */
 @layer components {
   .obsidian-sidebar {
-    /* Same bg as the Ribbon (obsidianBlack) so the activity bar and
-       the sidebar form one seamless dark surface — no visible "gap"
-       between them. The right border stays as the boundary against
-       the editor. */
-    @apply bg-obsidianBlack border-r border-obsidianBorder h-full overflow-y-auto;
+    /* User feedback 2026-06-04: remove the right border entirely so
+       the sidebar → editor seam is invisible. The SidebarResizeHandle
+       still occupies the 6px gap as the draggable boundary; it stays
+       transparent at rest and tints purple on hover/drag. */
+    @apply bg-obsidianBlack h-full overflow-y-auto;
   }
 
   .obsidian-button {
