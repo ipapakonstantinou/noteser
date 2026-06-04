@@ -322,7 +322,16 @@ const obsidianTheme = EditorView.theme({
   '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,0.025)' },
   // No display:none on .cm-gutters — basicSetup disables line-numbers
   // and fold-gutter (see <CodeMirror basicSetup={...} />), so the only
-  // gutter mounted is our diff gutter, which needs to render.
+  // gutter mounted is our diff gutter, which needs to render. The
+  // default CodeMirror theme paints `.cm-gutters` with a light grey
+  // background + 1px right border, which read as a visible vertical
+  // seam against the dark editor (user feedback 2026-06-04). Force
+  // transparent + no border so the seam between the sidebar and the
+  // editor stays invisible.
+  '.cm-gutters': {
+    backgroundColor: 'transparent',
+    borderRight: 'none',
+  },
   '.cm-placeholder': { color: '#6b7280' },
   // Search / replace panel — repaint it in the Obsidian palette so it
   // doesn't look like a stray native form on top of the editor.
