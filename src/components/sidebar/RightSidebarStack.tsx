@@ -134,8 +134,14 @@ export const RightSidebarStack = () => {
         const showHandleBelow =
           next != null && !g.collapsed && !next.collapsed
 
+        // Same fix as SidebarStack: the wrapper has to be a flex
+        // column so SidebarGroup's `flex-1` (fill mode) actually
+        // stretches to fill the remaining vertical space.
+        const wrapperClass = layoutMode === 'fill'
+          ? 'flex-1 min-h-0 flex flex-col'
+          : 'flex-shrink-0 flex flex-col'
         return (
-          <div key={g.id} ref={setGroupRef(g.id)}>
+          <div key={g.id} ref={setGroupRef(g.id)} className={wrapperClass}>
             <RightInterGroupDropZone
               active={dragActive}
               onDropId={(id) => createRightGroupWithTab(idx, id)}

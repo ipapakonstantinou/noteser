@@ -188,8 +188,16 @@ export const SidebarStack = ({ onRightClick }: Props) => {
         const showHandleBelow =
           next != null && !g.collapsed && !next.collapsed
 
+        // The wrapper has to be a flex column itself so the
+        // SidebarGroup's `flex-1` (fill mode) actually grows to the
+        // remaining vertical space instead of collapsing to content
+        // height. When THIS wrapper is the fill target, give it
+        // flex-1 too so it stretches inside the SidebarStack flexbox.
+        const wrapperClass = layoutMode === 'fill'
+          ? 'flex-1 min-h-0 flex flex-col'
+          : 'flex-shrink-0 flex flex-col'
         return (
-          <div key={g.id} ref={setGroupRef(g.id)}>
+          <div key={g.id} ref={setGroupRef(g.id)} className={wrapperClass}>
             <InterGroupDropZone
               active={dragActive}
               onDropId={(id) => createGroupWithTab(idx, id)}
