@@ -551,26 +551,37 @@ export default function Home() {
 
   return (
     <div className="flex h-dvh w-screen bg-obsidianBlack text-obsidianText overflow-hidden">
-      {/* Ribbon */}
-      <div className="flex-none">
-        <Ribbon />
-      </div>
+      {/* Ribbon (Activity Bar). Per user feedback 2026-06-04, the bar
+          disappears entirely when the sidebar is collapsed — matches
+          Obsidian's behaviour, gives the editor the full viewport
+          width. A thin edge handle on the left (rendered below) is the
+          single re-expand affordance. */}
+      {!isSidebarCollapsed && (
+        <div className="flex-none">
+          <Ribbon />
+        </div>
+      )}
 
-      {/* Sidebar column. Collapsed → fixed 50px rail. Expanded → the
-          user-set, drag-resizable width from useUIStore (defaults to
-          256 = the old w-64). We DROP the width transition while
-          expanded so the drag tracks the pointer 1:1 instead of
-          lagging behind a 300ms ease; the collapse toggle keeps its
-          animation. Pre-hydration we render the default width to avoid
-          an SSR/client mismatch (sidebarWidth is persisted). */}
-      <div
-        className={`flex-none ${
-          isSidebarCollapsed ? 'w-[50px] transition-all duration-300' : ''
-        }`}
-        style={isSidebarCollapsed ? undefined : { width: hydrated ? sidebarWidth : DEFAULT_SIDEBAR_WIDTH }}
-      >
-        <Sidebar />
-      </div>
+      {/* Sidebar column. Hidden entirely when collapsed (the activity
+          bar above is hidden too, so the editor goes full-width).
+          Expanded → the user-set, drag-resizable width from useUIStore
+          (defaults to 256 = the old w-64). We DROP the width transition
+          while expanded so the drag tracks the pointer 1:1 instead of
+          lagging behind a 300ms ease. Pre-hydration we render the
+          default width to avoid an SSR/client mismatch. */}
+      {!isSidebarCollapsed && (
+        <div
+          className="flex-none"
+          style={{ width: hydrated ? sidebarWidth : DEFAULT_SIDEBAR_WIDTH }}
+        >
+          <Sidebar />
+        </div>
+      )}
+
+      {/* Re-expand handle — only when collapsed on desktop. Reuses
+          the same DrawerHandle that opens the mobile drawer (a thin
+          pill on the left edge with a hover chevron). */}
+      {isSidebarCollapsed && <DrawerHandle />}
 
       {/* Drag-to-resize handle — sits between the sidebar and the
           editor. Only meaningful when the sidebar is expanded. */}

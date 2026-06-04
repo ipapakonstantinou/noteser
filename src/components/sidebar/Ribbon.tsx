@@ -299,26 +299,26 @@ export const Ribbon = () => {
     unpinPanel(pinnedGroups, dropped)
   }
 
-  const showSeparator = pinnedIconIds.length > 0 && unpinnedIds.length > 0
-
   return (
     <div className="h-full w-[44px] max-md:w-12 flex flex-col items-center gap-1 py-2 bg-obsidianBlack border-r border-obsidianBorder">
       {/* Collapse-sidebar toggle. Moved from the Sidebar header so the
           activity bar owns the chrome that survives a collapsed
           sidebar. Visible on every viewport — on mobile the same flag
           drives the drawer-open state, so the icon doubles as
-          open/close. */}
-      <RibbonButton
-        onClick={toggleSidebar}
-        title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        testId="activity-bar-collapse-toggle"
-      >
-        {sidebarCollapsed
-          ? <PanelRightIcon className="w-5 h-5" />
-          : <PanelLeftIcon className="w-5 h-5" />}
-      </RibbonButton>
-
-      <Separator />
+          open/close. A small bottom-margin gives the pinned/unpinned
+          section a hair of breathing room (Obsidian uses spacing, not
+          divider lines, to group these). */}
+      <div className="mb-1.5">
+        <RibbonButton
+          onClick={toggleSidebar}
+          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          testId="activity-bar-collapse-toggle"
+        >
+          {sidebarCollapsed
+            ? <PanelRightIcon className="w-5 h-5" />
+            : <PanelLeftIcon className="w-5 h-5" />}
+        </RibbonButton>
+      </div>
 
       {/* Pinned panel icons. Single icon per group. Right-click pops
           a tiny native-style context menu via the existing approach
@@ -366,8 +366,6 @@ export const Ribbon = () => {
         )}
       </div>
 
-      {showSeparator && <Separator />}
-
       {/* Unpinned panel icons. Drag UP onto the pinned drop zone to
           pin (the unpinned icon emits TAB_DRAG_MIME which the pin
           section accepts). */}
@@ -404,9 +402,10 @@ export const Ribbon = () => {
         })}
       </div>
 
-      <Separator />
-
-      {/* Quick-launch ACTIONS — search + new-note + daily-note + ... */}
+      {/* Quick-launch ACTIONS — search + new-note + daily-note + ...
+          A small top-margin separates these from the panel-switcher
+          section above (spacing, not a divider line, per Obsidian). */}
+      <div className="mt-2 w-full flex flex-col items-center gap-1">
       <RibbonButton onClick={openSearch} title="Search (Ctrl+K)">
         <MagnifyingGlassIcon className="w-5 h-5" />
       </RibbonButton>
@@ -440,6 +439,7 @@ export const Ribbon = () => {
           </div>
         )
       })}
+      </div>
 
       <div className="mt-auto">
         <RibbonButton onClick={() => openModal({ type: 'settings' })} title="Settings">
@@ -449,10 +449,6 @@ export const Ribbon = () => {
     </div>
   )
 }
-
-const Separator = () => (
-  <div className="w-7 border-t border-obsidianBorder/60 my-1" aria-hidden="true" />
-)
 
 const RibbonButton = ({
   onClick, title, children, active, testId,
