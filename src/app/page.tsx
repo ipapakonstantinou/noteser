@@ -601,7 +601,7 @@ export default function Home() {
       {!isRightSidebarCollapsed && <RightSidebarResizeHandle />}
       {!isRightSidebarCollapsed && (
         <div
-          className="flex-none border-l border-obsidianBorder flex flex-col h-full"
+          className="flex-none flex flex-col h-full"
           style={{ width: hydrated ? rightSidebarWidth : DEFAULT_RIGHT_SIDEBAR_WIDTH }}
           data-testid="right-sidebar-column"
         >

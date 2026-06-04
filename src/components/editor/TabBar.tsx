@@ -67,7 +67,7 @@ export const TabBar = ({ pane }: Props) => {
   return (
     <div
       className={`flex items-stretch border-b border-obsidianBorder overflow-x-auto ${
-        paneIsActive ? 'bg-obsidianGray' : 'bg-obsidianGray/60'
+        paneIsActive ? 'bg-obsidianBlack' : 'bg-obsidianBlack/95'
       }`}
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOverIdx(null) }}
     >
