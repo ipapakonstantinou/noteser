@@ -14,6 +14,7 @@ import {
   ArrowDownTrayIcon,
   InformationCircleIcon,
   BeakerIcon,
+  PuzzlePieceIcon,
   SwatchIcon,
   ViewColumnsIcon,
   EyeIcon,
@@ -22,7 +23,7 @@ import {
 import { PANELS } from '@/components/sidebar/sidebarPanelRegistry'
 import { THEME_TOKENS, THEME_PRESETS } from '@/utils/theme'
 import { FONT_SLOTS_DEF, SYSTEM_DEFAULT_VALUE, type FontSlot } from '@/utils/fonts'
-import { useUIStore, useSettingsStore, useGitHubStore, useLocalFolderStore, useNoteStore } from '@/stores'
+import { useUIStore, useSettingsStore, useGitHubStore, useLocalFolderStore, useNoteStore, useFolderStore } from '@/stores'
 import type { FolderSortMode, TaskListDensity } from '@/stores'
 import type { TrashMode } from '@/stores/settingsStore'
 import { Modal, Button } from '@/components/ui'
@@ -75,14 +76,14 @@ const CATEGORIES: readonly CategoryDef[] = [
   { id: 'editor',      label: 'Editor',      Icon: PencilSquareIcon },
   { id: 'sidebar',     label: 'Sidebar',     Icon: ViewColumnsIcon },
   { id: 'attachments', label: 'Attachments', Icon: PaperClipIcon },
-  { id: 'daily-notes', label: 'Daily notes', Icon: CalendarDaysIcon },
+  { id: 'daily-notes', label: 'Daily & weekly notes', Icon: CalendarDaysIcon },
   { id: 'templates',   label: 'Templates',   Icon: DocumentDuplicateIcon },
   { id: 'github',      label: 'GitHub sync', Icon: CloudIcon },
   { id: 'local-folder', label: 'Local folder', Icon: FolderOpenIcon },
   { id: 'ai',          label: 'AI',          Icon: SparklesIcon },
   { id: 'shortcuts',   label: 'Shortcuts',   Icon: CommandLineIcon },
   { id: 'export',      label: 'Export',      Icon: ArrowDownTrayIcon },
-  { id: 'plugins',     label: 'Plugins',     Icon: BeakerIcon },
+  { id: 'plugins',     label: 'Plugins',     Icon: PuzzlePieceIcon },
   { id: 'beta',        label: 'Beta',        Icon: BeakerIcon },
   { id: 'about',       label: 'About',       Icon: InformationCircleIcon },
 ]
@@ -104,11 +105,14 @@ export const SettingsModal = () => {
       size="3xl"
       bodyless
     >
-      <div className="flex flex-row h-[70dvh] min-h-[480px]">
-        {/* ── Left rail: category navigator ─────────────────────────── */}
+      <div className="flex flex-col md:flex-row h-[80dvh] md:h-[70dvh] min-h-[480px]">
+        {/* ── Mobile (≤md): horizontal scroll strip of category chips
+                across the top. Desktop: vertical left rail.
+            Same buttons, different container; only the wrapper class
+            changes by breakpoint. */}
         <nav
           aria-label="Settings categories"
-          className="w-52 flex-none border-r border-obsidianBorder bg-obsidianBlack/40 overflow-y-auto py-2"
+          className="md:w-52 md:flex-none md:border-r border-b md:border-b-0 border-obsidianBorder bg-obsidianBlack/40 overflow-x-auto md:overflow-x-visible md:overflow-y-auto py-1 md:py-2 flex md:block flex-row gap-1 md:gap-0 px-2 md:px-0 flex-none"
           data-testid="settings-categories"
         >
           {CATEGORIES.map(cat => {
@@ -121,10 +125,12 @@ export const SettingsModal = () => {
                 aria-current={isActive ? 'page' : undefined}
                 data-testid={`settings-cat-${cat.id}`}
                 className={[
-                  'w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left transition-colors',
+                  // Mobile: rounded chip; desktop: full-width row.
+                  'flex items-center gap-2 text-sm text-left transition-colors flex-none',
+                  'px-3 py-1.5 rounded md:rounded-none md:w-full md:px-3 md:py-1.5',
                   isActive
-                    ? 'bg-obsidianAccentPurple/15 text-obsidianText border-l-2 border-obsidianAccentPurple pl-[10px]'
-                    : 'text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText border-l-2 border-transparent pl-[10px]',
+                    ? 'bg-obsidianAccentPurple/15 text-obsidianText md:border-l-2 md:border-obsidianAccentPurple md:pl-[10px]'
+                    : 'text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText md:border-l-2 md:border-transparent md:pl-[10px]',
                 ].join(' ')}
               >
                 <cat.Icon className="w-4 h-4 flex-none" />
@@ -137,7 +143,7 @@ export const SettingsModal = () => {
         {/* ── Right pane: selected category content ─────────────────── */}
         <div className="flex-1 min-w-0 flex flex-col">
           <div
-            className="flex-1 min-h-0 overflow-y-auto p-5"
+            className="flex-1 min-h-0 overflow-y-auto p-4 md:p-5"
             data-testid={`settings-panel-${active}`}
           >
             <CategoryPanel id={active} />
@@ -179,18 +185,67 @@ function GeneralPanel() {
   const showHiddenFolders = useSettingsStore(s => s.showHiddenFolders)
   const trashMode = useSettingsStore(s => s.trashMode)
   const confirmBulkDelete = useSettingsStore(s => s.confirmBulkDelete)
+  const confirmBeforeTrash = useSettingsStore(s => s.confirmBeforeTrash)
   const shareDefaultExpiryDays = useSettingsStore(s => s.shareDefaultExpiryDays)
   const shareDefaultBurn = useSettingsStore(s => s.shareDefaultBurn)
+  const startupNoteId = useSettingsStore(s => s.startupNoteId)
   const setFolderSortMode = useSettingsStore(s => s.setFolderSortMode)
   const setShowHiddenFolders = useSettingsStore(s => s.setShowHiddenFolders)
   const setTrashMode = useSettingsStore(s => s.setTrashMode)
   const setConfirmBulkDelete = useSettingsStore(s => s.setConfirmBulkDelete)
+  const setConfirmBeforeTrash = useSettingsStore(s => s.setConfirmBeforeTrash)
   const setShareDefaultExpiryDays = useSettingsStore(s => s.setShareDefaultExpiryDays)
   const setShareDefaultBurn = useSettingsStore(s => s.setShareDefaultBurn)
+  const setStartupNoteId = useSettingsStore(s => s.setStartupNoteId)
+
+  // Note picker options: every non-deleted note labeled by FULL PATH
+  // so two notes with the same title in different folders stay
+  // distinguishable. Sorted by path, capped at 500 to keep the
+  // dropdown usable on huge vaults.
+  const notesForPicker = useNoteStore(s => s.notes)
+  const foldersForPicker = useFolderStore(s => s.folders)
+  const startupOptions = useMemo(() => {
+    const folderById = new Map(foldersForPicker.map(f => [f.id, f] as const))
+    const pathOf = (folderId: string | null): string => {
+      const parts: string[] = []
+      let cur: string | null = folderId
+      while (cur) {
+        const f = folderById.get(cur)
+        if (!f) break
+        parts.unshift(f.name)
+        cur = f.parentId
+      }
+      return parts.join('/')
+    }
+    const labeled = notesForPicker
+      .filter(n => !n.isDeleted)
+      .map(n => {
+        const folderPath = pathOf(n.folderId ?? null)
+        const title = n.title || 'Untitled'
+        const label = folderPath ? `${folderPath}/${title}` : title
+        return { id: n.id, label }
+      })
+      .sort((a, b) => a.label.toLowerCase().localeCompare(b.label.toLowerCase()))
+      .slice(0, 500)
+    return [
+      { value: '', label: 'Welcome view (default)' },
+      ...labeled.map(n => ({ value: n.id, label: n.label })),
+    ]
+  }, [notesForPicker, foldersForPicker])
 
   return (
     <div className="space-y-4">
       <PanelHeading>General</PanelHeading>
+      <Field
+        label="Open on launch"
+        description="Which note opens automatically when Noteser starts. Leave on `Welcome view` to keep the current behaviour."
+      >
+        <SettingsSelect<string>
+          value={startupNoteId ?? ''}
+          onChange={(v) => setStartupNoteId(v === '' ? null : v)}
+          options={startupOptions}
+        />
+      </Field>
       <Field
         label="Sort notes within folders"
         description="How notes are ordered in the sidebar. Manual = insertion order."
@@ -226,6 +281,15 @@ function GeneralPanel() {
             { value: 'trash', label: 'Move to trash (recoverable)' },
             { value: 'hardDelete', label: 'Delete immediately (no trash)' },
           ]}
+        />
+      </Field>
+      <Field
+        label="Confirm before moving notes to trash"
+        description="When off, deleting a note skips the confirmation and moves it straight to trash. Only applies in `Move to trash` mode — immediate-delete still confirms because it can't be undone."
+      >
+        <SettingsCheckbox
+          checked={confirmBeforeTrash}
+          onChange={setConfirmBeforeTrash}
         />
       </Field>
       <Field

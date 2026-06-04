@@ -244,12 +244,14 @@ test('02 — live preview', async ({ page }) => {
 
 test('03 — sidebar pane model', async ({ page }) => {
   await seed(page)
-  // Pin Calendar to the top so the screenshot demonstrates the
-  // stacked pane layout (top mini-strip plus bottom tab strip).
+  // Two stacked groups so the screenshot demonstrates the leaf-model
+  // pane layout (a mini-strip per group, body below each).
   await page.evaluate(() => {
     window.__noteser_test!.stores.settingsStore.setState({
-      pinnedPanels: [['calendar']],
-      sidebarTabOrder: ['files', 'outline', 'search', 'tags', 'bookmarks'],
+      sidebarGroups: [
+        { id: 'shot-1', tabs: ['calendar'], activeTab: 'calendar', collapsed: false },
+        { id: 'shot-2', tabs: ['files'], activeTab: 'files', collapsed: false },
+      ],
     })
   })
   await page.waitForTimeout(300)

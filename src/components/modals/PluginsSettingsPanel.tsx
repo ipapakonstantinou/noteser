@@ -16,8 +16,9 @@ import { useState } from 'react'
 import { ArrowPathIcon, TrashIcon } from '@heroicons/react/24/outline'
 import { usePluginInstallStore } from '@/stores/pluginInstallStore'
 import { usePluginStore } from '@/stores/pluginStore'
+import { useUIStore } from '@/stores'
 import {
-  installPluginFromUrl,
+  fetchPluginForInstall,
   uninstallPlugin,
 } from '@/plugins/pluginHostSingleton'
 
@@ -25,23 +26,22 @@ export const PluginsSettingsPanel = () => {
   const records = usePluginInstallStore((s) => s.records)
   const setEnabled = usePluginInstallStore((s) => s.setEnabled)
   const loadedPlugins = usePluginStore((s) => s.loaded)
+  const openModal = useUIStore((s) => s.openModal)
 
   const [url, setUrl] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [info, setInfo] = useState<string | null>(null)
 
   const handleAdd = async () => {
     setError(null)
-    setInfo(null)
     if (!url.trim()) {
       setError('Paste a manifest.json URL.')
       return
     }
     setBusy(true)
     try {
-      await installPluginFromUrl(url.trim())
-      setInfo('Plugin installed.')
+      const record = await fetchPluginForInstall(url.trim())
+      openModal({ type: 'plugin-install-confirm', data: { record } })
       setUrl('')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -98,7 +98,6 @@ export const PluginsSettingsPanel = () => {
           </button>
         </div>
         {error && <p className="text-xs text-red-300 mt-2">{error}</p>}
-        {info && <p className="text-xs text-emerald-300 mt-2">{info}</p>}
       </section>
 
       <section>

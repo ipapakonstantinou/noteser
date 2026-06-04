@@ -400,6 +400,15 @@ function dispatchShortcut(def: ShortcutDef): void | Promise<void> {
     case 'deleteNote': {
       const id = useNoteStore.getState().selectedNoteId
       if (!id) return
+      // Honour the "Confirm before moving notes to trash" toggle. When
+      // off, the keystroke moves the note straight to trash with no
+      // modal — same dispatcher path the ContextMenu uses, so the two
+      // entrypoints stay in lockstep.
+      const { confirmBeforeTrash, trashMode } = useSettingsStore.getState()
+      if (!confirmBeforeTrash && trashMode !== 'hardDelete') {
+        useNoteStore.getState().deleteNote(id)
+        return
+      }
       ui.openModal({ type: 'delete', data: { type: 'note', id } })
       return
     }

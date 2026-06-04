@@ -120,7 +120,7 @@ export const PinnedMiniStrip = ({
 
   return (
     <div
-      className={`relative flex items-center gap-0.5 px-1 py-1 border-b border-obsidianBorder bg-obsidianDarkGray/40 ${
+      className={`relative flex items-center gap-0.5 px-1 py-1 border-b border-obsidianBorder ${
         dropActive ? 'outline outline-2 outline-obsidianAccentPurple/60' : ''
       }`}
       onDragOver={onStripDragOver}

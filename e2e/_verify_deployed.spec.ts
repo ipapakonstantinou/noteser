@@ -43,21 +43,21 @@ test('FIX 1: right-click inside pinned Files panel does NOT unpin', async ({ pag
   await page.goto(PROD)
   await page.waitForFunction(() => !!window.__noteser_test)
 
-  // Pin the Files panel and seed a folder we can right-click.
+  // Seed one group containing Files + a folder we can right-click.
   await page.evaluate(() => {
     const s = window.__noteser_test!.stores.settingsStore.getState()
-    s.setPinnedPanels([['files']])
+    s.setSidebarGroups([{ id: 'verify-g', tabs: ['files'], activeTab: 'files', collapsed: false }])
     const fs = window.__noteser_test!.stores.folderStore.getState()
     fs.ensureFolderPath(['Verify folder'])
   })
   await page.waitForTimeout(400)
 
-  const pinnedBefore = await page.evaluate(() =>
-    window.__noteser_test!.stores.settingsStore.getState().pinnedPanels,
+  const before = await page.evaluate(() =>
+    window.__noteser_test!.stores.settingsStore.getState().sidebarGroups,
   )
-  expect(pinnedBefore).toEqual([['files']])
+  expect(before[0]?.tabs).toEqual(['files'])
 
-  // Right-click the folder row inside the pinned panel.
+  // Right-click the folder row inside the panel.
   await page.getByTestId('folder-row').first().click({ button: 'right' })
   await page.waitForTimeout(300)
   await page.screenshot({ path: path.join(OUT, 'fix1-right-click-context-menu.png'), fullPage: false })
@@ -65,45 +65,41 @@ test('FIX 1: right-click inside pinned Files panel does NOT unpin', async ({ pag
   // Context menu visible (Rename is a stable label across versions).
   await expect(page.getByRole('button', { name: 'Rename' })).toBeVisible()
 
-  // Panel still pinned (the bug used to bubble-unpin).
-  const pinnedAfter = await page.evaluate(() =>
-    window.__noteser_test!.stores.settingsStore.getState().pinnedPanels,
+  // Panel still in the same group (the bug used to bubble-unpin).
+  const after = await page.evaluate(() =>
+    window.__noteser_test!.stores.settingsStore.getState().sidebarGroups,
   )
-  expect(pinnedAfter).toEqual([['files']])
+  expect(after[0]?.tabs).toEqual(['files'])
 })
 
 test('FIX 2: intra-strip reorder round-trips through the store', async ({ page }) => {
   await page.goto(PROD)
   await page.waitForFunction(() => !!window.__noteser_test)
 
-  // Pin three panels into a single group.
+  // One group with three tabs.
   await page.evaluate(() => {
     window.__noteser_test!.stores.settingsStore.getState()
-      .setPinnedPanels([['files', 'outline', 'search']])
+      .setSidebarGroups([{ id: 'verify-r', tabs: ['files', 'outline', 'search'], activeTab: 'files', collapsed: false }])
   })
   await page.waitForTimeout(400)
 
-  // Capture the strip with three icons.
   await expect(page.getByTestId('sidebar-pinned-tab-files')).toBeVisible()
   await expect(page.getByTestId('sidebar-pinned-tab-outline')).toBeVisible()
   await expect(page.getByTestId('sidebar-pinned-tab-search')).toBeVisible()
   await page.screenshot({ path: path.join(OUT, 'fix2-strip-before.png'), fullPage: false })
 
-  // Drive a reorder through the store — equivalent to the user
-  // dragging 'search' onto 'files' with side='before'. The deployed
-  // setPinnedPanels API takes the new shape directly.
+  // Drive a reorder through the store.
   await page.evaluate(() => {
     window.__noteser_test!.stores.settingsStore.getState()
-      .setPinnedPanels([['search', 'files', 'outline']])
+      .setSidebarGroups([{ id: 'verify-r', tabs: ['search', 'files', 'outline'], activeTab: 'search', collapsed: false }])
   })
   await page.waitForTimeout(400)
 
   const after = await page.evaluate(() =>
-    window.__noteser_test!.stores.settingsStore.getState().pinnedPanels,
+    window.__noteser_test!.stores.settingsStore.getState().sidebarGroups,
   )
-  expect(after).toEqual([['search', 'files', 'outline']])
+  expect(after[0]?.tabs).toEqual(['search', 'files', 'outline'])
   await page.screenshot({ path: path.join(OUT, 'fix2-strip-after.png'), fullPage: false })
 
-  // And confirm each icon is still draggable post-reorder.
   await expect(page.getByTestId('sidebar-pinned-tab-files')).toHaveAttribute('draggable', 'true')
 })

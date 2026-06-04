@@ -248,12 +248,20 @@ const livePreviewTheme = EditorView.baseTheme({
   },
   '.cm-lp-strike': { textDecoration: 'line-through', opacity: '0.7' },
   '.cm-lp-blockquote': {
-    borderLeft: '3px solid hsl(217, 88%, 50%)',
+    // Left bar removed per user feedback (2026-06-04, option 2γ).
+    // Italic + dim colour still differentiates quoted content; the
+    // 3px blue accent read as visual noise.
     paddingLeft: '12px',
     fontStyle: 'italic',
     color: '#a8a8a8',
   },
   '.cm-lp-list': { paddingLeft: '4px' },
+  // Blue restored (user feedback 2026-06-04, round 2: "why these are
+  // not blue anymore? I liked the blue in these"). The earlier mute
+  // was a misdiagnosis — the "blue line" Jon was seeing was actually
+  // the cm-activeLineGutter highlight (now overridden in globals.css),
+  // not these inline list/task glyphs. The brackets + bullet markers
+  // get their accent colour back.
   '.cm-lp-list-mark': { color: 'hsl(217, 88%, 50%)', fontWeight: '600' },
   '.cm-lp-task-unchecked': { color: 'hsl(217, 88%, 50%)', cursor: 'pointer' },
   '.cm-lp-task-checked':   { color: 'hsl(217, 88%, 50%)', cursor: 'pointer' },

@@ -49,8 +49,7 @@ function fakeSettings(overrides: Partial<SettingsState> = {}): SettingsState {
     betaEnabled: false,
     betaFlags: {},
     ribbonOrder: [],
-    sidebarTabOrder: [],
-    pinnedPanels: ['calendar'],
+    sidebarGroups: [{ id: 'default', tabs: ['calendar'], activeTab: 'calendar', collapsed: false }],
     onboardingShown: false,
     settingsFolderPath: '.noteser',
     vaultSettingsUpdatedAt: 0,
@@ -68,7 +67,7 @@ test('pickVaultSlice returns only vault-tagged keys', () => {
   expect('aiApiKey' in slice).toBe(false)
   expect('aiProvider' in slice).toBe(false)
   expect('settingsFolderPath' in slice).toBe(false)
-  expect('pinnedPanels' in slice).toBe(false)
+  expect('sidebarGroups' in slice).toBe(false)
 })
 
 test('serialize → parse round-trips a vault slice cleanly', () => {

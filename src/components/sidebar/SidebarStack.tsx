@@ -1,157 +1,81 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { useSettingsStore, type SidebarTabId } from '@/stores'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSettingsStore, type SidebarTabId, type SidebarGroupState } from '@/stores'
 import { SIDEBAR_PANEL_DRAG_MIME } from './SidebarSection'
 import { InterGroupDropZone } from './InterGroupDropZone'
-import { PinnedGroup } from './PinnedGroup'
-import { TabSwitcher } from './TabSwitcher'
-import { TabContextMenu, type TabContextMenuLocation } from './TabContextMenu'
+import { SidebarGroup } from './SidebarGroup'
+import { GroupResizeHandle } from './GroupResizeHandle'
+import { TabContextMenu } from './TabContextMenu'
 import {
   KNOWN_IDS,
   TAB_DRAG_MIME,
-  resolveTabOrder,
   type PanelRightClick,
 } from './sidebarPanelRegistry'
-
-// Re-export resolveTabOrder so older callers (the unit test, future
-// consumers) keep their existing `from './SidebarStack'` import path.
-export { resolveTabOrder }
+import {
+  createGroupWithTab,
+  closeTabInGroup,
+  moveTabToNewGroup,
+  moveTabAcrossSidebars,
+} from './sidebarGroupActions'
 
 interface Props {
   onRightClick: PanelRightClick
 }
 
+// Leaf model (2026-06-04): every panel that's currently in the sidebar
+// is a tab in a group. Groups stack vertically; each renders its own
+// mini-strip + content body. No "floating active unpinned panel" — if
+// a panel isn't in any group, it doesn't show.
+//
+// Activity-bar (Ribbon) handles the icon column on the far left and
+// implements the "add panel to last-focused group" logic; this
+// component is purely a renderer of the persisted state plus the
+// inter-group drop zones for drag-to-new-group + the inter-group
+// resize handles.
 export const SidebarStack = ({ onRightClick }: Props) => {
-  const pinnedSaved = useSettingsStore(s => s.pinnedPanels)
-  const setPinnedPanels = useSettingsStore(s => s.setPinnedPanels)
-  const tabOrderSaved = useSettingsStore(s => s.sidebarTabOrder)
+  const sidebarGroupsSaved = useSettingsStore(s => s.sidebarGroups)
   const hiddenSidebarTabs = useSettingsStore(s => s.hiddenSidebarTabs)
   const hideSidebarTab = useSettingsStore(s => s.hideSidebarTab)
+  const setGroupHeight = useSettingsStore(s => s.setGroupHeight)
 
-  // Hidden-tab filter: any id the user has hidden via right-click is
-  // dropped from BOTH the pinned strips and the bottom switcher at
-  // render time. Settings → Sidebar exposes the unhide UI.
+  // Sanitise persisted groups: drop unknown ids, drop hidden ids,
+  // drop empty groups. De-dupe across the stack (a panel can only
+  // live in one group). Same semantics the old SidebarStack applied
+  // to pinnedPanels, ported to the new shape.
   const hiddenSet = useMemo(() => new Set(hiddenSidebarTabs), [hiddenSidebarTabs])
-
-  // Sanitise pinnedPanels: outer array = groups, each inner array =
-  // tabs in that group. Drop unknown ids, drop empty groups, de-dupe
-  // across groups (a panel can only live in one place), drop hidden
-  // ids. Returns SidebarTabId[][].
-  const pinnedGroups = useMemo<SidebarTabId[][]>(() => {
+  const groups = useMemo<SidebarGroupState[]>(() => {
     const seen = new Set<string>()
-    const out: SidebarTabId[][] = []
-    for (const group of pinnedSaved) {
-      if (!Array.isArray(group)) continue
-      const cleaned: SidebarTabId[] = []
-      for (const id of group) {
+    const out: SidebarGroupState[] = []
+    for (const g of sidebarGroupsSaved) {
+      if (!g || !Array.isArray(g.tabs)) continue
+      const cleanedTabs: SidebarTabId[] = []
+      for (const id of g.tabs) {
         if (KNOWN_IDS.has(id as SidebarTabId) && !seen.has(id) && !hiddenSet.has(id)) {
           seen.add(id)
-          cleaned.push(id as SidebarTabId)
+          cleanedTabs.push(id as SidebarTabId)
         }
       }
-      if (cleaned.length > 0) out.push(cleaned)
+      if (cleanedTabs.length === 0) continue
+      const activeTab = g.activeTab && cleanedTabs.includes(g.activeTab as SidebarTabId)
+        ? (g.activeTab as SidebarTabId)
+        : cleanedTabs[0]
+      out.push({
+        id: g.id,
+        tabs: cleanedTabs,
+        activeTab,
+        collapsed: Boolean(g.collapsed),
+        height: g.height ?? null,
+      })
     }
     return out
-  }, [pinnedSaved, hiddenSet])
+  }, [sidebarGroupsSaved, hiddenSet])
 
-  // Flat list of every pinned id — handy for resolveTabOrder + lookup.
-  const pinnedFlat = useMemo<SidebarTabId[]>(
-    () => pinnedGroups.flat(),
-    [pinnedGroups],
-  )
-
-  // ── Pin/unpin / group ops ────────────────────────────────────────────
-  // pinAsNewGroup creates a NEW group at the bottom of the pinned
-  // stack containing just `id`. Used by right-click-on-main-strip and
-  // drag-to-pin-drop-zone.
-  const pinAsNewGroup = (id: SidebarTabId) => {
-    if (pinnedFlat.includes(id)) return
-    setPinnedPanels([...pinnedGroups, [id]])
-  }
-  // pinIntoGroup adds `id` to an existing group at `groupIndex`. Used
-  // when the user drops a tab onto an existing pinned mini-strip.
-  // If `id` is already pinned elsewhere, it's moved (removed from
-  // its previous group first).
-  const pinIntoGroup = (id: SidebarTabId, groupIndex: number) => {
-    const next: SidebarTabId[][] = pinnedGroups
-      .map(g => g.filter(p => p !== id))
-      .filter(g => g.length > 0)
-    // groupIndex may have shifted if we just removed an empty group
-    // before it. Re-find the target by panel set (use any remaining
-    // id from the original target group as an anchor).
-    const targetAnchor = pinnedGroups[groupIndex]?.find(p => p !== id) ?? null
-    const realIndex = targetAnchor == null
-      ? Math.min(groupIndex, next.length - 1)
-      : next.findIndex(g => g.includes(targetAnchor))
-    if (realIndex < 0 || realIndex >= next.length) {
-      // Target group disappeared (it only contained the dragged id);
-      // re-pin as a new solo group at the original spot.
-      const insertAt = Math.min(groupIndex, next.length)
-      next.splice(insertAt, 0, [id])
-    } else {
-      next[realIndex] = [...next[realIndex], id]
-    }
-    setPinnedPanels(next)
-  }
-  // unpinPanel removes `id` from whatever group it lives in. Empty
-  // groups are dropped so we don't leave phantom strips.
-  const unpinPanel = (id: SidebarTabId) => {
-    if (!pinnedFlat.includes(id)) return
-    const next = pinnedGroups
-      .map(g => g.filter(p => p !== id))
-      .filter(g => g.length > 0)
-    setPinnedPanels(next)
-  }
-  // pinAsNewGroupAt creates a NEW solo group at a specific position
-  // in the stack. Used by the inter-group drop zones so the user
-  // can insert a new pane between two existing ones precisely.
-  const pinAsNewGroupAt = (id: SidebarTabId, insertAt: number) => {
-    const next = pinnedGroups
-      .map(g => g.filter(p => p !== id))
-      .filter(g => g.length > 0)
-    next.splice(Math.max(0, Math.min(insertAt, next.length)), 0, [id])
-    setPinnedPanels(next)
-  }
-  // reorderGroup replaces ONE group's id list with a new order — used
-  // by intra-strip drag-reorder inside a PinnedMiniStrip.
-  const reorderGroup = (groupIndex: number, newIds: SidebarTabId[]) => {
-    if (groupIndex < 0 || groupIndex >= pinnedGroups.length) return
-    if (newIds.length === 0) return
-    const next = pinnedGroups.map((g, i) => i === groupIndex ? newIds : g)
-    setPinnedPanels(next)
-  }
-
-  // Track whether a sidebar drag is in flight. Used to inflate the
-  // drop zones (main pin-zone + inter-group zones) so the user can
-  // hit them more easily. Window-level dragstart / dragend listener
-  // so we react regardless of which child started the drag.
-  //
-  // Defensive: HTML5 dnd can drop dragend if the user releases the
-  // drag outside the browser (window blur, alt-tab, devtools focus,
-  // etc.). When that happens the dragActive flag gets stuck true and
-  // the "↑ PIN TO TOP" bar sticks around forever. We layer extra
-  // clears on `mouseup` and `blur` so any mouse release / window
-  // de-focus also resets it.
+  // Track in-flight drag so inter-group drop zones inflate to a
+  // hittable height. Same defensive listeners as the old version —
+  // dragend can be skipped on alt-tab / devtools focus, so mouseup
+  // + blur also clear the flag.
   const [dragActive, setDragActive] = useState(false)
-
-  // Right-click context-menu state for sidebar tab icons. The menu
-  // replaces the old "right-click = instant pin/unpin" behaviour
-  // (Telegram feedback 2026-05-22). Both TabSwitcher (bottom strip)
-  // and PinnedMiniStrip (top strips) route through this single
-  // instance so we get consistent positioning + outside-click semantics.
-  const [tabMenu, setTabMenu] = useState<{
-    id: SidebarTabId
-    x: number
-    y: number
-    location: TabContextMenuLocation
-  } | null>(null)
-  const openTabMenu = (id: SidebarTabId, e: React.MouseEvent, location: TabContextMenuLocation) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setTabMenu({ id, x: e.clientX, y: e.clientY, location })
-  }
-  const closeTabMenu = () => setTabMenu(null)
   useEffect(() => {
     const onStart = (e: DragEvent) => {
       const t = e.dataTransfer?.types
@@ -164,9 +88,6 @@ export const SidebarStack = ({ onRightClick }: Props) => {
     window.addEventListener('dragstart', onStart)
     window.addEventListener('dragend', onEnd)
     window.addEventListener('drop', onEnd)
-    // Belt-and-braces: mouseup outside a drop zone, or the window
-    // losing focus, also clears the flag. Both are guaranteed to
-    // fire even when dragend doesn't.
     window.addEventListener('mouseup', onEnd)
     window.addEventListener('blur', onEnd)
     return () => {
@@ -178,68 +99,193 @@ export const SidebarStack = ({ onRightClick }: Props) => {
     }
   }, [])
 
+  // Right-click context-menu state for tab-strip icons. One menu
+  // instance for the whole sidebar; each group's strip forwards its
+  // tab-context-menu requests up here.
+  const [tabMenu, setTabMenu] = useState<{
+    id: SidebarTabId
+    groupId: string
+    x: number
+    y: number
+  } | null>(null)
+  const openTabMenu = (id: SidebarTabId, groupId: string, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setTabMenu({ id, groupId, x: e.clientX, y: e.clientY })
+  }
+  const closeTabMenu = () => setTabMenu(null)
+
+  // ── Inter-group resize state ─────────────────────────────────────────
+  // Refs onto each group's outer wrapper so we can read the actual
+  // pixel height before a drag starts (works whether the group is
+  // currently using flex-1 or an explicit height — both flow through
+  // the DOM). Stored as a record keyed by group id so reorders /
+  // group-id changes don't leak stale refs.
+  const groupRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const setGroupRef = useCallback((id: string) => (el: HTMLDivElement | null) => {
+    if (el) groupRefs.current[id] = el
+    else delete groupRefs.current[id]
+  }, [])
+
+  // Draft heights — live snapshot of what the user is dragging towards.
+  // We update these on every mousemove so the layout tracks the pointer
+  // 1:1; on mouseup we commit to settingsStore.setGroupHeight (cheaper
+  // than hammering persist + re-running every store subscriber each
+  // frame). Keyed by group id.
+  const [draftHeights, setDraftHeights] = useState<Record<string, number>>({})
+
+  // Helper: read the current rendered height of a group. Falls back to
+  // the persisted `height` field, then to 0 if the ref isn't mounted
+  // yet (defensive — the handle never mounts before its neighbours).
+  const measureGroupHeight = useCallback((groupId: string): number => {
+    const el = groupRefs.current[groupId]
+    if (el) return el.getBoundingClientRect().height
+    const persisted = groups.find(g => g.id === groupId)?.height
+    return typeof persisted === 'number' ? persisted : 0
+  }, [groups])
+
   return (
-    <div className="flex-1 min-h-0 flex flex-col">
-      {/* Scrollable pinned area — lets the user stack arbitrarily
-          many groups without crowding out the main tab strip below.
-          max-h-[60%] caps it so the bottom switcher stays reachable;
-          internal scroll handles the rest. */}
-      {pinnedGroups.length > 0 && (
-        <div className="flex-shrink min-h-0 overflow-y-auto" style={{ maxHeight: '60%' }}>
-          {pinnedGroups.map((group, groupIndex) => (
-            <div key={group.join(',')}>
-              {/* Inter-group drop zone ABOVE this group. During drag
-                  it's tall + visibly highlighted; otherwise zero-height. */}
-              <InterGroupDropZone
-                active={dragActive}
-                onDropId={(id) => pinAsNewGroupAt(id, groupIndex)}
-              />
-              <PinnedGroup
-                group={group}
-                onUnpin={unpinPanel}
-                onAddToThisGroup={(otherId) => pinIntoGroup(otherId, groupIndex)}
-                onReorder={(newIds) => reorderGroup(groupIndex, newIds)}
-                onRightClick={onRightClick}
-                onTabContextMenu={(id, e) => openTabMenu(id, e, 'pinned')}
-              />
-            </div>
-          ))}
-          {/* Trailing zone — insert a new group at the end. */}
-          <InterGroupDropZone
-            active={dragActive}
-            onDropId={(id) => pinAsNewGroupAt(id, pinnedGroups.length)}
-          />
+    <div className="flex-1 min-h-0 flex flex-col overflow-y-auto" data-testid="sidebar-stack">
+      {groups.length === 0 && (
+        // Defensive: migration / default should always seed at least
+        // one group, but if every panel is hidden the stack ends up
+        // empty. Render a helpful prompt instead of a blank pane.
+        <div className="p-4 text-sm text-obsidianSecondaryText" data-testid="sidebar-empty">
+          No panels in the sidebar. Click an icon in the activity bar to add one.
         </div>
       )}
-      {/* When there are no pinned groups yet, render a single drop
-          zone ABOVE the bottom switcher so the user can pin via
-          drag-up from the empty state (otherwise the only way in
-          is the right-click → Pin menu). Inactive height collapses
-          to zero, so we don't introduce extra padding when no drag
-          is in flight. */}
-      {pinnedGroups.length === 0 && (
+      {groups.map((g, idx) => {
+        // Layout assignment:
+        //   - A group with an explicit `height` (or in-flight draft) is
+        //     'fixed' so the user's drag value wins.
+        //   - The LAST expanded group with no explicit height is
+        //     'fill' so leftover vertical space lands there cleanly.
+        //   - Everything else is 'auto' (size to content / flex-shrink).
+        // Collapsed groups always size to content; the SidebarGroup
+        // component ignores the layoutMode in that branch.
+        const hasExplicit = (g.height != null) || (g.id in draftHeights)
+        // Find the index of the LAST expanded group (the trailing fill
+        // target). We treat both explicit and auto groups as candidates
+        // but prefer auto + last so explicit-height users see their
+        // values respected.
+        const lastExpandedIdx = (() => {
+          for (let i = groups.length - 1; i >= 0; i--) {
+            if (!groups[i].collapsed && groups[i].height == null && !(groups[i].id in draftHeights)) {
+              return i
+            }
+          }
+          return -1
+        })()
+        const layoutMode: 'fill' | 'fixed' | 'auto' = hasExplicit
+          ? 'fixed'
+          : (idx === lastExpandedIdx ? 'fill' : 'auto')
+        const draft = draftHeights[g.id]
+
+        // The resize handle between THIS group and the next one only
+        // mounts when both are expanded — collapsed groups have no
+        // body to grow into, so resizing them would just shuffle the
+        // chrome. Also skip the handle after the last group.
+        const next = groups[idx + 1]
+        const showHandleBelow =
+          next != null && !g.collapsed && !next.collapsed
+
+        // The wrapper has to be a flex column itself so the
+        // SidebarGroup's `flex-1` (fill mode) actually grows to the
+        // remaining vertical space instead of collapsing to content
+        // height. When THIS wrapper is the fill target, give it
+        // flex-1 too so it stretches inside the SidebarStack flexbox.
+        const wrapperClass = layoutMode === 'fill'
+          ? 'flex-1 min-h-0 flex flex-col'
+          : 'flex-shrink-0 flex flex-col'
+        return (
+          <div key={g.id} ref={setGroupRef(g.id)} className={wrapperClass}>
+            <InterGroupDropZone
+              active={dragActive}
+              onDropId={(id) => {
+                // Cross-sidebar: if this id currently lives in a
+                // right-side group, route through moveTabAcrossSidebars
+                // so the right group loses the tab atomically.
+                const right = useSettingsStore.getState().rightSidebarGroups
+                if (right.some(g => g.tabs.includes(id))) {
+                  moveTabAcrossSidebars(id, 'left', null, idx)
+                } else {
+                  createGroupWithTab(idx, id)
+                }
+              }}
+            />
+            <SidebarGroup
+              group={g}
+              layoutMode={layoutMode}
+              draftHeight={draft}
+              onTabContextMenu={(id, e) => openTabMenu(id, g.id, e)}
+              onRightClick={onRightClick}
+            />
+            {showHandleBelow && (
+              <GroupResizeHandle
+                ariaLabel={`Resize group ${g.activeTab ?? g.id}`}
+                aboveHeight={draft ?? measureGroupHeight(g.id)}
+                belowHeight={draftHeights[next.id] ?? measureGroupHeight(next.id)}
+                onResize={(nextAbove, nextBelow) => {
+                  setDraftHeights(prev => ({
+                    ...prev,
+                    [g.id]: nextAbove,
+                    [next.id]: nextBelow,
+                  }))
+                  // Commit to the store too — the store's same-ref
+                  // short-circuit drops no-op writes, so this is
+                  // cheap. Doing it inline (instead of on mouseup)
+                  // means a refresh mid-drag won't lose state.
+                  setGroupHeight(g.id, nextAbove)
+                  setGroupHeight(next.id, nextBelow)
+                }}
+                onReset={() => {
+                  setDraftHeights(prev => {
+                    const copy = { ...prev }
+                    delete copy[g.id]
+                    delete copy[next.id]
+                    return copy
+                  })
+                  setGroupHeight(g.id, null)
+                  setGroupHeight(next.id, null)
+                }}
+              />
+            )}
+          </div>
+        )
+      })}
+      {/* Trailing zone — drop here to spawn a new group at the very
+          bottom of the stack. Same cross-sidebar routing as the inner
+          zones. */}
+      {groups.length > 0 && (
         <InterGroupDropZone
           active={dragActive}
-          onDropId={(id) => pinAsNewGroupAt(id, 0)}
+          onDropId={(id) => {
+            const right = useSettingsStore.getState().rightSidebarGroups
+            if (right.some(g => g.tabs.includes(id))) {
+              moveTabAcrossSidebars(id, 'left', null, groups.length)
+            } else {
+              createGroupWithTab(groups.length, id)
+            }
+          }}
         />
       )}
-      <TabSwitcher
-        pinnedIds={pinnedFlat}
-        tabOrderSaved={tabOrderSaved}
-        hiddenIds={hiddenSet}
-        onRightClick={onRightClick}
-        onTabContextMenu={(id, e) => openTabMenu(id, e, 'bottom')}
-        onUnpinPanel={unpinPanel}
-      />
       {tabMenu && (
         <TabContextMenu
           x={tabMenu.x}
           y={tabMenu.y}
-          location={tabMenu.location}
-          onPin={() => { pinAsNewGroup(tabMenu.id); closeTabMenu() }}
-          onUnpin={() => { unpinPanel(tabMenu.id); closeTabMenu() }}
+          onClose={() => { closeTabInGroup(tabMenu.groupId, tabMenu.id); closeTabMenu() }}
+          onMoveToNewGroup={() => { moveTabToNewGroup(tabMenu.id); closeTabMenu() }}
+          onMoveToOtherSidebar={() => {
+            // Yank from the left side, drop as a new singleton group
+            // on the right. moveTabAcrossSidebars handles removing the
+            // tab from its left group + creating the right group in
+            // one setState pass.
+            moveTabAcrossSidebars(tabMenu.id, 'right', null)
+            closeTabMenu()
+          }}
+          moveToOtherSidebarLabel="Move to right sidebar"
           onHide={() => { hideSidebarTab(tabMenu.id); closeTabMenu() }}
-          onClose={closeTabMenu}
+          onDismiss={closeTabMenu}
         />
       )}
     </div>

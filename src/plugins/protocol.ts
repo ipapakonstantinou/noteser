@@ -31,6 +31,8 @@ export type HostToWorker =
   | HostUnmountPanel
   | HostRenderCodeBlock
   | HostActiveNoteChanged
+  | HostFileSaveResult
+  | HostFileOpenResult
 
 /** First message the host sends. Worker initialises the plugin module
  *  and replies with WorkerReady on success or WorkerBootError on failure. */
@@ -91,6 +93,32 @@ export interface HostActiveNoteChanged {
   note: { id: string; title: string; folderPath: string; content: string } | null
 }
 
+/** Host's reply to a worker:requestFileSave. `requestSeq` matches the
+ *  seq the worker emitted so the plugin Promise resolves to the right
+ *  call. v1.1 capability — requires `file-save` permission. */
+export interface HostFileSaveResult {
+  type: 'host:fileSaveResult'
+  seq: number
+  requestSeq: number
+  ok: boolean
+  error?: string
+}
+
+/** Host's reply to a worker:requestFileOpen. Carries the file bytes
+ *  on success, or `error` when the user cancelled / a permission was
+ *  not granted. */
+export interface HostFileOpenResult {
+  type: 'host:fileOpenResult'
+  seq: number
+  requestSeq: number
+  ok: boolean
+  /** Decoded as a base64 string so JSON-serialisation through
+   *  postMessage stays simple. Worker decodes back to Uint8Array. */
+  bytesBase64?: string
+  filename?: string
+  error?: string
+}
+
 // ─── Worker → Host ─────────────────────────────────────────────────────────
 
 export type WorkerToHost =
@@ -101,6 +129,8 @@ export type WorkerToHost =
   | WorkerRenderResult
   | WorkerInsertText
   | WorkerNotify
+  | WorkerRequestFileSave
+  | WorkerRequestFileOpen
   | WorkerError
 
 /** Sent in reply to host:boot once the plugin module loaded and
@@ -170,6 +200,32 @@ export interface WorkerError {
   message: string
 }
 
+/** Plugin asking the host to open the native save dialog and write
+ *  bytes to a user-picked file. v1.1 capability — requires `file-save`
+ *  permission in the manifest, granted by the user at install time.
+ *  Host replies with `host:fileSaveResult` carrying the same seq via
+ *  `requestSeq`. */
+export interface WorkerRequestFileSave {
+  type: 'worker:requestFileSave'
+  seq: number
+  suggestedName: string
+  mimeType: string
+  /** File bytes encoded as base64. Host decodes, writes via the File
+   *  System Access API (or a `<a download>` fallback). */
+  bytesBase64: string
+}
+
+/** Plugin asking the host to open the native file picker and return
+ *  the bytes of the chosen file. v1.1 capability — requires
+ *  `file-open` permission. */
+export interface WorkerRequestFileOpen {
+  type: 'worker:requestFileOpen'
+  seq: number
+  /** Accepted MIME types or extensions, e.g. ['.pdf', 'application/pdf'].
+   *  Empty / undefined means any file. */
+  accept?: string[]
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
 export function isHostToWorker(msg: unknown): msg is HostToWorker {
@@ -180,6 +236,8 @@ export function isHostToWorker(msg: unknown): msg is HostToWorker {
     'host:unmountPanel',
     'host:renderCodeBlock',
     'host:activeNoteChanged',
+    'host:fileSaveResult',
+    'host:fileOpenResult',
   ])
 }
 
@@ -193,6 +251,8 @@ export function isWorkerToHost(msg: unknown): msg is WorkerToHost {
     'worker:insertText',
     'worker:notify',
     'worker:error',
+    'worker:requestFileSave',
+    'worker:requestFileOpen',
   ])
 }
 

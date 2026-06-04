@@ -118,16 +118,20 @@ export const SidebarResizeHandle = () => {
       // 6px-wide grab zone straddles the visual border without adding
       // layout width. self-stretch keeps it full-height.
       className={`group relative z-10 -ml-[3px] w-[6px] flex-none cursor-col-resize self-stretch outline-none ${
-        dragging ? 'bg-obsidianAccentPurple/40' : 'hover:bg-obsidianAccentPurple/20'
-      } transition-colors focus-visible:bg-obsidianAccentPurple/30`}
+        dragging ? 'bg-obsidianHighlight/40' : 'hover:bg-obsidianHighlight/20'
+      } transition-colors focus-visible:bg-obsidianHighlight/30`}
     >
-      {/* Subtle 1px stripe centred in the grab zone, brightening on
-          hover/drag/focus — matches the SidebarSection row handle. */}
+      {/* Subtle 1px stripe centred in the grab zone. User feedback
+          2026-06-04 — the previous purple/blue hover tint was reading
+          as a stray blue vertical line whenever the cursor moved
+          near the sidebar/editor boundary. Switched to obsidianHighlight
+          (#4d4d4d gray) so the affordance is still visible on hover
+          but the colour doesn't fight the editor accent. */}
       <span
         className={`pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 ${
           dragging
-            ? 'bg-obsidianAccentPurple'
-            : 'bg-transparent group-hover:bg-obsidianAccentPurple/70 group-focus-visible:bg-obsidianAccentPurple/70'
+            ? 'bg-obsidianHighlight'
+            : 'bg-transparent group-hover:bg-obsidianHighlight/70 group-focus-visible:bg-obsidianHighlight/70'
         } transition-colors`}
       />
     </div>

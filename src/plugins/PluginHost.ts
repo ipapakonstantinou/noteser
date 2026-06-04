@@ -57,6 +57,20 @@ export type PluginHostEvent =
   | { type: 'notify'; pluginId: string; message: string }
   | { type: 'commandHandled'; pluginId: string; commandId: string; error?: string }
   | { type: 'workerError'; pluginId: string; message: string }
+  | {
+      type: 'fileSaveRequested'
+      pluginId: string
+      requestSeq: number
+      suggestedName: string
+      mimeType: string
+      bytesBase64: string
+    }
+  | {
+      type: 'fileOpenRequested'
+      pluginId: string
+      requestSeq: number
+      accept?: string[]
+    }
   | { type: 'rateLimited'; pluginId: string }
 
 interface WorkerEntry {
@@ -332,7 +346,85 @@ export class PluginHost {
       case 'worker:error':
         this.emit({ type: 'workerError', pluginId, message: msg.message })
         return
+
+      case 'worker:requestFileSave': {
+        // Permission gate. Plugins MUST declare `file-save` in the
+        // manifest AND the user grants it at install. Anything not
+        // declared gets refused before the picker ever shows.
+        const granted = entry.plugin.manifest.permissions?.includes('file-save') ?? false
+        if (!granted) {
+          this.respondFileSave(pluginId, msg.seq, {
+            ok: false,
+            error: 'Plugin did not declare the `file-save` permission.',
+          })
+          return
+        }
+        this.emit({
+          type: 'fileSaveRequested',
+          pluginId,
+          requestSeq: msg.seq,
+          suggestedName: msg.suggestedName,
+          mimeType: msg.mimeType,
+          bytesBase64: msg.bytesBase64,
+        })
+        return
+      }
+
+      case 'worker:requestFileOpen': {
+        const granted = entry.plugin.manifest.permissions?.includes('file-open') ?? false
+        if (!granted) {
+          this.respondFileOpen(pluginId, msg.seq, {
+            ok: false,
+            error: 'Plugin did not declare the `file-open` permission.',
+          })
+          return
+        }
+        this.emit({
+          type: 'fileOpenRequested',
+          pluginId,
+          requestSeq: msg.seq,
+          ...(msg.accept ? { accept: msg.accept } : {}),
+        })
+        return
+      }
     }
+  }
+
+  /** Surface adapter / singleton wires the native save dialog here.
+   *  Reports the outcome back to the worker via host:fileSaveResult. */
+  respondFileSave(
+    pluginId: string,
+    requestSeq: number,
+    result: { ok: true } | { ok: false; error: string },
+  ): void {
+    this.send(pluginId, {
+      type: 'host:fileSaveResult',
+      seq: ++this.seqCounter,
+      requestSeq,
+      ok: result.ok,
+      ...(result.ok ? {} : { error: result.error }),
+    })
+  }
+
+  /** Surface adapter / singleton wires the native file picker here. */
+  respondFileOpen(
+    pluginId: string,
+    requestSeq: number,
+    result:
+      | { ok: true; bytesBase64: string; filename: string }
+      | { ok: true; bytesBase64?: undefined; filename?: undefined }
+      | { ok: false; error: string },
+  ): void {
+    this.send(pluginId, {
+      type: 'host:fileOpenResult',
+      seq: ++this.seqCounter,
+      requestSeq,
+      ok: result.ok,
+      ...(result.ok && 'bytesBase64' in result && result.bytesBase64 !== undefined
+        ? { bytesBase64: result.bytesBase64, filename: result.filename ?? 'file' }
+        : {}),
+      ...(!result.ok ? { error: result.error } : {}),
+    })
   }
 
   private emit(event: PluginHostEvent): void {

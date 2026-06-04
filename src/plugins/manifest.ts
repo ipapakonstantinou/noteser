@@ -13,6 +13,25 @@ export interface PluginManifest {
   version: string
   author?: string
   surfaces: PluginSurfaces
+  /** Capabilities the plugin asks for at install time. v1.0 plugins
+   *  omit this; v1.1+ plugins may request `file-save` / `file-open`
+   *  for PDF / docx-style import/export. The user explicitly grants
+   *  each permission in the install-preview modal; the host refuses
+   *  to honour any capability call that was not granted. */
+  permissions?: PluginPermission[]
+}
+
+/** v1.1 capability identifiers. Unknown values are rejected by the
+ *  validator. The host gates each runtime capability call against the
+ *  granted set stored alongside the install record. */
+export const PERMISSIONS = ['file-save', 'file-open'] as const
+export type PluginPermission = (typeof PERMISSIONS)[number]
+
+/** Human-readable text shown to the user in the install confirmation
+ *  modal. Keep these short — they appear in a list of bullets. */
+export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
+  'file-save': 'Save a file to your computer (opens the native save dialog when the plugin needs to write a file).',
+  'file-open': 'Read a file you pick (opens the native file picker; the plugin sees the bytes of the file you choose, nothing else).',
 }
 
 export interface PluginSurfaces {
@@ -104,6 +123,7 @@ export function validateManifest(input: unknown): ManifestValidationResult {
   const commands = validateCommands(surfaces.commands, errors)
   const sidebarPanels = validateSidebarPanels(surfaces.sidebarPanels, errors)
   const codeBlockRenderers = validateCodeBlockRenderers(surfaces.codeBlockRenderers, errors)
+  const permissions = validatePermissions(m.permissions, errors)
 
   if (errors.length > 0) return { ok: false, errors }
 
@@ -132,6 +152,7 @@ export function validateManifest(input: unknown): ManifestValidationResult {
         ? { codeBlockRenderers }
         : {}),
     },
+    ...(permissions && permissions.length > 0 ? { permissions } : {}),
   }
   return { ok: true, errors: [], manifest: normalised }
 }
@@ -217,6 +238,36 @@ function validateCodeBlockRenderers(
     }
     return { language: r.language.toLowerCase() }
   }).filter((x): x is PluginCodeBlockRenderer => x !== null)
+}
+
+function validatePermissions(
+  input: unknown,
+  errors: string[],
+): PluginPermission[] | undefined {
+  if (input === undefined) return undefined
+  if (!Array.isArray(input)) {
+    errors.push('"permissions" must be an array when present.')
+    return undefined
+  }
+  const out: PluginPermission[] = []
+  const seen = new Set<string>()
+  for (let i = 0; i < input.length; i++) {
+    const entry = input[i]
+    if (typeof entry !== 'string') {
+      errors.push(`permissions[${i}] must be a string.`)
+      continue
+    }
+    if (!(PERMISSIONS as readonly string[]).includes(entry)) {
+      errors.push(
+        `permissions[${i}] "${entry}" is not a known capability. v1.1 allows: ${PERMISSIONS.join(', ')}.`,
+      )
+      continue
+    }
+    if (seen.has(entry)) continue
+    seen.add(entry)
+    out.push(entry as PluginPermission)
+  }
+  return out
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {

@@ -8,7 +8,6 @@ import {
   CheckCircleIcon,
   ExclamationCircleIcon,
 } from '@heroicons/react/24/outline'
-import { PanelLeftIcon } from '@/components/ui'
 import { useUIStore, useGitHubStore } from '@/stores'
 import { useGitHubSync } from '@/hooks/useGitHubSync'
 import { SYNC_REQUEST_EVENT } from '@/utils/events'
@@ -99,31 +98,24 @@ export const Sidebar = () => {
       className="obsidian-sidebar h-full w-full overflow-hidden flex flex-col"
       onClick={closeContextMenu}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-obsidianBorder">
-        {isExpanded && (
+      {/* Header. Desktop: the collapse-sidebar chevron moved to the
+          ActivityBar (left rail), so this strip is just the "Noteser"
+          title. Mobile: the same activity bar isn't rendered, so we
+          keep a small X here for closing the drawer. */}
+      {isExpanded && (
+        <div className="flex items-center justify-between px-3 py-2 border-b border-obsidianBorder">
           <h1 className="text-lg font-semibold text-obsidianText">Noteser</h1>
-        )}
-        <button
-          className="obsidian-button"
-          onClick={toggleSidebar}
-          title={
-            isMobile
-              ? 'Close sidebar'
-              : sidebarCollapsed
-                ? 'Expand sidebar'
-                : 'Collapse sidebar'
-          }
-        >
-          {/* Obsidian-style panel-toggle icon — a rectangle with the
-              "left edge" bar indicating the sidebar slides leftward.
-              On mobile the same button closes the drawer, so we swap
-              in an X glyph there for clearer intent. */}
-          {isMobile
-            ? <XMarkIcon className="w-4 h-4" />
-            : <PanelLeftIcon className="w-4 h-4" />}
-        </button>
-      </div>
+          {isMobile && (
+            <button
+              className="obsidian-button"
+              onClick={toggleSidebar}
+              title="Close sidebar"
+            >
+              <XMarkIcon className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Content. Both mobile + desktop render the full SidebarStack
           now. Phase B originally simplified the mobile drawer to a
