@@ -3,12 +3,13 @@
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
 import { RightMiniStrip } from './RightMiniStrip'
 import {
-  RIGHT_PANELS,
   RightPanelBody,
+  rightPanelDef,
   type RightSidebarTabId,
 } from './rightPanelRegistry'
 import { useSettingsStore, useUIStore, type SidebarGroupState } from '@/stores'
 import { moveTabToRightGroup } from './rightSidebarGroupActions'
+import { moveTabAcrossSidebars } from './sidebarGroupActions'
 
 // Right-side leaf-model group — mirror of `SidebarGroup` but bound to
 // the right-side registry + setters. Same chrome (strip + chevron +
@@ -33,7 +34,7 @@ export const RightSidebarGroup = ({
     ? group.activeTab
     : tabs[0]) as RightSidebarTabId
 
-  const activePanelTitle = RIGHT_PANELS.find(p => p.id === activeTab)?.title ?? activeTab
+  const activePanelTitle = rightPanelDef(activeTab)?.title ?? activeTab
   const isCollapsed = group.collapsed
 
   const onActivate = (id: RightSidebarTabId) => {
@@ -41,8 +42,18 @@ export const RightSidebarGroup = ({
     setLastFocusedRightGroupId(group.id)
   }
 
+  // Drop into this right-side group. Cross-sidebar (2026-06-04): if
+  // the dropped tab currently lives in a left-side group, route
+  // through moveTabAcrossSidebars so it's evicted from the left side
+  // as part of the same operation.
   const onAddToThisGroup = (otherId: RightSidebarTabId) => {
-    moveTabToRightGroup(otherId, group.id)
+    const leftGroups = useSettingsStore.getState().sidebarGroups
+    const onLeft = leftGroups.some(g => g.tabs.includes(otherId))
+    if (onLeft) {
+      moveTabAcrossSidebars(otherId, 'right', group.id)
+    } else {
+      moveTabToRightGroup(otherId, group.id)
+    }
     setLastFocusedRightGroupId(group.id)
   }
 

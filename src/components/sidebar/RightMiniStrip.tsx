@@ -2,8 +2,8 @@
 
 import { useRef, useState } from 'react'
 import {
-  RIGHT_PANELS,
   RIGHT_TAB_DRAG_MIME,
+  rightPanelDef,
   type RightSidebarTabId,
 } from './rightPanelRegistry'
 
@@ -107,7 +107,7 @@ export const RightMiniStrip = ({
     >
       {leadingSlot}
       {ids.map((id, idx) => {
-        const def = RIGHT_PANELS.find(p => p.id === id)
+        const def = rightPanelDef(id)
         if (!def) return null
         const Icon = def.Icon
         const active = id === activeId

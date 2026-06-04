@@ -4,7 +4,7 @@ import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
 import { PinnedMiniStrip } from './PinnedMiniStrip'
 import { PANELS, PanelBody, type PanelRightClick } from './sidebarPanelRegistry'
 import { useSettingsStore, useUIStore, type SidebarTabId, type SidebarGroupState } from '@/stores'
-import { moveTabToGroup } from './sidebarGroupActions'
+import { moveTabToGroup, moveTabAcrossSidebars } from './sidebarGroupActions'
 
 // One leaf-model group: a horizontal tab strip + the active tab's
 // content. Every group renders its OWN strip even when it only holds
@@ -59,8 +59,18 @@ export const SidebarGroup = ({
   // Drop from another group's strip / activity bar → move into this
   // group. The settings store's addTabToGroup handles the move
   // semantics (remove from source, drop empty source group).
+  //
+  // Cross-sidebar (2026-06-04): if the dropped tab currently lives in
+  // a right-side group, route through moveTabAcrossSidebars so it's
+  // removed from the right side as part of the same operation.
   const onAddToThisGroup = (otherId: SidebarTabId) => {
-    moveTabToGroup(otherId, group.id)
+    const rightGroups = useSettingsStore.getState().rightSidebarGroups
+    const onRight = rightGroups.some(g => g.tabs.includes(otherId))
+    if (onRight) {
+      moveTabAcrossSidebars(otherId, 'left', group.id)
+    } else {
+      moveTabToGroup(otherId, group.id)
+    }
     setLastFocusedGroupId(group.id)
   }
 

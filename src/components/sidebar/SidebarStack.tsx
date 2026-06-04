@@ -16,6 +16,7 @@ import {
   createGroupWithTab,
   closeTabInGroup,
   moveTabToNewGroup,
+  moveTabAcrossSidebars,
 } from './sidebarGroupActions'
 
 interface Props {
@@ -200,7 +201,17 @@ export const SidebarStack = ({ onRightClick }: Props) => {
           <div key={g.id} ref={setGroupRef(g.id)} className={wrapperClass}>
             <InterGroupDropZone
               active={dragActive}
-              onDropId={(id) => createGroupWithTab(idx, id)}
+              onDropId={(id) => {
+                // Cross-sidebar: if this id currently lives in a
+                // right-side group, route through moveTabAcrossSidebars
+                // so the right group loses the tab atomically.
+                const right = useSettingsStore.getState().rightSidebarGroups
+                if (right.some(g => g.tabs.includes(id))) {
+                  moveTabAcrossSidebars(id, 'left', null, idx)
+                } else {
+                  createGroupWithTab(idx, id)
+                }
+              }}
             />
             <SidebarGroup
               group={g}
@@ -243,11 +254,19 @@ export const SidebarStack = ({ onRightClick }: Props) => {
         )
       })}
       {/* Trailing zone — drop here to spawn a new group at the very
-          bottom of the stack. */}
+          bottom of the stack. Same cross-sidebar routing as the inner
+          zones. */}
       {groups.length > 0 && (
         <InterGroupDropZone
           active={dragActive}
-          onDropId={(id) => createGroupWithTab(groups.length, id)}
+          onDropId={(id) => {
+            const right = useSettingsStore.getState().rightSidebarGroups
+            if (right.some(g => g.tabs.includes(id))) {
+              moveTabAcrossSidebars(id, 'left', null, groups.length)
+            } else {
+              createGroupWithTab(groups.length, id)
+            }
+          }}
         />
       )}
       {tabMenu && (
@@ -256,6 +275,15 @@ export const SidebarStack = ({ onRightClick }: Props) => {
           y={tabMenu.y}
           onClose={() => { closeTabInGroup(tabMenu.groupId, tabMenu.id); closeTabMenu() }}
           onMoveToNewGroup={() => { moveTabToNewGroup(tabMenu.id); closeTabMenu() }}
+          onMoveToOtherSidebar={() => {
+            // Yank from the left side, drop as a new singleton group
+            // on the right. moveTabAcrossSidebars handles removing the
+            // tab from its left group + creating the right group in
+            // one setState pass.
+            moveTabAcrossSidebars(tabMenu.id, 'right', null)
+            closeTabMenu()
+          }}
+          moveToOtherSidebarLabel="Move to right sidebar"
           onHide={() => { hideSidebarTab(tabMenu.id); closeTabMenu() }}
           onDismiss={closeTabMenu}
         />

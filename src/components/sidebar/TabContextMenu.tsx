@@ -5,6 +5,7 @@ import {
   XMarkIcon,
   ArrowsPointingOutIcon,
   EyeSlashIcon,
+  ArrowsRightLeftIcon,
 } from '@heroicons/react/24/outline'
 
 // Lightweight popup menu for right-clicking a sidebar tab icon (or a
@@ -27,6 +28,19 @@ export interface TabContextMenuProps {
   onClose: () => void
   onMoveToNewGroup: () => void
   onHide: () => void
+  // Optional "Move to other sidebar" action — when set, renders an
+  // extra row that yanks the tab from the current side and creates a
+  // singleton group on the OPPOSITE side. Wired by SidebarGroup (left
+  // → right) and RightSidebarGroup (right → left). When unset, the
+  // row is hidden, so call sites that don't care (e.g. activity-bar
+  // panel menus, where there's no source side to move FROM) stay
+  // visually unchanged.
+  onMoveToOtherSidebar?: () => void
+  // Label override for the "Move to other sidebar" row. Defaults to
+  // "Move to other sidebar"; callsites pass a side-aware label like
+  // "Move to right sidebar" / "Move to left sidebar" so the menu reads
+  // naturally regardless of which side fired it.
+  moveToOtherSidebarLabel?: string
   // Called when the menu should dismiss WITHOUT performing any action
   // (Escape, outside click, etc.). Separate from the per-item handlers
   // so the parent doesn't fire close-tab on a stray outside click.
@@ -34,7 +48,9 @@ export interface TabContextMenuProps {
 }
 
 export const TabContextMenu = ({
-  x, y, onClose, onMoveToNewGroup, onHide, onDismiss,
+  x, y, onClose, onMoveToNewGroup, onHide,
+  onMoveToOtherSidebar, moveToOtherSidebarLabel,
+  onDismiss,
 }: TabContextMenuProps) => {
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -98,6 +114,18 @@ export const TabContextMenu = ({
         <ArrowsPointingOutIcon className="w-4 h-4" />
         Move to new group
       </button>
+      {onMoveToOtherSidebar && (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={onMoveToOtherSidebar}
+          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-obsidianText hover:bg-obsidianHighlight"
+          data-testid="tab-context-menu-move-to-other-sidebar"
+        >
+          <ArrowsRightLeftIcon className="w-4 h-4" />
+          {moveToOtherSidebarLabel ?? 'Move to other sidebar'}
+        </button>
+      )}
       <div className="my-1 border-t border-obsidianBorder" />
       <button
         type="button"

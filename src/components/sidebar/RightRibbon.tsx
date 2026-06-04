@@ -42,20 +42,28 @@ export const RightRibbon = () => {
 
   const {
     rightSidebarGroups,
+    sidebarGroups,
   } = useSettingsStore(useShallow(s => ({
     rightSidebarGroups: s.rightSidebarGroups,
+    sidebarGroups: s.sidebarGroups,
   })))
 
   // Same rule as the left ribbon — a panel currently shown in a
   // group does NOT get an icon in the activity bar; the group's
-  // mini-strip is its switcher.
+  // mini-strip is its switcher. Updated 2026-06-04 to inspect BOTH
+  // sides: a panel parked in a LEFT group is also hidden from the
+  // right bar (otherwise the user could conjure a duplicate by
+  // dragging a left panel across and then clicking the right icon).
   const inAnyGroup = useMemo(() => {
     const set = new Set<string>()
     for (const g of rightSidebarGroups) {
       for (const t of g.tabs) set.add(t)
     }
+    for (const g of sidebarGroups) {
+      for (const t of g.tabs) set.add(t)
+    }
     return set
-  }, [rightSidebarGroups])
+  }, [rightSidebarGroups, sidebarGroups])
   const visiblePanels = useMemo(
     () => RIGHT_PANELS.filter(p => !inAnyGroup.has(p.id)),
     [inAnyGroup],
@@ -117,16 +125,20 @@ export const RightRibbon = () => {
       >
         {visiblePanels.map(def => {
           const Icon = def.Icon
+          // RIGHT_PANELS is the source of visiblePanels — every id in
+          // it is a right-native id ('properties' | 'backlinks'),
+          // which the wider RightSidebarTabId union includes.
+          const id = def.id as RightSidebarTabId
           return (
             <div
               key={`right-panel-${def.id}`}
               draggable
-              onDragStart={onPanelDragStart(def.id)}
+              onDragStart={onPanelDragStart(id)}
               data-testid={`right-activity-bar-panel-${def.id}`}
             >
               <RibbonButton
-                onClick={() => onPanelClick(def.id)}
-                onContextMenu={(e) => openPanelMenu(def.id, e)}
+                onClick={() => onPanelClick(id)}
+                onContextMenu={(e) => openPanelMenu(id, e)}
                 title={`${def.title} — drag to a right sidebar group, right-click for options`}
               >
                 <Icon className="w-5 h-5" />
