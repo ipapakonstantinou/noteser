@@ -217,6 +217,9 @@ export interface SettingsState {
   // ID of the note (in `templatesFolder`) whose content seeds new daily
   // notes. null = no template; new daily notes start empty.
   dailyNoteTemplateId: string | null
+  // Same idea for new weekly notes (2026-06-04). Parallel to
+  // dailyNoteTemplateId; null = no template, new weekly notes empty.
+  weeklyNoteTemplateId: string | null
 
   // ── AI (BYO key) ──────────────────────────────────────────────────────
   // Which provider the aiClient targets. `'off'` (default) disables every
@@ -463,6 +466,7 @@ export interface SettingsState {
   setMonthlyNoteDateFormat: (format: string) => void
   setTemplatesFolder: (folder: string) => void
   setDailyNoteTemplateId: (id: string | null) => void
+  setWeeklyNoteTemplateId: (id: string | null) => void
   setAiProvider: (provider: AIProvider) => void
   setAiApiKey: (key: string) => void
   setAiModel: (model: string) => void
@@ -566,6 +570,7 @@ export const VAULT_SETTING_KEYS = [
   'monthlyNoteDateFormat',
   'templatesFolder',
   'dailyNoteTemplateId',
+  'weeklyNoteTemplateId',
   'trashMode',
   'confirmBulkDelete',
   'betaEnabled',
@@ -603,6 +608,7 @@ const DEFAULTS = {
   monthlyNoteDateFormat: 'YYYY-MM',
   templatesFolder: 'Templates',
   dailyNoteTemplateId: null as string | null,
+  weeklyNoteTemplateId: null as string | null,
   aiProvider: 'off' as AIProvider,
   aiApiKey: '',
   aiModel: DEFAULT_AI_MODEL.anthropic,
@@ -765,6 +771,7 @@ export const useSettingsStore = create<SettingsState>()(
         setMonthlyNoteDateFormat: (monthlyNoteDateFormat) => setVault({ monthlyNoteDateFormat }),
         setTemplatesFolder: (templatesFolder) => setVault({ templatesFolder }),
         setDailyNoteTemplateId: (dailyNoteTemplateId) => setVault({ dailyNoteTemplateId }),
+        setWeeklyNoteTemplateId: (weeklyNoteTemplateId) => setVault({ weeklyNoteTemplateId }),
         setAiProvider: (aiProvider) => set({ aiProvider }),
         setAiApiKey: (aiApiKey) => set({ aiApiKey }),
         setAiModel: (aiModel) => set({ aiModel }),

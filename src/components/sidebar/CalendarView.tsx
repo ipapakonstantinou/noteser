@@ -1,12 +1,18 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
+import React, { useCallback, useMemo, useState } from 'react'
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
 import { useNoteStore, useFolderStore, useWorkspaceStore, useSettingsStore, useUIStore } from '@/stores'
 import { useHydration } from '@/hooks'
 import { dailyNotesFolder } from '@/utils/systemFolder'
 import { formatDate } from '@/utils/dateFormat'
-import { dayHeadersForWeekStart, leadingBlankCount } from '@/utils/calendarGrid'
+import {
+  dayHeadersForWeekStart,
+  leadingBlankCount,
+  isoWeekNumber,
+  mondayOfIsoWeek,
+} from '@/utils/calendarGrid'
+import { openWeekNote, findWeeklyNoteId } from '@/utils/periodicNotes'
 import { CalendarDayContextMenu } from './CalendarDayContextMenu'
 
 const MONTH_NAMES = [
@@ -14,12 +20,18 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ]
 
-// Context-menu state for the right-click flow. `day` is the 1-indexed
-// day of the month being acted on, `title` is the formatted daily-note
-// title (used as the wikilink target + the lookup key), `noteId` is
-// the existing daily-note id (or null when the day has no note yet).
-interface DayMenuState {
-  day: number
+// Context-menu state for the right-click flow. `mode` distinguishes a
+// click on a day cell (default) from a click on the new W-column
+// week-number cell (2026-06-04 — the menu now works for weekly notes
+// too). For 'day' mode `day` is the 1-indexed day-of-month; for
+// 'week' mode `weekStart` is the Monday of the row's ISO week.
+// `title` is the formatted target-note title (used as the wikilink +
+// the lookup key), `noteId` is the existing daily/weekly note id (or
+// null when no note exists yet).
+interface CellMenuState {
+  mode: 'day' | 'week'
+  day: number | null      // day-of-month for 'day' mode
+  weekStart: Date | null  // Monday of the row for 'week' mode
   title: string
   noteId: string | null
   x: number
@@ -42,7 +54,7 @@ export const CalendarView = () => {
   const dailyTemplateId = useSettingsStore(s => s.dailyNoteTemplateId)
   const weekStartDay = useSettingsStore(s => s.calendarWeekStartDay)
 
-  const [menu, setMenu] = useState<DayMenuState | null>(null)
+  const [menu, setMenu] = useState<CellMenuState | null>(null)
 
   const year = viewDate.getFullYear()
   const month = viewDate.getMonth()
@@ -130,7 +142,22 @@ export const CalendarView = () => {
   const onDayContextMenu = (e: React.MouseEvent, day: number) => {
     e.preventDefault()
     const { id, title } = findDailyNoteId(day)
-    setMenu({ day, title, noteId: id, x: e.clientX, y: e.clientY })
+    setMenu({ mode: 'day', day, weekStart: null, title, noteId: id, x: e.clientX, y: e.clientY })
+  }
+
+  // Click handler for a W-column cell. Resolves the Monday of the
+  // row's ISO week from the leftmost real day in that row, then opens
+  // / creates the weekly note via openWeekNote. The row's leftmost
+  // cell may be a leading blank when the row spans a month boundary —
+  // in that case we anchor on the FIRST non-blank day of the row.
+  const openWeek = (weekStart: Date) => {
+    openWeekNote(weekStart)
+  }
+
+  const onWeekContextMenu = (e: React.MouseEvent, weekStart: Date) => {
+    e.preventDefault()
+    const { id, title } = findWeeklyNoteId(weekStart)
+    setMenu({ mode: 'week', day: null, weekStart, title, noteId: id, x: e.clientX, y: e.clientY })
   }
 
   const closeMenu = () => setMenu(null)
@@ -206,7 +233,11 @@ export const CalendarView = () => {
 
   const handleCreateDailyNote = () => {
     if (!menu) return
-    openDay(menu.day)
+    if (menu.mode === 'week' && menu.weekStart) {
+      openWeek(menu.weekStart)
+    } else if (menu.mode === 'day' && menu.day != null) {
+      openDay(menu.day)
+    }
     closeMenu()
   }
 
@@ -237,8 +268,17 @@ export const CalendarView = () => {
         </button>
       </div>
 
-      {/* Day-of-week headers */}
-      <div className="grid grid-cols-7 mb-1">
+      {/* Headers row: W column on the far left, then the 7 day-of-week
+          headers. `[auto_repeat(7,_1fr)]` keeps the W column tight to
+          its content while the 7 day columns share the remaining
+          width equally — same per-row layout as the day grid below. */}
+      <div className="grid grid-cols-[auto_repeat(7,_1fr)] mb-1">
+        <div
+          className="text-center text-[10px] text-obsidianSecondaryText/60 py-1 pr-1"
+          aria-label="ISO week number"
+        >
+          W
+        </div>
         {dayHeaders.map(d => (
           <div
             key={d}
@@ -249,31 +289,72 @@ export const CalendarView = () => {
         ))}
       </div>
 
-      {/* Day grid */}
-      <div className="grid grid-cols-7 gap-y-0.5">
-        {cells.map((day, i) => {
-          if (!day) return <div key={`e-${i}`} />
-
-          const isToday = isCurrentMonth && day === today.getDate()
-          const hasNote = notedDays.has(day)
+      {/* Day grid — chunked into rows so the W column can prepend a
+          per-row cell. Each row is 1 W cell + 7 day cells; rows that
+          start with a leading blank still anchor on the row's first
+          REAL day (the Monday derived from that day is always the
+          row's ISO-week Monday). */}
+      <div className="grid grid-cols-[auto_repeat(7,_1fr)] gap-y-0.5">
+        {Array.from({ length: Math.ceil(cells.length / 7) }, (_, rowIdx) => {
+          const rowStart = rowIdx * 7
+          const rowCells = cells.slice(rowStart, rowStart + 7)
+          // Find the row's anchor date: the first non-null day. Every
+          // calendar row has at least one — the leading-blank rows
+          // start the month at day 1, and trailing rows by definition
+          // contain the last days of the month.
+          const firstDayInRow = rowCells.find((d): d is number => d !== null)
+          const anchorDate = firstDayInRow != null
+            ? new Date(year, month, firstDayInRow)
+            : null
+          const weekMonday = anchorDate ? mondayOfIsoWeek(anchorDate) : null
+          const weekNumber = anchorDate ? isoWeekNumber(anchorDate) : null
 
           return (
-            <button
-              key={day}
-              onClick={() => openDay(day)}
-              onContextMenu={(e) => onDayContextMenu(e, day)}
-              className={`relative flex flex-col items-center justify-center rounded py-1 text-xs transition-colors ${
-                isToday
-                  ? 'bg-obsidianAccentPurple text-white font-semibold'
-                  : 'text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText'
-              }`}
-              data-testid={`calendar-day-${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`}
-            >
-              {day}
-              {hasNote && !isToday && (
-                <span className="absolute bottom-0.5 w-1 h-1 rounded-full bg-obsidianAccentPurple" />
+            <React.Fragment key={`row-${rowIdx}`}>
+              {/* W column cell — small text button, muted compared to
+                  day cells. Click opens / creates the weekly note;
+                  right-click opens the same context menu the day cell
+                  uses, but in 'week' mode. */}
+              {weekNumber != null && weekMonday ? (
+                <button
+                  onClick={() => openWeek(weekMonday)}
+                  onContextMenu={(e) => onWeekContextMenu(e, weekMonday)}
+                  className="flex items-center justify-center rounded py-1 pr-1 text-[10px] text-obsidianSecondaryText/70 hover:bg-obsidianHighlight hover:text-obsidianText transition-colors"
+                  data-testid={`calendar-week-${weekMonday.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`}
+                  title={`Week ${weekNumber} — open or create weekly note`}
+                  aria-label={`Open weekly note for week ${weekNumber}`}
+                >
+                  {weekNumber}
+                </button>
+              ) : (
+                <div />
               )}
-            </button>
+              {rowCells.map((day, i) => {
+                if (!day) return <div key={`e-${rowIdx}-${i}`} />
+
+                const isToday = isCurrentMonth && day === today.getDate()
+                const hasNote = notedDays.has(day)
+
+                return (
+                  <button
+                    key={day}
+                    onClick={() => openDay(day)}
+                    onContextMenu={(e) => onDayContextMenu(e, day)}
+                    className={`relative flex flex-col items-center justify-center rounded py-1 text-xs transition-colors ${
+                      isToday
+                        ? 'bg-obsidianAccentPurple text-white font-semibold'
+                        : 'text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText'
+                    }`}
+                    data-testid={`calendar-day-${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`}
+                  >
+                    {day}
+                    {hasNote && !isToday && (
+                      <span className="absolute bottom-0.5 w-1 h-1 rounded-full bg-obsidianAccentPurple" />
+                    )}
+                  </button>
+                )
+              })}
+            </React.Fragment>
           )
         })}
       </div>
@@ -292,6 +373,7 @@ export const CalendarView = () => {
         <CalendarDayContextMenu
           x={menu.x}
           y={menu.y}
+          mode={menu.mode}
           hasDailyNote={menu.noteId !== null}
           isBookmarked={menuTargetBookmarked}
           onOpenDailyNote={handleOpenDailyNote}

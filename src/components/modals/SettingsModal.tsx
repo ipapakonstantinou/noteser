@@ -76,7 +76,7 @@ const CATEGORIES: readonly CategoryDef[] = [
   { id: 'editor',      label: 'Editor',      Icon: PencilSquareIcon },
   { id: 'sidebar',     label: 'Sidebar',     Icon: ViewColumnsIcon },
   { id: 'attachments', label: 'Attachments', Icon: PaperClipIcon },
-  { id: 'daily-notes', label: 'Daily notes', Icon: CalendarDaysIcon },
+  { id: 'daily-notes', label: 'Daily & weekly notes', Icon: CalendarDaysIcon },
   { id: 'templates',   label: 'Templates',   Icon: DocumentDuplicateIcon },
   { id: 'github',      label: 'GitHub sync', Icon: CloudIcon },
   { id: 'local-folder', label: 'Local folder', Icon: FolderOpenIcon },
