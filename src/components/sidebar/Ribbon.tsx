@@ -231,18 +231,19 @@ export const Ribbon = () => {
 
   return (
     <div className="h-full w-[44px] max-md:w-12 flex flex-col items-center gap-1 py-2 bg-obsidianBlack border-r border-obsidianBorder">
-      {/* Collapse-sidebar toggle. */}
-      <div className="mb-1.5">
-        <RibbonButton
-          onClick={toggleSidebar}
-          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          testId="activity-bar-collapse-toggle"
-        >
-          {sidebarCollapsed
-            ? <PanelRightIcon className="w-5 h-5" />
-            : <PanelLeftIcon className="w-5 h-5" />}
-        </RibbonButton>
-      </div>
+      {/* Collapse-sidebar toggle. Sits flush with the rest of the icons
+          (per user feedback 2026-06-04) — the previous mb-1.5 looked
+          like a stray gap rather than a section break. Spacing is now
+          uniform via the parent's gap-1. */}
+      <RibbonButton
+        onClick={toggleSidebar}
+        title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        testId="activity-bar-collapse-toggle"
+      >
+        {sidebarCollapsed
+          ? <PanelRightIcon className="w-5 h-5" />
+          : <PanelLeftIcon className="w-5 h-5" />}
+      </RibbonButton>
 
       {/* Panel icons — single unified section (leaf model has no
           pinned/unpinned distinction). One icon per visible panel in
@@ -275,8 +276,10 @@ export const Ribbon = () => {
         })}
       </div>
 
-      {/* Quick-launch ACTIONS. */}
-      <div className="mt-2 w-full flex flex-col items-center gap-1">
+      {/* Quick-launch ACTIONS. No extra margin-top — spacing inherits
+          the parent's gap-1 so every icon in the bar is evenly
+          separated (user feedback 2026-06-04). */}
+      <div className="w-full flex flex-col items-center gap-1">
         <RibbonButton onClick={openSearch} title="Search (Ctrl+K)">
           <MagnifyingGlassIcon className="w-5 h-5" />
         </RibbonButton>
