@@ -28,7 +28,7 @@ test('reordering ids within a pinned group updates settingsStore.pinnedPanels', 
   // Seed: one pinned group with three panels in a known order.
   await page.evaluate(() => {
     window.__noteser_test!.stores.settingsStore.getState()
-      .setPinnedPanels([['files', 'outline', 'search']])
+      .setSidebarGroups([{ id: 'reord-g', tabs: ['files', 'outline', 'search'], activeTab: 'files', collapsed: false }])
   })
   await page.waitForTimeout(150)
 
@@ -42,15 +42,15 @@ test('reordering ids within a pinned group updates settingsStore.pinnedPanels', 
   // the 'search' icon onto 'files' with side='before'.)
   await page.evaluate(() => {
     window.__noteser_test!.stores.settingsStore.getState()
-      .setPinnedPanels([['search', 'files', 'outline']])
+      .setSidebarGroups([{ id: 'reord-g', tabs: ['search', 'files', 'outline'], activeTab: 'search', collapsed: false }])
   })
   await page.waitForTimeout(150)
 
-  // Read back: pinnedPanels reflects the new order.
+  // Read back: sidebarGroups reflects the new order.
   const after = await page.evaluate(() =>
-    window.__noteser_test!.stores.settingsStore.getState().pinnedPanels,
+    window.__noteser_test!.stores.settingsStore.getState().sidebarGroups,
   )
-  expect(after).toEqual([['search', 'files', 'outline']])
+  expect(after[0]?.tabs).toEqual(['search', 'files', 'outline'])
 })
 
 test('strip drag-source emits SIDEBAR_PANEL_DRAG_MIME for each icon', async ({ page }) => {
@@ -64,7 +64,7 @@ test('strip drag-source emits SIDEBAR_PANEL_DRAG_MIME for each icon', async ({ p
 
   await page.evaluate(() => {
     window.__noteser_test!.stores.settingsStore.getState()
-      .setPinnedPanels([['files', 'outline']])
+      .setSidebarGroups([{ id: 'reord-h', tabs: ['files', 'outline'], activeTab: 'files', collapsed: false }])
   })
   await page.waitForTimeout(150)
 

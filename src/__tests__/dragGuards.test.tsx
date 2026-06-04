@@ -2,17 +2,22 @@
  * dragGuards.test.tsx
  *
  * Component-level tests that verify the primary-button drag guard in each of
- * the five files that inline the `e.nativeEvent.button !== 0` check:
+ * the files that inline the `e.nativeEvent.button !== 0` check:
  *
  *   1. TabBar         (src/components/editor/TabBar.tsx)
  *   2. Ribbon         (src/components/sidebar/Ribbon.tsx)
  *   3. SidebarSection (src/components/sidebar/SidebarSection.tsx)
- *   4. TabSwitcher    (src/components/sidebar/TabSwitcher.tsx)
- *   5. PinnedMiniStrip(src/components/sidebar/PinnedMiniStrip.tsx)
+ *   4. PinnedMiniStrip(src/components/sidebar/PinnedMiniStrip.tsx)
  *
  * Strategy: render the minimal version of each draggable element and fire
  * synthetic dragstart events with button=0 (should proceed) and button=2
  * (should bail — dataTransfer.setData never called).
+ *
+ * The original TabSwitcher section was removed in the 2026-06-04
+ * ActivityBar refactor — TabSwitcher.tsx no longer exists. Panel
+ * switching lives in Ribbon.tsx (the activity bar), whose drag guards
+ * are covered by the Ribbon block below + by the new
+ * activityBarPinUnpinDrag spec.
  */
 
 jest.mock('idb-keyval', () => ({
@@ -33,10 +38,10 @@ jest.mock('../components/sidebar/sidebarPanelRegistry', () => {
         Icon: () => React.createElement('span', { 'aria-label': 'files-icon' }),
       },
     ],
+    KNOWN_IDS: new Set(['files']),
     PanelBody: ({ id }: { id: string }) =>
       React.createElement('div', { 'data-testid': `panel-body-${id}` }, `body:${id}`),
     TAB_DRAG_MIME: 'application/x-noteser-sidebar-tab',
-    resolveTabOrder: (saved: string[]) => saved,
   }
 })
 
@@ -47,7 +52,6 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { TabBar } from '../components/editor/TabBar'
 import { Ribbon } from '../components/sidebar/Ribbon'
 import { SidebarSection } from '../components/sidebar/SidebarSection'
-import { TabSwitcher } from '../components/sidebar/TabSwitcher'
 import { PinnedMiniStrip } from '../components/sidebar/PinnedMiniStrip'
 
 import { useNoteStore } from '../stores/noteStore'
@@ -195,51 +199,7 @@ describe('SidebarSection — dragstart primary-button guard', () => {
   })
 })
 
-// ── 4. TabSwitcher ────────────────────────────────────────────────────────────
-
-describe('TabSwitcher — dragstart primary-button guard', () => {
-  const TABS: SidebarTabId[] = ['files']
-
-  beforeEach(() => {
-    useUIStore.setState({ sidebarTabId: 'files' })
-    useSettingsStore.setState({ sidebarTabOrder: [] })
-  })
-
-  test('button=0: dragstart on tab icon sets MIME data', () => {
-    render(
-      <TabSwitcher
-        pinnedIds={[]}
-        tabOrderSaved={TABS}
-        hiddenIds={new Set()}
-        onRightClick={jest.fn()}
-        onTabContextMenu={jest.fn()}
-        onUnpinPanel={jest.fn()}
-      />
-    )
-    const tabIcon = screen.getByTestId('sidebar-tab-files').closest('[draggable]') as HTMLElement
-    expect(tabIcon).not.toBeNull()
-    fireDragStartWithButton(tabIcon, 0)
-    expect(setDataCalls.length).toBeGreaterThan(0)
-  })
-
-  test('button=2: dragstart on tab icon does NOT set MIME data', () => {
-    render(
-      <TabSwitcher
-        pinnedIds={[]}
-        tabOrderSaved={TABS}
-        hiddenIds={new Set()}
-        onRightClick={jest.fn()}
-        onTabContextMenu={jest.fn()}
-        onUnpinPanel={jest.fn()}
-      />
-    )
-    const tabIcon = screen.getByTestId('sidebar-tab-files').closest('[draggable]') as HTMLElement
-    fireDragStartWithButton(tabIcon, 2)
-    expect(setDataCalls.length).toBe(0)
-  })
-})
-
-// ── 5. PinnedMiniStrip ────────────────────────────────────────────────────────
+// ── 4. PinnedMiniStrip ────────────────────────────────────────────────────────
 
 describe('PinnedMiniStrip — dragstart primary-button guard', () => {
   const IDS: SidebarTabId[] = ['files']

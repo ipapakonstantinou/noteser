@@ -10,10 +10,10 @@ import { type SidebarTabId } from '@/stores'
 // extracted components share an import surface.)
 void ((null as unknown) as PanelRightClick)
 
-// Thin drop zone rendered ABOVE each pinned group (and once at the
-// end of the pinned area) so the user can position a new group
-// between two existing ones. Zero-height when nothing's being
-// dragged, inflates to 24px during a drag for an easy target.
+// Thin drop zone rendered ABOVE each sidebar group (and once at the
+// end of the stack) so the user can position a new group between two
+// existing ones. Zero-height when nothing is being dragged; inflates
+// to 24px during a drag for an easy target.
 export interface InterGroupDropZoneProps {
   active: boolean
   onDropId: (id: SidebarTabId) => void

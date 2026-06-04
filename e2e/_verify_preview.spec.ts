@@ -73,7 +73,10 @@ test('preview: resize handle is grabbable (h-2 hit target)', async ({ page }) =>
       const parsed = JSON.parse(window.localStorage.getItem('noteser-settings') || '{}')
       parsed.state = parsed.state || {}
       parsed.state.onboardingShown = true
-      parsed.state.pinnedPanels = [['calendar'], ['files']]
+      parsed.state.sidebarGroups = [
+        { id: 'pre-cal', tabs: ['calendar'], activeTab: 'calendar', collapsed: false },
+        { id: 'pre-fil', tabs: ['files'], activeTab: 'files', collapsed: false },
+      ]
       window.localStorage.setItem('noteser-settings', JSON.stringify(parsed))
     } catch { /* ignore */ }
   })
@@ -98,26 +101,27 @@ test('preview: notesOpenInPreviewMode defaults to true', async ({ page }) => {
   expect(val).toBe(true)
 })
 
-test('preview: intra-strip drag-reorder writes to pinnedPanels', async ({ page }) => {
+test('preview: intra-strip reorder writes to sidebarGroups', async ({ page }) => {
   await page.addInitScript(() => {
     try {
       const parsed = JSON.parse(window.localStorage.getItem('noteser-settings') || '{}')
       parsed.state = parsed.state || {}
       parsed.state.onboardingShown = true
-      parsed.state.pinnedPanels = [['files', 'outline', 'search']]
+      parsed.state.sidebarGroups = [
+        { id: 'pre-r', tabs: ['files', 'outline', 'search'], activeTab: 'files', collapsed: false },
+      ]
       window.localStorage.setItem('noteser-settings', JSON.stringify(parsed))
     } catch { /* ignore */ }
   })
   await page.goto(PREVIEW)
   await page.waitForFunction(() => !!window.__noteser_test)
-  // Reorder via the store API (same path the UI handler produces).
   await page.evaluate(() => {
     window.__noteser_test!.stores.settingsStore.getState()
-      .setPinnedPanels([['search', 'files', 'outline']])
+      .setSidebarGroups([{ id: 'pre-r', tabs: ['search', 'files', 'outline'], activeTab: 'search', collapsed: false }])
   })
   await page.waitForTimeout(200)
   const result = await page.evaluate(() =>
-    window.__noteser_test!.stores.settingsStore.getState().pinnedPanels,
+    window.__noteser_test!.stores.settingsStore.getState().sidebarGroups,
   )
-  expect(result).toEqual([['search', 'files', 'outline']])
+  expect(result[0]?.tabs).toEqual(['search', 'files', 'outline'])
 })

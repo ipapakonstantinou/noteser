@@ -185,6 +185,7 @@ function GeneralPanel() {
   const showHiddenFolders = useSettingsStore(s => s.showHiddenFolders)
   const trashMode = useSettingsStore(s => s.trashMode)
   const confirmBulkDelete = useSettingsStore(s => s.confirmBulkDelete)
+  const confirmBeforeTrash = useSettingsStore(s => s.confirmBeforeTrash)
   const shareDefaultExpiryDays = useSettingsStore(s => s.shareDefaultExpiryDays)
   const shareDefaultBurn = useSettingsStore(s => s.shareDefaultBurn)
   const startupNoteId = useSettingsStore(s => s.startupNoteId)
@@ -192,6 +193,7 @@ function GeneralPanel() {
   const setShowHiddenFolders = useSettingsStore(s => s.setShowHiddenFolders)
   const setTrashMode = useSettingsStore(s => s.setTrashMode)
   const setConfirmBulkDelete = useSettingsStore(s => s.setConfirmBulkDelete)
+  const setConfirmBeforeTrash = useSettingsStore(s => s.setConfirmBeforeTrash)
   const setShareDefaultExpiryDays = useSettingsStore(s => s.setShareDefaultExpiryDays)
   const setShareDefaultBurn = useSettingsStore(s => s.setShareDefaultBurn)
   const setStartupNoteId = useSettingsStore(s => s.setStartupNoteId)
@@ -279,6 +281,15 @@ function GeneralPanel() {
             { value: 'trash', label: 'Move to trash (recoverable)' },
             { value: 'hardDelete', label: 'Delete immediately (no trash)' },
           ]}
+        />
+      </Field>
+      <Field
+        label="Confirm before moving notes to trash"
+        description="When off, deleting a note skips the confirmation and moves it straight to trash. Only applies in `Move to trash` mode — immediate-delete still confirms because it can't be undone."
+      >
+        <SettingsCheckbox
+          checked={confirmBeforeTrash}
+          onChange={setConfirmBeforeTrash}
         />
       </Field>
       <Field

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { Sidebar, RightSidebar, Ribbon, MobileTopBar, DrawerHandle, SidebarResizeHandle } from '@/components/sidebar'
+import { Sidebar, Ribbon, RightRibbon, RightSidebarStack, RightSidebarResizeHandle, MobileTopBar, DrawerHandle, SidebarResizeHandle } from '@/components/sidebar'
 import { Editor } from '@/components/editor'
 import { Toaster } from '@/components/ui'
 
@@ -35,7 +35,7 @@ const DiscardLocalChangesModal = dynamic(() => import('@/components/modals/Disca
 const PluginInstallConfirmModal = dynamic(() => import('@/components/modals/PluginInstallConfirmModal').then(m => ({ default: m.PluginInstallConfirmModal })), { ssr: false })
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useKeyboardShortcuts, useHydration, useAutoSync, useAutoEmbedNotes, useApplyTheme, useApplyFonts, useViewport } from '@/hooks'
-import { useUIStore, useWorkspaceStore, useGitHubStore, DEFAULT_SIDEBAR_WIDTH } from '@/stores'
+import { useUIStore, useWorkspaceStore, useGitHubStore, DEFAULT_SIDEBAR_WIDTH, DEFAULT_RIGHT_SIDEBAR_WIDTH } from '@/stores'
 import { switchVault } from '@/utils/switchVault'
 import { notesKey } from '@/utils/repoStorage'
 import { useNoteStore } from '@/stores/noteStore'
@@ -59,12 +59,13 @@ const ResetConfirmModal = dynamic(
 
 export default function Home() {
   const hydrated = useHydration()
-  const { sidebarCollapsed, sidebarWidth } = useUIStore()
+  const { sidebarCollapsed, sidebarWidth, rightSidebarCollapsed, rightSidebarWidth } = useUIStore()
   const pruneStaleTabs = useWorkspaceStore(s => s.pruneStaleTabs)
   const { isMobile } = useViewport()
 
   // Use default value during SSR to avoid hydration mismatch
   const isSidebarCollapsed = hydrated ? sidebarCollapsed : false
+  const isRightSidebarCollapsed = hydrated ? rightSidebarCollapsed : false
   // SSR / pre-hydration: render the desktop layout. Mobile branches
   // only kick in after the viewport hook has measured the real width,
   // matching the existing useViewport SSR contract.
@@ -551,26 +552,30 @@ export default function Home() {
 
   return (
     <div className="flex h-dvh w-screen bg-obsidianBlack text-obsidianText overflow-hidden">
-      {/* Ribbon */}
+      {/* Ribbon (Activity Bar). Always visible on desktop — when the
+          sidebar is collapsed only the panel CONTENT hides, the bar
+          stays so you can re-open or switch panels with one click.
+          Matches Obsidian's behaviour where the activity bar persists
+          when the sidebar collapses. */}
       <div className="flex-none">
         <Ribbon />
       </div>
 
-      {/* Sidebar column. Collapsed → fixed 50px rail. Expanded → the
+      {/* Sidebar panel column. Hidden entirely when collapsed (the
+          activity bar above remains as the entry point). Expanded → the
           user-set, drag-resizable width from useUIStore (defaults to
-          256 = the old w-64). We DROP the width transition while
-          expanded so the drag tracks the pointer 1:1 instead of
-          lagging behind a 300ms ease; the collapse toggle keeps its
-          animation. Pre-hydration we render the default width to avoid
-          an SSR/client mismatch (sidebarWidth is persisted). */}
-      <div
-        className={`flex-none ${
-          isSidebarCollapsed ? 'w-[50px] transition-all duration-300' : ''
-        }`}
-        style={isSidebarCollapsed ? undefined : { width: hydrated ? sidebarWidth : DEFAULT_SIDEBAR_WIDTH }}
-      >
-        <Sidebar />
-      </div>
+          256). We DROP the width transition while expanded so the drag
+          tracks the pointer 1:1 instead of lagging behind a 300ms ease.
+          Pre-hydration we render the default width to avoid an
+          SSR/client mismatch. */}
+      {!isSidebarCollapsed && (
+        <div
+          className="flex-none"
+          style={{ width: hydrated ? sidebarWidth : DEFAULT_SIDEBAR_WIDTH }}
+        >
+          <Sidebar />
+        </div>
+      )}
 
       {/* Drag-to-resize handle — sits between the sidebar and the
           editor. Only meaningful when the sidebar is expanded. */}
@@ -585,7 +590,27 @@ export default function Home() {
         <Editor />
       </div>
 
-      <RightSidebar />
+      {/* Right sidebar (leaf-model, 2026-06-04). Mirror of the left
+          column: a panel stack (expanded → user-set drag-resizable
+          width, defaults 280) plus a fixed-width activity bar always
+          glued to the far-right edge. When the right sidebar is
+          collapsed only the activity bar shows; clicking a panel icon
+          re-expands the column.
+          Pre-hydration we render the default width so the SSR/client
+          snapshots align. */}
+      {!isRightSidebarCollapsed && <RightSidebarResizeHandle />}
+      {!isRightSidebarCollapsed && (
+        <div
+          className="flex-none border-l border-obsidianBorder flex flex-col h-full"
+          style={{ width: hydrated ? rightSidebarWidth : DEFAULT_RIGHT_SIDEBAR_WIDTH }}
+          data-testid="right-sidebar-column"
+        >
+          <RightSidebarStack />
+        </div>
+      )}
+      <div className="flex-none">
+        <RightRibbon />
+      </div>
 
       {renderModals()}
     </div>

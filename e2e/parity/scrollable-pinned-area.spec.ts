@@ -24,12 +24,12 @@ test('with many pinned groups the main tab strip stays reachable', async ({ page
   // source-control, search, bookmarks, related) — the old 'tags'/'recent'
   // ids were dropped in the May-2026 ribbon redesign.
   await page.evaluate(() => {
-    window.__noteser_test!.stores.settingsStore.getState().setPinnedPanels([
-      ['search'],
-      ['bookmarks'],
-      ['outline'],
-      ['related'],
-      ['calendar'],
+    window.__noteser_test!.stores.settingsStore.getState().setSidebarGroups([
+      { id: 'sc-1', tabs: ['search'],    activeTab: 'search',    collapsed: false },
+      { id: 'sc-2', tabs: ['bookmarks'], activeTab: 'bookmarks', collapsed: false },
+      { id: 'sc-3', tabs: ['outline'],   activeTab: 'outline',   collapsed: false },
+      { id: 'sc-4', tabs: ['related'],   activeTab: 'related',   collapsed: false },
+      { id: 'sc-5', tabs: ['calendar'],  activeTab: 'calendar',  collapsed: false },
     ])
   })
 
@@ -50,10 +50,10 @@ test('pinned area has overflow-y-auto (internal scroll container)', async ({ pag
 
   // Pin several groups.
   await page.evaluate(() => {
-    window.__noteser_test!.stores.settingsStore.getState().setPinnedPanels([
-      ['search'],
-      ['bookmarks'],
-      ['tags'],
+    window.__noteser_test!.stores.settingsStore.getState().setSidebarGroups([
+      { id: 'sc-a', tabs: ['search'],    activeTab: 'search',    collapsed: false },
+      { id: 'sc-b', tabs: ['bookmarks'], activeTab: 'bookmarks', collapsed: false },
+      { id: 'sc-c', tabs: ['outline'],   activeTab: 'outline',   collapsed: false },
     ])
   })
 

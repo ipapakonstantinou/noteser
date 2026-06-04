@@ -19,7 +19,7 @@ import { useUIStore, DEFAULT_SECTION_HEIGHT } from '../stores/uiStore'
 
 // Reset the store between tests so we don't bleed state.
 beforeEach(() => {
-  useUIStore.setState({ sidebarSections: {}, sidebarTabId: 'files' })
+  useUIStore.setState({ sidebarSections: {}, lastFocusedGroupId: null })
 })
 
 test('default sections are treated as collapsed', () => {
@@ -115,36 +115,20 @@ test('setSidebarSectionCollapsed is idempotent when target matches current state
   expect(useUIStore.getState().sidebarSections).toBe(before)
 })
 
-// ── sidebarTabId (lower-switcher state) ────────────────────────────────────
+// ── lastFocusedGroupId (leaf-model focus tracking) ─────────────────────────
 
-test('default sidebar tab is "files"', () => {
-  expect(useUIStore.getState().sidebarTabId).toBe('files')
+test('default lastFocusedGroupId is null', () => {
+  expect(useUIStore.getState().lastFocusedGroupId).toBeNull()
 })
 
-test('setSidebarTab switches between the five tab ids', () => {
-  const { setSidebarTab } = useUIStore.getState()
-
-  setSidebarTab('outline')
-  expect(useUIStore.getState().sidebarTabId).toBe('outline')
-
-  setSidebarTab('source-control')
-  expect(useUIStore.getState().sidebarTabId).toBe('source-control')
-
-  setSidebarTab('search')
-  expect(useUIStore.getState().sidebarTabId).toBe('search')
-
-  setSidebarTab('bookmarks')
-  expect(useUIStore.getState().sidebarTabId).toBe('bookmarks')
-
-  setSidebarTab('files')
-  expect(useUIStore.getState().sidebarTabId).toBe('files')
+test('setLastFocusedGroupId updates the field', () => {
+  useUIStore.getState().setLastFocusedGroupId('g-123')
+  expect(useUIStore.getState().lastFocusedGroupId).toBe('g-123')
 })
 
-test('setSidebarTab is idempotent when target equals current', () => {
-  useUIStore.setState({ sidebarTabId: 'outline' })
+test('setLastFocusedGroupId is idempotent when value matches', () => {
+  useUIStore.setState({ lastFocusedGroupId: 'g-123' })
   const beforeRef = useUIStore.getState()
-  useUIStore.getState().setSidebarTab('outline')
-  // No-op selector return means React subscribers don't re-render —
-  // the store returns the same state ref when nothing actually changed.
+  useUIStore.getState().setLastFocusedGroupId('g-123')
   expect(useUIStore.getState()).toBe(beforeRef)
 })

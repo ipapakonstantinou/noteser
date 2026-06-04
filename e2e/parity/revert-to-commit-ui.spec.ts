@@ -34,8 +34,13 @@ type TestHooks = {
     }
     uiStore: {
       getState(): {
-        setSidebarTab: (id: string) => void
+        setLastFocusedGroupId: (id: string | null) => void
         openModal: (opts: { type: string; data: Record<string, unknown> }) => void
+      }
+    }
+    settingsStore: {
+      getState(): {
+        setSidebarGroups: (groups: Array<{ id: string; tabs: string[]; activeTab: string | null; collapsed: boolean }>) => void
       }
     }
     githubStore: {
@@ -94,7 +99,9 @@ async function seedSessionAndOpenRevertModal(page: Page) {
       branch: 'main',
       isPrivate: false,
     })
-    hooks.stores.uiStore.getState().setSidebarTab('source-control')
+    hooks.stores.settingsStore.getState().setSidebarGroups([
+      { id: 'scm-revert', tabs: ['source-control'], activeTab: 'source-control', collapsed: false },
+    ])
   })
 }
 

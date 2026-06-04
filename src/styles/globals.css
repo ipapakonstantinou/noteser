@@ -13,7 +13,12 @@
   --obsidian-dark-gray: #333333;
   --obsidian-accent: #3a3a3a;
   --obsidian-highlight: #4d4d4d;
-  --obsidian-border: #444444;
+  /* Softer divider lines per user feedback (2026-06-04). Was
+     #444444 against the #1b1b1b background — too high contrast for
+     a calm UI. Dropped to #2e2e2e for a more Obsidian-like subtlety
+     across every `border-obsidianBorder` usage (sidebar boundaries,
+     mini-strip border-b, group border-t, modal divider, etc.). */
+  --obsidian-border: #2e2e2e;
   --obsidian-text: #dadada;
   --obsidian-secondary-text: #bababa;
   /* Historical name (--obsidian-accent-purple) kept so existing
@@ -77,7 +82,11 @@
 /* Components */
 @layer components {
   .obsidian-sidebar {
-    @apply bg-obsidianGray border-r border-obsidianBorder h-full overflow-y-auto;
+    /* Same bg as the Ribbon (obsidianBlack) so the activity bar and
+       the sidebar form one seamless dark surface — no visible "gap"
+       between them. The right border stays as the boundary against
+       the editor. */
+    @apply bg-obsidianBlack border-r border-obsidianBorder h-full overflow-y-auto;
   }
 
   .obsidian-button {

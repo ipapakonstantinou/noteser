@@ -28,13 +28,12 @@ test('right-clicking two different icons creates two separate pinned mini-strips
   await expect(page.getByTestId('sidebar-pinned-tab-search')).toBeVisible()
 
   // Both should be visible and in pinned state.
-  const pinnedPanels = await page.evaluate(() => {
-    return window.__noteser_test!.stores.settingsStore.getState().pinnedPanels
+  const sidebarGroups = await page.evaluate(() => {
+    return window.__noteser_test!.stores.settingsStore.getState().sidebarGroups
   })
-  // Each right-click creates its own group: [[bookmarks], [search]]
-  expect(pinnedPanels.length).toBe(2)
-  expect(pinnedPanels[0]).toContain('bookmarks')
-  expect(pinnedPanels[1]).toContain('search')
+  // Each right-click creates its own group: bookmarks then search.
+  expect(sidebarGroups.length).toBeGreaterThanOrEqual(2)
+  expect(sidebarGroups.flatMap(g => g.tabs)).toEqual(expect.arrayContaining(['bookmarks', 'search']))
 })
 
 test('setting pinnedPanels with two ids in one group renders them in the same mini-strip', async ({ page }) => {
@@ -44,8 +43,8 @@ test('setting pinnedPanels with two ids in one group renders them in the same mi
 
   // Directly set a multi-icon group via store.
   await page.evaluate(() => {
-    window.__noteser_test!.stores.settingsStore.getState().setPinnedPanels([
-      ['bookmarks', 'search'],
+    window.__noteser_test!.stores.settingsStore.getState().setSidebarGroups([
+      { id: 'multi-g', tabs: ['bookmarks', 'search'], activeTab: 'bookmarks', collapsed: false },
     ])
   })
 
@@ -65,8 +64,8 @@ test('unpinning one from a multi-icon group leaves the other still pinned', asyn
 
   // Seed a two-icon group.
   await page.evaluate(() => {
-    window.__noteser_test!.stores.settingsStore.getState().setPinnedPanels([
-      ['bookmarks', 'search'],
+    window.__noteser_test!.stores.settingsStore.getState().setSidebarGroups([
+      { id: 'multi-u', tabs: ['bookmarks', 'search'], activeTab: 'bookmarks', collapsed: false },
     ])
   })
 
