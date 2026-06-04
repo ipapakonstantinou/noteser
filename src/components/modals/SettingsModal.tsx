@@ -23,7 +23,7 @@ import {
 import { PANELS } from '@/components/sidebar/sidebarPanelRegistry'
 import { THEME_TOKENS, THEME_PRESETS } from '@/utils/theme'
 import { FONT_SLOTS_DEF, SYSTEM_DEFAULT_VALUE, type FontSlot } from '@/utils/fonts'
-import { useUIStore, useSettingsStore, useGitHubStore, useLocalFolderStore, useNoteStore } from '@/stores'
+import { useUIStore, useSettingsStore, useGitHubStore, useLocalFolderStore, useNoteStore, useFolderStore } from '@/stores'
 import type { FolderSortMode, TaskListDensity } from '@/stores'
 import type { TrashMode } from '@/stores/settingsStore'
 import { Modal, Button } from '@/components/ui'
@@ -196,23 +196,40 @@ function GeneralPanel() {
   const setShareDefaultBurn = useSettingsStore(s => s.setShareDefaultBurn)
   const setStartupNoteId = useSettingsStore(s => s.setStartupNoteId)
 
-  // Note picker options: every non-deleted note sorted by title.
-  // Capped at 500 so the dropdown stays usable on huge vaults — power
-  // users can still pin via the API if needed.
+  // Note picker options: every non-deleted note labeled by FULL PATH
+  // so two notes with the same title in different folders stay
+  // distinguishable. Sorted by path, capped at 500 to keep the
+  // dropdown usable on huge vaults.
   const notesForPicker = useNoteStore(s => s.notes)
+  const foldersForPicker = useFolderStore(s => s.folders)
   const startupOptions = useMemo(() => {
-    const active = notesForPicker.filter(n => !n.isDeleted)
-    const sorted = active.slice().sort((a, b) => {
-      const at = (a.title || 'Untitled').toLowerCase()
-      const bt = (b.title || 'Untitled').toLowerCase()
-      return at.localeCompare(bt)
-    })
-    const capped = sorted.slice(0, 500)
+    const folderById = new Map(foldersForPicker.map(f => [f.id, f] as const))
+    const pathOf = (folderId: string | null): string => {
+      const parts: string[] = []
+      let cur: string | null = folderId
+      while (cur) {
+        const f = folderById.get(cur)
+        if (!f) break
+        parts.unshift(f.name)
+        cur = f.parentId
+      }
+      return parts.join('/')
+    }
+    const labeled = notesForPicker
+      .filter(n => !n.isDeleted)
+      .map(n => {
+        const folderPath = pathOf(n.folderId ?? null)
+        const title = n.title || 'Untitled'
+        const label = folderPath ? `${folderPath}/${title}` : title
+        return { id: n.id, label }
+      })
+      .sort((a, b) => a.label.toLowerCase().localeCompare(b.label.toLowerCase()))
+      .slice(0, 500)
     return [
       { value: '', label: 'Welcome view (default)' },
-      ...capped.map(n => ({ value: n.id, label: n.title || 'Untitled' })),
+      ...labeled.map(n => ({ value: n.id, label: n.label })),
     ]
-  }, [notesForPicker])
+  }, [notesForPicker, foldersForPicker])
 
   return (
     <div className="space-y-4">
