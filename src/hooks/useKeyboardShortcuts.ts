@@ -84,6 +84,14 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers = {}) => {
         case 'deleteNote': {
           if (!selectedNoteId) return
           event.preventDefault()
+          // Honour the "Confirm before moving notes to trash" setting,
+          // same as the right-click and command-palette delete paths.
+          // hardDelete mode still confirms because it's irreversible.
+          const { confirmBeforeTrash, trashMode } = useSettingsStore.getState()
+          if (!confirmBeforeTrash && trashMode !== 'hardDelete') {
+            useNoteStore.getState().deleteNote(selectedNoteId)
+            return
+          }
           openModal({
             type: 'delete',
             data: { type: 'note', id: selectedNoteId },
