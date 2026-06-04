@@ -613,8 +613,25 @@ const DEFAULTS = {
   // very first render before persist rehydrates with the same default.
   // Once the user touches anything, real UUIDs take over via the
   // helpers in sidebarGroupActions.ts.
+  // Two-group default layout matching Obsidian's expected first-run
+  // (per user feedback 2026-06-04). Group 1 leads with the calendar /
+  // plugins / search trio; Group 2 holds the file-browsing + writing
+  // panels. Both group ids are stable strings so SSR + the very-first
+  // client render produce identical output. Once the user touches
+  // anything, real UUIDs take over via sidebarGroupActions.ts.
   sidebarGroups: [
-    { id: 'default', tabs: ['calendar'], activeTab: 'calendar', collapsed: false },
+    {
+      id: 'default-top',
+      tabs: ['calendar', 'plugins', 'search'],
+      activeTab: 'calendar',
+      collapsed: false,
+    },
+    {
+      id: 'default-bottom',
+      tabs: ['files', 'outline', 'source-control', 'bookmarks', 'related'],
+      activeTab: 'files',
+      collapsed: false,
+    },
   ] as SidebarGroupState[],
   // Sidebar tab ids the user has hidden via the right-click context
   // menu. Hidden tabs are filtered out of every group's strip at

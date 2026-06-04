@@ -230,7 +230,7 @@ export const Ribbon = () => {
   }
 
   return (
-    <div className="h-full w-[44px] max-md:w-12 flex flex-col items-center gap-1 py-2 bg-obsidianBlack border-r border-obsidianBorder">
+    <div className="h-full w-[44px] max-md:w-12 flex flex-col items-center gap-1 py-2 bg-obsidianBlack">
       {/* Collapse-sidebar toggle. */}
       <div className="mb-1.5">
         <RibbonButton

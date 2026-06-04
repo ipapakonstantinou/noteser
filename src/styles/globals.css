@@ -77,7 +77,11 @@
 /* Components */
 @layer components {
   .obsidian-sidebar {
-    @apply bg-obsidianGray border-r border-obsidianBorder h-full overflow-y-auto;
+    /* Same bg as the Ribbon (obsidianBlack) so the activity bar and
+       the sidebar form one seamless dark surface — no visible "gap"
+       between them. The right border stays as the boundary against
+       the editor. */
+    @apply bg-obsidianBlack border-r border-obsidianBorder h-full overflow-y-auto;
   }
 
   .obsidian-button {
