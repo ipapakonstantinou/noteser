@@ -245,9 +245,14 @@
   }
 }
 
-/* Preview mode: cursor indicator + completed-task strikethrough */
+/* Preview mode: cursor indicator + completed-task strikethrough.
+   User feedback 2026-06-04: "I don't want a blue line ... in edit
+   nor in preview". Repainted the cursor block + marker in the muted
+   secondary-text colour so the cursor stays visible in preview mode
+   but the persistent vertical blue bar that was reading as a "line"
+   alongside the active line is gone. */
 .preview-cursor-block {
-  border-left: 3px solid theme('colors.obsidianAccentPurple');
+  border-left: 3px solid theme('colors.obsidianSecondaryText');
   padding-left: 0.75rem;
   margin-left: -0.95rem;
 }
@@ -256,7 +261,7 @@
   display: inline-block;
   width: 2px;
   height: 1.1em;
-  background: theme('colors.obsidianAccentPurple');
+  background: theme('colors.obsidianSecondaryText');
   vertical-align: text-bottom;
   margin: 0 -1px;
   border-radius: 1px;

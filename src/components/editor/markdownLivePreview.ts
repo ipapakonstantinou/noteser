@@ -256,9 +256,15 @@ const livePreviewTheme = EditorView.baseTheme({
     color: '#a8a8a8',
   },
   '.cm-lp-list': { paddingLeft: '4px' },
-  '.cm-lp-list-mark': { color: 'hsl(217, 88%, 50%)', fontWeight: '600' },
-  '.cm-lp-task-unchecked': { color: 'hsl(217, 88%, 50%)', cursor: 'pointer' },
-  '.cm-lp-task-checked':   { color: 'hsl(217, 88%, 50%)', cursor: 'pointer' },
+  // User feedback 2026-06-04: "I don't want a blue line ... neither in
+  // edit nor in preview". When the cursor sits on a task line, live
+  // preview unhides the raw `[ ]` syntax — those blue brackets read
+  // as a stray blue vertical line at the left margin. Repainting these
+  // tokens in the muted secondary-text colour kills the perceived line
+  // while keeping the syntax legible.
+  '.cm-lp-list-mark': { color: 'var(--obsidian-secondary-text)', fontWeight: '600' },
+  '.cm-lp-task-unchecked': { color: 'var(--obsidian-secondary-text)', cursor: 'pointer' },
+  '.cm-lp-task-checked':   { color: 'var(--obsidian-secondary-text)', cursor: 'pointer' },
   '.cm-lp-task-done': { textDecoration: 'line-through', opacity: '0.55' },
   '.cm-lp-tag': {
     color: 'hsl(217, 88%, 50%)',
