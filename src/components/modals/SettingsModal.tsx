@@ -43,6 +43,7 @@ import {
 } from './settings'
 import { EmailSignup } from '@/components/marketing/EmailSignup'
 import { PluginsSettingsPanel } from './PluginsSettingsPanel'
+import { isIosSafari, isStandalone } from '@/components/pwa/PwaProvider'
 
 // One row in the left-side category navigator. Order here drives the
 // rendering order of the list AND the keyboard up/down nav (later).
@@ -1651,9 +1652,29 @@ function AboutPanel() {
   const buildId = buildIdRaw && buildIdRaw.length > 7 ? buildIdRaw.slice(0, 7) : buildIdRaw
   const version = buildId ? `${semver} (${buildId})` : semver
   const openModal = useUIStore(s => s.openModal)
+  // iOS Safari has no install API. When the user is in a normal Safari
+  // tab (not already a standalone home-screen launcher) surface the
+  // manual instructions here rather than as a screen-stealing banner.
+  const [showIosInstall, setShowIosInstall] = useState(false)
+  useEffect(() => {
+    setShowIosInstall(isIosSafari() && !isStandalone())
+  }, [])
   return (
     <div className="space-y-4">
       <PanelHeading>About</PanelHeading>
+      {showIosInstall && (
+        <div
+          className="rounded-md border border-obsidianBorder bg-obsidianGray/60 p-3 text-sm text-obsidianText"
+          data-testid="ios-install-hint"
+        >
+          <div className="font-medium mb-1">Install noteser</div>
+          <p className="text-obsidianSecondaryText">
+            Tap the Share icon in Safari, then choose Add to Home Screen.
+            The app will launch from the home screen with no browser
+            chrome and full offline access.
+          </p>
+        </div>
+      )}
       <div className="text-sm text-obsidianText space-y-2">
         <p>Noteser — browser-first, Obsidian-style markdown note-taking.</p>
         <p>

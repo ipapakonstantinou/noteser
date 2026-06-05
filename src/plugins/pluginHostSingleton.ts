@@ -25,6 +25,7 @@ import { useFolderStore } from '@/stores/folderStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { fetchPluginFromUrl, fetchPluginFromManifest, sha256Hex } from './installer'
 import type { VaultManifestCandidate } from './vaultScan'
+import { bootMark, bootMeasure, yieldToMain } from '@/utils/bootTrace'
 
 let instance: PluginHost | null = null
 
@@ -149,11 +150,26 @@ export async function bootstrapInstalledPlugins(): Promise<void> {
   if (host === null) return
 
   const records = Object.values(usePluginInstallStore.getState().records)
-  for (const record of records) {
-    if (!record.enabled) continue
+  if (records.length === 0) return
 
-    const actualHash = await sha256Hex(record.mainSource)
-    if (actualHash !== record.hash) {
+  bootMark('plugin-bootstrap:start')
+
+  // Hash every enabled plugin's bundle IN PARALLEL — sha256Hex is the
+  // dominant cost in this path (each call hashes the full plugin source
+  // through SubtleCrypto). Running them serially used to block ~80ms
+  // per plugin on a cold iOS boot. Promise.all lets the browser fan the
+  // work out across cores and yields to the main thread between each
+  // SubtleCrypto await.
+  const enabled = records.filter(r => r.enabled)
+  const hashes = await Promise.all(enabled.map(r => sha256Hex(r.mainSource)))
+
+  // Load each verified plugin, yielding to main between spawns so the
+  // iOS watchdog never sees a single long task. Worker creation itself
+  // is async (postMessage / module-fetch), but the synchronous setup
+  // around it can still pile up if a user has a dozen plugins.
+  for (let i = 0; i < enabled.length; i++) {
+    const record = enabled[i]
+    if (hashes[i] !== record.hash) {
       useToastStore.getState().addToast({
         kind: 'error',
         message: `Plugin "${record.manifest.id}" failed an integrity check and was not loaded.`,
@@ -172,7 +188,11 @@ export async function bootstrapInstalledPlugins(): Promise<void> {
       // prevent the rest from booting.
       void err
     }
+    await yieldToMain()
   }
+
+  bootMark('plugin-bootstrap:end')
+  bootMeasure('plugin-bootstrap', 'plugin-bootstrap:start', 'plugin-bootstrap:end')
 }
 
 /**
