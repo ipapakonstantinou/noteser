@@ -310,14 +310,15 @@ const obsidianTheme = EditorView.theme({
   // `&light`/`&dark` prefixes only work in EditorView.baseTheme, NOT here, so we
   // instead match CodeMirror's full child-combinator chain (`&` is this theme's
   // root class) to outrank the built-in default. We paint the selection with the
-  // theme-aware `--obsidian-highlight` token (the palette's designated highlight
-  // colour) so it stays readable against the editor text in every preset —
-  // dark, light, sepia, solarized — since editor text colour also follows the
-  // preset (globals.css forces `.cm-content { color: inherit }`). The bare
-  // `.cm-selectionBackground` covers the unfocused state.
-  '.cm-selectionBackground': { backgroundColor: 'var(--obsidian-highlight, #4d4d4d)' },
+  // theme-aware `--obsidian-selection` token. That token is DISTINCT from
+  // `--obsidian-highlight` (the sidebar hover surface) so a selection-visible
+  // colour can't bleed into every hover state in the chrome (2026-06-05). Each
+  // preset overrides it to a value that clears ≥ 2:1 against the editor bg AND
+  // ≥ 4.5:1 against the editor text. The bare `.cm-selectionBackground`
+  // covers the unfocused state.
+  '.cm-selectionBackground': { backgroundColor: 'var(--obsidian-selection, #2b5a9b)' },
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
-    backgroundColor: 'var(--obsidian-highlight, #4d4d4d)',
+    backgroundColor: 'var(--obsidian-selection, #2b5a9b)',
   },
   '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,0.025)' },
   // No display:none on .cm-gutters — basicSetup disables line-numbers

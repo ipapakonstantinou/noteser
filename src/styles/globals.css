@@ -13,6 +13,13 @@
   --obsidian-dark-gray: #333333;
   --obsidian-accent: #3a3a3a;
   --obsidian-highlight: #4d4d4d;
+  /* Editor selection background — painted into `.cm-selectionBackground`
+     by drawSelection() and reused for the global `::selection`. Kept
+     SEPARATE from --obsidian-highlight (the hover surface) so a
+     selection-visible value can't tint every sidebar hover state.
+     Picked to clear ≥ 2:1 against --obsidian-black and ≥ 4.5:1
+     against --obsidian-text, in family with the noteser blue accent. */
+  --obsidian-selection: #2b5a9b;
   /* Softer divider lines per user feedback (2026-06-04). Was
      #444444 against the #1b1b1b background — too high contrast for
      a calm UI. Dropped to #2e2e2e for a more Obsidian-like subtlety
