@@ -6,6 +6,7 @@ import {
   rightPanelDef,
   type RightSidebarTabId,
 } from './rightPanelRegistry'
+import { SIDEBAR_PANEL_DRAG_MIME } from './SidebarSection'
 
 // Mini tab strip for the RIGHT sidebar — copy of PinnedMiniStrip but
 // pinned (no pun intended) to the right-side registry + drag MIME.
@@ -121,6 +122,11 @@ export const RightMiniStrip = ({
             onDragStart={e => {
               if (e.nativeEvent && e.nativeEvent.button !== 0) return
               e.dataTransfer.setData(RIGHT_TAB_DRAG_MIME, id)
+              // Mirror onto the left-side MIME so dropping this tab in
+              // the left sidebar passes its drop-zone filter. The
+              // left-side drop handler calls moveTabAcrossSidebars
+              // which routes the move correctly.
+              e.dataTransfer.setData(SIDEBAR_PANEL_DRAG_MIME, id)
               e.dataTransfer.effectAllowed = 'move'
             }}
             onDragOver={onIconDragOver(idx)}
