@@ -37,8 +37,6 @@ export const TabBar = ({ pane }: Props) => {
   useEffect(() => {
     if (!menu) return
     const onDown = (e: MouseEvent) => {
-      // Don't dismiss when the click lands on the menu itself; menu
-      // items already call setMenu(null) before/after running.
       const el = e.target as HTMLElement | null
       if (el?.closest('[data-testid="tab-context-menu"]')) return
       setMenu(null)
