@@ -6,9 +6,9 @@ import { TooltipLayer } from '@/components/ui/TooltipLayer'
 import '@/styles/globals.css'
 
 export const metadata: Metadata = {
-  title: 'Noteser - Collaborative Note Taking',
-  description: 'A modern, collaborative note-taking app with real-time sync, markdown support, and offline capabilities.',
-  keywords: ['notes', 'markdown', 'collaborative', 'productivity', 'writing'],
+  title: 'Noteser — Your second brain in the browser',
+  description: 'Browser-based markdown notes with GitHub sync and local-folder sync. Plain text, in your own repo.',
+  keywords: ['notes', 'markdown', 'second brain', 'productivity', 'writing', 'github sync'],
   authors: [{ name: 'Noteser' }],
   applicationName: 'Noteser',
   manifest: '/manifest.json',
