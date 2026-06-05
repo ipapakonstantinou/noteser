@@ -1,7 +1,6 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Cog6ToothIcon } from '@heroicons/react/24/outline'
 import { PanelLeftIcon, PanelRightIcon } from '@/components/ui'
 import { useShallow } from 'zustand/react/shallow'
 import {
@@ -36,7 +35,6 @@ import {
 // Drag/drop emits RIGHT_TAB_DRAG_MIME so left-side drop targets ignore
 // right-side payloads and vice versa.
 export const RightRibbon = () => {
-  const openModal = useUIStore(s => s.openModal)
   const rightSidebarCollapsed = useUIStore(s => s.rightSidebarCollapsed)
   const setRightSidebarCollapsed = useUIStore(s => s.setRightSidebarCollapsed)
 
@@ -146,12 +144,6 @@ export const RightRibbon = () => {
             </div>
           )
         })}
-      </div>
-
-      <div className="mt-auto">
-        <RibbonButton onClick={() => openModal({ type: 'settings' })} title="Settings">
-          <Cog6ToothIcon className="w-5 h-5" />
-        </RibbonButton>
       </div>
 
       {panelMenu && (
