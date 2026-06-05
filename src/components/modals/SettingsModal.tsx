@@ -1676,7 +1676,7 @@ function AboutPanel() {
         </div>
       )}
       <div className="text-sm text-obsidianText space-y-2">
-        <p>Noteser — browser-first, Obsidian-style markdown note-taking.</p>
+        <p>Noteser is a browser-first markdown note-taking app.</p>
         <p>
           <span className="text-obsidianSecondaryText">Version: </span>
           <span className="font-mono text-xs">{version}</span>
@@ -1691,7 +1691,7 @@ function AboutPanel() {
           >
             Help &amp; docs →
           </a>
-          <span className="text-obsidianSecondaryText"> (in-app help — getting started, GitHub sync, local folder, shortcuts, FAQ)</span>
+          <span className="text-obsidianSecondaryText"> (in-app help: getting started, GitHub sync, local folder, shortcuts, FAQ)</span>
         </p>
         <p>
           <a
@@ -1714,6 +1714,16 @@ function AboutPanel() {
             Report an issue on GitHub →
           </a>
           <span className="text-obsidianSecondaryText"> (opens a new GitHub issue in a new tab)</span>
+        </p>
+        <p>
+          <a
+            href="https://noteser.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-obsidianAccentPurple hover:underline"
+          >
+            noteser.app
+          </a>
         </p>
         <p>
           <a
