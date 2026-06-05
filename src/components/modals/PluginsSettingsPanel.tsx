@@ -17,10 +17,7 @@ import { ArrowPathIcon, TrashIcon } from '@heroicons/react/24/outline'
 import { usePluginInstallStore } from '@/stores/pluginInstallStore'
 import { usePluginStore } from '@/stores/pluginStore'
 import { useUIStore } from '@/stores'
-import {
-  fetchPluginForInstall,
-  uninstallPlugin,
-} from '@/plugins/pluginHostSingleton'
+import { uninstallPlugin } from '@/plugins/pluginHostSingleton'
 
 export const PluginsSettingsPanel = () => {
   const records = usePluginInstallStore((s) => s.records)
@@ -29,25 +26,17 @@ export const PluginsSettingsPanel = () => {
   const openModal = useUIStore((s) => s.openModal)
 
   const [url, setUrl] = useState('')
-  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const handleAdd = async () => {
+  const handleAdd = () => {
     setError(null)
-    if (!url.trim()) {
+    const trimmed = url.trim()
+    if (!trimmed) {
       setError('Paste a manifest.json URL.')
       return
     }
-    setBusy(true)
-    try {
-      const record = await fetchPluginForInstall(url.trim())
-      openModal({ type: 'plugin-install-confirm', data: { record } })
-      setUrl('')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
-    }
+    openModal({ type: 'plugin-install-confirm', data: { manifestUrl: trimmed } })
+    setUrl('')
   }
 
   const handleUninstall = (pluginId: string) => {
@@ -83,18 +72,16 @@ export const PluginsSettingsPanel = () => {
             type="url"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            disabled={busy}
             placeholder="https://…/manifest.json"
-            className="flex-1 appearance-none px-3 py-2 rounded-md border border-obsidianBorder bg-obsidianBlack/40 text-sm text-obsidianText placeholder:text-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple disabled:opacity-60"
+            className="flex-1 appearance-none px-3 py-2 rounded-md border border-obsidianBorder bg-obsidianBlack/40 text-sm text-obsidianText placeholder:text-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple"
           />
           <button
             type="button"
             onClick={handleAdd}
-            disabled={busy}
-            className="px-4 py-2 rounded-md bg-obsidianAccentPurple/80 hover:bg-obsidianAccentPurple text-white text-sm font-medium disabled:opacity-60"
+            className="px-4 py-2 rounded-md bg-obsidianAccentPurple/80 hover:bg-obsidianAccentPurple text-white text-sm font-medium"
             data-testid="settings-plugins-add"
           >
-            {busy ? 'Adding…' : 'Add'}
+            Add
           </button>
         </div>
         {error && <p className="text-xs text-red-300 mt-2">{error}</p>}
