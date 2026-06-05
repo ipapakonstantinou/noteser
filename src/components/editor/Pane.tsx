@@ -11,6 +11,7 @@ import { EditorContent } from './EditorContent'
 import { TabBar } from './TabBar'
 import { MergeEditorView } from './MergeEditorView'
 import { MergeBatchView } from './MergeBatchView'
+import { CompareView } from './CompareView'
 import { WelcomePane } from './WelcomePane'
 import { EmptyState } from '@/components/ui'
 import type { PaneState } from '@/stores/workspaceStore'
@@ -104,6 +105,14 @@ export const Pane = ({ pane, allowSplitDropZone }: Props) => {
     body = <MergeEditorView tabId={activeTab.id} conflict={activeTab.conflict} />
   } else if (activeTab.kind === 'merge-batch') {
     body = <MergeBatchView tabId={activeTab.id} conflicts={activeTab.conflicts} />
+  } else if (activeTab.kind === 'compare') {
+    body = (
+      <CompareView
+        tabId={activeTab.id}
+        leftNoteId={activeTab.leftNoteId}
+        rightNoteId={activeTab.rightNoteId}
+      />
+    )
   } else if (activeTab.kind === 'welcome') {
     body = <WelcomePane tabId={activeTab.id} />
   } else {

@@ -41,6 +41,8 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   const { currentView } = useUIStore()
   const renameRequest = useUIStore(s => s.renameRequest)
   const clearRenameRequest = useUIStore(s => s.clearRenameRequest)
+  const compareSourceNoteId = useUIStore(s => s.compareSourceNoteId)
+  const clearCompareSource = useUIStore(s => s.clearCompareSource)
   const { isMobile } = useViewport()
   const sidebarCollapsed = useUIStore(s => s.sidebarCollapsed)
   const toggleSidebar = useUIStore(s => s.toggleSidebar)
@@ -160,6 +162,19 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     useNoteStore.getState().deleteNotes(ids)
     clearSelection()
   }
+
+  // Global Esc handler — clears a pending compare source so the highlight
+  // doesn't linger. Listening on window means the shortcut works from
+  // anywhere (editor, sidebar, etc.) the way VS Code's compare flow does.
+  useEffect(() => {
+    if (!compareSourceNoteId) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      clearCompareSource()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [compareSourceNoteId, clearCompareSource])
 
   // Global Delete / Backspace handler. The per-tree onKeyDown only fires
   // when the tree itself has focus — after clicking a note row, focus
@@ -592,6 +607,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   const NoteItem = ({ note, className = '' }: { note: typeof notes[0]; className?: string }) => {
     const kbFocused = isRowFocused('note', note.id)
     const multiSelected = isSelected(note.id)
+    const isCompareSource = compareSourceNoteId === note.id
     // Mobile-only drag-to-pin. Trash rows are excluded because their
     // primary affordance is restore / permanently delete.
     const swipeEnabled = isMobile && currentView !== 'trash' && !note.isDeleted
@@ -604,7 +620,10 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
           className={`obsidian-file-item ${
             multiSelected ? 'bg-obsidianAccentPurple/25 border-l-2 border-obsidianAccentPurple -ml-[2px] pl-[10px]' :
               selectedNoteId === note.id ? 'bg-obsidianHighlight' : ''
-          } ${kbFocused ? 'ring-1 ring-inset ring-obsidianAccentPurple' : ''} ${className}`}
+          } ${kbFocused ? 'ring-1 ring-inset ring-obsidianAccentPurple' : ''} ${
+            isCompareSource ? 'italic border-l-2 border-obsidianAccentPurple -ml-[2px] pl-[10px] ring-1 ring-inset ring-obsidianAccentPurple/60' : ''
+          } ${className}`}
+          data-compare-source={isCompareSource ? 'true' : undefined}
           draggable={currentView !== 'trash' && !multiSelected && !note.isDeleted}
           onDragStart={e => beginNoteDrag(e, note.id)}
           onDragEnd={endDrag}

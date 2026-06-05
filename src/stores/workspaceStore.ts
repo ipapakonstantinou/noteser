@@ -36,6 +36,12 @@ export type Tab =
   // it also flips `settingsStore.onboardingShown` so it doesn't
   // reappear on the next session.
   | { id: string; kind: 'welcome' }
+  // Read-only side-by-side diff between two notes (VS Code "Compare
+  // with Selected"). Snapshots the two note ids at open time; the
+  // view re-reads current content from the noteStore so live edits
+  // reflect into the diff. Not persisted — closed on reload, same
+  // as the welcome tab.
+  | { id: string; kind: 'compare'; leftNoteId: string; rightNoteId: string }
 
 export interface PaneState {
   id: string
@@ -64,6 +70,10 @@ interface WorkspaceState {
   // Open (or focus, if already open) the Welcome tab. Lives in the
   // active pane. Idempotent — calling twice is a no-op past the first.
   openWelcome: () => void
+  // Open a read-only side-by-side compare of two notes in a new tab.
+  // No-op if the two ids are the same. If a compare tab for this pair
+  // is already open in any pane it is focused instead of duplicated.
+  openCompare: (leftNoteId: string, rightNoteId: string) => void
   openMergeConflicts: (conflicts: ConflictTabData[]) => void
   // Opens a SINGLE summary tab covering all conflicts. Replaces any
   // existing merge-conflict / merge-batch tabs in the workspace.
@@ -359,6 +369,37 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         set({ panes: next, activePaneId: targetPaneId })
       },
 
+      openCompare: (leftNoteId, rightNoteId) => {
+        if (leftNoteId === rightNoteId) return
+        const state = get()
+        // Focus an existing compare tab for the same pair (either order)
+        // instead of opening a duplicate.
+        const existing = state.panes
+          .flatMap(p => p.tabs.map(t => ({ pane: p, tab: t })))
+          .find(({ tab }) =>
+            tab.kind === 'compare' &&
+            ((tab.leftNoteId === leftNoteId && tab.rightNoteId === rightNoteId) ||
+             (tab.leftNoteId === rightNoteId && tab.rightNoteId === leftNoteId)),
+          )
+        if (existing) {
+          const next = state.panes.map(p =>
+            p.id === existing.pane.id ? { ...p, activeTabId: existing.tab.id } : p,
+          )
+          set({ panes: next, activePaneId: existing.pane.id })
+          return
+        }
+        const targetPaneId = state.activePaneId ?? state.panes[0]?.id
+        if (!targetPaneId) return
+        const id = uuidv4()
+        const newTab: Tab = { id, kind: 'compare', leftNoteId, rightNoteId }
+        const next = state.panes.map(p =>
+          p.id === targetPaneId
+            ? { ...p, tabs: [...p.tabs, newTab], activeTabId: id }
+            : p,
+        )
+        set({ panes: next, activePaneId: targetPaneId })
+      },
+
       promoteTab: (tabId) => {
         set(state => ({
           panes: state.panes.map(p => ({
@@ -627,7 +668,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         const liveIds = new Set(notes.filter(n => !n.isDeleted).map(n => n.id))
         const state = get()
         const next = state.panes.map(p => {
-          const cleanTabs = p.tabs.filter(t => t.kind !== 'note' || liveIds.has(t.noteId))
+          const cleanTabs = p.tabs.filter(t => {
+            if (t.kind === 'note') return liveIds.has(t.noteId)
+            if (t.kind === 'compare') return liveIds.has(t.leftNoteId) && liveIds.has(t.rightNoteId)
+            return true
+          })
           const stillActive = cleanTabs.find(t => t.id === p.activeTabId)
           return { ...p, tabs: cleanTabs, activeTabId: stillActive?.id ?? cleanTabs[cleanTabs.length - 1]?.id ?? null }
         })
@@ -672,7 +717,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         return persisted as { panes: PaneState[]; activePaneId: string | null }
       },
       partialize: (state) => ({
-        // Persist only note tabs.
+        // Persist only note tabs. Welcome / merge-* / compare tabs are
+        // point-in-time surfaces; dropping them on reload is correct.
         panes: state.panes.map(p => ({
           ...p,
           tabs: p.tabs.filter(t => t.kind === 'note'),
