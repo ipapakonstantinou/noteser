@@ -11,6 +11,7 @@ import {
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
 import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore, useSettingsStore } from '@/stores'
 import { useHydration, useTreeDragDrop, useViewport } from '@/hooks'
+import { SwipePinRow } from './SwipePinRow'
 import { EditableText } from '../shared/EditableText'
 import { collectAllTags } from '@/utils/tags'
 import { sortNotes } from '@/utils/sortNotes'
@@ -60,7 +61,8 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     getRecentNotes,
     restoreNote,
     permanentlyDeleteNote,
-    emptyTrash
+    emptyTrash,
+    togglePinNote,
   } = useNoteStore()
   const openNote = useWorkspaceStore(s => s.openNote)
   const {
@@ -590,42 +592,50 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   const NoteItem = ({ note, className = '' }: { note: typeof notes[0]; className?: string }) => {
     const kbFocused = isRowFocused('note', note.id)
     const multiSelected = isSelected(note.id)
+    // Mobile-only drag-to-pin. Trash rows are excluded because their
+    // primary affordance is restore / permanently delete.
+    const swipeEnabled = isMobile && currentView !== 'trash' && !note.isDeleted
     return (
-      <div
-        className={`obsidian-file-item ${
-          multiSelected ? 'bg-obsidianAccentPurple/25 border-l-2 border-obsidianAccentPurple -ml-[2px] pl-[10px]' :
-            selectedNoteId === note.id ? 'bg-obsidianHighlight' : ''
-        } ${kbFocused ? 'ring-1 ring-inset ring-obsidianAccentPurple' : ''} ${className}`}
-        draggable={currentView !== 'trash' && !multiSelected && !note.isDeleted}
-        onDragStart={e => beginNoteDrag(e, note.id)}
-        onDragEnd={endDrag}
-        onClick={(e) => handleNoteClick(note.id, e)}
-        onDoubleClick={() => handleNoteDoubleClick(note.id)}
-        onContextMenu={e => onRightClick(e, 'note', note.id)}
-        tabIndex={-1}
-        data-testid="note-row"
-        data-note-id={note.id}
-        data-kb-focused={kbFocused ? 'true' : undefined}
+      <SwipePinRow
+        enabled={swipeEnabled}
+        onPinToggle={() => togglePinNote(note.id)}
       >
-        <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1">
-            {note.isPinned && (
-              <StarIconSolid className="w-3 h-3 text-yellow-500 flex-shrink-0" />
-            )}
-            {currentView === 'trash' ? (
-              <span className="truncate">{note.title}</span>
-            ) : (
-              <EditableText
-                value={note.title}
-                onSave={newTitle => updateNote(note.id, { title: newTitle })}
-                isEditing={renameRequest?.type === 'note' && renameRequest.id === note.id}
-                onEditingChange={(v) => { if (!v) clearRenameRequest() }}
-              />
-            )}
+        <div
+          className={`obsidian-file-item ${
+            multiSelected ? 'bg-obsidianAccentPurple/25 border-l-2 border-obsidianAccentPurple -ml-[2px] pl-[10px]' :
+              selectedNoteId === note.id ? 'bg-obsidianHighlight' : ''
+          } ${kbFocused ? 'ring-1 ring-inset ring-obsidianAccentPurple' : ''} ${className}`}
+          draggable={currentView !== 'trash' && !multiSelected && !note.isDeleted}
+          onDragStart={e => beginNoteDrag(e, note.id)}
+          onDragEnd={endDrag}
+          onClick={(e) => handleNoteClick(note.id, e)}
+          onDoubleClick={() => handleNoteDoubleClick(note.id)}
+          onContextMenu={e => onRightClick(e, 'note', note.id)}
+          tabIndex={-1}
+          data-testid="note-row"
+          data-note-id={note.id}
+          data-kb-focused={kbFocused ? 'true' : undefined}
+        >
+          <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1">
+              {note.isPinned && (
+                <StarIconSolid className="w-3 h-3 text-yellow-500 flex-shrink-0" />
+              )}
+              {currentView === 'trash' ? (
+                <span className="truncate">{note.title}</span>
+              ) : (
+                <EditableText
+                  value={note.title}
+                  onSave={newTitle => updateNote(note.id, { title: newTitle })}
+                  isEditing={renameRequest?.type === 'note' && renameRequest.id === note.id}
+                  onEditingChange={(v) => { if (!v) clearRenameRequest() }}
+                />
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      </SwipePinRow>
     )
   }
 
