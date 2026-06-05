@@ -131,30 +131,49 @@ function renumberDocument(view: EditorView): void {
 // through toggleTaskLineText so the ✅-date stamp + recurring-task behaviour is
 // preserved; on a plain/bullet/ordered line we convert it into an unchecked
 // task. Works across a multi-line selection.
-const toggleCheckboxStatus: Command = (view) => {
+export const toggleCheckboxStatus: Command = (view) => {
   const { state } = view
   const range = state.selection.main
   const fromLine = state.doc.lineAt(range.from)
   const toLine = state.doc.lineAt(range.to)
 
   const changes: { from: number; to: number; insert: string }[] = []
+  let firstLineNewText: string | null = null
+  let firstLineWasTask = false
   for (let n = fromLine.number; n <= toLine.number; n++) {
     const line = state.doc.line(n)
     const parts = splitListLine(line.text)
     let next: string
     if (parts.kind === 'task') {
-      // Existing task → flip done/undone with metadata-aware helper.
       const flipped = toggleTaskLineText(line.text)
       next = flipped ?? line.text
     } else {
-      // plain / bullet / ordered → unchecked task, keeping any carrier.
       const carrier = parts.kind === 'ordered' ? parts.carrier : '- '
       next = `${parts.indent}${carrier}[ ] ${parts.body}`
     }
     if (next !== line.text) changes.push({ from: line.from, to: line.to, insert: next })
+    if (n === fromLine.number) {
+      firstLineNewText = next
+      firstLineWasTask = parts.kind === 'task'
+    }
   }
   if (changes.length === 0) return false
-  view.dispatch({ changes, scrollIntoView: true })
+  // When the user converts a plain/bullet/ordered line into a NEW task with
+  // an empty cursor, park the caret at the end of the rewritten line so they
+  // can keep typing. Existing-task flips leave the caret alone (cursor
+  // position carries useful intent for the done/undone case).
+  const shouldMoveCaret =
+    range.empty &&
+    fromLine.number === toLine.number &&
+    !firstLineWasTask &&
+    firstLineNewText != null
+  view.dispatch({
+    changes,
+    selection: shouldMoveCaret
+      ? { anchor: fromLine.from + (firstLineNewText as string).length }
+      : undefined,
+    scrollIntoView: true,
+  })
   renumberDocument(view)
   return true
 }
@@ -706,52 +725,6 @@ export function CodeMirrorEditor({
     // renumber ordered runs so "1." sequences stay 1,2,3 after the move.
     { key: 'Alt-ArrowUp', preventDefault: true, run: moveLineThenRenumber(moveLineUp) },
     { key: 'Alt-ArrowDown', preventDefault: true, run: moveLineThenRenumber(moveLineDown) },
-    {
-      // Alt+L toggles the "- [ ]" task bullet (add on plain lines, remove
-      // on task lines). Alt+Shift+L toggles the [x]/[ ] checkmark
-      // (Obsidian-style with ✅ date stamp).
-      //
-      // CodeMirror's idiom for "same base key with/without Shift" is one
-      // binding with both `run` (no shift) and `shift` (with shift). An
-      // earlier attempt registered them as two separate bindings
-      // (`Alt-l` + `Alt-Shift-l`); CodeMirror's chord resolver did NOT
-      // pick the Shift variant for Alt+Shift+L and Alt-l ran on every
-      // press. The `shift` field on the base binding is the documented
-      // way to disambiguate. (Caught by the qa-tester sweep on
-      // 2026-05-21.)
-      key: 'Alt-l',
-      preventDefault: true,
-      run(view) {
-        const { state } = view
-        const { head } = state.selection.main
-        const line = state.doc.lineAt(head)
-        const taskMatch = line.text.match(/^(\s*)([-*+]\s+\[[ xX]\]\s+)/)
-        if (taskMatch) {
-          const indent = taskMatch[1].length
-          const markerLen = taskMatch[2].length
-          view.dispatch({
-            changes: { from: line.from + indent, to: line.from + indent + markerLen, insert: '' },
-            selection: { anchor: Math.max(line.from, head - markerLen) },
-          })
-        } else {
-          const indent = line.text.match(/^(\s*)/)![1].length
-          const insertAt = line.from + indent
-          view.dispatch({
-            changes: { from: insertAt, to: insertAt, insert: '- [ ] ' },
-            selection: { anchor: head + 6 },
-          })
-        }
-        return true
-      },
-      shift(view) {
-        const { head } = view.state.selection.main
-        const line = view.state.doc.lineAt(head)
-        const newLine = toggleTaskLineText(line.text)
-        if (newLine == null || newLine === line.text) return false
-        view.dispatch({ changes: { from: line.from, to: line.to, insert: newLine } })
-        return true
-      },
-    },
     {
       // Open the "Create or edit Task" modal for the task line under the
       // cursor. Mirrors Obsidian Tasks' Mod+Shift+T binding. No-op for lines
