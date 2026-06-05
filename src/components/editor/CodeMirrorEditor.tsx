@@ -166,7 +166,7 @@ const toggleCheckboxStatus: Command = (view) => {
 // (this mirrors how the other list toggles read intent off the leading line).
 // Indentation/nesting is preserved by the pure helpers; ordered runs are then
 // renumbered so "1." sequences read 1,2,3.
-const cycleListTypeCommand: Command = (view) => {
+export const cycleListTypeCommand: Command = (view) => {
   const { state } = view
   const range = state.selection.main
   const fromLine = state.doc.lineAt(range.from)
@@ -175,13 +175,27 @@ const cycleListTypeCommand: Command = (view) => {
   const target = nextCycleState(cycleState(fromLine.text))
 
   const changes: { from: number; to: number; insert: string }[] = []
+  let firstLineNewText: string | null = null
   for (let n = fromLine.number; n <= toLine.number; n++) {
     const line = state.doc.line(n)
     const next = setCycleState(line.text, target)
     if (next !== line.text) changes.push({ from: line.from, to: line.to, insert: next })
+    if (n === fromLine.number) firstLineNewText = next
   }
   if (changes.length === 0) return false
-  view.dispatch({ changes, scrollIntoView: true })
+  // Park the caret AFTER the new marker on the first affected line so the
+  // user can keep typing without first pressing End. Without this, CodeMirror
+  // anchors the cursor to the LEFT of the inserted marker, which is the
+  // wrong UX for the "convert this line into a task" use case.
+  const firstNewLength = firstLineNewText?.length ?? fromLine.length
+  const cursorAfterMarker = fromLine.from + firstNewLength
+  view.dispatch({
+    changes,
+    selection: range.empty && fromLine.number === toLine.number
+      ? { anchor: cursorAfterMarker }
+      : undefined,
+    scrollIntoView: true,
+  })
   renumberDocument(view)
   return true
 }
