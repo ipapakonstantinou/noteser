@@ -416,6 +416,11 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   return (
     <div
       ref={menuRef}
+      // Stop click propagation: the sidebar root has an onClick that
+      // closes the menu on ANY click inside, which kills the
+      // submenu-open state (Move to folder, AI) before it can render.
+      // Items that should close the menu call onClose() directly.
+      onClick={e => e.stopPropagation()}
       className="fixed bg-obsidianGray border border-obsidianBorder rounded-lg shadow-obsidian py-1 min-w-[180px] z-50"
       style={{
         top: contextMenu.y,
