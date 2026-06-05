@@ -315,11 +315,19 @@ export const PublishGistModal = () => {
                 href={scopeFlow.verification_uri}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={() => {
+                  // GitHub's device-flow page asks the user to paste the
+                  // user_code. Copy it to the clipboard at click time so
+                  // the destination tab opens with the code already on
+                  // the user's clipboard. Errors are swallowed because a
+                  // failed clipboard write does not block authorisation.
+                  navigator.clipboard?.writeText(scopeFlow.user_code).catch(() => {})
+                }}
                 className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-obsidianAccentPurple text-white rounded text-sm hover:bg-opacity-90 transition-colors no-underline"
                 data-testid="publish-gist-scope-link"
               >
                 <ArrowTopRightOnSquareIcon className="w-4 h-4" />
-                Open GitHub to authorise
+                Copy code and open GitHub
               </a>
             </div>
           )}
