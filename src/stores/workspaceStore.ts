@@ -49,8 +49,21 @@ export interface PaneState {
   activeTabId: string | null
 }
 
+// Layout tree describing how panes are arranged on screen. Leaves point
+// back to a PaneState by id; splits arrange their two children either
+// side-by-side (horizontal) or stacked top-over-bottom (vertical). A
+// 3-pane workspace is two nested splits — e.g. a 'right' split whose
+// right child is a 'down' split forms an L-shape. We carry a per-split
+// ratio so the divider drag can persist.
+export type LayoutNode =
+  | { kind: 'leaf'; paneId: string }
+  | { kind: 'split'; direction: 'horizontal' | 'vertical'; ratio: number; children: [LayoutNode, LayoutNode] }
+
+export const MAX_PANES = 3
+
 interface WorkspaceState {
-  panes: PaneState[]              // length 1 or 2 (horizontal split)
+  panes: PaneState[]              // length 1..MAX_PANES
+  layout: LayoutNode              // mirrors panes[] arrangement
   activePaneId: string | null
   // Bumped each time the user clicks Apply on a merge tab; reset to 0 when a
   // new openMergeConflicts batch starts.
@@ -96,6 +109,16 @@ interface WorkspaceState {
   // Take the tab out of its current pane and put it in a brand-new pane that
   // sits to the right (or alone if there's nowhere to go).
   splitTabRight: (tabId: string) => void
+  // Same shape as splitTabRight but stacks the new pane BELOW the source —
+  // Obsidian's "Split down". No-op once the workspace already holds
+  // MAX_PANES panes.
+  splitTabDown: (tabId: string) => void
+  // Persist a divider drag for a particular split node (looked up by the
+  // ids of the two panes immediately on either side of it; order doesn't
+  // matter). Ratio is the size fraction of the FIRST child in tree order
+  // (left for horizontal, top for vertical) and is clamped to a small
+  // floor so a pane can't be dragged to zero.
+  setLayoutRatio: (paneA: string, paneB: string, ratio: number) => void
 
   // ── Navigation history (Back / Forward) ────────────────────────────────
   // Move the given pane (default: active pane) back / forward through its
@@ -118,6 +141,218 @@ function findTab(panes: PaneState[], tabId: string): { paneIdx: number; tabIdx: 
 
 function makePane(): PaneState {
   return { id: uuidv4(), tabs: [], activeTabId: null }
+}
+
+const DEFAULT_SPLIT_RATIO = 0.5
+
+function leaf(paneId: string): LayoutNode {
+  return { kind: 'leaf', paneId }
+}
+
+// Collect all pane ids the layout currently references, in tree order.
+function leafIds(node: LayoutNode): string[] {
+  if (node.kind === 'leaf') return [node.paneId]
+  return [...leafIds(node.children[0]), ...leafIds(node.children[1])]
+}
+
+// Find the leaf for a given pane id and return the path from the root
+// (list of child indices, 0 or 1, taken at each split).
+function pathTo(node: LayoutNode, paneId: string, acc: number[] = []): number[] | null {
+  if (node.kind === 'leaf') return node.paneId === paneId ? acc : null
+  const l = pathTo(node.children[0], paneId, [...acc, 0])
+  if (l) return l
+  return pathTo(node.children[1], paneId, [...acc, 1])
+}
+
+// Replace the subtree at `path` with a new node. Pure — returns a new
+// tree, leaves the original untouched.
+function replaceAt(node: LayoutNode, path: number[], next: LayoutNode): LayoutNode {
+  if (path.length === 0) return next
+  if (node.kind === 'leaf') return node // path was bogus — shouldn't happen
+  const [head, ...rest] = path
+  const newChild = replaceAt(node.children[head], rest, next)
+  const children: [LayoutNode, LayoutNode] = head === 0
+    ? [newChild, node.children[1]]
+    : [node.children[0], newChild]
+  return { ...node, children }
+}
+
+// Split the leaf for `paneId` into a new split node containing the
+// original leaf in `originalSide` (0 = first child) and a fresh leaf for
+// `newPaneId` on the opposite side. Returns the new tree; caller must
+// also add the new pane to panes[].
+function splitLeaf(
+  layout: LayoutNode,
+  paneId: string,
+  newPaneId: string,
+  direction: 'horizontal' | 'vertical',
+  originalSide: 0 | 1 = 0,
+): LayoutNode {
+  const path = pathTo(layout, paneId)
+  if (!path) return layout
+  const original = leaf(paneId)
+  const fresh = leaf(newPaneId)
+  const children: [LayoutNode, LayoutNode] = originalSide === 0
+    ? [original, fresh]
+    : [fresh, original]
+  return replaceAt(layout, path, {
+    kind: 'split',
+    direction,
+    ratio: DEFAULT_SPLIT_RATIO,
+    children,
+  })
+}
+
+// Drop the leaf for `paneId` from the layout. The parent split collapses
+// into its surviving child (so the tree never holds a one-child split).
+// Returns null if the layout would end up empty — caller is expected to
+// substitute a fresh single-leaf root.
+function removeLeaf(layout: LayoutNode, paneId: string): LayoutNode | null {
+  if (layout.kind === 'leaf') {
+    return layout.paneId === paneId ? null : layout
+  }
+  const path = pathTo(layout, paneId)
+  if (!path) return layout
+  // Walk to the parent of the doomed leaf and replace the parent split
+  // with whichever child survives.
+  const parentPath = path.slice(0, -1)
+  const lastIdx = path[path.length - 1] as 0 | 1
+  // Resolve the parent split node.
+  let parent: LayoutNode = layout
+  for (const step of parentPath) {
+    if (parent.kind !== 'split') return layout
+    parent = parent.children[step]
+  }
+  if (parent.kind !== 'split') return layout
+  const survivor = parent.children[lastIdx === 0 ? 1 : 0]
+  return replaceAt(layout, parentPath, survivor)
+}
+
+// Find the split node that has BOTH the given pane ids as descendants on
+// opposite sides — i.e. the divider that sits visually between them.
+// Used to look up the ratio for a drag handle.
+function findSplitBetween(node: LayoutNode, a: string, b: string): { path: number[] } | null {
+  if (node.kind === 'leaf') return null
+  const inLeft = leafIds(node.children[0])
+  const inRight = leafIds(node.children[1])
+  const aLeft = inLeft.includes(a)
+  const aRight = inRight.includes(a)
+  const bLeft = inLeft.includes(b)
+  const bRight = inRight.includes(b)
+  if ((aLeft && bRight) || (aRight && bLeft)) return { path: [] }
+  const downLeft = findSplitBetween(node.children[0], a, b)
+  if (downLeft) return { path: [0, ...downLeft.path] }
+  const downRight = findSplitBetween(node.children[1], a, b)
+  if (downRight) return { path: [1, ...downRight.path] }
+  return null
+}
+
+// Shared core for Split right / Split down. Direction picks how the new
+// pane sits relative to the original (horizontal = right, vertical =
+// below). The 4th-split rejection lives here so both entry points stay
+// in sync. Once the workspace already holds MAX_PANES panes we fall
+// back to moving the tab into the most-recently-created pane, which is
+// the pre-3-pane behaviour for splitTabRight.
+function splitTabInternal(
+  set: (partial: Partial<WorkspaceState>) => void,
+  get: () => WorkspaceState,
+  tabId: string,
+  direction: 'horizontal' | 'vertical',
+): void {
+  const state = get()
+  const loc = findTab(state.panes, tabId)
+  if (!loc) return
+
+  if (state.panes.length >= MAX_PANES) {
+    // No room for a new pane — drop the tab into the last pane the user
+    // created (panes are appended on split, so panes[last] is "the
+    // newest one"). Preserves the "splitting a third time = move into
+    // an existing split" affordance. We move INLINE rather than via
+    // moveTab so a now-empty source pane isn't compacted away — the
+    // 3-pane layout must stay 3 panes (Obsidian leaves an empty leaf
+    // sitting where the user is, mirroring splitTabRight's own "leave
+    // the original pane in place but empty" rule below).
+    const targetPane = state.panes[state.panes.length - 1]
+    if (targetPane.id === state.panes[loc.paneIdx].id) return
+    const sourcePane = state.panes[loc.paneIdx]
+    const tab = sourcePane.tabs[loc.tabIdx]
+    const next = state.panes.map(p => {
+      if (p.id === sourcePane.id) {
+        const tabs = p.tabs.filter(t => t.id !== tabId)
+        const stillActive = p.activeTabId === tabId
+          ? (tabs[loc.tabIdx]?.id ?? tabs[loc.tabIdx - 1]?.id ?? null)
+          : p.activeTabId
+        return { ...p, tabs, activeTabId: stillActive }
+      }
+      if (p.id === targetPane.id) {
+        return { ...p, tabs: [...p.tabs, tab], activeTabId: tab.id }
+      }
+      return p
+    })
+    set({ panes: next, activePaneId: targetPane.id })
+    selectNoteFromActive(next, targetPane.id)
+    return
+  }
+
+  const sourcePane = state.panes[loc.paneIdx]
+  const tab = sourcePane.tabs[loc.tabIdx]
+
+  const draft = state.panes.map(p => ({ ...p, tabs: [...p.tabs] }))
+  draft[loc.paneIdx].tabs.splice(loc.tabIdx, 1)
+  if (draft[loc.paneIdx].activeTabId === tabId) {
+    const remaining = draft[loc.paneIdx].tabs
+    draft[loc.paneIdx].activeTabId = remaining[loc.tabIdx]?.id ?? remaining[loc.tabIdx - 1]?.id ?? null
+  }
+
+  const newPane: PaneState = { id: uuidv4(), tabs: [tab], activeTabId: tab.id }
+  // Obsidian behaviour: splitting the ONLY tab leaves the original pane
+  // in place but empty. compactPanes intentionally is NOT called here.
+  const panes: PaneState[] = [...draft, newPane]
+  const layout = splitLeaf(state.layout, sourcePane.id, newPane.id, direction)
+  set({ panes, layout, activePaneId: newPane.id })
+  selectNoteFromActive(panes, newPane.id)
+}
+
+// Re-derive a layout for a flat list of panes when the persisted layout
+// is missing / stale (e.g. v2 → v3 migration, or partialize dropped it).
+// Pre-v3 always meant a horizontal split between 1 or 2 panes.
+function flatLayout(panes: PaneState[]): LayoutNode {
+  if (panes.length === 0) return leaf(uuidv4()) // unreachable in practice
+  if (panes.length === 1) return leaf(panes[0].id)
+  // Recursively build a right-leaning horizontal cascade.
+  const [first, ...rest] = panes
+  return {
+    kind: 'split',
+    direction: 'horizontal',
+    ratio: DEFAULT_SPLIT_RATIO,
+    children: [leaf(first.id), flatLayout(rest)],
+  }
+}
+
+// Drop layout entries that point at panes that no longer exist, and
+// re-add any orphaned panes as right-side leaves so they don't vanish.
+// Called by `set`-wrappers after pane-list mutations.
+function reconcileLayout(layout: LayoutNode | undefined, panes: PaneState[]): LayoutNode {
+  const paneIds = new Set(panes.map(p => p.id))
+  // Prune dead leaves.
+  let pruned: LayoutNode | null = layout ?? null
+  if (pruned) {
+    const dead = leafIds(pruned).filter(id => !paneIds.has(id))
+    for (const id of dead) {
+      pruned = pruned ? removeLeaf(pruned, id) : null
+    }
+  }
+  if (!pruned) return flatLayout(panes)
+  // Append any panes missing from the layout as horizontal splits on the
+  // right edge — this is the historical "new pane goes to the right"
+  // behaviour and only fires on recovery paths.
+  const present = new Set(leafIds(pruned))
+  let out = pruned
+  for (const p of panes) {
+    if (present.has(p.id)) continue
+    out = { kind: 'split', direction: 'horizontal', ratio: DEFAULT_SPLIT_RATIO, children: [out, leaf(p.id)] }
+  }
+  return out
 }
 
 function selectNoteFromActive(panes: PaneState[], activePaneId: string | null): void {
@@ -241,10 +476,71 @@ function navigateInPane(
   selectNoteFromActive(next, paneId)
 }
 
+// Migrate persisted workspace state to the current shape. Exported for
+// tests so the v1→v3 / v2→v3 / no-op paths can be exercised directly
+// without round-tripping through the persist middleware.
+//
+// v1 → v2 collapsed legacy `{ tabs, activeTabId }` into a single-pane
+// workspace; v2 → v3 keeps the flat panes[] but now also derives a
+// LayoutNode tree so the renderer can describe horizontal AND vertical
+// splits. The migration ALWAYS produces a fresh layout from the flat
+// panes list — pre-v3 only ever supported a horizontal cascade.
+export function migrateWorkspace(persisted: unknown, version: number): {
+  panes: PaneState[]
+  layout: LayoutNode
+  activePaneId: string | null
+  recents?: string[]
+} {
+  let panes: PaneState[] = []
+  let activePaneId: string | null = null
+  let recents: string[] | undefined
+
+  if (version < 2 && persisted && typeof persisted === 'object') {
+    const p = persisted as { tabs?: Tab[]; activeTabId?: string | null }
+    const tabs = (p.tabs ?? []).filter(t => t.kind === 'note')
+    panes = [{ id: uuidv4(), tabs, activeTabId: p.activeTabId ?? null }]
+    activePaneId = null
+  } else if (persisted && typeof persisted === 'object') {
+    const p = persisted as {
+      panes?: PaneState[]
+      activePaneId?: string | null
+      recents?: string[]
+      layout?: LayoutNode
+    }
+    panes = Array.isArray(p.panes) && p.panes.length > 0
+      ? p.panes
+      : [makePane()]
+    activePaneId = p.activePaneId ?? null
+    recents = p.recents
+    // If the persisted blob already has a layout (e.g. mid-migration
+    // double-call), trust it — reconcileLayout will scrub any stale leaves.
+    if (p.layout) {
+      return {
+        panes,
+        layout: reconcileLayout(p.layout, panes),
+        activePaneId,
+        recents,
+      }
+    }
+  } else {
+    panes = [makePane()]
+  }
+
+  return {
+    panes,
+    layout: flatLayout(panes),
+    activePaneId,
+    recents,
+  }
+}
+
 export const useWorkspaceStore = create<WorkspaceState>()(
   persist(
-    (set, get) => ({
-      panes: [makePane()],
+    (set, get) => {
+      const initialPane = makePane()
+      return {
+      panes: [initialPane],
+      layout: leaf(initialPane.id),
       activePaneId: null,
       mergeAppliedCount: 0,
       histories: {},
@@ -472,6 +768,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           i === loc.paneIdx ? { ...p, tabs: newTabs, activeTabId: newActiveTabId } : p,
         )
         const compacted = compactPanes(updatedPanes)
+        const layout = reconcileLayout(state.layout, compacted)
 
         // Did we just close the last merge tab (per-conflict OR batch
         // summary) in the whole workspace?
@@ -497,6 +794,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
         set({
           panes: compacted,
+          layout,
           activePaneId: newActivePaneId,
           mergeAppliedCount: lastMergeGone ? 0 : state.mergeAppliedCount,
         })
@@ -557,43 +855,40 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         draft[dstIdx].activeTabId = tab.id
 
         const compacted = compactPanes(draft)
+        const layout = reconcileLayout(state.layout, compacted)
         // If the moved tab's destination pane got compacted away (shouldn't
         // happen because we just inserted into it), fall back.
         const dstStillExists = compacted.some(p => p.id === toPaneId)
         const newActive = dstStillExists ? toPaneId : compacted[0].id
-        set({ panes: compacted, activePaneId: newActive })
+        set({ panes: compacted, layout, activePaneId: newActive })
         selectNoteFromActive(compacted, newActive)
       },
 
       splitTabRight: (tabId) => {
+        splitTabInternal(set, get, tabId, 'horizontal')
+      },
+
+      splitTabDown: (tabId) => {
+        splitTabInternal(set, get, tabId, 'vertical')
+      },
+
+      setLayoutRatio: (paneA, paneB, ratio) => {
         const state = get()
-        if (state.panes.length >= 2) {
-          // Already split — move the tab to the right pane instead.
-          const rightPane = state.panes[1]
-          get().moveTab(tabId, rightPane.id, rightPane.tabs.length)
-          return
+        const found = findSplitBetween(state.layout, paneA, paneB)
+        if (!found) return
+        const clamped = Math.max(0.05, Math.min(0.95, ratio))
+        // Walk to the node at `path` and rebuild with a new ratio.
+        const updateRatio = (node: LayoutNode, path: number[]): LayoutNode => {
+          if (node.kind === 'leaf') return node
+          if (path.length === 0) return { ...node, ratio: clamped }
+          const [head, ...rest] = path
+          const newChild = updateRatio(node.children[head], rest)
+          const children: [LayoutNode, LayoutNode] = head === 0
+            ? [newChild, node.children[1]]
+            : [node.children[0], newChild]
+          return { ...node, children }
         }
-        const loc = findTab(state.panes, tabId)
-        if (!loc) return
-        const tab = state.panes[loc.paneIdx].tabs[loc.tabIdx]
-
-        const draft = state.panes.map(p => ({ ...p, tabs: [...p.tabs] }))
-        draft[loc.paneIdx].tabs.splice(loc.tabIdx, 1)
-        if (draft[loc.paneIdx].activeTabId === tabId) {
-          const remaining = draft[loc.paneIdx].tabs
-          draft[loc.paneIdx].activeTabId = remaining[loc.tabIdx]?.id ?? remaining[loc.tabIdx - 1]?.id ?? null
-        }
-
-        const newPane: PaneState = { id: uuidv4(), tabs: [tab], activeTabId: tab.id }
-        // Obsidian behaviour: splitting the ONLY tab leaves the
-        // original pane in place but empty. Previously we dropped
-        // the empty left pane and ended up with just one pane (the
-        // new right one), which is functionally a no-op split — the
-        // tab "moved" rather than "split". Keep both panes always;
-        // an empty pane renders an EmptyState in Pane.tsx.
-        const panes: PaneState[] = [...draft, newPane]
-        set({ panes, activePaneId: newPane.id })
-        selectNoteFromActive(panes, newPane.id)
+        set({ layout: updateRatio(state.layout, found.path) })
       },
 
       goBack: (paneId) => {
@@ -653,7 +948,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           const stillActive = p.tabs.find(t => t.id === p.activeTabId)
           return stillActive ? p : { ...p, activeTabId: p.tabs[p.tabs.length - 1]?.id ?? null }
         })
-        set({ panes: next, activePaneId: newActive, mergeAppliedCount: 0 })
+        const layout = reconcileLayout(state.layout, next)
+        set({ panes: next, layout, activePaneId: newActive, mergeAppliedCount: 0 })
         selectNoteFromActive(next, newActive)
       },
 
@@ -690,6 +986,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         }
         set({
           panes: compacted,
+          layout: reconcileLayout(state.layout, compacted),
           activePaneId: newActive,
           histories,
           recents: pruneRecents(state.recents, liveIds),
@@ -697,25 +994,15 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       },
       resetToEmptyWorkspace: () => {
         const pane = makePane()
-        set({ panes: [pane], activePaneId: pane.id, histories: {} })
+        set({ panes: [pane], layout: leaf(pane.id), activePaneId: pane.id, histories: {} })
         useNoteStore.getState().selectNote(null)
       },
-    }),
+      }
+    },
     {
       name: STORAGE_KEYS.workspace,
-      version: 2, // bumped: shape changed from tabs[] to panes[]
-      migrate: (persisted, version) => {
-        // v1 had { tabs, activeTabId }. Merge into a single pane.
-        if (version < 2 && persisted && typeof persisted === 'object') {
-          const p = persisted as { tabs?: Tab[]; activeTabId?: string | null }
-          const tabs = (p.tabs ?? []).filter(t => t.kind === 'note')
-          return {
-            panes: [{ id: uuidv4(), tabs, activeTabId: p.activeTabId ?? null }],
-            activePaneId: null,
-          }
-        }
-        return persisted as { panes: PaneState[]; activePaneId: string | null }
-      },
+      version: 3, // bumped: layout tree added alongside flat panes[]
+      migrate: migrateWorkspace,
       partialize: (state) => ({
         // Persist only note tabs. Welcome / merge-* / compare tabs are
         // point-in-time surfaces; dropping them on reload is correct.
@@ -723,6 +1010,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           ...p,
           tabs: p.tabs.filter(t => t.kind === 'note'),
         })),
+        layout: state.layout,
         activePaneId: state.activePaneId,
         recents: state.recents,
       }),
