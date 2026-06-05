@@ -23,7 +23,8 @@ import { useToastStore } from '@/stores/toastStore'
 import { useNoteStore } from '@/stores/noteStore'
 import { useFolderStore } from '@/stores/folderStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { fetchPluginFromUrl, sha256Hex } from './installer'
+import { fetchPluginFromUrl, fetchPluginFromManifest, sha256Hex } from './installer'
+import type { VaultManifestCandidate } from './vaultScan'
 
 let instance: PluginHost | null = null
 
@@ -79,6 +80,30 @@ export async function fetchPluginForInstall(
   manifestUrl: string,
 ): Promise<InstalledPluginRecord> {
   const fetched = await fetchPluginFromUrl(manifestUrl)
+  return {
+    manifest: fetched.manifest,
+    mainSource: fetched.mainSource,
+    hash: fetched.hash,
+    sourceUrl: fetched.sourceUrl,
+    addedAt: Date.now(),
+    enabled: true,
+  }
+}
+
+/**
+ * Vault-scan equivalent of fetchPluginForInstall. Takes a candidate
+ * from scanVaultForManifests (manifest already parsed + validated)
+ * and fetches the bundle, returning a record the existing confirm
+ * modal accepts unchanged.
+ */
+export async function fetchPluginForInstallFromVault(
+  candidate: VaultManifestCandidate,
+): Promise<InstalledPluginRecord> {
+  const fetched = await fetchPluginFromManifest({
+    manifest: candidate.manifest,
+    mainUrl: candidate.mainUrl,
+    sourceLabel: `vault: ${candidate.pathInVault}`,
+  })
   return {
     manifest: fetched.manifest,
     mainSource: fetched.mainSource,
