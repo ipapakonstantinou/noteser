@@ -67,12 +67,6 @@ jobs:
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
-    # REPORT-ONLY for now: the first real CI run surfaced 8 stale top-level
-    # specs (UI changed, specs did not — not app regressions). The suite still
-    # runs and uploads its report, but a stale spec must not block PRs until
-    # the specs are repaired. Flip this off (make the gate blocking) once
-    # they're green. Tracked in issue #67.
-    continue-on-error: true
     env:
       NODE_VERSION: '22'
 
