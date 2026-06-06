@@ -1,0 +1,43 @@
+name: PKM Scout
+
+# Scan PKM/markdown-notes communities for unmet feature needs and file
+# GitHub issues for genuine gaps not already tracked in noteser.
+on:
+  schedule:
+    # Every Monday at 09:00 UTC
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+    # Allow manual runs for testing
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  scout:
+    name: PKM community feature scan
+    runs-on: ubuntu-latest
+    env:
+      NODE_VERSION: "22"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Anthropic SDK
+        # Install only the SDK into an isolated prefix to avoid pulling in all
+        # of noteser's dev dependencies (Next.js, React, etc.).
+        run: npm install --prefix /tmp/pkm-scout @anthropic-ai/sdk
+
+      - name: Run PKM scout
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ipapakonstantinou/noteser
+          NODE_PATH: /tmp/pkm-scout/node_modules
+        run: node scripts/pkm-scout.mjs
