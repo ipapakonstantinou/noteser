@@ -48,6 +48,10 @@ import { useGitHubStore } from '../stores/githubStore'
 import { useNoteStore } from '../stores/noteStore'
 import { useFolderStore } from '../stores/folderStore'
 import { useWorkspaceStore } from '../stores/workspaceStore'
+import { useToastStore } from '../stores/toastStore'
+import { useUIStore } from '../stores/uiStore'
+import { VaultLockedError } from '../utils/vaultKey'
+import { ReconnectRequiredError } from '../utils/tokenRefresh'
 import { notesKey, foldersKey } from '../utils/repoStorage'
 import type { SyncRepo } from '../types'
 
@@ -108,6 +112,11 @@ beforeEach(() => {
   applyNonConflictsMock.mockReturnValue({ created: 0, updated: 0, deleted: 0, autoMerged: 0 })
   applyAttachmentClassificationsMock.mockResolvedValue({ created: 0, updated: 0, failed: 0 })
   resetStores()
+  // The push-path tests assert on terminal toasts and on the modal the hook
+  // opens for a locked vault — clear both so one test's feedback never leaks
+  // into the next.
+  useToastStore.setState({ toasts: [] })
+  useUIStore.setState({ modal: { type: null } })
 })
 
 describe('useGitHubSync — runPullOnly', () => {
@@ -423,5 +432,154 @@ describe('useGitHubSync — watchdog timeout', () => {
     if (result.current.syncState.kind === 'err') {
       expect(result.current.syncState.message).toMatch(/timed out/i)
     }
+  })
+})
+
+describe('useGitHubSync — runSync (pull → apply → push)', () => {
+  // runPullOnly is exercised above; these cover the push half of runSync —
+  // the happy commit path plus the failure branches that previously had no
+  // coverage (push rejects, locked vault, exhausted token, conflicts).
+
+  test('happy path: applies, pushes, records the commit, writes path updates back', async () => {
+    pullFromGitHubMock.mockResolvedValue({
+      classifications: [{ kind: 'unchanged', noteId: 'note-1' }],
+      latestCommitSha: 'pulled-sha',
+    })
+    syncToGitHubMock.mockResolvedValue({
+      result: {
+        created: 1,
+        updated: 0,
+        deleted: 0,
+        unchanged: false,
+        commitSha: 'push-sha',
+        commitUrl: 'https://github.com/octocat/vault/commit/push-sha',
+      },
+      pathUpdates: [
+        {
+          noteId: 'note-1',
+          gitPath: 'Existing.md',
+          gitLastPushedSha: 'blob-1',
+          gitRemoteBaseSha: 'blob-1',
+        },
+      ],
+    })
+
+    const { result } = renderHook(() => useGitHubSync())
+    await act(async () => {
+      await result.current.runSync()
+    })
+
+    expect(syncToGitHubMock).toHaveBeenCalledTimes(1)
+    expect(result.current.syncState.kind).toBe('ok')
+    if (result.current.syncState.kind === 'ok') {
+      // A real push exposes the commit URL (a pull-only leaves it null).
+      expect(result.current.syncState.url).toBe(
+        'https://github.com/octocat/vault/commit/push-sha',
+      )
+    }
+    // The pushed commit becomes the new baseline.
+    expect(useGitHubStore.getState().lastCommitSha).toBe('push-sha')
+    // Path updates are written back so the next pull classifies us as
+    // `unchanged` rather than detecting a phantom remote change.
+    const note = useNoteStore.getState().notes.find(n => n.id === 'note-1')
+    expect(note?.gitPath).toBe('Existing.md')
+    expect(note?.gitLastPushedSha).toBe('blob-1')
+    // Guard released.
+    expect(useGitHubStore.getState().isSyncing).toBe(false)
+  })
+
+  test('push failure surfaces a retryable error and releases the guard', async () => {
+    pullFromGitHubMock.mockResolvedValue({
+      classifications: [{ kind: 'unchanged', noteId: 'note-1' }],
+      latestCommitSha: 'pulled-sha',
+    })
+    syncToGitHubMock.mockRejectedValue(new Error('push 500'))
+
+    const { result } = renderHook(() => useGitHubSync())
+    await act(async () => {
+      await result.current.runSync()
+    })
+
+    expect(result.current.syncState.kind).toBe('err')
+    if (result.current.syncState.kind === 'err') {
+      expect(result.current.syncState.message).toBe('push 500')
+    }
+    // A wedged guard would silently kill every later sync — it must release.
+    expect(useGitHubStore.getState().isSyncing).toBe(false)
+    const toasts = useToastStore.getState().toasts
+    expect(toasts.some(t => t.kind === 'error' && t.actionLabel === 'Retry')).toBe(true)
+  })
+
+  test('a locked vault opens the unlock modal instead of pushing', async () => {
+    // Vault encryption is on but locked — the sync layer throws before any
+    // HTTP traffic. The hook should turn that into an unlock prompt.
+    pullFromGitHubMock.mockRejectedValue(new VaultLockedError())
+
+    const { result } = renderHook(() => useGitHubSync())
+    await act(async () => {
+      await result.current.runSync()
+    })
+
+    expect(syncToGitHubMock).not.toHaveBeenCalled()
+    expect(useUIStore.getState().modal.type).toBe('vault-encryption')
+    expect(result.current.syncState.kind).toBe('err')
+    if (result.current.syncState.kind === 'err') {
+      expect(result.current.syncState.message).toMatch(/locked/i)
+    }
+    expect(useGitHubStore.getState().isSyncing).toBe(false)
+  })
+
+  test('an exhausted token offers Reconnect, not a blind Retry', async () => {
+    pullFromGitHubMock.mockResolvedValue({
+      classifications: [{ kind: 'unchanged', noteId: 'note-1' }],
+      latestCommitSha: 'pulled-sha',
+    })
+    syncToGitHubMock.mockRejectedValue(new ReconnectRequiredError())
+
+    const { result } = renderHook(() => useGitHubSync())
+    await act(async () => {
+      await result.current.runSync()
+    })
+
+    expect(result.current.syncState.kind).toBe('err')
+    const toasts = useToastStore.getState().toasts
+    // Reconnect, because a blind Retry would just 401 again and loop.
+    expect(toasts.some(t => t.actionLabel === 'Reconnect')).toBe(true)
+    expect(toasts.some(t => t.actionLabel === 'Retry')).toBe(false)
+    expect(useGitHubStore.getState().isSyncing).toBe(false)
+  })
+
+  test('on conflict, applies non-conflicts and opens merge tabs without pushing', async () => {
+    pullFromGitHubMock.mockResolvedValue({
+      classifications: [
+        {
+          kind: 'conflict',
+          noteId: 'note-1',
+          path: 'Existing.md',
+          localContent: 'local',
+          remoteSha: 'r1',
+          remoteContent: 'remote',
+          remoteTags: [],
+          remoteBody: 'remote',
+        },
+      ],
+      latestCommitSha: 'pulled-sha',
+    })
+
+    const { result } = renderHook(() => useGitHubSync())
+    await act(async () => {
+      await result.current.runSync()
+    })
+
+    // Non-conflict siblings are applied, but a conflict must never push.
+    expect(applyNonConflictsMock).toHaveBeenCalledTimes(1)
+    expect(syncToGitHubMock).not.toHaveBeenCalled()
+    const tabs = useWorkspaceStore.getState().panes[0].tabs
+    expect(tabs.some(t => t.kind === 'merge-conflict')).toBe(true)
+    expect(result.current.syncState.kind).toBe('err')
+    if (result.current.syncState.kind === 'err') {
+      expect(result.current.syncState.message).toMatch(/conflict/)
+    }
+    expect(useGitHubStore.getState().isSyncing).toBe(false)
   })
 })
