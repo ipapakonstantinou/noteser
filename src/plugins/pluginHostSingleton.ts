@@ -41,9 +41,16 @@ let instance: PluginHost | null = null
 export function getPluginHost(): PluginHost | null {
   if (typeof window === 'undefined') return null
   if (instance === null) {
-    instance = new PluginHost({ createWorker: spawnPluginWorker })
+    instance = new PluginHost({
+      createWorker: spawnPluginWorker,
+      isPermissionRevoked: (pluginId, permission) => {
+        const rec = usePluginInstallStore.getState().records[pluginId]
+        return rec?.revokedPermissions?.includes(permission) ?? false
+      },
+    })
     wireListener(instance)
     wireActiveNoteTracker(instance)
+    wireVaultEvents(instance)
   }
   return instance
 }
@@ -321,6 +328,95 @@ function wireActiveNoteTracker(host: PluginHost): void {
       host.activeNoteChanged(event.pluginId, note)
     }
   })
+}
+
+/**
+ * Wire `vault.events` fan-out. Subscribes to the note + workspace +
+ * folder stores and translates each mutation into the right host call:
+ *
+ *   - Any noteStore / folderStore change → notifyVaultChanged()
+ *   - A `notes` array mutation that changes a note's content / title /
+ *     frontmatter (i.e. a save) → notifyNoteSaved(noteId)
+ *   - A workspace active-tab transition that resolves to a different
+ *     noteId → notifyActiveNoteIdChanged(noteId)
+ *
+ * The host debounces every signal at 250 ms (VAULT_EVENT_DEBOUNCE_MS),
+ * so this wrapper does NOT bother coalescing — it just dispatches as
+ * the store fires. Keystrokes in the editor are noisy; the debounce
+ * absorbs the burst.
+ */
+function wireVaultEvents(host: PluginHost): void {
+  type NoteSnap = { id: string; title: string; content: string; updatedAt: number; isDeleted: boolean }
+  let lastNotes: Map<string, NoteSnap> = snapshotNotes(useNoteStore.getState().notes)
+  let lastActiveNoteId: string | null = resolveActiveNoteId()
+
+  useNoteStore.subscribe((state) => {
+    const next = snapshotNotes(state.notes)
+    let vaultDirty = false
+
+    // Detect adds, deletions, and content / title changes.
+    for (const [id, cur] of next) {
+      const prev = lastNotes.get(id)
+      if (!prev) {
+        vaultDirty = true
+        host.notifyNoteSaved(id)
+        continue
+      }
+      if (
+        prev.content !== cur.content ||
+        prev.title !== cur.title ||
+        prev.isDeleted !== cur.isDeleted
+      ) {
+        vaultDirty = true
+        host.notifyNoteSaved(id)
+      }
+    }
+    for (const id of lastNotes.keys()) {
+      if (!next.has(id)) vaultDirty = true
+    }
+
+    if (vaultDirty) host.notifyVaultChanged()
+    lastNotes = next
+  })
+
+  useFolderStore.subscribe(() => {
+    host.notifyVaultChanged()
+  })
+
+  useWorkspaceStore.subscribe(() => {
+    const cur = resolveActiveNoteId()
+    if (cur !== lastActiveNoteId) {
+      lastActiveNoteId = cur
+      host.notifyActiveNoteIdChanged(cur)
+    }
+  })
+}
+
+function snapshotNotes(
+  notes: ReadonlyArray<{ id: string; title?: string; content?: string; updatedAt?: number; isDeleted?: boolean }>,
+): Map<string, { id: string; title: string; content: string; updatedAt: number; isDeleted: boolean }> {
+  const map = new Map<string, { id: string; title: string; content: string; updatedAt: number; isDeleted: boolean }>()
+  for (const n of notes) {
+    map.set(n.id, {
+      id: n.id,
+      title: n.title ?? '',
+      content: n.content ?? '',
+      updatedAt: n.updatedAt ?? 0,
+      isDeleted: n.isDeleted ?? false,
+    })
+  }
+  return map
+}
+
+function resolveActiveNoteId(): string | null {
+  const ws = useWorkspaceStore.getState()
+  const activePane = ws.panes.find((p) => p.id === ws.activePaneId) ?? ws.panes[0]
+  const activeTab = activePane?.tabs.find((t) => t.id === activePane?.activeTabId)
+  if (!activeTab) return null
+  if (activeTab.kind !== 'note') return null
+  const note = useNoteStore.getState().notes.find((n) => n.id === activeTab.noteId)
+  if (!note || note.isDeleted) return null
+  return note.id
 }
 
 function buildFolderPath(

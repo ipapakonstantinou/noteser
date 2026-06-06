@@ -11,6 +11,7 @@ import {
   isWorkerToHost,
   MAX_ENVELOPE_BYTES,
   MAX_MESSAGES_PER_SECOND,
+  VAULT_EVENT_DEBOUNCE_MS,
   type HostToWorker,
   type WorkerToHost,
   type NoteWithBodyWire,
@@ -45,6 +46,12 @@ export interface PluginHostOptions {
    *  bundled `workerEntry.ts` module via `new URL(..., import.meta.url)`
    *  — see `pluginHostSingleton.ts`. */
   createWorker?: () => MinimalWorker
+  /** Look up whether a permission has been revoked for a plugin at
+   *  Settings level. Re-checked on every vault.events dispatch so a
+   *  user toggling the permission off makes the handler stop firing
+   *  without restarting the plugin (the existing subscriber's
+   *  unsubscribe is still callable; it just receives no events). */
+  isPermissionRevoked?: (pluginId: string, permission: PluginPermission) => boolean
 }
 
 export interface MinimalWorker {
@@ -92,6 +99,37 @@ export type PluginHostEvent =
 interface WorkerEntry {
   plugin: InstalledPlugin
   worker: MinimalWorker
+  /** Vault-events subscriptions the worker has registered. Cleared on
+   *  unload; the host drops every entry whose pluginId matches. */
+  vaultSubs: Map<string, VaultSubscription>
+  /** Per-event-type debounce timers + pending coalesced payload. Each
+   *  event type has at most one in-flight timer for the lifetime of
+   *  the entry. */
+  vaultDebounce: {
+    vaultChanged: PendingEvent<null>
+    noteSaved: PendingEvent<Set<string>>
+    activeNoteIdChanged: PendingEvent<{ noteId: string | null }>
+  }
+}
+
+interface VaultSubscription {
+  event: VaultEventName
+  subscriptionId: string
+}
+
+type VaultEventName = 'vaultChanged' | 'noteSaved' | 'activeNoteIdChanged'
+
+interface PendingEvent<P> {
+  timer: ReturnType<typeof setTimeout> | null
+  payload: P | null
+}
+
+function makePendingState(): WorkerEntry['vaultDebounce'] {
+  return {
+    vaultChanged: { timer: null, payload: null },
+    noteSaved: { timer: null, payload: null },
+    activeNoteIdChanged: { timer: null, payload: null },
+  }
 }
 
 export class PluginHost {
@@ -160,7 +198,12 @@ export class PluginHost {
       ready: false,
       revokedPermissions: new Set<PluginPermission>(),
     }
-    const entry: WorkerEntry = { plugin, worker }
+    const entry: WorkerEntry = {
+      plugin,
+      worker,
+      vaultSubs: new Map(),
+      vaultDebounce: makePendingState(),
+    }
     this.workers.set(pluginId, entry)
 
     return new Promise<PluginManifest>((resolve, reject) => {
@@ -205,16 +248,35 @@ export class PluginHost {
     })
   }
 
-  /** Terminate a plugin's worker and forget it. */
+  /** Terminate a plugin's worker and forget it. Also drops every
+   *  vault.events subscription the worker had open and cancels any
+   *  in-flight debounce timer — a forgotten unsubscribe in the plugin
+   *  cannot leak across reboots. */
   unload(pluginId: string): void {
     const entry = this.workers.get(pluginId)
     if (!entry) return
+    this.clearVaultDebounce(entry)
+    entry.vaultSubs.clear()
     try {
       entry.worker.terminate()
     } catch {
       // Some test fakes do not implement terminate; ignore.
     }
     this.workers.delete(pluginId)
+  }
+
+  /** Inspect — used by tests to assert subscription cleanup. Returns
+   *  the count of active vault.events subscriptions across every loaded
+   *  plugin. */
+  vaultSubscriptionCount(): number {
+    let n = 0
+    for (const e of this.workers.values()) n += e.vaultSubs.size
+    return n
+  }
+
+  /** Inspect — used by tests. Subscriptions for a single plugin. */
+  vaultSubscriptionCountForPlugin(pluginId: string): number {
+    return this.workers.get(pluginId)?.vaultSubs.size ?? 0
   }
 
   /** User picked one of the plugin's commands from the palette. */
@@ -307,6 +369,134 @@ export class PluginHost {
     const declared = entry.plugin.manifest.permissions?.includes(permission) ?? false
     if (!declared) return false
     return !entry.plugin.revokedPermissions.has(permission)
+  }
+
+  // ── v1.2 vault.events fan-out ───────────────────────────────────────────
+  //
+  // The singleton glue calls these when the underlying noteStore /
+  // workspaceStore mutates. The host walks every loaded plugin, checks
+  // the `vault.events` permission, and posts a coalesced debounced
+  // envelope per subscription.
+
+  /** Coarse "something in the vault changed" pulse. Called by the
+   *  pluginHostSingleton on every noteStore or folderStore mutation.
+   *  Coalesced at `VAULT_EVENT_DEBOUNCE_MS` per (plugin, subscription)
+   *  pair. */
+  notifyVaultChanged(): void {
+    for (const entry of this.workers.values()) {
+      if (!this.isVaultEventsAllowed(entry)) continue
+      if (!hasSub(entry, 'vaultChanged')) continue
+      this.scheduleVaultEvent(entry, 'vaultChanged', null)
+    }
+  }
+
+  /** Note-save pulse. Carries the note id so plugins can re-derive
+   *  cheaply. Multiple saves of the same id within the debounce
+   *  window collapse into one envelope; saves of different ids fan
+   *  out as one envelope per id at the trailing edge. */
+  notifyNoteSaved(noteId: string): void {
+    for (const entry of this.workers.values()) {
+      if (!this.isVaultEventsAllowed(entry)) continue
+      if (!hasSub(entry, 'noteSaved')) continue
+      const pending = entry.vaultDebounce.noteSaved
+      if (!pending.payload) pending.payload = new Set<string>()
+      pending.payload.add(noteId)
+      this.scheduleVaultEvent(entry, 'noteSaved', pending.payload)
+    }
+  }
+
+  /** Active-note transition. Coalesced — back-to-back switches keep
+   *  only the most recent id. */
+  notifyActiveNoteIdChanged(noteId: string | null): void {
+    for (const entry of this.workers.values()) {
+      if (!this.isVaultEventsAllowed(entry)) continue
+      if (!hasSub(entry, 'activeNoteIdChanged')) continue
+      this.scheduleVaultEvent(entry, 'activeNoteIdChanged', { noteId })
+    }
+  }
+
+  /** Internal — re-checked on every dispatch so a settings-level
+   *  revocation takes effect without restarting the plugin. The in-host
+   *  `revokedPermissions` set (populated by PR C from the install
+   *  store) is the canonical source; `opts.isPermissionRevoked` is the
+   *  test-side override that lets a fake host inject revocation without
+   *  spinning up the store. */
+  private isVaultEventsAllowed(entry: WorkerEntry): boolean {
+    const granted = entry.plugin.manifest.permissions?.includes('vault.events') ?? false
+    if (!granted) return false
+    if (entry.plugin.revokedPermissions.has('vault.events')) return false
+    const optRevoked =
+      this.opts.isPermissionRevoked?.(entry.plugin.manifest.id, 'vault.events') ?? false
+    return !optRevoked
+  }
+
+  private scheduleVaultEvent<E extends VaultEventName>(
+    entry: WorkerEntry,
+    event: E,
+    payload: WorkerEntry['vaultDebounce'][E]['payload'],
+  ): void {
+    const slot = entry.vaultDebounce[event] as PendingEvent<unknown>
+    slot.payload = payload as unknown
+    if (slot.timer !== null) return // existing trailing-edge timer will pick up the latest payload
+    slot.timer = setTimeout(() => {
+      slot.timer = null
+      const finalPayload = slot.payload
+      slot.payload = null
+      this.flushVaultEvent(entry, event, finalPayload)
+    }, VAULT_EVENT_DEBOUNCE_MS)
+  }
+
+  private flushVaultEvent(entry: WorkerEntry, event: VaultEventName, payload: unknown): void {
+    const pluginId = entry.plugin.manifest.id
+    // Re-check permission at flush time so a Settings revocation that
+    // landed during the debounce window still suppresses delivery.
+    if (!this.isVaultEventsAllowed(entry)) return
+    for (const sub of entry.vaultSubs.values()) {
+      if (sub.event !== event) continue
+      switch (event) {
+        case 'vaultChanged':
+          this.send(pluginId, {
+            type: 'host:vaultChanged',
+            seq: ++this.seqCounter,
+            subscriptionId: sub.subscriptionId,
+          })
+          break
+        case 'noteSaved': {
+          const ids = (payload as Set<string> | null) ?? new Set<string>()
+          for (const noteId of ids) {
+            this.send(pluginId, {
+              type: 'host:noteSaved',
+              seq: ++this.seqCounter,
+              subscriptionId: sub.subscriptionId,
+              noteId,
+            })
+          }
+          break
+        }
+        case 'activeNoteIdChanged': {
+          const p = (payload as { noteId: string | null } | null) ?? { noteId: null }
+          this.send(pluginId, {
+            type: 'host:activeNoteIdChanged',
+            seq: ++this.seqCounter,
+            subscriptionId: sub.subscriptionId,
+            noteId: p.noteId,
+          })
+          break
+        }
+      }
+    }
+  }
+
+  private clearVaultDebounce(entry: WorkerEntry): void {
+    for (const slot of [
+      entry.vaultDebounce.vaultChanged,
+      entry.vaultDebounce.noteSaved,
+      entry.vaultDebounce.activeNoteIdChanged,
+    ]) {
+      if (slot.timer !== null) clearTimeout(slot.timer)
+      slot.timer = null
+      slot.payload = null
+    }
   }
 
   // ── private ─────────────────────────────────────────────────────────────
@@ -423,6 +613,31 @@ export class PluginHost {
         })
         return
       }
+
+      case 'worker:subscribeVault': {
+        // Permission gate. Plugin MUST declare `vault.events` in the
+        // manifest. We still accept the subscribe so cleanup logic is
+        // uniform (the worker tracks an unsubscribe even when it never
+        // received any event), but never deliver events.
+        const granted = entry.plugin.manifest.permissions?.includes('vault.events') ?? false
+        if (!granted) {
+          this.emit({
+            type: 'workerError',
+            pluginId,
+            message: 'Plugin did not declare the `vault.events` permission; subscription will receive no events.',
+          })
+          return
+        }
+        entry.vaultSubs.set(msg.subscriptionId, {
+          event: msg.event,
+          subscriptionId: msg.subscriptionId,
+        })
+        return
+      }
+
+      case 'worker:unsubscribeVault':
+        entry.vaultSubs.delete(msg.subscriptionId)
+        return
 
       case 'worker:requestFileOpen': {
         const granted = entry.plugin.manifest.permissions?.includes('file-open') ?? false
@@ -633,4 +848,11 @@ function estimateSize(value: unknown): number {
   } catch {
     return Number.POSITIVE_INFINITY
   }
+}
+
+function hasSub(entry: WorkerEntry, event: VaultEventName): boolean {
+  for (const sub of entry.vaultSubs.values()) {
+    if (sub.event === event) return true
+  }
+  return false
 }

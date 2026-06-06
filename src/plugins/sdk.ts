@@ -101,10 +101,11 @@ export interface PluginCtx {
   /**
    * v1.2 vault namespace. Always populated; methods reject when the
    * matching permission was not granted or has been revoked. Plugins
-   * can catch and degrade. PR C wires the `read` sub-namespace; PRs
-   * D / F introduce `write` and `events` later.
+   * can catch and degrade.
    *
-   * Spec reference: docs/plugins-v1.2-plan.md §4.1.
+   * - `read` ships in PR C (vault.read.all), spec §4.1.
+   * - `events` ships in PR F (vault.events), spec §4.4.
+   * - `write` lands in PR D (vault.write), spec §4.2.
    */
   vault: {
     read: {
@@ -133,8 +134,36 @@ export interface PluginCtx {
        */
       stream(opts?: { chunkSize?: number }): AsyncIterable<ReadonlyArray<NoteWithBody>>
     }
+    events: {
+      /** Fires when any note in the vault changes (added / updated /
+       *  trashed / restored). Coarse "something changed" pulse — use
+       *  `onNoteSaved` if you need the id.
+       *
+       *  Requires `vault.events` permission. Returns an `Unsubscribe`
+       *  thunk; the host also auto-unwinds every subscription on
+       *  plugin unload, so a forgotten call leaks at most until the
+       *  next reboot. Debounced host-side at 250 ms; plugins cannot
+       *  lower the window. Per-event-type cap of 16 subscriptions; a
+       *  17th call throws synchronously. */
+      onVaultChange(handler: () => void): Unsubscribe
+      /** Fires when a specific note's body / title / frontmatter is
+       *  saved. The handler receives the note id; reading the body
+       *  still requires the `vault.read.all` permission. Same
+       *  debounce / cap rules as `onVaultChange`. */
+      onNoteSaved(handler: (noteId: string) => void): Unsubscribe
+      /** Fires when the editor moves to a different note (or to no
+       *  note). `null` means the welcome / blank state. Same
+       *  debounce / cap rules as `onVaultChange`. */
+      onActiveNoteChange(handler: (noteId: string | null) => void): Unsubscribe
+    }
   }
 }
+
+/** Cleanup thunk returned by every `vault.events` subscription. The
+ *  plugin must call this when it no longer needs the events; the host
+ *  ALSO calls every outstanding unsubscribe when the plugin unloads,
+ *  so a missed call leaks at most until the next reboot. */
+export type Unsubscribe = () => void
 
 export interface PluginHandlers {
   /** Optional — fires after the worker boots and the manifest validates. */

@@ -1,0 +1,12 @@
+{
+  "id": "noteser-event-demo",
+  "name": "Vault events demo",
+  "version": "0.1.0",
+  "author": "Noteser",
+  "description": "Subscribes to vault.events and toasts on every fired event. Smoke-test plugin for the v1.2 vault.events capability.",
+  "main": "./main.js",
+  "surfaces": {
+    "sidebarPanels": [{ "id": "panel", "title": "Vault events" }]
+  },
+  "permissions": ["vault.events"]
+}

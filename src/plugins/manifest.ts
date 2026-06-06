@@ -33,13 +33,14 @@ export interface PluginManifest {
  *  the granted set stored alongside the install record.
  *
  *  v1.1 added the two `file-*` capabilities; v1.2 starts layering the
- *  vault / fs capabilities. `vault.read.all` is the first of the v1.2
- *  set — it lets a plugin read every note's body + frontmatter, which
- *  backlinks, AI-RAG, and graph-derivation plugins all need. */
+ *  vault / fs capabilities. `vault.read.all` lets a plugin read every
+ *  note's body + frontmatter (PR C). `vault.events` lets a plugin
+ *  subscribe to vault-change pulses (PR F). */
 export const PERMISSIONS = [
   'file-save',       // v1.1
   'file-open',       // v1.1
   'vault.read.all',  // v1.2 — see docs/plugins-v1.2-plan.md §4.1
+  'vault.events',    // v1.2 — see docs/plugins-v1.2-plan.md §4.4
 ] as const
 export type PluginPermission = (typeof PERMISSIONS)[number]
 
@@ -50,6 +51,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   'file-open': 'Read a file you pick (opens the native file picker; the plugin sees the bytes of the file you choose, nothing else).',
   'vault.read.all':
     'Read the full content of every note in your vault. Required for features like backlinks, graph views, and AI search.',
+  'vault.events': 'Listen for changes to the vault. The plugin learns that a note was saved or that you switched notes (by id), but reading the body still requires a separate read permission.',
 }
 
 /** Surface kinds the manifest can declare. Used by the install-preview

@@ -19,13 +19,14 @@
 //   5. Host begins sending events; worker dispatches them to handlers
 
 import { validateManifest, type PluginManifest } from './manifest'
-import type {
-  HostToWorker,
-  WorkerToHost,
-  HostBootMessage,
-  NoteWithBodyWire,
+import {
+  MAX_VAULT_SUBSCRIPTIONS_PER_EVENT,
+  type HostToWorker,
+  type WorkerToHost,
+  type HostBootMessage,
+  type NoteWithBodyWire,
 } from './protocol'
-import type { PluginCtx, PluginDefinition, NoteWithBody } from './sdk'
+import type { PluginCtx, PluginDefinition, NoteWithBody, Unsubscribe } from './sdk'
 
 interface PluginState {
   manifest: PluginManifest
@@ -81,6 +82,84 @@ const pending = new Map<
 let nextRequestSeq = 0
 function allocRequestSeq(): number {
   return ++nextRequestSeq
+}
+
+// ─── vault.events subscriptions ─────────────────────────────────────────
+//
+// One handler table per event type. The worker mints opaque
+// subscriptionIds (`vsub-<n>`) the host pairs against incoming
+// host:vaultChanged / host:noteSaved / host:activeNoteIdChanged
+// envelopes.
+//
+// On plugin teardown (worker termination) the host drops every
+// subscription on its side, so this in-worker map never has to be
+// drained — but plugins are still encouraged to call the returned
+// unsubscribe so a long-lived plugin does not accumulate handlers
+// across panel mounts.
+
+type VaultEventName = 'vaultChanged' | 'noteSaved' | 'activeNoteIdChanged'
+type AnyVaultHandler =
+  | (() => void)
+  | ((noteId: string) => void)
+  | ((noteId: string | null) => void)
+
+interface VaultSubEntry {
+  event: VaultEventName
+  handler: AnyVaultHandler
+}
+
+const vaultSubs = new Map<string, VaultSubEntry>()
+let nextSubSeq = 0
+
+function countSubsForEvent(event: VaultEventName): number {
+  let n = 0
+  for (const v of vaultSubs.values()) if (v.event === event) n++
+  return n
+}
+
+function subscribeVault(event: VaultEventName, handler: AnyVaultHandler): Unsubscribe {
+  if (countSubsForEvent(event) >= MAX_VAULT_SUBSCRIPTIONS_PER_EVENT) {
+    throw new Error(
+      `Too many ${event} subscriptions (max ${MAX_VAULT_SUBSCRIPTIONS_PER_EVENT} per plugin).`,
+    )
+  }
+  const subscriptionId = `vsub-${++nextSubSeq}`
+  vaultSubs.set(subscriptionId, { event, handler })
+  emit({
+    type: 'worker:subscribeVault',
+    seq: allocRequestSeq(),
+    event,
+    subscriptionId,
+  })
+  return () => {
+    if (!vaultSubs.has(subscriptionId)) return
+    vaultSubs.delete(subscriptionId)
+    emit({
+      type: 'worker:unsubscribeVault',
+      seq: allocRequestSeq(),
+      subscriptionId,
+    })
+  }
+}
+
+function dispatchVault(subscriptionId: string, payload: string | null | undefined): void {
+  const entry = vaultSubs.get(subscriptionId)
+  if (!entry) return
+  try {
+    if (entry.event === 'vaultChanged') {
+      ;(entry.handler as () => void)()
+    } else if (entry.event === 'noteSaved') {
+      ;(entry.handler as (noteId: string) => void)(payload as string)
+    } else {
+      ;(entry.handler as (noteId: string | null) => void)(payload ?? null)
+    }
+  } catch (err) {
+    emit({
+      type: 'worker:error',
+      seq: 0,
+      message: `vault.events handler threw: ${err instanceof Error ? err.message : String(err)}`,
+    })
+  }
 }
 
 self.onmessage = async (event: MessageEvent<HostToWorker>) => {
@@ -190,6 +269,18 @@ self.onmessage = async (event: MessageEvent<HostToWorker>) => {
         p.push(msg.notes as ReadonlyArray<NoteWithBody>, null)
         return
       }
+
+      case 'host:vaultChanged':
+        dispatchVault(msg.subscriptionId, undefined)
+        return
+
+      case 'host:noteSaved':
+        dispatchVault(msg.subscriptionId, msg.noteId)
+        return
+
+      case 'host:activeNoteIdChanged':
+        dispatchVault(msg.subscriptionId, msg.noteId)
+        return
 
       default:
         // Exhaustiveness — TypeScript will catch missed cases at build,
@@ -441,6 +532,17 @@ function buildCtx(parentSeq: number): PluginCtx {
         },
         stream(opts?: { chunkSize?: number }) {
           return makeVaultStream(opts?.chunkSize)
+        },
+      },
+      events: {
+        onVaultChange(handler: () => void): Unsubscribe {
+          return subscribeVault('vaultChanged', handler)
+        },
+        onNoteSaved(handler: (noteId: string) => void): Unsubscribe {
+          return subscribeVault('noteSaved', handler)
+        },
+        onActiveNoteChange(handler: (noteId: string | null) => void): Unsubscribe {
+          return subscribeVault('activeNoteIdChanged', handler)
         },
       },
     },
