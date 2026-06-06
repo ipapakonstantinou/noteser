@@ -283,3 +283,155 @@ host's automatic cleanup on terminate is the safety net.
   capability adds host-side subscriptions outside the SDK, the cap
   should move into the host so the worker boundary stays the cap's
   enforcement point.
+
+## PR E — `fs.openDirectory` capability
+
+Plan reference: section 4.3.
+
+### What shipped
+
+- New permission `fs.open-directory` in
+  `src/plugins/manifest.ts` (`PERMISSIONS` + `PERMISSION_DESCRIPTIONS`).
+  The validator already rejected unknown permissions; the new value
+  flows through unchanged. Mirrored in
+  `packages/noteser-plugin-sdk/src/manifest.ts` so plugin authors
+  building against the published SDK get type-level errors for
+  unknown permission strings.
+- New SDK surface `ctx.fs.openDirectory(args?: { extensions?: string[] })`
+  returning `Promise<ReadonlyArray<{ name, path, blob }> | null>`.
+  `null` is "user cancelled the picker"; a `Blob` (real `File`) lets
+  the plugin read file contents lazily via `blob.text()` /
+  `blob.arrayBuffer()`. Mirrored in
+  `packages/noteser-plugin-sdk/src/sdk.ts`.
+- Wire-protocol additions:
+  `worker:requestDirectoryOpen` (`src/plugins/protocol.ts`) and
+  `host:directoryOpenResult`. Both registered in `isHostToWorker` /
+  `isWorkerToHost` type guards. Constant `MAX_DIRECTORY_ENTRIES` (50,000)
+  exported alongside the existing rate-limit constants.
+- Host handler in `pluginHostSingleton.ts`:
+   - Modern path: `showDirectoryPicker()` → recursive walk via
+     `walkDirectoryHandle` (extracted into
+     `src/plugins/directoryPickerHelpers.ts` so it can be unit-tested
+     without spinning up the singleton).
+   - Fallback path: `<input type="file" webkitdirectory>`. Mirrors the
+     existing single-file fallback at line ~458 of the singleton but
+     sets `webkitdirectory` + `directory` so the picker browses
+     folders. `webkitRelativePath` carries the root segment; we strip
+     it so the returned `path` is relative to the picked root,
+     matching the modern-path output.
+   - 50k cap enforced post-walk. The walker returns as soon as
+     `out.length > MAX_DIRECTORY_ENTRIES` so we never scan a
+     million-file tree.
+   - Extension filter applied host-side via `buildExtensionMatcher`.
+     Case-insensitive, leading dot optional, e.g. `['md', '.MARKDOWN']`
+     all work.
+- Manifest-preview modal copy line:
+  "Open folders to read files into the plugin. You pick the folder;
+  the plugin sees the file names and contents under that folder,
+  nothing else." Rendered automatically by
+  `PluginInstallConfirmModal.tsx` via the existing
+  `PERMISSION_DESCRIPTIONS` lookup.
+- Settings → Plugins revocation hook: the per-permission checkbox UI
+  + `revokedPermissions` field + `setPermissionRevoked` action already
+  landed in PR C. PR E plugs `fs.open-directory` into the same
+  pipeline (`PluginHost.handleWorkerMessage` consults
+  `entry.plugin.revokedPermissions.has('fs.open-directory')` before
+  dispatching the picker). Subsequent capability calls after revocation
+  reject with `Permission "fs.open-directory" was revoked.`
+- Reference plugin `public/plugins/noteser-folder-demo/` with a single
+  command "Folder demo: count files in a folder" that exercises the
+  modern + fallback paths end-to-end and toasts the count after
+  filtering to `.md` / `.markdown`.
+
+### Deviations from the plan
+
+1. **Wire shape uses `Blob`, not `bytesBase64`.** The plan's section
+   5.1 typed `HostDirectoryOpenResult.entries` as
+   `Array<{ relativePath, name, bytesBase64, mimeType }>`. We ship
+   `Array<{ name, path, blob }>` instead:
+   - Structured clone passes `Blob` through `postMessage` natively,
+     so we avoid a base64 round-trip for what could be a half-gigabyte
+     of file content.
+   - The plugin reads lazily via `blob.text()` / `blob.arrayBuffer()`;
+     a `for (const e of entries)` that touches only `.md` files no
+     longer loads the entire folder into the worker's heap up front.
+   - `mimeType` lives on the `Blob` itself
+     (`blob.type`), so dropping the field loses nothing.
+   The change is forward-compatible: a future PR that ships a streaming
+   version (`fs.openDirectoryStream`) can add lazy fetch without
+   reworking the existing `entries` shape.
+
+2. **`relativePath` renamed to `path`.** The user-facing prompt asked
+   for `{ name, path, blob }`. Both are unambiguous (the picked root is
+   always the prefix-base), so the shorter name wins.
+
+3. **No 500 MiB size cap.** Section 4.3 mentions a 500 MiB total-byte
+   cap alongside the 50,000-entry cap. Because we now hand back lazy
+   `Blob`s we never see the bytes until the plugin reads them, and the
+   cap would need to walk every blob to enforce. The 50,000-entry cap
+   is the practical proxy: an Obsidian vault hitting it has bigger
+   problems than a noteser import limit. A byte cap can land in v1.3
+   alongside the streaming variant.
+
+4. **Revocation store action lives in PR C, reused in PR E.** PR C
+   shipped `revokedPermissions: PluginPermission[]` on
+   `InstalledPluginRecord`, the `setPermissionRevoked` action, the
+   singleton helper `setPluginPermissionRevoked`, and the
+   `PluginHost.{revokePermission, restorePermission}` runtime methods.
+   PR E reuses every piece — the only addition here is the
+   `fs.open-directory` check in `PluginHost.handleWorkerMessage`. PRs
+   D and F will piggy-back on the same plumbing.
+
+### Test coverage
+
+- `src/__tests__/plugins/fsOpenDirectory.test.ts`:
+   - Manifest validator accepts `fs.open-directory`, rejects
+     `fs.openDirectory` (typo), mixes with v1.1 permissions.
+   - `PluginHost` short-circuits `worker:requestDirectoryOpen` with a
+     permission-not-declared error when the manifest is silent;
+     emits `directoryOpenRequested` when the permission is present.
+   - `respondDirectoryOpen` round-trips `Blob` entries faithfully and
+     distinguishes "user cancelled" (`ok: true`, no `entries`) from
+     "host failed" (`ok: false`, `error`).
+   - `buildExtensionMatcher` covers leading-dot, case-insensitive,
+     mid-name false-positive cases.
+   - `walkDirectoryHandle` covers flat / nested / cap-overflow trees
+     and asserts blobs read back to their original contents.
+   - jsdom-driven test for the `<input webkitdirectory>` `cancel`
+     event rejection — the path the user prompt called out
+     specifically.
+- `src/__tests__/plugins/pluginInstallStoreRevocation.test.ts`:
+   - PR C's `setPermissionRevoked` action covers the
+     `fs.open-directory` arm: toggles, double-toggle round-trips,
+     idempotent no-ops, unknown plugin id no-ops.
+
+### Manual verification
+
+- Chrome / Edge / Opera: `showDirectoryPicker()` opens the native
+  directory dialog; picking a folder full of `.md` files toasts the
+  count.
+- Safari / Firefox: `<input webkitdirectory>` opens the folder picker;
+  same outcome. Pressing Cancel toasts "Folder pick cancelled." rather
+  than throwing.
+
+### Files touched
+
+```
+docs/plugins-v1.2-impl-notes.md                                     (appended)
+packages/noteser-plugin-sdk/src/index.ts
+packages/noteser-plugin-sdk/src/manifest.ts
+packages/noteser-plugin-sdk/src/sdk.ts
+public/plugins/noteser-folder-demo/main.js                          (new)
+public/plugins/noteser-folder-demo/manifest.json                    (new)
+src/__tests__/plugins/fsOpenDirectory.test.ts                       (new)
+src/__tests__/plugins/pluginInstallStoreRevocation.test.ts          (new)
+src/components/modals/PluginsSettingsPanel.tsx
+src/plugins/PluginHost.ts
+src/plugins/directoryPickerHelpers.ts                               (new)
+src/plugins/manifest.ts
+src/plugins/pluginHostSingleton.ts
+src/plugins/protocol.ts
+src/plugins/sdk.ts
+src/plugins/workerEntry.ts
+src/stores/pluginInstallStore.ts
+```

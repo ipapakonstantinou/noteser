@@ -7,6 +7,8 @@ export type {
   PluginDefinition,
   NoteWithBody,
   Unsubscribe,
+  DirectoryEntry,
+  DirectoryEntries,
 } from './sdk'
 
 // v1.2 — VNode shapes plus the shared event-handler record. PR A adds
@@ -33,7 +35,10 @@ export type {
   PluginCommand,
   PluginSidebarPanel,
   PluginCodeBlockRenderer,
+  PluginPermission,
 } from './manifest'
+
+export { PERMISSIONS } from './manifest'
 
 // `validateManifest` is host-side; published intentionally so plugin
 // authors can sanity-check their own manifest at build time.

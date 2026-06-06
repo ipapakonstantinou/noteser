@@ -33,6 +33,12 @@ export const VAULT_EVENT_DEBOUNCE_MS = 250
  *  `onActiveNoteChange` calls synchronously beyond this. */
 export const MAX_VAULT_SUBSCRIPTIONS_PER_EVENT = 16
 
+/** Hard cap on entries returned from `fs.openDirectory`. Above this the
+ *  host rejects with "Directory too large". Prevents an accidental
+ *  whole-disk pick from emitting a multi-million-entry response. See
+ *  plugins-v1.2-plan.md section 4.3. */
+export const MAX_DIRECTORY_ENTRIES = 50_000
+
 // ─── Host → Worker ─────────────────────────────────────────────────────────
 
 export type HostToWorker =
@@ -50,6 +56,7 @@ export type HostToWorker =
   | HostVaultChangedEvent
   | HostNoteSavedEvent
   | HostActiveNoteIdChanged
+  | HostDirectoryOpenResult
 
 /** First message the host sends. Worker initialises the plugin module
  *  and replies with WorkerReady on success or WorkerBootError on failure. */
@@ -224,6 +231,23 @@ export interface HostVaultStreamChunk {
   error?: string
 }
 
+/** Host's reply to a worker:requestDirectoryOpen. Carries an array of
+ *  entries with their raw `Blob` so the plugin can read each file
+ *  lazily via `blob.text()` / `blob.arrayBuffer()`. v1.2 capability —
+ *  requires `fs.open-directory` permission. See plugins-v1.2-plan.md
+ *  section 4.3. */
+export interface HostDirectoryOpenResult {
+  type: 'host:directoryOpenResult'
+  seq: number
+  requestSeq: number
+  ok: boolean
+  /** Present on success; absent / empty when the user cancelled. Blobs
+   *  survive structured clone unchanged so the worker can hand them to
+   *  plugin code without re-encoding. */
+  entries?: ReadonlyArray<{ name: string; path: string; blob: Blob }>
+  error?: string
+}
+
 // ─── Worker → Host ─────────────────────────────────────────────────────────
 
 export type WorkerToHost =
@@ -237,6 +261,7 @@ export type WorkerToHost =
   | WorkerRequestFileSave
   | WorkerRequestFileOpen
   | WorkerRequestVaultRead
+  | WorkerRequestDirectoryOpen
   | WorkerError
   | WorkerSubscribeVault
   | WorkerUnsubscribeVault
@@ -430,6 +455,21 @@ export interface WorkerUnsubscribeVault {
   subscriptionId: string
 }
 
+/** Plugin asking the host to open the native directory picker and
+ *  return a flat list of every file inside the chosen folder. v1.2
+ *  capability — requires `fs.open-directory` permission. See
+ *  plugins-v1.2-plan.md section 4.3.
+ *
+ *  The optional `extensions` filter narrows the result host-side; the
+ *  picker still shows every file, but the response only carries entries
+ *  whose name ends with one of the supplied extensions (case-insensitive,
+ *  leading dot optional). */
+export interface WorkerRequestDirectoryOpen {
+  type: 'worker:requestDirectoryOpen'
+  seq: number
+  extensions?: string[]
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
 export function isHostToWorker(msg: unknown): msg is HostToWorker {
@@ -448,6 +488,7 @@ export function isHostToWorker(msg: unknown): msg is HostToWorker {
     'host:vaultChanged',
     'host:noteSaved',
     'host:activeNoteIdChanged',
+    'host:directoryOpenResult',
   ])
 }
 
@@ -466,6 +507,7 @@ export function isWorkerToHost(msg: unknown): msg is WorkerToHost {
     'worker:requestVaultRead',
     'worker:subscribeVault',
     'worker:unsubscribeVault',
+    'worker:requestDirectoryOpen',
   ])
 }
 

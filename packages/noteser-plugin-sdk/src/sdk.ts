@@ -140,6 +140,24 @@ export interface NoteWithBody {
   updatedAt: number
 }
 
+/**
+ * v1.2 — one entry returned by `ctx.fs.openDirectory`. See
+ * docs/plugins-v1.2-plan.md section 4.3 in the noteser repo.
+ *
+ *  - `name` is the filename (no path prefix).
+ *  - `path` is the forward-slash relative path inside the picked root.
+ *  - `blob` lets the plugin read the file lazily via `blob.text()` or
+ *    `blob.arrayBuffer()`. The host does not pre-load file bytes.
+ */
+export interface DirectoryEntry {
+  name: string
+  path: string
+  blob: Blob
+}
+
+export type DirectoryEntries = ReadonlyArray<DirectoryEntry>
+
+
 /** Narrow capability surface exposed to plugin handlers. The plugin
  *  never sees `localStorage`, the GitHub token, or the bodies of notes
  *  it is not currently viewing. v1 read scope is intentionally tight:
@@ -215,6 +233,32 @@ export interface PluginCtx {
        *  note). Same debounce / cap rules as `onVaultChange`. */
       onActiveNoteChange(handler: (noteId: string | null) => void): Unsubscribe
     }
+  }
+
+  /**
+   * v1.2 file-system namespace. Methods reject when the matching
+   * permission was not granted (or was revoked from Settings →
+   * Plugins) with the message
+   * `Permission "fs.open-directory" was not granted.` Plugins can
+   * catch and degrade.
+   */
+  fs: {
+    /**
+     * Open the native directory picker. Resolves with an array of
+     * `{ name, path, blob }` for every file under the picked root, or
+     * `null` when the user cancelled.
+     *
+     * Requires `permissions: ['fs.open-directory']` in the manifest.
+     *
+     *  - `args.extensions` (case-insensitive, leading dot optional):
+     *    filters the response to entries whose name ends with one of
+     *    the listed suffixes, e.g. `['.md', '.markdown']`. Empty /
+     *    undefined returns every file.
+     *
+     * Rejects with `Directory too large` when the picked folder
+     * contains more than 50,000 entries.
+     */
+    openDirectory(args?: { extensions?: string[] }): Promise<DirectoryEntries | null>
   }
 }
 

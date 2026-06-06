@@ -26,7 +26,13 @@ import {
   type HostBootMessage,
   type NoteWithBodyWire,
 } from './protocol'
-import type { PluginCtx, PluginDefinition, NoteWithBody, Unsubscribe } from './sdk'
+import type {
+  DirectoryEntries,
+  NoteWithBody,
+  PluginCtx,
+  PluginDefinition,
+  Unsubscribe,
+} from './sdk'
 
 interface PluginState {
   manifest: PluginManifest
@@ -70,6 +76,11 @@ interface PendingVaultReadStream {
    *  with null when the host signals end-of-stream / error. */
   push: (chunk: ReadonlyArray<NoteWithBody> | null, error: string | null) => void
 }
+interface PendingDirectoryOpen {
+  kind: 'openDirectory'
+  resolve: (v: DirectoryEntries | null) => void
+  reject: (err: Error) => void
+}
 const pending = new Map<
   number,
   | PendingFileSave
@@ -77,6 +88,7 @@ const pending = new Map<
   | PendingVaultReadAll
   | PendingVaultReadOne
   | PendingVaultReadStream
+  | PendingDirectoryOpen
 >()
 
 let nextRequestSeq = 0
@@ -281,6 +293,26 @@ self.onmessage = async (event: MessageEvent<HostToWorker>) => {
       case 'host:activeNoteIdChanged':
         dispatchVault(msg.subscriptionId, msg.noteId)
         return
+
+      case 'host:directoryOpenResult': {
+        const p = pending.get(msg.requestSeq)
+        if (p && p.kind === 'openDirectory') {
+          pending.delete(msg.requestSeq)
+          if (msg.ok) {
+            // No entries → user cancelled the picker. Distinct from a
+            // permission rejection (ok=false) so the plugin can branch
+            // on `null` vs catching an error.
+            if (msg.entries === undefined) {
+              p.resolve(null)
+            } else {
+              p.resolve(msg.entries as DirectoryEntries)
+            }
+          } else {
+            p.reject(new Error(msg.error ?? 'Directory open failed.'))
+          }
+        }
+        return
+      }
 
       default:
         // Exhaustiveness — TypeScript will catch missed cases at build,
@@ -544,6 +576,20 @@ function buildCtx(parentSeq: number): PluginCtx {
         onActiveNoteChange(handler: (noteId: string | null) => void): Unsubscribe {
           return subscribeVault('activeNoteIdChanged', handler)
         },
+      },
+    },
+    fs: {
+      openDirectory(opts) {
+        const requestSeq = allocRequestSeq()
+        const promise = new Promise<DirectoryEntries | null>((resolve, reject) => {
+          pending.set(requestSeq, { kind: 'openDirectory', resolve, reject })
+        })
+        emit({
+          type: 'worker:requestDirectoryOpen',
+          seq: requestSeq,
+          ...(opts?.extensions ? { extensions: opts.extensions } : {}),
+        })
+        return promise
       },
     },
   }
