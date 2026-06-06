@@ -100,6 +100,19 @@ export type PluginHostEvent =
       requestSeq: number
       extensions?: string[]
     }
+  | {
+      type: 'fullscreenOpenRequested'
+      pluginId: string
+      requestSeq: number
+      viewId: string
+    }
+  | { type: 'fullscreenCloseRequested'; pluginId: string; viewId: string }
+  | {
+      type: 'fullscreenContent'
+      pluginId: string
+      viewId: string
+      node: unknown
+    }
   | { type: 'rateLimited'; pluginId: string }
 
 interface WorkerEntry {
@@ -738,6 +751,42 @@ export class PluginHost {
         })
         return
       }
+
+      case 'worker:openFullscreen': {
+        // Validate against the manifest. Anything not declared is
+        // rejected here, before any singleton coordination, so a
+        // plugin that simply made a typo gets a clear error and the
+        // host modal never blinks open.
+        const declared =
+          entry.plugin.manifest.surfaces.fullscreenViews?.some((v) => v.id === msg.viewId) ?? false
+        if (!declared) {
+          this.respondFullscreenOpen(pluginId, msg.seq, {
+            ok: false,
+            error: `Fullscreen view "${msg.viewId}" is not declared in the manifest.`,
+          })
+          return
+        }
+        this.emit({
+          type: 'fullscreenOpenRequested',
+          pluginId,
+          requestSeq: msg.seq,
+          viewId: msg.viewId,
+        })
+        return
+      }
+
+      case 'worker:closeFullscreen':
+        this.emit({ type: 'fullscreenCloseRequested', pluginId, viewId: msg.viewId })
+        return
+
+      case 'worker:setFullscreenContent':
+        this.emit({
+          type: 'fullscreenContent',
+          pluginId,
+          viewId: msg.viewId,
+          node: msg.node,
+        })
+        return
     }
   }
 
@@ -820,6 +869,48 @@ export class PluginHost {
       chunkIndex: chunk.chunkIndex,
       notes: chunk.notes,
       ...(chunk.error ? { error: chunk.error } : {}),
+    })
+  }
+
+  /** Surface adapter wires the fullscreen mount here. Reports
+   *  whether the modal mounted; on `ok: true` the host should also
+   *  emit `notifyFullscreenOpened` so the plugin's
+   *  `onFullscreenMount` runs and the plugin can populate content. */
+  respondFullscreenOpen(
+    pluginId: string,
+    requestSeq: number,
+    result: { ok: true } | { ok: false; error: string },
+  ): void {
+    this.send(pluginId, {
+      type: 'host:fullscreenOpenResult',
+      seq: ++this.seqCounter,
+      requestSeq,
+      ok: result.ok,
+      ...(result.ok ? {} : { error: result.error }),
+    })
+  }
+
+  /** Notify the worker that the fullscreen modal is now mounted.
+   *  Fire-and-forget — the worker uses this to run
+   *  `onFullscreenMount`. Separate from `respondFullscreenOpen` so
+   *  the open call's Promise can resolve before the mount handler
+   *  starts emitting content updates. */
+  notifyFullscreenOpened(pluginId: string, viewId: string): void {
+    this.send(pluginId, {
+      type: 'host:fullscreenOpened',
+      seq: ++this.seqCounter,
+      viewId,
+    })
+  }
+
+  /** Notify the worker that the fullscreen modal is now unmounted
+   *  (X click, Esc, page unload, or explicit closeFullscreen). The
+   *  worker runs `onFullscreenUnmount`. */
+  notifyFullscreenClosed(pluginId: string, viewId: string): void {
+    this.send(pluginId, {
+      type: 'host:fullscreenClosed',
+      seq: ++this.seqCounter,
+      viewId,
     })
   }
 

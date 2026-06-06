@@ -57,6 +57,9 @@ export type HostToWorker =
   | HostNoteSavedEvent
   | HostActiveNoteIdChanged
   | HostDirectoryOpenResult
+  | HostFullscreenOpened
+  | HostFullscreenClosed
+  | HostFullscreenOpenResult
 
 /** First message the host sends. Worker initialises the plugin module
  *  and replies with WorkerReady on success or WorkerBootError on failure. */
@@ -248,6 +251,38 @@ export interface HostDirectoryOpenResult {
   error?: string
 }
 
+/** v1.2 PR B — fullscreen view surface. Sent after the host has
+ *  mounted the modal in response to a `worker:openFullscreen`. The
+ *  worker fires `onFullscreenMount` so the plugin can populate
+ *  content via `ctx.setFullscreenContent`. Fire-and-forget — the
+ *  response to the open request is `host:fullscreenOpenResult`. */
+export interface HostFullscreenOpened {
+  type: 'host:fullscreenOpened'
+  seq: number
+  viewId: string
+}
+
+/** v1.2 PR B — sent after the host has unmounted the modal (X click,
+ *  Esc, page unload, or `worker:closeFullscreen`). The worker fires
+ *  `onFullscreenUnmount`. */
+export interface HostFullscreenClosed {
+  type: 'host:fullscreenClosed'
+  seq: number
+  viewId: string
+}
+
+/** v1.2 PR B — host's reply to `worker:openFullscreen`. Carries
+ *  `ok: false` when the view id was not declared in the manifest
+ *  or when another fullscreen view is already open. Pairs by
+ *  `requestSeq` the same way `host:fileSaveResult` does. */
+export interface HostFullscreenOpenResult {
+  type: 'host:fullscreenOpenResult'
+  seq: number
+  requestSeq: number
+  ok: boolean
+  error?: string
+}
+
 // ─── Worker → Host ─────────────────────────────────────────────────────────
 
 export type WorkerToHost =
@@ -265,6 +300,9 @@ export type WorkerToHost =
   | WorkerError
   | WorkerSubscribeVault
   | WorkerUnsubscribeVault
+  | WorkerOpenFullscreen
+  | WorkerCloseFullscreen
+  | WorkerSetFullscreenContent
 
 /** Sent in reply to host:boot once the plugin module loaded and
  *  `definePlugin` ran. Includes the validated manifest, which the host
@@ -470,6 +508,38 @@ export interface WorkerRequestDirectoryOpen {
   extensions?: string[]
 }
 
+/** v1.2 PR B — plugin asking the host to mount the named fullscreen
+ *  view. Host validates the view id against the manifest's declared
+ *  `surfaces.fullscreenViews` and the single-open invariant before
+ *  mounting. Replies with `host:fullscreenOpenResult` keyed by
+ *  `requestSeq` so the plugin's Promise resolves to the right call. */
+export interface WorkerOpenFullscreen {
+  type: 'worker:openFullscreen'
+  seq: number
+  viewId: string
+}
+
+/** v1.2 PR B — plugin asking the host to unmount the current
+ *  fullscreen view. No reply; host emits `host:fullscreenClosed`
+ *  when the unmount lands so the plugin's `onFullscreenUnmount`
+ *  runs the same way an X / Esc dismiss does. */
+export interface WorkerCloseFullscreen {
+  type: 'worker:closeFullscreen'
+  seq: number
+  viewId: string
+}
+
+/** v1.2 PR B — plugin updating the fullscreen view's content tree.
+ *  Same VNode contract as `worker:setPanelContent`; the host runs
+ *  the value through the curated renderer. Silently dropped if the
+ *  named view is not currently open. */
+export interface WorkerSetFullscreenContent {
+  type: 'worker:setFullscreenContent'
+  seq: number
+  viewId: string
+  node: unknown
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
 export function isHostToWorker(msg: unknown): msg is HostToWorker {
@@ -489,6 +559,9 @@ export function isHostToWorker(msg: unknown): msg is HostToWorker {
     'host:noteSaved',
     'host:activeNoteIdChanged',
     'host:directoryOpenResult',
+    'host:fullscreenOpened',
+    'host:fullscreenClosed',
+    'host:fullscreenOpenResult',
   ])
 }
 
@@ -508,6 +581,9 @@ export function isWorkerToHost(msg: unknown): msg is WorkerToHost {
     'worker:subscribeVault',
     'worker:unsubscribeVault',
     'worker:requestDirectoryOpen',
+    'worker:openFullscreen',
+    'worker:closeFullscreen',
+    'worker:setFullscreenContent',
   ])
 }
 

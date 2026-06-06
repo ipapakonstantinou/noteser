@@ -307,5 +307,12 @@ function buildSurfaceRows(surfaces: InstalledPluginRecord['manifest']['surfaces'
       description: SURFACE_DESCRIPTIONS.codeBlockRenderers,
     })
   }
+  if (surfaces.fullscreenViews && surfaces.fullscreenViews.length > 0) {
+    rows.push({
+      key: 'fullscreenViews' satisfies PluginSurfaceKind,
+      label: `Provides full-screen view${surfaces.fullscreenViews.length === 1 ? '' : 's'}`,
+      description: SURFACE_DESCRIPTIONS.fullscreenViews,
+    })
+  }
   return rows
 }

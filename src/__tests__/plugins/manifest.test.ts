@@ -162,4 +162,106 @@ describe('validateManifest', () => {
     })
     expect(r.ok).toBe(true)
   })
+
+  // v1.2 PR B — fullscreenViews surface ----------------------------------
+  describe('surfaces.fullscreenViews', () => {
+    test('accepts a manifest that declares one fullscreen view', () => {
+      const r = validateManifest({
+        id: 'graph',
+        name: 'Graph',
+        version: '1.0.0',
+        surfaces: {
+          fullscreenViews: [{ id: 'graph', title: 'Note graph' }],
+        },
+      })
+      expect(r.ok).toBe(true)
+      expect(r.manifest?.surfaces.fullscreenViews?.[0].id).toBe('graph')
+      expect(r.manifest?.surfaces.fullscreenViews?.[0].title).toBe('Note graph')
+    })
+
+    test('treats a single fullscreen view as enough to satisfy the at-least-one-surface check', () => {
+      const r = validateManifest({
+        id: 'graph',
+        name: 'Graph',
+        version: '1.0.0',
+        surfaces: {
+          fullscreenViews: [{ id: 'graph', title: 'Note graph' }],
+        },
+      })
+      expect(r.ok).toBe(true)
+    })
+
+    test('rejects when fullscreenViews is not an array', () => {
+      const r = validateManifest({
+        id: 'graph',
+        name: 'Graph',
+        version: '1.0.0',
+        surfaces: { fullscreenViews: { id: 'graph', title: 'Note graph' } },
+      })
+      expect(r.ok).toBe(false)
+      expect(r.errors.some((e) => e.toLowerCase().includes('fullscreenviews'))).toBe(true)
+    })
+
+    test('rejects fullscreen views with non-kebab-case ids', () => {
+      const r = validateManifest({
+        id: 'graph',
+        name: 'Graph',
+        version: '1.0.0',
+        surfaces: {
+          fullscreenViews: [{ id: 'BadID', title: 'Note graph' }],
+        },
+      })
+      expect(r.ok).toBe(false)
+      expect(r.errors.some((e) => e.toLowerCase().includes('kebab-case'))).toBe(true)
+    })
+
+    test('rejects fullscreen views with empty or oversize titles', () => {
+      const empty = validateManifest({
+        id: 'graph',
+        name: 'Graph',
+        version: '1.0.0',
+        surfaces: { fullscreenViews: [{ id: 'graph', title: '' }] },
+      })
+      expect(empty.ok).toBe(false)
+
+      const huge = validateManifest({
+        id: 'graph',
+        name: 'Graph',
+        version: '1.0.0',
+        surfaces: {
+          fullscreenViews: [{ id: 'graph', title: 'x'.repeat(200) }],
+        },
+      })
+      expect(huge.ok).toBe(false)
+    })
+
+    test('rejects duplicate fullscreen view ids', () => {
+      const r = validateManifest({
+        id: 'graph',
+        name: 'Graph',
+        version: '1.0.0',
+        surfaces: {
+          fullscreenViews: [
+            { id: 'graph', title: 'Note graph' },
+            { id: 'graph', title: 'Note graph 2' },
+          ],
+        },
+      })
+      expect(r.ok).toBe(false)
+      expect(r.errors.some((e) => e.toLowerCase().includes('duplicat'))).toBe(true)
+    })
+
+    test('preserves the optional icon when present', () => {
+      const r = validateManifest({
+        id: 'graph',
+        name: 'Graph',
+        version: '1.0.0',
+        surfaces: {
+          fullscreenViews: [{ id: 'graph', title: 'Note graph', icon: 'document-text' }],
+        },
+      })
+      expect(r.ok).toBe(true)
+      expect(r.manifest?.surfaces.fullscreenViews?.[0].icon).toBe('document-text')
+    })
+  })
 })
