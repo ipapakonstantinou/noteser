@@ -24,14 +24,14 @@ live `tasks` query blocks). No browser/git rival pairs both.
 
 | Tool | Storage | Browser? | Why it matters |
 |---|---|---|---|
-| **NotesHub** | GitHub / generic git / FS | Yes + native apps | The single closest rival. $3.99 one-time. Has offline, Kanban, whiteboard, Mermaid/LaTeX. Its conflict resolution is *opaque "automatic"* — noteser's transparent per-hunk merge is the edge. |
-| **SilverBullet** | Files on your server | PWA (self-host) | Programmable (Lua), offline PWA. Needs a server; no git-as-storage, no merge UX. |
-| **GitJournal** | Any git over SSH | Mobile-only | Owns mobile-git. A mobile-weak noteser loses to it on phones. |
-| **StackEdit** | GitHub/Drive/Dropbox | Yes | Closest "browser + GitHub" precedent, but a single-document editor, not a vault/PKM. |
-| **Obsidian** | Local files | **No official web** | The gravity well. noteser's core wedge is exactly Obsidian's most persistent gap: no browser version. Shipped Bases, official Web Clipper, Canvas, and AI in 2025. |
-
-Disaffected-user pools worth targeting: **Logseq** (multi-year DB-migration
-limbo, reports of data loss), **Notion** (restrictive offline + lock-in).
+| **NotesHub** | GitHub / generic git / FS / iCloud | Yes + native apps everywhere | Single closest rival. $3.99 one-time. Offline, Kanban, whiteboard, Mermaid/LaTeX, real-time collab. Conflict resolution is *opaque "automatic"* — transparent per-hunk merge is the only durable edge. See `docs/research/competitors/noteshub.md`. |
+| **SilverBullet** | Files on your server | PWA (self-host) | Programmable (Space Lua), Objects/Queries DSL, true offline PWA. Needs a server; no git-as-storage; no merge UX. Reference design for the properties/DB-views work (#72). See `silverbullet.md`. |
+| **GitJournal** | Any git over SSH | Mobile-only | Owns mobile-git. Complementary, not overlapping — but a weak PWA cedes phones to it (#68). Reported "failed to save" / crashes argue for #69 retry + queued-state UI. See `gitjournal.md`. |
+| **StackEdit / HackMD / CodiMD** | GitHub/Drive/Dropbox; or hosted DB | Yes | StackEdit is the closest "browser + GitHub" precedent (single-doc, no offline, opaque sync — stackedit #1176). HackMD/CodiMD are team real-time collab over a hosted DB. None is a vault/PKM. See `stackedit-hackmd.md`. |
+| **Obsidian** | Local files | **No official web** | The gravity well. Core wedge is exactly Obsidian's persistent gap. Shipped Bases, official Web Clipper (with AI Interpreter), Canvas (JSON Canvas), Claude/AI Skills in 2025-26. obsidian-git #803 is the demand signal for noteser's merge UX. See `obsidian.md`. |
+| **Logseq** | Local md/org + sync | Limited | Cautionary tale: DB-migration limbo since 2022, stalled development, data-loss reports. Disaffected-user pool addressable via a clean import (#73) + stability positioning (#75). See `logseq.md`. |
+| **Privacy/E2E cluster** (Anytype, Standard Notes, Notesnook, Joplin) | E2E hosted / P2P / self-host | Varies | Defines the encrypted pole. Do not compete on privacy (#75). Joplin's "sync broke and lost data" thread *reinforces* the merge UX wedge. See `privacy-e2e-cluster.md`. |
+| **Notion alternatives** (AFFiNE, SiYuan, Trilium) | CRDT / md+sidecars / SQLite | Mostly self-host | "DB-in-notes + blocks + graph" pole. SiYuan sets the bar for thousands-of-notes performance (#79); AFFiNE for canvas; Trilium warns against in-app scripting. See `notion-alternatives.md`. |
 
 ## Gaps vs the field (priority-ordered)
 
@@ -65,6 +65,53 @@ fight it).
   version control + portability, not privacy.**
 - **Breadth is a losing game** vs NotesHub/Obsidian. Double down on the
   merge + tasks + interop wedge.
+
+## Lessons surfaced by deeper research
+
+Findings from the 2026-06-06 sweep of `docs/research/competitors/` that
+were not in the original analysis. Each ties back to a priority or
+backlog issue.
+
+- **NotesHub still resolves conflicts opaquely.** The 2026 review of
+  about.noteshub.app and the GitHub org found no sign of a transparent
+  per-hunk merge UI. The wedge (#75) is intact; lead with it in copy.
+- **Joplin's "sync that constantly broke" thread is a positive signal
+  for noteser, not a warning.** It is direct evidence that
+  trustworthy sync + merge is an unmet need at the file-storage tier,
+  which is exactly the axis #69 (rate-limit / retry hardening) +
+  per-hunk merge address.
+- **SiYuan markets explicitly on thousands-of-notes performance.**
+  This sets a concrete bar for #79: 5,000 notes load under a second,
+  search under 200 ms, sync does not refetch the full tree (ETag from
+  #69 + incremental Fuse.js index updates).
+- **Obsidian Bases is now the de facto frontmatter-properties standard.**
+  #72 must stay file-compatible with Bases' frontmatter shape; do not
+  invent a parallel schema. This also opens the Obsidian-import path
+  in #73 for free.
+- **JSON Canvas (Obsidian) is the open canvas format to target.** If
+  a canvas surface ever ships (low priority today), prefer JSON Canvas
+  over a CRDT-shaped format. AFFiNE's edgeless canvas is not the
+  interop target.
+- **Kanban does not need a separate data model.** NotesHub bundles it
+  as a feature, but a `kanban` view derived from `- [ ]` lines plus
+  status tags maps onto existing Obsidian Tasks data — a cheap parity
+  move that reinforces the tasks-interop wedge.
+- **A "noteser + GitJournal" pairing is the right mobile story until
+  the PWA lands.** GitJournal owns mobile-git; the messaging "use
+  GitJournal on your phone, noteser in the browser, same repo" buys
+  time on #68 without ceding the mobile narrative.
+- **Standard Notes' "your data will outlive the app" framing maps
+  cleanly onto noteser's pitch** ("the files are in your repo, a
+  plain markdown editor can open them"). Reuse the longevity framing
+  in #75 positioning copy without claiming E2E.
+- **Trilium's in-app scripting is a cautionary tale for any
+  programmability work.** Avoid a user-script runtime. A scoped
+  templater is safer than a Space-Lua-style surface, and far easier
+  to migrate later (relevant if #72 grows toward derived views).
+- **The "browser anywhere" pitch reads as hollow without an
+  installable PWA.** Every serious rival except StackEdit and the
+  HackMD family has offline-first. #68 is the single highest-leverage
+  unblocker; it also de-risks the GitHub rate-limit story (#69).
 
 ## Top recommendations
 
