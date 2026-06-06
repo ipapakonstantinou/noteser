@@ -140,20 +140,16 @@ test('![[Title]] embed renders as a blockquote in preview (z9o3)', async ({ page
           noteStore: { getState(): { addNote: (i: { title: string; content: string }) => { id: string } } }
           workspaceStore: { getState(): { openNote: (id: string, opt: { preview: boolean }) => void } }
           uiStore: { getState(): { setPreviewMode: (v: boolean) => void } }
-          settingsStore: { getState(): { setNotesOpenInPreviewMode: (v: boolean) => void } }
         }
       }
     }).__noteser_test
-    // workspaceStore.openNote runs a deferred async import to align the
-    // global isPreviewMode with settingsStore.notesOpenInPreviewMode on
-    // first-note-open. If we just call setPreviewMode(true) right after
-    // openNote, that async path resolves a beat later and clobbers our
-    // override back to the settings default (false). Set the setting first
-    // so the import lands in the "already correct" branch.
-    hooks.stores.settingsStore.getState().setNotesOpenInPreviewMode(true)
     hooks.stores.noteStore.getState().addNote({ title: 'Source', content: 'hello from embedded note' })
     const host = hooks.stores.noteStore.getState().addNote({ title: 'Host', content: 'Before\n![[Source]]\nAfter' })
     hooks.stores.workspaceStore.getState().openNote(host.id, { preview: false })
+    // Render the embed in rendered-preview. Set it deterministically via
+    // the store rather than pressing Ctrl+E — notes open in preview by
+    // default now, so a blind toggle would race the async default and could
+    // land us back in edit mode.
     hooks.stores.uiStore.getState().setPreviewMode(true)
   })
   await expect(page.getByText(/hello from embedded note/)).toBeVisible()
@@ -167,11 +163,10 @@ test('![[Title]] embed renders as a blockquote in preview (z9o3)', async ({ page
 // infinite loop. Only triggered when the SourceControlPanel was also
 // mounted (which it is whenever the user is in the github view).
 //
-// GitHub moved out of the ribbon into the Source control sidebar tab in
-// the May-2026 redesign; after the 2026-06-04 leaf-model rework the
-// pinned mini-strip uses `sidebar-pinned-tab-source-control` for the
-// activation control. We seed a fake-but-shape-correct GitHub session
-// into localStorage, open that sidebar tab, and assert nothing throws.
+// GitHub moved out of the ribbon into the Source control sidebar tab
+// (`sidebar-tab-source-control` → GitHubView). We seed a fake-but-shape-
+// correct GitHub session into localStorage, open that sidebar tab, and
+// assert nothing throws.
 
 test('opening the Source control sidebar tab with a configured repo does not crash (vsg1)', async ({ page }) => {
   // Capture page errors BEFORE navigating — they'll fire during the
@@ -194,24 +189,21 @@ test('opening the Source control sidebar tab with a configured repo does not cra
         },
         version: 0,
       }))
-      // Persist settings at the current version (3) so the v0→v3 migration
-      // doesn't collapse the default two-group sidebar into a single
-      // calendar-only group. We seed sidebarGroups directly with
-      // source-control as the active tab of its group so the SourceControlPanel
-      // mounts at first paint.
       window.localStorage.setItem('noteser-settings', JSON.stringify({
-        state: {
-          onboardingShown: true,
-          sidebarGroups: [
-            { id: 'g-scm', tabs: ['source-control'], activeTab: 'source-control', collapsed: false },
-          ],
-        },
-        version: 3,
+        state: { onboardingShown: true },
+        version: 0,
       }))
     } catch {}
   })
 
   await page.goto('/')
+
+  // GitHub now lives in the Source control sidebar tab (it left the ribbon
+  // in the May-2026 redesign). Open that tab to mount GitHubView.
+  const scTab = page.getByTestId('sidebar-tab-source-control')
+  await expect(scTab).toBeVisible({ timeout: 5000 })
+
+  await scTab.click()
 
   // Confirm the GitHub view actually mounted (source-control panel is
   // the new surface that used to be what tipped this over the edge).
@@ -227,31 +219,30 @@ test('opening the Source control sidebar tab with a configured repo does not cra
 
 test('ribbon items follow the saved order (b3e7)', async ({ page }) => {
   await page.goto('/')
-  // Wait for the ribbon to be mounted. After the 2026-06-04 leaf-model
-  // refactor the ribbon holds the four quick-launch ACTION ids
-  // (new-note / daily-note / command-palette / templates). `random-note`
-  // and the old filter-mode ids (notes/recent/tags/backlinks/calendar/
-  // outline/trash) are not known to `resolveRibbonOrder` and would be
-  // silently dropped from any saved order.
+  // Wait for the ribbon to be mounted. After the May-2026 redesign the
+  // ribbon holds quick-launch ACTION ids (new-note / daily-note /
+  // command-palette / templates / random-note) — the old filter-mode ids
+  // (notes/recent/tags/backlinks/calendar/outline/trash) were removed and
+  // are silently dropped by resolveRibbonOrder.
   await expect(page.getByTestId('ribbon-item-new-note')).toBeVisible()
   const beforeIds = await page.locator('[data-testid^="ribbon-item-"]').evaluateAll(
     els => els.map(e => e.getAttribute('data-testid')),
   )
   expect(beforeIds).toContain('ribbon-item-templates')
-  expect(beforeIds).toContain('ribbon-item-daily-note')
+  expect(beforeIds).toContain('ribbon-item-random-note')
 
-  // Reorder via the store action exposed by testHooks: put templates
+  // Reorder via the store action exposed by testHooks: put random-note
   // first. (Stale ids in the saved order are dropped; known ids are kept.)
   await page.evaluate(() => {
     const hooks = (window as unknown as {
       __noteser_test: { stores: { settingsStore: { getState(): { setRibbonOrder: (order: string[]) => void } } } }
     }).__noteser_test
     hooks.stores.settingsStore.getState().setRibbonOrder([
-      'templates', 'new-note', 'daily-note', 'command-palette',
+      'random-note', 'new-note', 'daily-note', 'command-palette', 'templates',
     ])
   })
 
   await expect(page.locator('[data-testid^="ribbon-item-"]').first()).toHaveAttribute(
-    'data-testid', 'ribbon-item-templates',
+    'data-testid', 'ribbon-item-random-note',
   )
 })

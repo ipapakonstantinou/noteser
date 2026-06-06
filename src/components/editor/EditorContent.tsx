@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback, createElement } from 'react'
+import { useState, useEffect, useRef, useCallback, createElement } from 'react'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import dynamic from 'next/dynamic'
@@ -24,7 +24,6 @@ import { resolveAttachmentPath } from '@/utils/attachments'
 import { findNoteByTitleOrAlias } from '@/utils/aliases'
 import { toggleTaskLineText, removeTaskPrefixFromLine } from '@/utils/tasks'
 import { isTaskItemDone, type HastNode } from '@/utils/taskListItem'
-import { splitTaskDoneChildren } from '@/utils/previewTaskDoneSplit'
 import { SCROLL_TO_LINE_EVENT } from '@/utils/events'
 import { CodeMirrorEditor } from './CodeMirrorEditor'
 import { FrontmatterPanel } from './FrontmatterPanel'
@@ -518,24 +517,6 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
       isCursorBlock(node) ? 'preview-cursor-block' : '',
       isChecked ? 'preview-task-done' : '',
     ].filter(Boolean).join(' ')
-    // For a DONE task we split children into (a) the item's own content and
-    // (b) any nested <ul>/<ol> sub-lists. The own content is wrapped in a
-    // `.preview-task-done-line` span that carries the line-through; the
-    // nested sub-list sits OUTSIDE the span so the strike line does not get
-    // painted through its descendant text — even when a descendant <li> sets
-    // text-decoration: none, modern browsers still paint the ancestor's
-    // strike line across the descendant's box (the bug the older
-    // descendant-reset CSS rules could not fix). Sibling-relationship is the
-    // only reliable separator.
-    if (isChecked) {
-      const { ownContent, nestedLists } = splitTaskDoneChildren(children)
-      return (
-        <li className={cls || undefined} {...rest}>
-          <span className="preview-task-done-line">{ownContent}</span>
-          {nestedLists}
-        </li>
-      )
-    }
     return <li className={cls || undefined} {...rest}>{children}</li>
   }
   ListItem.displayName = 'MdListItem'

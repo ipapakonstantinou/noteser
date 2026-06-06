@@ -3,7 +3,6 @@
 import { useRef, useState } from 'react'
 import { SIDEBAR_PANEL_DRAG_MIME } from './SidebarSection'
 import { PANELS, TAB_DRAG_MIME } from './sidebarPanelRegistry'
-import { RIGHT_TAB_DRAG_MIME } from './rightPanelRegistry'
 import { type SidebarTabId } from '@/stores'
 
 // Mini tab strip rendered ABOVE each pinned group's content. One
@@ -149,11 +148,6 @@ export const PinnedMiniStrip = ({
               // bleeding into a phantom drag.
               if (e.nativeEvent && e.nativeEvent.button !== 0) return
               e.dataTransfer.setData(SIDEBAR_PANEL_DRAG_MIME, id)
-              // Mirror onto the right-side MIME so dropping this tab in
-              // the right sidebar passes its drop-zone filter. The
-              // right-side drop handler calls moveTabAcrossSidebars
-              // which routes the move correctly.
-              e.dataTransfer.setData(RIGHT_TAB_DRAG_MIME, id)
               e.dataTransfer.effectAllowed = 'move'
             }}
             onDragOver={onIconDragOver(idx)}

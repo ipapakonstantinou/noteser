@@ -16,13 +16,8 @@ interface EditorHeaderProps {
 
 export const EditorHeader = ({ note, paneId, onTitleChange }: EditorHeaderProps) => {
   const { isPreviewMode, togglePreview } = useUIStore()
-  const setCurrentView = useUIStore(s => s.setCurrentView)
-  const sidebarCollapsed = useUIStore(s => s.sidebarCollapsed)
-  const toggleSidebar = useUIStore(s => s.toggleSidebar)
   const { togglePinNote } = useNoteStore()
   const { getFolderById } = useFolderStore()
-  const setActiveFolder = useFolderStore(s => s.setActiveFolder)
-  const setFolderExpanded = useFolderStore(s => s.setFolderExpanded)
   const { isMobile } = useViewport()
   const goBack = useWorkspaceStore(s => s.goBack)
   const goForward = useWorkspaceStore(s => s.goForward)
@@ -40,63 +35,27 @@ export const EditorHeader = ({ note, paneId, onTitleChange }: EditorHeaderProps)
   if (isMobile) return null
 
   // Build a "Folder / Subfolder" trail by walking parentId chain. Empty when
-  // the note is at the root (no folder). We keep id alongside name so the
-  // breadcrumb segments can navigate the sidebar.
-  const folderTrail: { id: string; name: string }[] = []
+  // the note is at the root (no folder).
+  const folderTrail: string[] = []
   let current = note.folderId ? getFolderById(note.folderId) : undefined
   const seen = new Set<string>()
   while (current && !seen.has(current.id)) {
-    folderTrail.unshift({ id: current.id, name: current.name })
+    folderTrail.unshift(current.name)
     seen.add(current.id)
     current = current.parentId ? getFolderById(current.parentId) : undefined
-  }
-
-  // Reveal a folder in the sidebar: switch to the Files view, open the
-  // sidebar if it was collapsed, expand the chain leading to the folder,
-  // and select the folder so the user immediately sees their context.
-  const revealFolder = (folderId: string) => {
-    if (sidebarCollapsed) toggleSidebar()
-    setCurrentView('notes')
-    let walk = getFolderById(folderId)
-    const walked = new Set<string>()
-    while (walk && !walked.has(walk.id)) {
-      setFolderExpanded(walk.id, true)
-      walked.add(walk.id)
-      walk = walk.parentId ? getFolderById(walk.parentId) : undefined
-    }
-    setActiveFolder(folderId)
   }
 
   return (
     <div className="flex flex-col border-b border-obsidianBorder">
       {folderTrail.length > 0 && (
         <div className="flex items-center gap-1 px-4 pt-2 text-[11px] text-obsidianSecondaryText truncate">
-          {folderTrail.map((seg, i) => (
-            <span key={seg.id} className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => revealFolder(seg.id)}
-                className="truncate hover:text-obsidianText hover:underline transition-colors"
-                title={`Reveal ${seg.name} in the file tree`}
-                data-testid={`breadcrumb-folder-${i}`}
-              >
-                {seg.name}
-              </button>
+          {folderTrail.map((name, i) => (
+            <span key={i} className="flex items-center gap-1">
+              <span className="truncate">{name}</span>
               <span className="text-obsidianBorder">/</span>
             </span>
           ))}
-          <button
-            type="button"
-            onClick={() => {
-              const parentId = folderTrail[folderTrail.length - 1]?.id
-              if (parentId) revealFolder(parentId)
-            }}
-            className="truncate text-obsidianText/70 hover:text-obsidianText hover:underline transition-colors"
-            title="Reveal this note in the file tree"
-            data-testid="breadcrumb-note"
-          >
-            {note.title || 'Untitled'}
-          </button>
+          <span className="truncate text-obsidianText/70">{note.title || 'Untitled'}</span>
         </div>
       )}
       <div className="flex items-center gap-2 px-4 py-3">

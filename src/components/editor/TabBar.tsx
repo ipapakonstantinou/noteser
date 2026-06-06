@@ -1,15 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import {
-  DocumentTextIcon,
-  DocumentDuplicateIcon,
-  ExclamationTriangleIcon,
-  XMarkIcon,
-  SparklesIcon,
-  ArrowsRightLeftIcon,
-  ArrowsUpDownIcon,
-} from '@heroicons/react/24/outline'
+import { useRef, useState } from 'react'
+import { DocumentTextIcon, ExclamationTriangleIcon, XMarkIcon, SparklesIcon } from '@heroicons/react/24/outline'
 import { useNoteStore, useWorkspaceStore } from '@/stores'
 import { TAB_DRAG_MIME } from '@/hooks'
 import type { Tab, PaneState } from '@/stores/workspaceStore'
@@ -26,29 +18,7 @@ export const TabBar = ({ pane }: Props) => {
   const closeTab = useWorkspaceStore(s => s.closeTab)
   const moveTab = useWorkspaceStore(s => s.moveTab)
   const promoteTab = useWorkspaceStore(s => s.promoteTab)
-  const splitTabRight = useWorkspaceStore(s => s.splitTabRight)
-  const splitTabDown = useWorkspaceStore(s => s.splitTabDown)
-  const paneCount = useWorkspaceStore(s => s.panes.length)
   const notes = useNoteStore(s => s.notes)
-  const canSplitMore = paneCount < 3
-
-  const [menu, setMenu] = useState<{ tabId: string; x: number; y: number } | null>(null)
-  // Close on click-out / Esc — mirrors the sidebar ContextMenu pattern.
-  useEffect(() => {
-    if (!menu) return
-    const onDown = (e: MouseEvent) => {
-      const el = e.target as HTMLElement | null
-      if (el?.closest('[data-testid="tab-context-menu"]')) return
-      setMenu(null)
-    }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(null) }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [menu])
 
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
   // A genuine (slightly slow) double-click does not reliably fire the native
@@ -95,12 +65,9 @@ export const TabBar = ({ pane }: Props) => {
   }
 
   return (
-    <>
     <div
-      className={`flex items-stretch border-b overflow-x-auto transition-colors ${
-        paneIsActive
-          ? 'bg-obsidianBlack border-b-obsidianAccentPurple/60'
-          : 'bg-obsidianBlack/95 border-b-obsidianBorder'
+      className={`flex items-stretch border-b border-obsidianBorder overflow-x-auto ${
+        paneIsActive ? 'bg-obsidianBlack' : 'bg-obsidianBlack/95'
       }`}
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOverIdx(null) }}
     >
@@ -124,10 +91,6 @@ export const TabBar = ({ pane }: Props) => {
               onClick={() => handleTabClick(tab.id)}
               onDoubleClick={() => promoteTab(tab.id)}
               onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); closeTab(tab.id) } }}
-              onContextMenu={(e) => {
-                e.preventDefault()
-                setMenu({ tabId: tab.id, x: e.clientX, y: e.clientY })
-              }}
               className={`flex items-center gap-1.5 px-3 py-2 text-sm border-r border-obsidianBorder cursor-pointer max-w-[200px] flex-shrink-0 select-none min-h-[44px] ${
                 active
                   ? 'bg-obsidianBlack text-obsidianText border-t-2 border-t-obsidianAccentPurple'
@@ -139,9 +102,7 @@ export const TabBar = ({ pane }: Props) => {
                 ? <ExclamationTriangleIcon className="w-4 h-4 text-amber-400 flex-shrink-0" />
                 : tab.kind === 'welcome'
                   ? <SparklesIcon className="w-4 h-4 text-obsidianAccentPurple flex-shrink-0" />
-                  : tab.kind === 'compare'
-                    ? <DocumentDuplicateIcon className="w-4 h-4 text-obsidianAccentPurple flex-shrink-0" />
-                    : <DocumentTextIcon className="w-4 h-4 flex-shrink-0" />}
+                  : <DocumentTextIcon className="w-4 h-4 flex-shrink-0" />}
               <span className={`truncate flex-1 min-w-0 ${title.italic ? 'italic' : ''}`}>{title.text}</span>
               <button
                 onClick={(e) => { e.stopPropagation(); closeTab(tab.id) }}
@@ -161,81 +122,6 @@ export const TabBar = ({ pane }: Props) => {
           </div>
         )
       })}
-    </div>
-    {menu && (
-      <TabContextMenu
-        x={menu.x}
-        y={menu.y}
-        canSplit={canSplitMore}
-        onSplitRight={() => { splitTabRight(menu.tabId); setMenu(null) }}
-        onSplitDown={() => { splitTabDown(menu.tabId); setMenu(null) }}
-        onClose={() => { closeTab(menu.tabId); setMenu(null) }}
-      />
-    )}
-    </>
-  )
-}
-
-interface TabContextMenuProps {
-  x: number
-  y: number
-  canSplit: boolean
-  onSplitRight: () => void
-  onSplitDown: () => void
-  onClose: () => void
-}
-
-const TabContextMenu = ({ x, y, canSplit, onSplitRight, onSplitDown, onClose }: TabContextMenuProps) => {
-  const ref = useRef<HTMLDivElement>(null)
-  // Nudge the menu back into view if it would render off the right/bottom
-  // edge — matches the sidebar ContextMenu adjustment.
-  useEffect(() => {
-    if (!ref.current) return
-    const el = ref.current
-    const rect = el.getBoundingClientRect()
-    if (rect.right > window.innerWidth) {
-      el.style.left = `${Math.max(8, window.innerWidth - rect.width - 8)}px`
-    }
-    if (rect.bottom > window.innerHeight) {
-      el.style.top = `${Math.max(8, window.innerHeight - rect.height - 8)}px`
-    }
-  }, [])
-
-  return (
-    <div
-      ref={ref}
-      role="menu"
-      data-testid="tab-context-menu"
-      className="fixed bg-obsidianGray border border-obsidianBorder rounded-lg shadow-obsidian py-1 min-w-[180px] z-50"
-      style={{ top: y, left: x }}
-    >
-      <button
-        onClick={onSplitRight}
-        disabled={!canSplit}
-        data-testid="tab-context-split-right"
-        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-obsidianText hover:bg-obsidianHighlight disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-      >
-        <ArrowsRightLeftIcon className="w-4 h-4" />
-        Split right
-      </button>
-      <button
-        onClick={onSplitDown}
-        disabled={!canSplit}
-        data-testid="tab-context-split-down"
-        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-obsidianText hover:bg-obsidianHighlight disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-      >
-        <ArrowsUpDownIcon className="w-4 h-4" />
-        Split down
-      </button>
-      <div className="my-1 border-t border-obsidianBorder" />
-      <button
-        onClick={onClose}
-        data-testid="tab-context-close"
-        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-obsidianText hover:bg-obsidianHighlight transition-colors"
-      >
-        <XMarkIcon className="w-4 h-4" />
-        Close tab
-      </button>
     </div>
   )
 }
@@ -268,14 +154,6 @@ function renderTitle(tab: Tab, notes: Array<{ id: string; title: string }>): Ren
   }
   if (tab.kind === 'welcome') {
     return { text: 'Welcome', tooltip: 'Welcome — getting started', italic: false }
-  }
-  if (tab.kind === 'compare') {
-    const leftNote = notes.find(n => n.id === tab.leftNoteId)
-    const rightNote = notes.find(n => n.id === tab.rightNoteId)
-    const leftTitle = leftNote?.title || 'Untitled'
-    const rightTitle = rightNote?.title || 'Untitled'
-    const text = `${leftTitle} ↔ ${rightTitle}`
-    return { text, tooltip: `Compare: ${leftTitle} ↔ ${rightTitle}`, italic: false }
   }
   const note = notes.find(n => n.id === tab.noteId)
   const text = note?.title || 'Untitled'

@@ -118,48 +118,4 @@ describe('validateManifest', () => {
     })
     expect(r.ok).toBe(false)
   })
-
-  test('accepts an optional description and surfaces it on the normalised manifest', () => {
-    const r = validateManifest({
-      ...goodManifest,
-      description: 'Counts words in the active note.',
-    })
-    expect(r.ok).toBe(true)
-    expect(r.manifest?.description).toBe('Counts words in the active note.')
-  })
-
-  test('rejects an oversize description', () => {
-    const r = validateManifest({
-      ...goodManifest,
-      description: 'x'.repeat(500),
-    })
-    expect(r.ok).toBe(false)
-    expect(r.errors.some((e) => e.toLowerCase().includes('description'))).toBe(true)
-  })
-
-  test('accepts an https homepage URL', () => {
-    const r = validateManifest({
-      ...goodManifest,
-      homepage: 'https://example.com/word-count',
-    })
-    expect(r.ok).toBe(true)
-    expect(r.manifest?.homepage).toBe('https://example.com/word-count')
-  })
-
-  test('rejects a non-https homepage', () => {
-    const r = validateManifest({
-      ...goodManifest,
-      homepage: 'javascript:alert(1)',
-    })
-    expect(r.ok).toBe(false)
-    expect(r.errors.some((e) => e.toLowerCase().includes('homepage'))).toBe(true)
-  })
-
-  test('accepts http://localhost as a homepage for dev', () => {
-    const r = validateManifest({
-      ...goodManifest,
-      homepage: 'http://localhost:3001/plugin',
-    })
-    expect(r.ok).toBe(true)
-  })
 })

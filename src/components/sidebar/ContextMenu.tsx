@@ -15,7 +15,6 @@ import {
   ArrowUturnLeftIcon,
   ClockIcon,
   ShareIcon,
-  ArrowsRightLeftIcon,
 } from '@heroicons/react/24/outline'
 import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore, useSettingsStore, useGitHubStore } from '@/stores'
 import type { ContextMenuState, Folder } from '@/types'
@@ -69,13 +68,6 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   } = useNoteStore()
   const { getFolderById, addFolder, deleteFolder, getActiveFolders, getDeletedFolders, restoreFolders, toggleFolderExpanded, expandedFolders } = useFolderStore()
   const openNote = useWorkspaceStore(s => s.openNote)
-  const openCompare = useWorkspaceStore(s => s.openCompare)
-  // VS Code-style compare flow: a previously right-clicked note may be
-  // pending as the "left" side. Reading the id here (not the action) so
-  // both Select for Compare and Compare with Selected stay in sync.
-  const compareSourceNoteId = useUIStore(s => s.compareSourceNoteId)
-  const setCompareSource = useUIStore(s => s.setCompareSource)
-  const clearCompareSource = useUIStore(s => s.clearCompareSource)
   // "Publish as gist" reuses the GitHub OAuth token. Hooked up here at
   // the top of the component so it sits BEFORE the early `if (!item)
   // return` below — react-hooks/rules-of-hooks won't accept a hook
@@ -331,28 +323,6 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
     onClose()
   }
 
-  const handleSelectForCompare = () => {
-    if (isNote) setCompareSource(contextMenu.id)
-    onClose()
-  }
-
-  const handleCompareWithSelected = () => {
-    if (isNote && compareSourceNoteId && compareSourceNoteId !== contextMenu.id) {
-      openCompare(compareSourceNoteId, contextMenu.id)
-      // Auto-clear once a compare opens — matches VS Code's behaviour
-      // and keeps the tree highlight from lingering after the diff
-      // surface is already on screen.
-      clearCompareSource()
-    }
-    onClose()
-  }
-
-  const canCompareWithSelected =
-    isNote &&
-    !!compareSourceNoteId &&
-    compareSourceNoteId !== contextMenu.id &&
-    !isTrashedNote
-
   const handleNewNoteInFolder = () => {
     if (!isNote) {
       const note = addNote({ folderId: contextMenu.id })
@@ -416,11 +386,6 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   return (
     <div
       ref={menuRef}
-      // Stop click propagation: the sidebar root has an onClick that
-      // closes the menu on ANY click inside, which kills the
-      // submenu-open state (Move to folder, AI) before it can render.
-      // Items that should close the menu call onClose() directly.
-      onClick={e => e.stopPropagation()}
       className="fixed bg-obsidianGray border border-obsidianBorder rounded-lg shadow-obsidian py-1 min-w-[180px] z-50"
       style={{
         top: contextMenu.y,
@@ -479,20 +444,6 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
             label="Duplicate"
             onClick={handleDuplicate}
           />
-          {!isTrashedNote && (
-            <MenuButton
-              icon={ArrowsRightLeftIcon}
-              label="Select for Compare"
-              onClick={handleSelectForCompare}
-            />
-          )}
-          {canCompareWithSelected && (
-            <MenuButton
-              icon={ArrowsRightLeftIcon}
-              label="Compare with Selected"
-              onClick={handleCompareWithSelected}
-            />
-          )}
           {canViewHistory && (
             <MenuButton
               icon={ClockIcon}

@@ -3,23 +3,24 @@
 // Settings → Plugins.
 //
 // Lists every installed plugin (toggle / uninstall), and accepts a
-// new plugin via URL paste or by scanning the vault for in-vault
-// manifest.json notes. Both paths hand the assembled
-// InstalledPluginRecord to the existing plugin-install-confirm modal
-// so the user sees the same preview + permissions screen.
+// new plugin via URL paste. The paste flow:
+//   1. User types/pastes a manifest.json URL
+//   2. We click "Add" — calls installPluginFromUrl which fetches,
+//      validates, stores, and boots the plugin
+//   3. Errors surface as inline text + the existing toast system
+//
+// This is the v1 install surface. Vault-folder scan
+// (.noteser/plugins/) lands in a follow-up.
 
 import { useState } from 'react'
 import { ArrowPathIcon, TrashIcon } from '@heroicons/react/24/outline'
 import { usePluginInstallStore } from '@/stores/pluginInstallStore'
 import { usePluginStore } from '@/stores/pluginStore'
-import { useNoteStore } from '@/stores/noteStore'
-import { useFolderStore } from '@/stores/folderStore'
 import { useUIStore } from '@/stores'
 import {
-  fetchPluginForInstallFromVault,
+  fetchPluginForInstall,
   uninstallPlugin,
 } from '@/plugins/pluginHostSingleton'
-import { scanVaultForManifests, type VaultManifestCandidate } from '@/plugins/vaultScan'
 
 export const PluginsSettingsPanel = () => {
   const records = usePluginInstallStore((s) => s.records)
@@ -28,54 +29,24 @@ export const PluginsSettingsPanel = () => {
   const openModal = useUIStore((s) => s.openModal)
 
   const [url, setUrl] = useState('')
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  const [scanState, setScanState] = useState<
-    | { kind: 'idle' }
-    | { kind: 'scanning' }
-    | { kind: 'done'; candidates: VaultManifestCandidate[]; skipped: number }
-    | { kind: 'error'; message: string }
-  >({ kind: 'idle' })
-  const [installingNoteId, setInstallingNoteId] = useState<string | null>(null)
 
   const handleAdd = async () => {
     setError(null)
-    const trimmed = url.trim()
-    if (!trimmed) {
+    if (!url.trim()) {
       setError('Paste a manifest.json URL.')
       return
     }
-    openModal({ type: 'plugin-install-confirm', data: { manifestUrl: trimmed } })
-    setUrl('')
-  }
-
-  const handleScan = () => {
-    setScanState({ kind: 'scanning' })
+    setBusy(true)
     try {
-      const notes = useNoteStore.getState().notes
-      const folders = useFolderStore.getState().folders
-      const result = scanVaultForManifests(notes, folders)
-      setScanState({ kind: 'done', candidates: result.candidates, skipped: result.skipped })
-    } catch (err) {
-      setScanState({
-        kind: 'error',
-        message: err instanceof Error ? err.message : String(err),
-      })
-    }
-  }
-
-  const handleInstallFromVault = async (candidate: VaultManifestCandidate) => {
-    setInstallingNoteId(candidate.noteId)
-    try {
-      const record = await fetchPluginForInstallFromVault(candidate)
+      const record = await fetchPluginForInstall(url.trim())
       openModal({ type: 'plugin-install-confirm', data: { record } })
+      setUrl('')
     } catch (err) {
-      setScanState({
-        kind: 'error',
-        message: err instanceof Error ? err.message : String(err),
-      })
+      setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setInstallingNoteId(null)
+      setBusy(false)
     }
   }
 
@@ -112,84 +83,21 @@ export const PluginsSettingsPanel = () => {
             type="url"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
+            disabled={busy}
             placeholder="https://…/manifest.json"
-            className="flex-1 appearance-none px-3 py-2 rounded-md border border-obsidianBorder bg-obsidianBlack/40 text-sm text-obsidianText placeholder:text-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple"
+            className="flex-1 appearance-none px-3 py-2 rounded-md border border-obsidianBorder bg-obsidianBlack/40 text-sm text-obsidianText placeholder:text-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple disabled:opacity-60"
           />
           <button
             type="button"
             onClick={handleAdd}
-            className="px-4 py-2 rounded-md bg-obsidianAccentPurple/80 hover:bg-obsidianAccentPurple text-white text-sm font-medium"
+            disabled={busy}
+            className="px-4 py-2 rounded-md bg-obsidianAccentPurple/80 hover:bg-obsidianAccentPurple text-white text-sm font-medium disabled:opacity-60"
             data-testid="settings-plugins-add"
           >
-            Add
+            {busy ? 'Adding…' : 'Add'}
           </button>
         </div>
         {error && <p className="text-xs text-red-300 mt-2">{error}</p>}
-      </section>
-
-      <section>
-        <div className="text-sm text-obsidianText mb-1">Scan vault for plugins</div>
-        <p className="text-xs text-obsidianSecondaryText mb-2">
-          Look through your vault for notes titled <code className="text-[11px] bg-obsidianHighlight/40 px-1 rounded">manifest.json</code> that declare a plugin. Each match shows up below with an Install button.
-        </p>
-        <button
-          type="button"
-          onClick={handleScan}
-          disabled={scanState.kind === 'scanning'}
-          className="px-3 py-1.5 rounded-md border border-obsidianBorder bg-obsidianBlack/40 hover:bg-obsidianHighlight/40 text-sm text-obsidianText disabled:opacity-60"
-          data-testid="settings-plugins-scan"
-        >
-          {scanState.kind === 'scanning' ? 'Scanning…' : 'Scan vault for plugins'}
-        </button>
-
-        {scanState.kind === 'error' && (
-          <p className="text-xs text-red-300 mt-2" data-testid="settings-plugins-scan-error">
-            Could not read vault: {scanState.message}
-          </p>
-        )}
-
-        {scanState.kind === 'done' && scanState.candidates.length === 0 && (
-          <p className="text-xs text-obsidianSecondaryText mt-2" data-testid="settings-plugins-scan-empty">
-            No plugin manifests found in this vault.
-            {scanState.skipped > 0 && ` Skipped ${scanState.skipped} note(s) titled manifest.json that did not match the plugin schema.`}
-          </p>
-        )}
-
-        {scanState.kind === 'done' && scanState.candidates.length > 0 && (
-          <ul
-            className="mt-2 divide-y divide-obsidianBorder rounded-lg border border-obsidianBorder"
-            data-testid="settings-plugins-scan-results"
-          >
-            {scanState.candidates.map((c) => (
-              <li key={c.noteId} className="p-3 flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-sm font-medium text-obsidianText">{c.manifest.name}</span>
-                    <span className="text-[10px] uppercase tracking-wide text-obsidianSecondaryText">
-                      v{c.manifest.version}
-                    </span>
-                  </div>
-                  <div className="text-xs text-obsidianSecondaryText mt-0.5">
-                    <code className="text-[11px] bg-obsidianHighlight/40 px-1 rounded">{c.manifest.id}</code>
-                    {c.manifest.author && <span> · by {c.manifest.author}</span>}
-                  </div>
-                  <div className="text-[11px] text-obsidianSecondaryText/80 mt-1 truncate">
-                    {c.pathInVault}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleInstallFromVault(c)}
-                  disabled={installingNoteId !== null}
-                  className="px-3 py-1.5 rounded-md bg-obsidianAccentPurple/80 hover:bg-obsidianAccentPurple text-white text-xs font-medium disabled:opacity-60"
-                  data-testid={`settings-plugins-scan-install-${c.manifest.id}`}
-                >
-                  {installingNoteId === c.noteId ? 'Preparing…' : 'Install'}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
       </section>
 
       <section>

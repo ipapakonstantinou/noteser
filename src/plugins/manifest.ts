@@ -12,13 +12,6 @@ export interface PluginManifest {
   name: string
   version: string
   author?: string
-  /** Short one-to-two sentence summary of what the plugin does.
-   *  Shown verbatim in the install-preview modal. Capped at 280
-   *  chars so a verbose paragraph cannot blow up the layout. */
-  description?: string
-  /** Optional homepage / repo URL. Must be https (or http://localhost
-   *  for dev). Rendered as a link in the install-preview modal. */
-  homepage?: string
   surfaces: PluginSurfaces
   /** Capabilities the plugin asks for at install time. v1.0 plugins
    *  omit this; v1.1+ plugins may request `file-save` / `file-open`
@@ -39,17 +32,6 @@ export type PluginPermission = (typeof PERMISSIONS)[number]
 export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   'file-save': 'Save a file to your computer (opens the native save dialog when the plugin needs to write a file).',
   'file-open': 'Read a file you pick (opens the native file picker; the plugin sees the bytes of the file you choose, nothing else).',
-}
-
-/** Surface kinds the manifest can declare. Used by the install-preview
- *  modal to render a one-line explanation per kind alongside the count.
- *  Keep the prose short — these appear as bullets next to a count. */
-export type PluginSurfaceKind = 'commands' | 'sidebarPanels' | 'codeBlockRenderers'
-
-export const SURFACE_DESCRIPTIONS: Record<PluginSurfaceKind, string> = {
-  commands: 'Adds entries to the command palette you can run with the keyboard.',
-  sidebarPanels: 'Adds a panel to the sidebar showing plugin-rendered content.',
-  codeBlockRenderers: 'Renders fenced code blocks of a given language inside notes.',
 }
 
 export interface PluginSurfaces {
@@ -130,18 +112,6 @@ export function validateManifest(input: unknown): ManifestValidationResult {
     errors.push('Manifest "author" must be a string when present.')
   }
 
-  if (m.description !== undefined) {
-    if (typeof m.description !== 'string' || m.description.length === 0 || m.description.length > 280) {
-      errors.push('Manifest "description" must be a non-empty string up to 280 chars when present.')
-    }
-  }
-
-  if (m.homepage !== undefined) {
-    if (typeof m.homepage !== 'string' || !isSafeUrl(m.homepage)) {
-      errors.push('Manifest "homepage" must be an https URL (or http://localhost for dev) when present.')
-    }
-  }
-
   if (!isPlainObject(m.surfaces)) {
     errors.push('Manifest "surfaces" must be an object.')
   }
@@ -175,8 +145,6 @@ export function validateManifest(input: unknown): ManifestValidationResult {
     name: m.name as string,
     version: m.version as string,
     author: m.author as string | undefined,
-    ...(typeof m.description === 'string' ? { description: m.description } : {}),
-    ...(typeof m.homepage === 'string' ? { homepage: m.homepage } : {}),
     surfaces: {
       ...(commands && commands.length > 0 ? { commands } : {}),
       ...(sidebarPanels && sidebarPanels.length > 0 ? { sidebarPanels } : {}),
@@ -304,15 +272,4 @@ function validatePermissions(
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
-}
-
-function isSafeUrl(s: string): boolean {
-  try {
-    const u = new URL(s)
-    if (u.protocol === 'https:') return true
-    if (u.protocol === 'http:' && (u.hostname === 'localhost' || u.hostname === '127.0.0.1')) return true
-    return false
-  } catch {
-    return false
-  }
 }
