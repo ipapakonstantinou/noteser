@@ -236,6 +236,104 @@ describe('PluginHost', () => {
   })
 })
 
+// v1.2 PR B — fullscreen surface routing through PluginHost.
+describe('PluginHost — fullscreen wire (PR B)', () => {
+  const manifestWithFs: PluginManifest = {
+    id: 'echo',
+    name: 'Echo',
+    version: '1.0.0',
+    surfaces: {
+      commands: [{ id: 'say', title: 'Say hello' }],
+      fullscreenViews: [{ id: 'main', title: 'Main view' }],
+    },
+  }
+
+  test('worker:openFullscreen for a declared view emits fullscreenOpenRequested', async () => {
+    const fake = makeFakeWorker({ manifest: manifestWithFs })
+    const host = new PluginHost({ createWorker: () => fake.worker })
+    const events: PluginHostEvent[] = []
+    host.on((e) => events.push(e))
+
+    await host.load({ pluginId: 'echo', pluginSource: '' })
+
+    fake.inject({ type: 'worker:openFullscreen', seq: 42, viewId: 'main' })
+    await flushMicrotasks()
+
+    const requested = events.find((e) => e.type === 'fullscreenOpenRequested')
+    expect(requested).toBeDefined()
+    if (requested && requested.type === 'fullscreenOpenRequested') {
+      expect(requested.viewId).toBe('main')
+      expect(requested.requestSeq).toBe(42)
+    }
+  })
+
+  test('worker:openFullscreen for an UNDECLARED view replies with an error and no request fires', async () => {
+    const fake = makeFakeWorker({ manifest: manifestWithFs })
+    const host = new PluginHost({ createWorker: () => fake.worker })
+    const events: PluginHostEvent[] = []
+    host.on((e) => events.push(e))
+
+    await host.load({ pluginId: 'echo', pluginSource: '' })
+
+    fake.inject({ type: 'worker:openFullscreen', seq: 7, viewId: 'not-declared' })
+    await flushMicrotasks()
+
+    expect(events.some((e) => e.type === 'fullscreenOpenRequested')).toBe(false)
+    const sent = fake.sent.find((m) => m.type === 'host:fullscreenOpenResult')
+    expect(sent).toBeDefined()
+    if (sent && sent.type === 'host:fullscreenOpenResult') {
+      expect(sent.ok).toBe(false)
+      expect(sent.requestSeq).toBe(7)
+      expect(sent.error).toMatch(/not declared/)
+    }
+  })
+
+  test('respondFullscreenOpen + notifyFullscreenOpened post the right envelopes', async () => {
+    const fake = makeFakeWorker({ manifest: manifestWithFs })
+    const host = new PluginHost({ createWorker: () => fake.worker })
+    await host.load({ pluginId: 'echo', pluginSource: '' })
+
+    host.respondFullscreenOpen('echo', 99, { ok: true })
+    host.notifyFullscreenOpened('echo', 'main')
+
+    const okResult = fake.sent.find(
+      (m) => m.type === 'host:fullscreenOpenResult' && 'requestSeq' in m && m.requestSeq === 99,
+    )
+    expect(okResult).toBeDefined()
+    const opened = fake.sent.find((m) => m.type === 'host:fullscreenOpened')
+    expect(opened).toBeDefined()
+    if (opened && opened.type === 'host:fullscreenOpened') {
+      expect(opened.viewId).toBe('main')
+    }
+  })
+
+  test('worker:closeFullscreen + worker:setFullscreenContent fan out as PluginHostEvents', async () => {
+    const fake = makeFakeWorker({ manifest: manifestWithFs })
+    const host = new PluginHost({ createWorker: () => fake.worker })
+    const events: PluginHostEvent[] = []
+    host.on((e) => events.push(e))
+
+    await host.load({ pluginId: 'echo', pluginSource: '' })
+
+    fake.inject({ type: 'worker:closeFullscreen', seq: 10, viewId: 'main' })
+    fake.inject({
+      type: 'worker:setFullscreenContent',
+      seq: 11,
+      viewId: 'main',
+      node: { tag: 'text', value: 'hi' },
+    })
+    await flushMicrotasks()
+
+    expect(events.some((e) => e.type === 'fullscreenCloseRequested')).toBe(true)
+    const content = events.find((e) => e.type === 'fullscreenContent')
+    expect(content).toBeDefined()
+    if (content && content.type === 'fullscreenContent') {
+      expect(content.viewId).toBe('main')
+      expect((content.node as { value: string }).value).toBe('hi')
+    }
+  })
+})
+
 /** Two microtask ticks — enough for fake-worker queueMicrotask replies
  *  to land and for the host to dispatch to listeners. */
 async function flushMicrotasks(): Promise<void> {

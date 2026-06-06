@@ -81,6 +81,11 @@ interface PendingDirectoryOpen {
   resolve: (v: DirectoryEntries | null) => void
   reject: (err: Error) => void
 }
+interface PendingFullscreenOpen {
+  kind: 'fullscreen-open'
+  resolve: () => void
+  reject: (err: Error) => void
+}
 const pending = new Map<
   number,
   | PendingFileSave
@@ -89,6 +94,7 @@ const pending = new Map<
   | PendingVaultReadOne
   | PendingVaultReadStream
   | PendingDirectoryOpen
+  | PendingFullscreenOpen
 >()
 
 let nextRequestSeq = 0
@@ -314,6 +320,24 @@ self.onmessage = async (event: MessageEvent<HostToWorker>) => {
         return
       }
 
+      case 'host:fullscreenOpenResult': {
+        const p = pending.get(msg.requestSeq)
+        if (p && p.kind === 'fullscreen-open') {
+          pending.delete(msg.requestSeq)
+          if (msg.ok) p.resolve()
+          else p.reject(new Error(msg.error ?? 'Could not open fullscreen view.'))
+        }
+        return
+      }
+
+      case 'host:fullscreenOpened':
+        await handleFullscreenOpened(msg.seq, msg.viewId)
+        return
+
+      case 'host:fullscreenClosed':
+        await handleFullscreenClosed(msg.seq, msg.viewId)
+        return
+
       default:
         // Exhaustiveness — TypeScript will catch missed cases at build,
         // this branch is the runtime tripwire if the protocol changes
@@ -479,6 +503,20 @@ async function handleRenderCodeBlock(
   }
 }
 
+async function handleFullscreenOpened(seq: number, viewId: string): Promise<void> {
+  if (state === null) return
+  if (typeof state.def.onFullscreenMount === 'function') {
+    await state.def.onFullscreenMount(viewId, buildCtx(seq))
+  }
+}
+
+async function handleFullscreenClosed(seq: number, viewId: string): Promise<void> {
+  if (state === null) return
+  if (typeof state.def.onFullscreenUnmount === 'function') {
+    await state.def.onFullscreenUnmount(viewId, buildCtx(seq))
+  }
+}
+
 function buildCtx(parentSeq: number): PluginCtx {
   if (state === null) throw new Error('buildCtx called before boot')
   const s = state
@@ -591,6 +629,25 @@ function buildCtx(parentSeq: number): PluginCtx {
         })
         return promise
       },
+    },
+    openFullscreen(viewId: string) {
+      const requestSeq = allocRequestSeq()
+      const promise = new Promise<void>((resolve, reject) => {
+        pending.set(requestSeq, { kind: 'fullscreen-open', resolve, reject })
+      })
+      emit({ type: 'worker:openFullscreen', seq: requestSeq, viewId })
+      return promise
+    },
+    closeFullscreen(viewId: string) {
+      emit({ type: 'worker:closeFullscreen', seq: allocRequestSeq(), viewId })
+    },
+    setFullscreenContent(viewId: string, node: unknown) {
+      emit({
+        type: 'worker:setFullscreenContent',
+        seq: parentSeq,
+        viewId,
+        node,
+      })
     },
   }
 }

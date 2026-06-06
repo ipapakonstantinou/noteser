@@ -33,6 +33,7 @@ const RevertToCommitModal = dynamic(() => import('@/components/modals/RevertToCo
 const LocalFolderImportModal = dynamic(() => import('@/components/modals/LocalFolderImportModal').then(m => ({ default: m.LocalFolderImportModal })), { ssr: false })
 const DiscardLocalChangesModal = dynamic(() => import('@/components/modals/DiscardLocalChangesModal').then(m => ({ default: m.DiscardLocalChangesModal })), { ssr: false })
 const PluginInstallConfirmModal = dynamic(() => import('@/components/modals/PluginInstallConfirmModal').then(m => ({ default: m.PluginInstallConfirmModal })), { ssr: false })
+const PluginFullscreenView = dynamic(() => import('@/components/plugins/PluginFullscreenView').then(m => ({ default: m.PluginFullscreenView })), { ssr: false })
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useKeyboardShortcuts, useHydration, useAutoSync, useAutoEmbedNotes, useApplyTheme, useApplyFonts, useViewport } from '@/hooks'
 import { useUIStore, useWorkspaceStore, useGitHubStore, DEFAULT_SIDEBAR_WIDTH, DEFAULT_RIGHT_SIDEBAR_WIDTH } from '@/stores'
@@ -493,6 +494,7 @@ export default function Home() {
       <LocalFolderImportModal />
       <DiscardLocalChangesModal />
       <PluginInstallConfirmModal />
+      <PluginFullscreenView />
       <ResetConfirmModal
         isOpen={showResetModal}
         hasUnsynced={resetHasUnsynced}

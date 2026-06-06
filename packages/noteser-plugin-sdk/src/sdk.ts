@@ -260,6 +260,32 @@ export interface PluginCtx {
      */
     openDirectory(args?: { extensions?: string[] }): Promise<DirectoryEntries | null>
   }
+
+  /**
+   * v1.2 PR B — request that the host mount one of this plugin's
+   * declared fullscreen views. The view id must appear in
+   * `surfaces.fullscreenViews` of the manifest. Only one fullscreen
+   * view is open at a time across the whole app; if another one is
+   * already open the Promise rejects with a clear message.
+   *
+   * Once the modal mounts, the plugin's `onFullscreenMount` handler
+   * fires and the plugin should populate content with
+   * `setFullscreenContent`. The modal stays open across active-note
+   * changes — the plugin is in control and decides when to close.
+   */
+  openFullscreen(viewId: string): Promise<void>
+
+  /**
+   * v1.2 PR B — close the currently-mounted fullscreen view. No-op
+   * when no view is open or when the id does not match.
+   */
+  closeFullscreen(viewId: string): void
+
+  /**
+   * v1.2 PR B — replace the content tree of the named fullscreen
+   * view. Same VNode contract as `setPanelContent`.
+   */
+  setFullscreenContent(viewId: string, node: VNode): void
 }
 
 /** Cleanup thunk returned by every `vault.events` subscription. The
@@ -299,6 +325,13 @@ export interface PluginHandlers {
     args: { language: string; source: string; blockId: string },
     ctx: PluginCtx,
   ) => void | Promise<void>
+
+  /** v1.2 PR B — fires after the host mounts a fullscreen view in
+   *  response to `ctx.openFullscreen(viewId)`. */
+  onFullscreenMount?: (viewId: string, ctx: PluginCtx) => void | Promise<void>
+
+  /** v1.2 PR B — fires after the host unmounts a fullscreen view. */
+  onFullscreenUnmount?: (viewId: string, ctx: PluginCtx) => void | Promise<void>
 }
 
 export interface PluginDefinition extends PluginManifest, PluginHandlers {}

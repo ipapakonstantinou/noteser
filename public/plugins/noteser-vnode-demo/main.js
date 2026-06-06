@@ -1,19 +1,22 @@
-// noteser-vnode-demo v0.1.0
+// noteser-vnode-demo v0.2.0
 //
-// Reference plugin for Plugin API v1.2 PR A. Renders one of every new
-// VNode shape (button, input, list, link, radio, svg, box) inside a
-// sidebar panel so a human can confirm the end-to-end wire works.
+// Reference plugin for Plugin API v1.2 PR A + PR B.
 //
-// The event-handler wire (ctx.onVNodeEvent) lands in a later PR. This
-// plugin logs to the worker console so the developer can see that the
-// renderer produced the right DOM and the event records made it back
-// across postMessage. Once ctx.onVNodeEvent ships, this plugin will
-// flip the logged values into live state without changing its VNode
-// shapes.
+// PR A added the new VNode shapes (button, input, list, link, radio,
+// svg, box). The sidebar panel below renders one of each.
+//
+// PR B added the fullscreen view surface. The "VNode demo: show
+// fullscreen" command opens a modal with a box that contains a
+// callout, a button, and a tiny SVG so a human can confirm:
+//   - opening returns a Promise that resolves once the modal is up
+//   - onFullscreenMount fires + setFullscreenContent populates the body
+//   - Esc + X both close + onFullscreenUnmount fires
+//   - opening a second time while one is open rejects with a clear
+//     message
 //
 // Self-contained ES module. Worker dynamic-imports via Blob URL.
 
-function render(state) {
+function panelView(state) {
   return {
     tag: 'box',
     gap: 3,
@@ -38,7 +41,7 @@ function render(state) {
         tag: 'input',
         type: 'text',
         value: state.text,
-        placeholder: 'Type something…',
+        placeholder: 'Type something...',
         onChange: { kind: 'emit', event: 'demo.text' },
       },
 
@@ -90,25 +93,93 @@ function render(state) {
   }
 }
 
+function fullscreenView() {
+  return {
+    tag: 'box',
+    gap: 4,
+    children: [
+      {
+        tag: 'callout',
+        kind: 'tip',
+        title: 'PR B fullscreen demo',
+        body: 'This box is rendered inside the host fullscreen modal. Press Esc or click the X to close. The plugin gets onFullscreenUnmount when you do.',
+      },
+      {
+        tag: 'button',
+        label: 'Click me inside the modal',
+        variant: 'primary',
+        onClick: {
+          kind: 'emit',
+          event: 'demo.fullscreen.click',
+          payload: { from: 'fullscreen-button' },
+        },
+      },
+      {
+        tag: 'svg',
+        width: 320,
+        height: 120,
+        viewBox: [0, 0, 320, 120],
+        children: [
+          { tag: 'rect', x: 0, y: 0, width: 320, height: 120, fill: '#0f172a' },
+          { tag: 'circle', cx: 160, cy: 60, r: 36, fill: '#38bdf8' },
+          {
+            tag: 'text',
+            x: 110,
+            y: 110,
+            value: 'fullscreen surface',
+            fill: '#cbd5e1',
+            fontSize: 12,
+          },
+        ],
+      },
+    ],
+  }
+}
+
 export default {
   id: 'noteser-vnode-demo',
   name: 'VNode demo',
-  version: '0.1.0',
+  version: '0.2.0',
   author: 'Noteser',
   description:
-    'Reference plugin for v1.2 PR A. Exercises every new VNode shape inside a sidebar panel.',
+    'Reference plugin for v1.2 PRs A and B. Exercises every new VNode shape inside a sidebar panel, and opens a fullscreen view from the command palette.',
   surfaces: {
     sidebarPanels: [{ id: 'demo', title: 'VNode demo' }],
+    commands: [
+      { id: 'show-fullscreen', title: 'VNode demo: show fullscreen' },
+    ],
+    fullscreenViews: [
+      { id: 'demo-view', title: 'VNode fullscreen demo' },
+    ],
   },
 
   onPanelMount(panelId, ctx) {
     if (panelId !== 'demo') return
     const state = { text: '', mode: 'a' }
-    ctx.setPanelContent('demo', render(state))
-    // ctx.onVNodeEvent ships in a later v1.2 PR — for now the worker
-    // simply emits the VNodes and trusts the renderer's event wire.
-    // Once the event registration API lands, this handler will read
-    // the click / change events and re-render the panel with new
-    // state. The shapes themselves do not change.
+    ctx.setPanelContent('demo', panelView(state))
+  },
+
+  async onCommand(commandId, ctx) {
+    if (commandId !== 'show-fullscreen') return
+    try {
+      await ctx.openFullscreen('demo-view')
+    } catch (err) {
+      // The host rejects when another fullscreen view is already
+      // open. Surface that to the user via the toast helper instead
+      // of swallowing it silently.
+      ctx.notify(
+        err instanceof Error ? err.message : 'Could not open fullscreen view.',
+      )
+    }
+  },
+
+  onFullscreenMount(viewId, ctx) {
+    if (viewId !== 'demo-view') return
+    ctx.setFullscreenContent('demo-view', fullscreenView())
+  },
+
+  onFullscreenUnmount(viewId, ctx) {
+    if (viewId !== 'demo-view') return
+    ctx.notify('Fullscreen demo closed.')
   },
 }

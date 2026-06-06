@@ -435,3 +435,140 @@ src/plugins/sdk.ts
 src/plugins/workerEntry.ts
 src/stores/pluginInstallStore.ts
 ```
+
+## PR B — fullscreen view surface
+
+Lands the `surfaces.fullscreenViews` manifest field, the host modal at
+`src/components/plugins/PluginFullscreenView.tsx`, the wire envelopes
+for open / close / setContent, and the `ctx.openFullscreen` /
+`ctx.closeFullscreen` / `ctx.setFullscreenContent` SDK methods. Follows
+plan section 3.1 with the deviations and choices below.
+
+### Single-view invariant — reject, do not replace
+
+The plan permits either rejecting a second `openFullscreen` call or
+replacing the active view. PR B picks REJECT, with the exact error
+string `'Another fullscreen view is already open.'` per plan section
+3.1. Reasoning: replacing would silently destroy the original view's
+worker state (any in-flight async setup the first plugin had queued)
+and surprise the user mid-flow. A clear error lets the calling plugin
+fall back to a sidebar panel or toast, and lets a user-facing UI later
+prompt "close the other view first" without ambiguity.
+
+The two coordination layers are deliberately split: `PluginHost`
+checks the view id against the calling plugin's manifest (fast,
+local), and `pluginHostSingleton.handleFullscreenOpenRequest` checks
+the cross-plugin single-view invariant. The split means a manifest
+typo and a "second plugin tried to open one" produce different
+error messages, so the calling plugin can disambiguate.
+
+### Note focus loss — modal persists across note changes
+
+Per plan section 3.1's open question: opening a fullscreen view does
+NOT suspend the editor and does NOT auto-close when the active note
+changes. The plugin stays in control. The store-backed view persists
+until:
+
+1. The user clicks the X-close button.
+2. The user presses Esc (capture phase so a plugin handler cannot
+   trap it).
+3. The plugin calls `ctx.closeFullscreen(viewId)` explicitly.
+4. The browser fires `pagehide` (route change, tab close). The host
+   listens and dismisses so `onFullscreenUnmount` runs before the
+   plugin's worker is terminated.
+5. The plugin is uninstalled. `pluginStore.remove` drops
+   `activeFullscreen` when the removed plugin owns it.
+
+Reasoning: the gated v1.2 features (graph view #71, AI chat #70,
+importer review #73) all keep state that survives note switches.
+Auto-closing on `onActiveNoteChange` would force every plugin to
+re-implement "rehydrate from scratch" — at which point we have
+re-imposed sidebar-panel semantics on a surface that exists precisely
+to escape them. The plugin still receives `onActiveNoteChange` while
+the modal is open (the plan calls this out explicitly) and can call
+`closeFullscreen` itself if a particular view does want to dismiss.
+
+### Lifecycle envelopes — split open response from mount notification
+
+The plan shows `host:mountFullscreen` as the host → worker message
+fired after the modal mounts. PR B splits this into TWO envelopes:
+
+- `host:fullscreenOpenResult` — paired with `worker:openFullscreen`'s
+  `requestSeq`, resolves the plugin's `openFullscreen()` Promise.
+- `host:fullscreenOpened` — fire-and-forget, runs the plugin's
+  `onFullscreenMount` handler.
+
+The split lets the plugin's `await ctx.openFullscreen(...)` resolve
+BEFORE the mount handler starts emitting content updates; without it,
+a plugin that writes `await ctx.openFullscreen(); ctx.setFullscreenContent(...)`
+risks racing the mount-handler's own `setFullscreenContent` and double-
+rendering. Symmetrically, `host:fullscreenClosed` runs the plugin's
+`onFullscreenUnmount`. The wire-protocol names in the plan stay valid
+as a higher-level concept; the actual envelopes are these two.
+
+### Z-index, scroll lock, focus trap
+
+The modal renders at `z-index: 9999` via an inline style (Tailwind's
+preset z-50 sits at 50, the existing `Modal.tsx` uses z-50 for the
+install confirm dialog; the plan says "above sidebars and toasts" so
+9999 buys headroom above any future overlay). Body scroll lock and
+focus trap reuse the same inline-trap pattern as `Modal.tsx` (the
+trap from PR #104). The trap is duplicated rather than extracted to
+a shared hook because:
+
+- The two trap callsites have different lifecycle triggers (Modal is
+  store-driven via `isOpen`; PluginFullscreenView is store-driven via
+  `activeFullscreen !== null`).
+- Extracting now would force a hooks API decision that should land
+  with a third trap site, not at N=2.
+
+### Store ownership of `activeFullscreen`
+
+The active view lives in `pluginStore.activeFullscreen` alongside the
+loaded-plugin map rather than in `uiStore`. Reasoning: lifecycle is
+plugin-owned, not user-owned. When `pluginStore.remove` runs, the
+slot drops automatically, so a buggy plugin teardown cannot leave a
+zombie modal pointing at a torn-down worker.
+
+### Reference plugin
+
+Extended `public/plugins/noteser-vnode-demo` (v0.2.0) instead of
+adding a separate plugin: one install slot, one set of permissions to
+review, one place to maintain the v1.2 demo surface. The plugin now
+declares `surfaces.commands` and `surfaces.fullscreenViews`; the
+`onCommand` handler awaits `openFullscreen('demo-view')`, the
+`onFullscreenMount` handler populates a box with a callout, button,
+and SVG, and `onFullscreenUnmount` fires a notify toast so a human
+can confirm the close lifecycle round-trips end-to-end.
+
+### Manifest-preview modal
+
+`SURFACE_DESCRIPTIONS.fullscreenViews` reads:
+"Opens a full-window view when the plugin asks. You can close it any
+time with Esc or the X button." The capability row in the install
+modal renders as `Provides full-screen view(s)` with the prose below,
+matching the existing prose pattern from PR #104's a11y pass.
+
+### Test coverage
+
+`src/plugins/__tests__/PluginFullscreenView.test.tsx` covers mount/
+unmount, X-close, Esc-close, focus trap (Tab and Shift+Tab wrap),
+body scroll lock, content updates, the store's single-view
+invariant, and the singleton's `dismissActiveFullscreen` helper.
+`src/__tests__/plugins/manifest.test.ts` gains a `surfaces.fullscreenViews`
+block covering the happy path plus rejection of non-arrays, bad ids,
+empty / oversize titles, and duplicate ids. `src/__tests__/plugins/PluginHost.test.ts`
+gains a "fullscreen wire (PR B)" describe block covering the
+manifest-validated open path, the rejected open for an undeclared
+view, and the `worker:closeFullscreen` / `worker:setFullscreenContent`
+fan-out to PluginHostEvent listeners.
+
+### Out-of-scope reminders for downstream PRs
+
+- The `ctx.onVNodeEvent` registration API still has not landed; the
+  fullscreen modal's `handleEvent` is a no-op pending that PR, same
+  as the panel surface. When it does land, this file's
+  `PluginFullscreenView.tsx` needs the dispatcher hooked through
+  `host:vnodeEvent` with `source: { kind: 'fullscreen', viewId }`.
+- PR D MUST NOT touch the fullscreen surface; the remaining
+  capability PR is surface-agnostic by design.

@@ -513,6 +513,24 @@ function wireListener(host: PluginHost): void {
       case 'directoryOpenRequested':
         void handleDirectoryOpenRequest(host, event)
         return
+
+      case 'fullscreenOpenRequested':
+        handleFullscreenOpenRequest(host, event)
+        return
+
+      case 'fullscreenCloseRequested':
+        handleFullscreenCloseRequest(host, event)
+        return
+
+      case 'fullscreenContent':
+        // Plugin pushed new content for its open fullscreen view. The
+        // store ignores updates for views that are not active, so a
+        // plugin that races a setFullscreenContent with a close does
+        // not zombie state in.
+        usePluginStore
+          .getState()
+          .updateActiveFullscreenContent(event.pluginId, event.viewId, event.node)
+        return
     }
   })
 }
@@ -621,6 +639,104 @@ async function handleVaultReadRequest(
       host.respondVaultRead(pluginId, requestSeq, { ok: false, error: message })
     }
   }
+}
+
+/**
+ * v1.2 PR B — host-side fullscreen lifecycle.
+ *
+ * Single-view invariant: only one fullscreen view is mounted at a
+ * time, across all installed plugins. When a second plugin (or the
+ * same plugin twice) calls `openFullscreen` we REJECT rather than
+ * replace — replacing would silently kill the original view's state
+ * and surprise the user mid-flow. The error message names the
+ * conflict so the plugin can fall back gracefully.
+ *
+ * Note focus loss: opening a fullscreen view does NOT suspend the
+ * editor, and does NOT auto-close when the active note changes. The
+ * plugin is in control. The store-backed view persists until the
+ * user dismisses (X, Esc) or the plugin calls `closeFullscreen`.
+ * That matches the plan section 3.1 decision and the issue #71 graph
+ * + issue #70 chat use cases, both of which need to stay open across
+ * note switches.
+ */
+function handleFullscreenOpenRequest(
+  host: PluginHost,
+  event: Extract<import('./PluginHost').PluginHostEvent, { type: 'fullscreenOpenRequested' }>,
+): void {
+  const { pluginId, requestSeq, viewId } = event
+  const store = usePluginStore.getState()
+
+  // Single-view invariant. PluginHost already validated the view id
+  // against the manifest; this is the cross-plugin coordination
+  // check.
+  if (store.activeFullscreen !== null) {
+    host.respondFullscreenOpen(pluginId, requestSeq, {
+      ok: false,
+      error: 'Another fullscreen view is already open.',
+    })
+    return
+  }
+
+  const plugin = store.loaded[pluginId]
+  if (!plugin) {
+    host.respondFullscreenOpen(pluginId, requestSeq, {
+      ok: false,
+      error: 'Plugin is not loaded.',
+    })
+    return
+  }
+
+  const view = plugin.manifest.surfaces.fullscreenViews?.find((v) => v.id === viewId)
+  if (!view) {
+    // Defence in depth — PluginHost checks the same condition, but
+    // the manifest snapshot here might be newer.
+    host.respondFullscreenOpen(pluginId, requestSeq, {
+      ok: false,
+      error: `Fullscreen view "${viewId}" is not declared in the manifest.`,
+    })
+    return
+  }
+
+  store.setActiveFullscreen({
+    pluginId,
+    pluginName: plugin.manifest.name,
+    viewId,
+    title: view.title,
+    node: null,
+  })
+
+  host.respondFullscreenOpen(pluginId, requestSeq, { ok: true })
+  // Notify the worker AFTER resolving the open promise so the
+  // plugin's openFullscreen() awaits cleanly; the mount handler then
+  // emits the initial setFullscreenContent.
+  host.notifyFullscreenOpened(pluginId, viewId)
+}
+
+function handleFullscreenCloseRequest(
+  host: PluginHost,
+  event: Extract<import('./PluginHost').PluginHostEvent, { type: 'fullscreenCloseRequested' }>,
+): void {
+  const { pluginId, viewId } = event
+  const cur = usePluginStore.getState().activeFullscreen
+  // Silently no-op when the request does not match the currently
+  // open view. Lets a plugin call closeFullscreen defensively
+  // without spamming errors.
+  if (!cur || cur.pluginId !== pluginId || cur.viewId !== viewId) return
+  usePluginStore.getState().setActiveFullscreen(null)
+  host.notifyFullscreenClosed(pluginId, viewId)
+}
+
+/**
+ * Surfaced to the host modal component — when the user hits X or
+ * Esc, the modal calls this to tear the view down and notify the
+ * plugin. Imported by `PluginFullscreenView.tsx`.
+ */
+export function dismissActiveFullscreen(): void {
+  const host = getPluginHost()
+  const cur = usePluginStore.getState().activeFullscreen
+  if (!cur) return
+  usePluginStore.getState().setActiveFullscreen(null)
+  if (host) host.notifyFullscreenClosed(cur.pluginId, cur.viewId)
 }
 
 /** Open the native save dialog, write the plugin's bytes to it.

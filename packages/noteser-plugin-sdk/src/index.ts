@@ -36,6 +36,7 @@ export type {
   PluginSidebarPanel,
   PluginCodeBlockRenderer,
   PluginPermission,
+  PluginFullscreenView,
 } from './manifest'
 
 export { PERMISSIONS } from './manifest'
