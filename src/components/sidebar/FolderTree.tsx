@@ -9,6 +9,7 @@ import {
   TrashIcon,
 } from '@heroicons/react/24/outline'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
+import { useShallow } from 'zustand/react/shallow'
 import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore, useSettingsStore } from '@/stores'
 import { useHydration, useTreeDragDrop, useViewport } from '@/hooks'
 import { SwipePinRow } from './SwipePinRow'
@@ -38,7 +39,7 @@ interface FolderTreeProps {
 
 export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   const hydrated = useHydration()
-  const { currentView } = useUIStore()
+  const currentView = useUIStore(s => s.currentView)
   const renameRequest = useUIStore(s => s.renameRequest)
   const clearRenameRequest = useUIStore(s => s.clearRenameRequest)
   const compareSourceNoteId = useUIStore(s => s.compareSourceNoteId)
@@ -66,7 +67,20 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     permanentlyDeleteNote,
     emptyTrash,
     togglePinNote,
-  } = useNoteStore()
+  } = useNoteStore(
+    useShallow(s => ({
+      notes: s.notes,
+      selectedNoteId: s.selectedNoteId,
+      updateNote: s.updateNote,
+      getActiveNotes: s.getActiveNotes,
+      getDeletedNotes: s.getDeletedNotes,
+      getRecentNotes: s.getRecentNotes,
+      restoreNote: s.restoreNote,
+      permanentlyDeleteNote: s.permanentlyDeleteNote,
+      emptyTrash: s.emptyTrash,
+      togglePinNote: s.togglePinNote,
+    }))
+  )
   const openNote = useWorkspaceStore(s => s.openNote)
   const {
     folders,
@@ -77,8 +91,20 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     updateFolder,
     getRootFolders,
     getChildFolders,
-    getDeletedFolders
-  } = useFolderStore()
+    getDeletedFolders,
+  } = useFolderStore(
+    useShallow(s => ({
+      folders: s.folders,
+      activeFolderId: s.activeFolderId,
+      expandedFolders: s.expandedFolders,
+      setActiveFolder: s.setActiveFolder,
+      toggleFolderExpanded: s.toggleFolderExpanded,
+      updateFolder: s.updateFolder,
+      getRootFolders: s.getRootFolders,
+      getChildFolders: s.getChildFolders,
+      getDeletedFolders: s.getDeletedFolders,
+    }))
+  )
 
   // Use empty arrays during SSR to avoid hydration mismatch. `folders`/
   // `notes` are the triggers; the get*() helpers pull fresh state from

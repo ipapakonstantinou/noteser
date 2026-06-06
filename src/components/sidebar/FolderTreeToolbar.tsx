@@ -11,8 +11,9 @@ import { useNoteStore, useFolderStore, useWorkspaceStore } from '@/stores'
 // Thin icon-button strip above the folder tree (Obsidian-style).
 // Matches the toolbar from the user's reference screenshot.
 export const FolderTreeToolbar = () => {
-  const { addNote } = useNoteStore()
-  const { addFolder, setAllFoldersExpanded } = useFolderStore()
+  const addNote = useNoteStore(s => s.addNote)
+  const addFolder = useFolderStore(s => s.addFolder)
+  const setAllFoldersExpanded = useFolderStore(s => s.setAllFoldersExpanded)
   const openNote = useWorkspaceStore(s => s.openNote)
 
   // Toolbar buttons always create at the root — contextual "New note here"

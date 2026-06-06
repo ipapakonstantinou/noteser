@@ -45,7 +45,8 @@ export const CalendarView = () => {
     new Date(today.getFullYear(), today.getMonth(), 1)
   )
 
-  const { notes, addNote } = useNoteStore()
+  const notes = useNoteStore(s => s.notes)
+  const addNote = useNoteStore(s => s.addNote)
   const openNote = useWorkspaceStore(s => s.openNote)
   const splitTabRight = useWorkspaceStore(s => s.splitTabRight)
   const openModal = useUIStore(s => s.openModal)
