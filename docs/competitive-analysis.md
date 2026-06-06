@@ -77,5 +77,9 @@ fight it).
 6. Frontmatter/properties UI + Bases-compatible table views.
 7. Import from Obsidian/Notion/Logseq; web clipper for capture inflow.
 
-See `.claude/orchestrator/queue.json` for these broken into actionable,
-agent-pickup-ready tasks.
+These are tracked as actionable, agent-pickup-ready GitHub issues
+(noteser #68–#79): offline/PWA (#68), rate-limit hardening (#69), AI RAG
+(#70), graph view + backlinks (#71), properties UI + Bases views (#72),
+imports (#73), web clipper (#74), positioning (#75), plus the tech-debt
+items: split SettingsModal (#76), split githubSync (#77), accessibility
+pass (#78), Zustand selector/perf audit (#79).
