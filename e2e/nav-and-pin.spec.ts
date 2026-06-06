@@ -11,16 +11,6 @@ test.beforeEach(async ({ page }) => {
     try {
       for (const name of ['noteser', 'keyval-store']) indexedDB.deleteDatabase(name)
     } catch { /* ignore */ }
-    // Suppress the first-run Welcome tab. Without this, a fresh vault auto-
-    // opens a "Welcome" tab (see page.tsx openWelcome()), which sits in the
-    // tab strip and makes `activeTabTitle` (first .truncate under the active
-    // tab) resolve to "Welcome" and steals the clicks these tests drive.
-    try {
-      window.localStorage.setItem('noteser-settings', JSON.stringify({
-        state: { onboardingShown: true },
-        version: 0,
-      }))
-    } catch { /* ignore */ }
   })
 })
 
