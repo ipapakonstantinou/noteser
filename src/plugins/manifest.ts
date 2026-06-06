@@ -28,10 +28,19 @@ export interface PluginManifest {
   permissions?: PluginPermission[]
 }
 
-/** v1.1 capability identifiers. Unknown values are rejected by the
- *  validator. The host gates each runtime capability call against the
- *  granted set stored alongside the install record. */
-export const PERMISSIONS = ['file-save', 'file-open'] as const
+/** Capability identifiers known to the host. Unknown values are rejected
+ *  by the validator. The host gates each runtime capability call against
+ *  the granted set stored alongside the install record.
+ *
+ *  v1.1 added the two `file-*` capabilities; v1.2 starts layering the
+ *  vault / fs capabilities. `vault.read.all` is the first of the v1.2
+ *  set — it lets a plugin read every note's body + frontmatter, which
+ *  backlinks, AI-RAG, and graph-derivation plugins all need. */
+export const PERMISSIONS = [
+  'file-save',       // v1.1
+  'file-open',       // v1.1
+  'vault.read.all',  // v1.2 — see docs/plugins-v1.2-plan.md §4.1
+] as const
 export type PluginPermission = (typeof PERMISSIONS)[number]
 
 /** Human-readable text shown to the user in the install confirmation
@@ -39,6 +48,8 @@ export type PluginPermission = (typeof PERMISSIONS)[number]
 export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   'file-save': 'Save a file to your computer (opens the native save dialog when the plugin needs to write a file).',
   'file-open': 'Read a file you pick (opens the native file picker; the plugin sees the bytes of the file you choose, nothing else).',
+  'vault.read.all':
+    'Read the full content of every note in your vault. Required for features like backlinks, graph views, and AI search.',
 }
 
 /** Surface kinds the manifest can declare. Used by the install-preview

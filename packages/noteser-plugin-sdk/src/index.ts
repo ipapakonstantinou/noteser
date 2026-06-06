@@ -5,6 +5,7 @@ export type {
   PluginCtx,
   PluginHandlers,
   PluginDefinition,
+  NoteWithBody,
 } from './sdk'
 
 // v1.2 — VNode shapes plus the shared event-handler record. PR A adds

@@ -127,6 +127,19 @@ export type VNode =
   | VNodeSvg
   | VNodeBox
 
+/** A note's body + frontmatter as the host renders them. Returned by
+ *  the v1.2 `ctx.vault.read.*` family. Strings only — the host never
+ *  hands the worker raw bytes or a YAML string. */
+export interface NoteWithBody {
+  id: string
+  title: string
+  folderPath: string
+  body: string
+  /** Parsed by the host. `null` when the note has no frontmatter. */
+  frontmatter: Readonly<Record<string, unknown>> | null
+  updatedAt: number
+}
+
 /** Narrow capability surface exposed to plugin handlers. The plugin
  *  never sees `localStorage`, the GitHub token, or the bodies of notes
  *  it is not currently viewing. v1 read scope is intentionally tight:
@@ -157,6 +170,38 @@ export interface PluginCtx {
    *  cannot read another plugin's settings. */
   getSetting<T = unknown>(key: string): T | undefined
   setSetting<T = unknown>(key: string, value: T): void
+
+  /**
+   * v1.2 vault namespace. Always populated; methods reject when the
+   * matching permission was not granted or has been revoked. Plugins
+   * can catch and degrade. PR C wires the `read` sub-namespace.
+   *
+   * Spec reference: docs/plugins-v1.2-plan.md §4.1.
+   */
+  vault: {
+    read: {
+      /** Snapshot every non-deleted note in the vault. Resolves with a
+       *  plain array of `NoteWithBody`. For very large vaults the host
+       *  rejects with `'Vault too large; use stream().'`; plugins MUST
+       *  fall back to `stream()` in that case.
+       *
+       *  Requires `vault.read.all` permission. */
+      getAllNotes(): Promise<ReadonlyArray<NoteWithBody>>
+
+      /** Resolve a single note by id. Returns null when the id is
+       *  unknown or the note has been soft-deleted. Requires
+       *  `vault.read.all` permission. */
+      getNote(id: string): Promise<NoteWithBody | null>
+
+      /** Paginate over the vault. Each iteration yields up to
+       *  `chunkSize` notes (default 100, max 500). The iterator
+       *  completes naturally when the vault is exhausted; it throws
+       *  when the permission is revoked mid-stream.
+       *
+       *  Requires `vault.read.all` permission. */
+      stream(opts?: { chunkSize?: number }): AsyncIterable<ReadonlyArray<NoteWithBody>>
+    }
+  }
 }
 
 export interface PluginHandlers {

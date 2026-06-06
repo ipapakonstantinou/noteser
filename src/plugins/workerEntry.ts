@@ -23,8 +23,9 @@ import type {
   HostToWorker,
   WorkerToHost,
   HostBootMessage,
+  NoteWithBodyWire,
 } from './protocol'
-import type { PluginCtx, PluginDefinition } from './sdk'
+import type { PluginCtx, PluginDefinition, NoteWithBody } from './sdk'
 
 interface PluginState {
   manifest: PluginManifest
@@ -52,7 +53,30 @@ interface PendingFileOpen {
   resolve: (v: { bytes: Uint8Array; filename: string } | null) => void
   reject: (err: Error) => void
 }
-const pending = new Map<number, PendingFileSave | PendingFileOpen>()
+interface PendingVaultReadAll {
+  kind: 'vault.all'
+  resolve: (notes: ReadonlyArray<NoteWithBody>) => void
+  reject: (err: Error) => void
+}
+interface PendingVaultReadOne {
+  kind: 'vault.one'
+  resolve: (note: NoteWithBody | null) => void
+  reject: (err: Error) => void
+}
+interface PendingVaultReadStream {
+  kind: 'vault.stream'
+  /** Emits one chunk per host:vaultStreamChunk arrival, or completes
+   *  with null when the host signals end-of-stream / error. */
+  push: (chunk: ReadonlyArray<NoteWithBody> | null, error: string | null) => void
+}
+const pending = new Map<
+  number,
+  | PendingFileSave
+  | PendingFileOpen
+  | PendingVaultReadAll
+  | PendingVaultReadOne
+  | PendingVaultReadStream
+>()
 
 let nextRequestSeq = 0
 function allocRequestSeq(): number {
@@ -111,6 +135,59 @@ self.onmessage = async (event: MessageEvent<HostToWorker>) => {
             p.reject(new Error(msg.error ?? 'File open failed.'))
           }
         }
+        return
+      }
+
+      case 'host:vaultReadResult': {
+        const p = pending.get(msg.requestSeq)
+        if (!p) return
+        if (p.kind === 'vault.all') {
+          pending.delete(msg.requestSeq)
+          if (!msg.ok) {
+            p.reject(new Error(msg.error ?? 'vault.read.getAllNotes failed.'))
+            return
+          }
+          p.resolve((msg.notes ?? []) as ReadonlyArray<NoteWithBody>)
+          return
+        }
+        if (p.kind === 'vault.one') {
+          pending.delete(msg.requestSeq)
+          if (!msg.ok) {
+            p.reject(new Error(msg.error ?? 'vault.read.getNote failed.'))
+            return
+          }
+          // `note` may be undefined on the wire when the host sent the
+          // null variant (host normalises null → omitted spread); the
+          // SDK contract is null-when-not-found.
+          p.resolve(msg.note === undefined ? null : (msg.note as NoteWithBody | null))
+          return
+        }
+        // Wrong response kind for the pending request shape — emit a
+        // worker:error so the dev sees the protocol mismatch instead
+        // of a silently hung Promise.
+        emit({
+          type: 'worker:error',
+          seq: 0,
+          message: `vaultReadResult arrived for a non-read pending request (kind=${p.kind}).`,
+        })
+        return
+      }
+
+      case 'host:vaultStreamChunk': {
+        const p = pending.get(msg.requestSeq)
+        if (!p || p.kind !== 'vault.stream') return
+        if (msg.error) {
+          pending.delete(msg.requestSeq)
+          p.push(null, msg.error)
+          return
+        }
+        if (msg.notes.length === 0) {
+          // End-of-stream marker.
+          pending.delete(msg.requestSeq)
+          p.push(null, null)
+          return
+        }
+        p.push(msg.notes as ReadonlyArray<NoteWithBody>, null)
         return
       }
 
@@ -335,8 +412,115 @@ function buildCtx(parentSeq: number): PluginCtx {
       })
       return promise
     },
+    vault: {
+      read: {
+        getAllNotes() {
+          const requestSeq = allocRequestSeq()
+          const promise = new Promise<ReadonlyArray<NoteWithBody>>((resolve, reject) => {
+            pending.set(requestSeq, { kind: 'vault.all', resolve, reject })
+          })
+          emit({
+            type: 'worker:requestVaultRead',
+            seq: requestSeq,
+            mode: 'all',
+          })
+          return promise
+        },
+        getNote(id: string) {
+          const requestSeq = allocRequestSeq()
+          const promise = new Promise<NoteWithBody | null>((resolve, reject) => {
+            pending.set(requestSeq, { kind: 'vault.one', resolve, reject })
+          })
+          emit({
+            type: 'worker:requestVaultRead',
+            seq: requestSeq,
+            mode: 'one',
+            noteId: id,
+          })
+          return promise
+        },
+        stream(opts?: { chunkSize?: number }) {
+          return makeVaultStream(opts?.chunkSize)
+        },
+      },
+    },
   }
 }
+
+/**
+ * Build the AsyncIterable that backs `ctx.vault.read.stream()`.
+ *
+ * Implementation note: chunks arrive on a fan-in queue keyed by the
+ * request seq. The iterator's `next()` pulls from that queue, awaiting
+ * a host:vaultStreamChunk when empty. End-of-stream is signalled by
+ * `push(null, null)`; an error by `push(null, error)`. We DO NOT post
+ * a new envelope per chunk — the host paginates on its own cadence.
+ */
+function makeVaultStream(chunkSize: number | undefined): AsyncIterable<ReadonlyArray<NoteWithBody>> {
+  const requestSeq = allocRequestSeq()
+  const buffer: ReadonlyArray<NoteWithBody>[] = []
+  let done = false
+  let error: string | null = null
+  // Pending consumer waker. When `next()` is called with an empty
+  // buffer we park here; the chunk handler resolves us.
+  let wake: (() => void) | null = null
+
+  pending.set(requestSeq, {
+    kind: 'vault.stream',
+    push(chunk, err) {
+      if (err) {
+        error = err
+        done = true
+      } else if (chunk === null) {
+        done = true
+      } else {
+        buffer.push(chunk)
+      }
+      const w = wake
+      wake = null
+      w?.()
+    },
+  })
+
+  emit({
+    type: 'worker:requestVaultRead',
+    seq: requestSeq,
+    mode: 'stream',
+    ...(typeof chunkSize === 'number' ? { chunkSize } : {}),
+  })
+
+  return {
+    [Symbol.asyncIterator](): AsyncIterator<ReadonlyArray<NoteWithBody>> {
+      return {
+        async next(): Promise<IteratorResult<ReadonlyArray<NoteWithBody>>> {
+          while (buffer.length === 0 && !done) {
+            await new Promise<void>((resolve) => {
+              wake = resolve
+            })
+          }
+          if (buffer.length > 0) {
+            return { value: buffer.shift() as ReadonlyArray<NoteWithBody>, done: false }
+          }
+          if (error !== null) throw new Error(error)
+          return { value: undefined as unknown as ReadonlyArray<NoteWithBody>, done: true }
+        },
+        async return(): Promise<IteratorResult<ReadonlyArray<NoteWithBody>>> {
+          // Plugin abandoned the iterator (e.g. `break` out of for-await).
+          // Mark complete; the host will still finish emitting chunks
+          // but the plugin no longer cares.
+          done = true
+          pending.delete(requestSeq)
+          return { value: undefined as unknown as ReadonlyArray<NoteWithBody>, done: true }
+        },
+      }
+    },
+  }
+}
+
+// Mark `NoteWithBodyWire` referenced so the import is not stripped by
+// TS' isolatedModules pass — the worker treats wire and SDK shapes as
+// structurally identical, but we still want the type-level link.
+type _NoteWithBodyWireAlias = NoteWithBodyWire
 
 function emit(msg: WorkerToHost): void {
   ;(self as unknown as { postMessage: (msg: unknown) => void }).postMessage(msg)
