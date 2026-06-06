@@ -19,6 +19,8 @@ import {
   ViewColumnsIcon,
   EyeIcon,
   FolderOpenIcon,
+  MagnifyingGlassIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline'
 import { PANELS } from '@/components/sidebar/sidebarPanelRegistry'
 import { THEME_TOKENS, THEME_PRESETS } from '@/utils/theme'
@@ -43,6 +45,9 @@ import {
 } from './settings'
 import { EmailSignup } from '@/components/marketing/EmailSignup'
 import { PluginsSettingsPanel } from './PluginsSettingsPanel'
+import { isIosSafari, isStandalone } from '@/components/pwa/PwaProvider'
+import { SETTINGS_CATALOG, type SettingsCatalogEntry } from './settings/settingsCatalog'
+import { filterSettingsCatalog, groupByCategory } from './settings/filterSettingsCatalog'
 
 // One row in the left-side category navigator. Order here drives the
 // rendering order of the list AND the keyboard up/down nav (later).
@@ -96,6 +101,81 @@ export const SettingsModal = () => {
   // when the modal re-opens via `key={modal.type}` on the inner panel —
   // not strictly necessary but it keeps the default predictable.
   const [active, setActive] = useState<CategoryId>('general')
+  const [query, setQuery] = useState('')
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Reset state every time the modal opens fresh.
+  useEffect(() => {
+    if (isOpen) {
+      setQuery('')
+      setActive('general')
+    }
+  }, [isOpen])
+
+  // Auto-focus the search input when the modal opens, and listen for `/`
+  // to refocus from elsewhere in the modal. Esc while the search has a
+  // query clears it; Modal's own Esc handler then closes the modal on
+  // the next press (because we stop propagation only when there is a
+  // query to clear).
+  useEffect(() => {
+    if (!isOpen) return
+    // Defer focus one frame so the input is mounted.
+    const id = window.requestAnimationFrame(() => {
+      searchInputRef.current?.focus()
+    })
+    return () => window.cancelAnimationFrame(id)
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const handler = (e: KeyboardEvent) => {
+      // `/` from anywhere in the modal refocuses the search input, as
+      // long as the user is not already typing into another text field
+      // where `/` is a real character.
+      if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const target = e.target as HTMLElement | null
+        const tag = target?.tagName
+        const editable = tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable
+        if (!editable || target === searchInputRef.current) {
+          e.preventDefault()
+          searchInputRef.current?.focus()
+          searchInputRef.current?.select()
+        }
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [isOpen])
+
+  // Capture-phase Escape interceptor: if the search has a query, swallow
+  // the first Escape so Modal's own listener does not close the modal.
+  useEffect(() => {
+    if (!isOpen) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (query.length === 0) return
+      const focused = document.activeElement
+      if (focused !== searchInputRef.current) return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      setQuery('')
+    }
+    document.addEventListener('keydown', handler, true)
+    return () => document.removeEventListener('keydown', handler, true)
+  }, [isOpen, query])
+
+  const trimmedQuery = query.trim()
+  const isSearching = trimmedQuery.length > 0
+  const searchResults = useMemo(
+    () => (isSearching ? filterSettingsCatalog(SETTINGS_CATALOG, trimmedQuery) : []),
+    [isSearching, trimmedQuery],
+  )
+
+  const handleJumpToCategory = (categoryId: CategoryId) => {
+    setActive(categoryId)
+    setQuery('')
+    searchInputRef.current?.blur()
+  }
 
   return (
     <Modal
@@ -105,53 +185,153 @@ export const SettingsModal = () => {
       size="3xl"
       bodyless
     >
-      <div className="flex flex-col md:flex-row h-[80dvh] md:h-[70dvh] min-h-[480px]">
-        {/* ── Mobile (≤md): horizontal scroll strip of category chips
-                across the top. Desktop: vertical left rail.
-            Same buttons, different container; only the wrapper class
-            changes by breakpoint. */}
-        <nav
-          aria-label="Settings categories"
-          className="md:w-52 md:flex-none md:border-r border-b md:border-b-0 border-obsidianBorder bg-obsidianBlack/40 overflow-x-auto md:overflow-x-visible md:overflow-y-auto py-1 md:py-2 flex md:block flex-row gap-1 md:gap-0 px-2 md:px-0 flex-none"
-          data-testid="settings-categories"
-        >
-          {CATEGORIES.map(cat => {
-            const isActive = cat.id === active
-            return (
+      <div className="flex flex-col h-[80dvh] md:h-[70dvh] min-h-[480px]">
+        {/* Sticky search row spanning sidebar + main column. */}
+        <div className="flex-none border-b border-obsidianBorder px-3 py-2 bg-obsidianBlack/40">
+          <div className="relative">
+            <MagnifyingGlassIcon className="w-4 h-4 absolute left-2 top-1/2 -translate-y-1/2 text-obsidianSecondaryText pointer-events-none" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search settings"
+              aria-label="Search settings"
+              data-testid="settings-search-input"
+              className="w-full pl-8 pr-8 py-1.5 text-sm bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple"
+            />
+            {query.length > 0 && (
               <button
-                key={cat.id}
                 type="button"
-                onClick={() => setActive(cat.id)}
-                aria-current={isActive ? 'page' : undefined}
-                data-testid={`settings-cat-${cat.id}`}
-                className={[
-                  // Mobile: rounded chip; desktop: full-width row.
-                  'flex items-center gap-2 text-sm text-left transition-colors flex-none',
-                  'px-3 py-1.5 rounded md:rounded-none md:w-full md:px-3 md:py-1.5',
-                  isActive
-                    ? 'bg-obsidianAccentPurple/15 text-obsidianText md:border-l-2 md:border-obsidianAccentPurple md:pl-[10px]'
-                    : 'text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText md:border-l-2 md:border-transparent md:pl-[10px]',
-                ].join(' ')}
+                onClick={() => {
+                  setQuery('')
+                  searchInputRef.current?.focus()
+                }}
+                aria-label="Clear search"
+                data-testid="settings-search-clear"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-obsidianSecondaryText hover:text-obsidianText hover:bg-obsidianHighlight"
               >
-                <cat.Icon className="w-4 h-4 flex-none" />
-                <span className="truncate">{cat.label}</span>
+                <XMarkIcon className="w-3.5 h-3.5" />
               </button>
-            )
-          })}
-        </nav>
-
-        {/* ── Right pane: selected category content ─────────────────── */}
-        <div className="flex-1 min-w-0 flex flex-col">
-          <div
-            className="flex-1 min-h-0 overflow-y-auto p-4 md:p-5"
-            data-testid={`settings-panel-${active}`}
-          >
-            <CategoryPanel id={active} />
+            )}
           </div>
-          <SettingsFooterBar />
+        </div>
+
+        <div className="flex flex-col md:flex-row flex-1 min-h-0">
+          {/* ── Mobile (≤md): horizontal scroll strip of category chips
+                  across the top. Desktop: vertical left rail.
+              Hidden while a search query is active — the results list
+              owns the whole right pane and category context is shown
+              per-result. */}
+          {!isSearching && (
+            <nav
+              aria-label="Settings categories"
+              className="md:w-52 md:flex-none md:border-r border-b md:border-b-0 border-obsidianBorder bg-obsidianBlack/40 overflow-x-auto md:overflow-x-visible md:overflow-y-auto py-1 md:py-2 flex md:block flex-row gap-1 md:gap-0 px-2 md:px-0 flex-none"
+              data-testid="settings-categories"
+            >
+              {CATEGORIES.map(cat => {
+                const isActive = cat.id === active
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setActive(cat.id)}
+                    aria-current={isActive ? 'page' : undefined}
+                    data-testid={`settings-cat-${cat.id}`}
+                    className={[
+                      // Mobile: rounded chip; desktop: full-width row.
+                      'flex items-center gap-2 text-sm text-left transition-colors flex-none',
+                      'px-3 py-1.5 rounded md:rounded-none md:w-full md:px-3 md:py-1.5',
+                      isActive
+                        ? 'bg-obsidianAccentPurple/15 text-obsidianText md:border-l-2 md:border-obsidianAccentPurple md:pl-[10px]'
+                        : 'text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText md:border-l-2 md:border-transparent md:pl-[10px]',
+                    ].join(' ')}
+                  >
+                    <cat.Icon className="w-4 h-4 flex-none" />
+                    <span className="truncate">{cat.label}</span>
+                  </button>
+                )
+              })}
+            </nav>
+          )}
+
+          {/* ── Right pane: selected category content OR search results ── */}
+          <div className="flex-1 min-w-0 flex flex-col">
+            <div
+              className="flex-1 min-h-0 overflow-y-auto p-4 md:p-5"
+              data-testid={isSearching ? 'settings-search-results' : `settings-panel-${active}`}
+            >
+              {isSearching ? (
+                <SettingsSearchResults
+                  query={trimmedQuery}
+                  results={searchResults}
+                  onJump={handleJumpToCategory}
+                />
+              ) : (
+                <CategoryPanel id={active} />
+              )}
+            </div>
+            <SettingsFooterBar />
+          </div>
         </div>
       </div>
     </Modal>
+  )
+}
+
+// Renders the filtered settings list grouped by category. The Go to setting
+// button jumps to that setting's category and clears the query so the user
+// lands on the live control.
+function SettingsSearchResults({
+  query,
+  results,
+  onJump,
+}: {
+  query: string
+  results: SettingsCatalogEntry[]
+  onJump: (categoryId: CategoryId) => void
+}) {
+  if (results.length === 0) {
+    return (
+      <div className="text-sm text-obsidianSecondaryText" data-testid="settings-search-empty">
+        No settings match &ldquo;{query}&rdquo;.
+      </div>
+    )
+  }
+  const groups = groupByCategory(results)
+  return (
+    <div className="space-y-5" data-testid="settings-search-list">
+      {groups.map(group => (
+        <div key={group.categoryId} className="space-y-2">
+          <div className="text-xs uppercase tracking-wide text-obsidianSecondaryText">
+            {group.categoryLabel}
+          </div>
+          <ul className="divide-y divide-obsidianBorder border border-obsidianBorder rounded">
+            {group.items.map(item => (
+              <li
+                key={item.id}
+                className="p-3 flex items-start justify-between gap-3"
+                data-testid={`settings-search-result-${item.id}`}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-obsidianText">{item.label}</div>
+                  <div className="text-xs text-obsidianSecondaryText mt-0.5">
+                    {item.description}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onJump(item.categoryId as CategoryId)}
+                  className="flex-none px-2 py-1 text-xs rounded border border-obsidianBorder text-obsidianText hover:border-obsidianAccentPurple hover:bg-obsidianHighlight/40 transition-colors"
+                >
+                  Go to setting
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -1651,11 +1831,31 @@ function AboutPanel() {
   const buildId = buildIdRaw && buildIdRaw.length > 7 ? buildIdRaw.slice(0, 7) : buildIdRaw
   const version = buildId ? `${semver} (${buildId})` : semver
   const openModal = useUIStore(s => s.openModal)
+  // iOS Safari has no install API. When the user is in a normal Safari
+  // tab (not already a standalone home-screen launcher) surface the
+  // manual instructions here rather than as a screen-stealing banner.
+  const [showIosInstall, setShowIosInstall] = useState(false)
+  useEffect(() => {
+    setShowIosInstall(isIosSafari() && !isStandalone())
+  }, [])
   return (
     <div className="space-y-4">
       <PanelHeading>About</PanelHeading>
+      {showIosInstall && (
+        <div
+          className="rounded-md border border-obsidianBorder bg-obsidianGray/60 p-3 text-sm text-obsidianText"
+          data-testid="ios-install-hint"
+        >
+          <div className="font-medium mb-1">Install noteser</div>
+          <p className="text-obsidianSecondaryText">
+            Tap the Share icon in Safari, then choose Add to Home Screen.
+            The app will launch from the home screen with no browser
+            chrome and full offline access.
+          </p>
+        </div>
+      )}
       <div className="text-sm text-obsidianText space-y-2">
-        <p>Noteser — browser-first, Obsidian-style markdown note-taking.</p>
+        <p>Noteser is a browser-first markdown note-taking app.</p>
         <p>
           <span className="text-obsidianSecondaryText">Version: </span>
           <span className="font-mono text-xs">{version}</span>
@@ -1670,7 +1870,7 @@ function AboutPanel() {
           >
             Help &amp; docs →
           </a>
-          <span className="text-obsidianSecondaryText"> (in-app help — getting started, GitHub sync, local folder, shortcuts, FAQ)</span>
+          <span className="text-obsidianSecondaryText"> (in-app help: getting started, GitHub sync, local folder, shortcuts, FAQ)</span>
         </p>
         <p>
           <a
@@ -1693,6 +1893,16 @@ function AboutPanel() {
             Report an issue on GitHub →
           </a>
           <span className="text-obsidianSecondaryText"> (opens a new GitHub issue in a new tab)</span>
+        </p>
+        <p>
+          <a
+            href="https://noteser.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-obsidianAccentPurple hover:underline"
+          >
+            noteser.app
+          </a>
         </p>
         <p>
           <a

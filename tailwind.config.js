@@ -16,6 +16,7 @@ module.exports = {
         obsidianDarkGray: 'var(--obsidian-dark-gray, #333333)',
         obsidianAccent: 'var(--obsidian-accent, #3a3a3a)',
         obsidianHighlight: 'var(--obsidian-highlight, #4d4d4d)',
+        obsidianSelection: 'var(--obsidian-selection, #2b5a9b)',
         obsidianBorder: 'var(--obsidian-border, #444444)',
         obsidianText: 'var(--obsidian-text, #dadada)',
         obsidianSecondaryText: 'var(--obsidian-secondary-text, #bababa)',

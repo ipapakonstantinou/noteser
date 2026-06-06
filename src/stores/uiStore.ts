@@ -126,6 +126,12 @@ interface UIState {
   // and puts the matching EditableText into edit mode, then clears it.
   renameRequest: { type: 'note' | 'folder'; id: string } | null
 
+  // VS Code-style "Select for Compare" pending source. The note id the
+  // user marked as the LEFT side of a pending compare; null when nothing
+  // is selected. Cleared on Esc, after the compare tab opens, or
+  // explicitly via clearCompareSource.
+  compareSourceNoteId: string | null
+
   // Actions
   toggleSidebar: () => void
   setSidebarWidth: (width: number) => void
@@ -157,6 +163,8 @@ interface UIState {
   setCurrentView: (view: UIState['currentView']) => void
   requestRename: (target: { type: 'note' | 'folder'; id: string }) => void
   clearRenameRequest: () => void
+  setCompareSource: (noteId: string | null) => void
+  clearCompareSource: () => void
 }
 
 export const useUIStore = create<UIState>()(
@@ -187,6 +195,7 @@ export const useUIStore = create<UIState>()(
       modal: { type: null },
       currentView: 'notes',
       renameRequest: null,
+      compareSourceNoteId: null,
 
       // Actions
       toggleSidebar: () => {
@@ -336,6 +345,8 @@ export const useUIStore = create<UIState>()(
 
       requestRename: (target) => set({ renameRequest: target }),
       clearRenameRequest: () => set({ renameRequest: null }),
+      setCompareSource: (noteId) => set({ compareSourceNoteId: noteId }),
+      clearCompareSource: () => set({ compareSourceNoteId: null }),
     }),
     {
       name: STORAGE_KEYS.ui,

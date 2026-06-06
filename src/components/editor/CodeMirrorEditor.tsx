@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import { EditorView, keymap, type Command } from '@codemirror/view'
+import { EditorView, keymap, drawSelection, type Command } from '@codemirror/view'
 import { Prec, Compartment } from '@codemirror/state'
 import { moveLineUp, moveLineDown, deleteLine } from '@codemirror/commands'
 import { search, searchKeymap, openSearchPanel } from '@codemirror/search'
@@ -131,30 +131,49 @@ function renumberDocument(view: EditorView): void {
 // through toggleTaskLineText so the ✅-date stamp + recurring-task behaviour is
 // preserved; on a plain/bullet/ordered line we convert it into an unchecked
 // task. Works across a multi-line selection.
-const toggleCheckboxStatus: Command = (view) => {
+export const toggleCheckboxStatus: Command = (view) => {
   const { state } = view
   const range = state.selection.main
   const fromLine = state.doc.lineAt(range.from)
   const toLine = state.doc.lineAt(range.to)
 
   const changes: { from: number; to: number; insert: string }[] = []
+  let firstLineNewText: string | null = null
+  let firstLineWasTask = false
   for (let n = fromLine.number; n <= toLine.number; n++) {
     const line = state.doc.line(n)
     const parts = splitListLine(line.text)
     let next: string
     if (parts.kind === 'task') {
-      // Existing task → flip done/undone with metadata-aware helper.
       const flipped = toggleTaskLineText(line.text)
       next = flipped ?? line.text
     } else {
-      // plain / bullet / ordered → unchecked task, keeping any carrier.
       const carrier = parts.kind === 'ordered' ? parts.carrier : '- '
       next = `${parts.indent}${carrier}[ ] ${parts.body}`
     }
     if (next !== line.text) changes.push({ from: line.from, to: line.to, insert: next })
+    if (n === fromLine.number) {
+      firstLineNewText = next
+      firstLineWasTask = parts.kind === 'task'
+    }
   }
   if (changes.length === 0) return false
-  view.dispatch({ changes, scrollIntoView: true })
+  // When the user converts a plain/bullet/ordered line into a NEW task with
+  // an empty cursor, park the caret at the end of the rewritten line so they
+  // can keep typing. Existing-task flips leave the caret alone (cursor
+  // position carries useful intent for the done/undone case).
+  const shouldMoveCaret =
+    range.empty &&
+    fromLine.number === toLine.number &&
+    !firstLineWasTask &&
+    firstLineNewText != null
+  view.dispatch({
+    changes,
+    selection: shouldMoveCaret
+      ? { anchor: fromLine.from + (firstLineNewText as string).length }
+      : undefined,
+    scrollIntoView: true,
+  })
   renumberDocument(view)
   return true
 }
@@ -166,7 +185,7 @@ const toggleCheckboxStatus: Command = (view) => {
 // (this mirrors how the other list toggles read intent off the leading line).
 // Indentation/nesting is preserved by the pure helpers; ordered runs are then
 // renumbered so "1." sequences read 1,2,3.
-const cycleListTypeCommand: Command = (view) => {
+export const cycleListTypeCommand: Command = (view) => {
   const { state } = view
   const range = state.selection.main
   const fromLine = state.doc.lineAt(range.from)
@@ -175,13 +194,27 @@ const cycleListTypeCommand: Command = (view) => {
   const target = nextCycleState(cycleState(fromLine.text))
 
   const changes: { from: number; to: number; insert: string }[] = []
+  let firstLineNewText: string | null = null
   for (let n = fromLine.number; n <= toLine.number; n++) {
     const line = state.doc.line(n)
     const next = setCycleState(line.text, target)
     if (next !== line.text) changes.push({ from: line.from, to: line.to, insert: next })
+    if (n === fromLine.number) firstLineNewText = next
   }
   if (changes.length === 0) return false
-  view.dispatch({ changes, scrollIntoView: true })
+  // Park the caret AFTER the new marker on the first affected line so the
+  // user can keep typing without first pressing End. Without this, CodeMirror
+  // anchors the cursor to the LEFT of the inserted marker, which is the
+  // wrong UX for the "convert this line into a task" use case.
+  const firstNewLength = firstLineNewText?.length ?? fromLine.length
+  const cursorAfterMarker = fromLine.from + firstNewLength
+  view.dispatch({
+    changes,
+    selection: range.empty && fromLine.number === toLine.number
+      ? { anchor: cursorAfterMarker }
+      : undefined,
+    scrollIntoView: true,
+  })
   renumberDocument(view)
   return true
 }
@@ -310,14 +343,15 @@ const obsidianTheme = EditorView.theme({
   // `&light`/`&dark` prefixes only work in EditorView.baseTheme, NOT here, so we
   // instead match CodeMirror's full child-combinator chain (`&` is this theme's
   // root class) to outrank the built-in default. We paint the selection with the
-  // theme-aware `--obsidian-highlight` token (the palette's designated highlight
-  // colour) so it stays readable against the editor text in every preset —
-  // dark, light, sepia, solarized — since editor text colour also follows the
-  // preset (globals.css forces `.cm-content { color: inherit }`). The bare
-  // `.cm-selectionBackground` covers the unfocused state.
-  '.cm-selectionBackground': { backgroundColor: 'var(--obsidian-highlight, #4d4d4d)' },
+  // theme-aware `--obsidian-selection` token. That token is DISTINCT from
+  // `--obsidian-highlight` (the sidebar hover surface) so a selection-visible
+  // colour can't bleed into every hover state in the chrome (2026-06-05). Each
+  // preset overrides it to a value that clears ≥ 2:1 against the editor bg AND
+  // ≥ 4.5:1 against the editor text. The bare `.cm-selectionBackground`
+  // covers the unfocused state.
+  '.cm-selectionBackground': { backgroundColor: 'var(--obsidian-selection, #2b5a9b)' },
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
-    backgroundColor: 'var(--obsidian-highlight, #4d4d4d)',
+    backgroundColor: 'var(--obsidian-selection, #2b5a9b)',
   },
   '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,0.025)' },
   // No display:none on .cm-gutters — basicSetup disables line-numbers
@@ -639,6 +673,13 @@ export function CodeMirrorEditor({
     ])),
     obsidianTheme,
     EditorView.lineWrapping,
+    // Explicit drawSelection() so the .cm-selectionBackground layer is
+    // guaranteed to render regardless of basicSetup defaults. We already paint
+    // that layer with var(--obsidian-highlight) (see obsidianTheme above), and
+    // globals.css carries a `::selection` fallback for the native path —
+    // belt-and-suspenders so a future @uiw basicSetup change that drops
+    // drawSelection() from defaults can't leave the selection invisible again.
+    drawSelection(),
     renumberOnEdit,
     // Prec.highest ensures our bindings win over any conflicting default keymap.
     Prec.highest(keymap.of([
@@ -684,52 +725,6 @@ export function CodeMirrorEditor({
     // renumber ordered runs so "1." sequences stay 1,2,3 after the move.
     { key: 'Alt-ArrowUp', preventDefault: true, run: moveLineThenRenumber(moveLineUp) },
     { key: 'Alt-ArrowDown', preventDefault: true, run: moveLineThenRenumber(moveLineDown) },
-    {
-      // Alt+L toggles the "- [ ]" task bullet (add on plain lines, remove
-      // on task lines). Alt+Shift+L toggles the [x]/[ ] checkmark
-      // (Obsidian-style with ✅ date stamp).
-      //
-      // CodeMirror's idiom for "same base key with/without Shift" is one
-      // binding with both `run` (no shift) and `shift` (with shift). An
-      // earlier attempt registered them as two separate bindings
-      // (`Alt-l` + `Alt-Shift-l`); CodeMirror's chord resolver did NOT
-      // pick the Shift variant for Alt+Shift+L and Alt-l ran on every
-      // press. The `shift` field on the base binding is the documented
-      // way to disambiguate. (Caught by the qa-tester sweep on
-      // 2026-05-21.)
-      key: 'Alt-l',
-      preventDefault: true,
-      run(view) {
-        const { state } = view
-        const { head } = state.selection.main
-        const line = state.doc.lineAt(head)
-        const taskMatch = line.text.match(/^(\s*)([-*+]\s+\[[ xX]\]\s+)/)
-        if (taskMatch) {
-          const indent = taskMatch[1].length
-          const markerLen = taskMatch[2].length
-          view.dispatch({
-            changes: { from: line.from + indent, to: line.from + indent + markerLen, insert: '' },
-            selection: { anchor: Math.max(line.from, head - markerLen) },
-          })
-        } else {
-          const indent = line.text.match(/^(\s*)/)![1].length
-          const insertAt = line.from + indent
-          view.dispatch({
-            changes: { from: insertAt, to: insertAt, insert: '- [ ] ' },
-            selection: { anchor: head + 6 },
-          })
-        }
-        return true
-      },
-      shift(view) {
-        const { head } = view.state.selection.main
-        const line = view.state.doc.lineAt(head)
-        const newLine = toggleTaskLineText(line.text)
-        if (newLine == null || newLine === line.text) return false
-        view.dispatch({ changes: { from: line.from, to: line.to, insert: newLine } })
-        return true
-      },
-    },
     {
       // Open the "Create or edit Task" modal for the task line under the
       // cursor. Mirrors Obsidian Tasks' Mod+Shift+T binding. No-op for lines

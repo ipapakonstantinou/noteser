@@ -30,6 +30,17 @@ export interface FetchedPlugin {
   sourceUrl: string
 }
 
+export interface FetchPluginFromManifestArgs {
+  /** Already-validated manifest object (vault-scan provides this). */
+  manifest: PluginManifest
+  /** The raw `main` URL from the manifest. */
+  mainUrl: string
+  /** Display label for the install record's sourceUrl field. The
+   *  vault scanner passes the in-vault path so the Plugins list shows
+   *  where the manifest came from. */
+  sourceLabel: string
+}
+
 export interface FetchOptions {
   /** Per-request timeout in milliseconds. Total fetch budget for an
    *  install is `2 * timeoutMs` (manifest + main). */
@@ -97,6 +108,32 @@ export async function fetchPluginFromUrl(
     mainSource,
     hash,
     sourceUrl: manifestUrl,
+  }
+}
+
+/**
+ * Build a FetchedPlugin from a manifest that came from somewhere
+ * other than an HTTPS manifest URL — currently only the vault scan.
+ * The bundle still lives on the network, so we fetch + hash it here;
+ * the manifest itself is taken as-is (the caller validated it).
+ */
+export async function fetchPluginFromManifest(
+  args: FetchPluginFromManifestArgs,
+  opts: FetchOptions = {},
+): Promise<FetchedPlugin> {
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  if (!isHttpsOrLocalhost(args.mainUrl)) {
+    throw new Error(
+      'Plugin main.js URL must use HTTPS. Plain HTTP is only accepted from localhost (dev mode).',
+    )
+  }
+  const mainSource = await fetchText(args.mainUrl, timeoutMs)
+  const hash = await sha256Hex(mainSource)
+  return {
+    manifest: args.manifest,
+    mainSource,
+    hash,
+    sourceUrl: args.sourceLabel,
   }
 }
 
