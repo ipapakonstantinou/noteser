@@ -293,3 +293,166 @@ persisted value — use `?reset=1` to see the new default.
 10. **Run the local gate before pushing:** lint → typecheck → `npm test` → build. End
     every test run by reporting what you added/changed, the pass/fail count, and anything
     you could not cover and why.
+
+---
+
+## Appendix — copy-paste templates
+
+Faithful, runnable skeletons modelled on existing tests. Copy one, rename, fill in.
+
+### Unit — pure util (cheapest, start here)
+
+```ts
+import { extractTags } from '@/utils/tags'
+
+describe('extractTags', () => {
+  test('pulls #word patterns out of the body', () => {
+    expect(extractTags('a #foo and #bar-baz here')).toEqual(['foo', 'bar-baz'])
+  })
+
+  test('ignores # inside code fences and headings', () => {
+    expect(extractTags('# Heading\n`#notatag`')).toEqual([])
+  })
+})
+```
+
+### Unit — store with fake timers
+
+```ts
+jest.mock('idb-keyval', () => ({
+  get: jest.fn().mockResolvedValue(undefined),
+  set: jest.fn().mockResolvedValue(undefined),
+  del: jest.fn().mockResolvedValue(undefined),
+  keys: jest.fn().mockResolvedValue([]),
+}))
+import { useToastStore } from '@/stores/toastStore'
+
+beforeEach(() => { jest.useFakeTimers(); useToastStore.setState({ toasts: [] }) })
+afterEach(() => { jest.clearAllTimers(); jest.useRealTimers() })
+
+test('success toasts auto-dismiss after the timeout', () => {
+  useToastStore.getState().addToast({ kind: 'success', message: 'done' })
+  jest.advanceTimersByTime(3_999)
+  expect(useToastStore.getState().toasts).toHaveLength(1)
+  jest.advanceTimersByTime(2)
+  expect(useToastStore.getState().toasts).toHaveLength(0)
+})
+```
+
+### Unit — hook with a mocked module + `act`
+
+```ts
+jest.mock('idb-keyval', () => ({ get: jest.fn().mockResolvedValue(undefined), set: jest.fn(), del: jest.fn(), keys: jest.fn().mockResolvedValue([]) }))
+const pullFromGitHubMock = jest.fn()
+jest.mock('@/utils/githubSync', () => ({ pullFromGitHub: (...a: unknown[]) => pullFromGitHubMock(...a) }))
+import { renderHook, act } from '@testing-library/react'
+import { useGitHubSync } from '@/hooks/useGitHubSync'
+
+beforeEach(() => {
+  pullFromGitHubMock.mockReset()
+  pullFromGitHubMock.mockResolvedValue({ classifications: [], latestCommitSha: 'sha' })
+})
+
+test('runPullOnly calls into githubSync once', async () => {
+  const { result } = renderHook(() => useGitHubSync())
+  await act(async () => { await result.current.runPullOnly() })
+  expect(pullFromGitHubMock).toHaveBeenCalledTimes(1)
+})
+```
+
+### Unit — component with `userEvent`
+
+```ts
+jest.mock('idb-keyval', () => ({ get: jest.fn().mockResolvedValue(undefined), set: jest.fn(), del: jest.fn(), keys: jest.fn().mockResolvedValue([]) }))
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { SettingsSelect } from '@/components/modals/settings/SettingsPrimitives'
+
+test('SettingsSelect fires onChange with the picked value', async () => {
+  const user = userEvent.setup()
+  const onChange = jest.fn()
+  render(<SettingsSelect value="a" onChange={onChange} options={[{ value: 'a', label: 'A' }, { value: 'c', label: 'C' }]} />)
+  await user.selectOptions(screen.getByRole('combobox'), 'c')
+  expect(onChange).toHaveBeenCalledWith('c')
+})
+```
+
+### E2E — canonical parity spec (seed via store, assert via store)
+
+```ts
+import { test, expect } from '@playwright/test'
+import { setupCleanVault, waitForTestHooks } from './_helpers'
+
+test.beforeEach(async ({ page }) => { await setupCleanVault(page) })
+
+test('soft-deleting a note flips isDeleted', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByTestId('folder-tree')).toBeVisible()
+  await waitForTestHooks(page)
+
+  const id = await page.evaluate(() => {
+    const ns = window.__noteser_test!.stores.noteStore.getState()
+    const n = ns.addNote({ folderId: null }); ns.updateNote(n.id, { title: 'Doomed', content: 'x' })
+    return n.id
+  })
+
+  // … drive the delete via the UI (context menu → confirm) …
+
+  const deleted = await page.evaluate((nid) =>
+    window.__noteser_test!.stores.noteStore.getState().notes.find(n => n.id === nid)!.isDeleted, id)
+  expect(deleted).toBe(true)
+})
+```
+
+### E2E — editor / CodeMirror (notes open in preview by default)
+
+```ts
+await page.getByTestId('folder-tree').click()
+await page.keyboard.press('Alt+n')        // new note — opens in rendered preview
+await page.keyboard.press('Control+e')    // flip to edit mode so CodeMirror mounts
+await expect(page.locator('.cm-editor').first()).toBeVisible({ timeout: 10_000 })
+const content = page.locator('.cm-content').first()
+await content.click()                      // never .fill() a CodeMirror editor
+await page.keyboard.type('# Heading One\nplain text\n')
+await expect(page.locator('.cm-line.cm-lp-h1')).toHaveCount(1)
+```
+
+### E2E — tasks query block (toggle rendered checkbox, assert source note)
+
+```ts
+const { srcId } = await page.evaluate(() => {
+  const ns = window.__noteser_test!.stores.noteStore.getState()
+  const src = ns.addNote({ title: 'Plan', content: '- [ ] Buy milk\n- [x] Done thing' })
+  const host = ns.addNote({ title: 'Dashboard', content: '```tasks\nnot done\n```\n' })
+  window.__noteser_test!.stores.workspaceStore.getState().openNote(host.id, { preview: false })
+  return { srcId: src.id }
+})
+const preview = page.locator('.prose').first()  // rendered surface; edit pane also holds a copy
+await preview.locator('li', { hasText: 'Buy milk' }).locator('input[type="checkbox"]').click()
+const done = await page.evaluate((id) =>
+  /- \[x\] Buy milk/.test(window.__noteser_test!.stores.noteStore.getState().notes.find(n => n.id === id)!.content), srcId)
+expect(done).toBe(true)
+```
+
+### E2E — seeding a connected GitHub vault (no real network)
+
+```ts
+await page.evaluate(() => {
+  const gh = window.__noteser_test!.stores.githubStore.getState()
+  gh.setSession('fake-token', { id: 1, login: 'me', name: 'Me', avatar_url: '' })
+  gh.setSyncRepo({ owner: 'me', name: 'vault', branch: 'main', isPrivate: true })
+})
+// Seed the per-file last-pushed baseline used by the three-way merge:
+await page.evaluate(() => window.__noteser_test!.lastPushedContent.set('note-id', 'remote body'))
+```
+
+### E2E — drag-and-drop via manual DataTransfer (native dragTo is flaky)
+
+```ts
+const dt = await page.evaluateHandle(() => new DataTransfer())
+await page.evaluate(({ id, dt }) => dt.setData('application/x-noteser-note', id), { id: noteId, dt })
+await noteRow.dispatchEvent('dragstart', { dataTransfer: dt })
+await folderRow.dispatchEvent('dragover', { dataTransfer: dt })
+await folderRow.dispatchEvent('drop', { dataTransfer: dt })
+await noteRow.dispatchEvent('dragend', { dataTransfer: dt })
+```
