@@ -198,12 +198,19 @@ test('opening the Source control sidebar tab with a configured repo does not cra
 
   await page.goto('/')
 
-  // GitHub now lives in the Source control sidebar tab (it left the ribbon
-  // in the May-2026 redesign). Open that tab to mount GitHubView.
-  const scTab = page.getByTestId('sidebar-tab-source-control')
-  await expect(scTab).toBeVisible({ timeout: 5000 })
-
-  await scTab.click()
+  // GitHub left the ribbon and now lives in a sidebar group (the leaf-model
+  // sidebar refactor). Switch the sidebar to the source-control panel via the
+  // store — the same path the gutter-and-scm SCM tests use — to mount
+  // GitHubView / SourceControlPanel.
+  await page.waitForFunction(() => Boolean((window as unknown as { __noteser_test?: unknown }).__noteser_test))
+  await page.evaluate(() => {
+    const hooks = (window as unknown as {
+      __noteser_test: { stores: { settingsStore: { getState(): { setSidebarGroups: (g: unknown[]) => void } } } }
+    }).__noteser_test
+    hooks.stores.settingsStore.getState().setSidebarGroups([
+      { id: 'scm-g', tabs: ['source-control'], activeTab: 'source-control', collapsed: false },
+    ])
+  })
 
   // Confirm the GitHub view actually mounted (source-control panel is
   // the new surface that used to be what tipped this over the edge).
@@ -219,30 +226,30 @@ test('opening the Source control sidebar tab with a configured repo does not cra
 
 test('ribbon items follow the saved order (b3e7)', async ({ page }) => {
   await page.goto('/')
-  // Wait for the ribbon to be mounted. After the May-2026 redesign the
-  // ribbon holds quick-launch ACTION ids (new-note / daily-note /
-  // command-palette / templates / random-note) — the old filter-mode ids
-  // (notes/recent/tags/backlinks/calendar/outline/trash) were removed and
-  // are silently dropped by resolveRibbonOrder.
+  // Wait for the ribbon to be mounted. The ribbon holds quick-launch ACTION
+  // ids — the registered set is new-note / daily-note / command-palette /
+  // templates (see ITEMS in Ribbon.tsx). Any other id (old filter-mode ids,
+  // or unregistered ones) is silently dropped by resolveRibbonOrder.
   await expect(page.getByTestId('ribbon-item-new-note')).toBeVisible()
   const beforeIds = await page.locator('[data-testid^="ribbon-item-"]').evaluateAll(
     els => els.map(e => e.getAttribute('data-testid')),
   )
   expect(beforeIds).toContain('ribbon-item-templates')
-  expect(beforeIds).toContain('ribbon-item-random-note')
+  expect(beforeIds).toContain('ribbon-item-new-note')
 
-  // Reorder via the store action exposed by testHooks: put random-note
-  // first. (Stale ids in the saved order are dropped; known ids are kept.)
+  // Reorder via the store action exposed by testHooks: put templates first.
+  // Only registered ids survive resolveRibbonOrder, so we reorder using the
+  // known set (no unregistered ids, which would be dropped).
   await page.evaluate(() => {
     const hooks = (window as unknown as {
       __noteser_test: { stores: { settingsStore: { getState(): { setRibbonOrder: (order: string[]) => void } } } }
     }).__noteser_test
     hooks.stores.settingsStore.getState().setRibbonOrder([
-      'random-note', 'new-note', 'daily-note', 'command-palette', 'templates',
+      'templates', 'new-note', 'daily-note', 'command-palette',
     ])
   })
 
   await expect(page.locator('[data-testid^="ribbon-item-"]').first()).toHaveAttribute(
-    'data-testid', 'ribbon-item-random-note',
+    'data-testid', 'ribbon-item-templates',
   )
 })
