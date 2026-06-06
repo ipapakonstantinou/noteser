@@ -8,7 +8,7 @@
 // InstalledPluginRecord to the existing plugin-install-confirm modal
 // so the user sees the same preview + permissions screen.
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { ArrowPathIcon, TrashIcon } from '@heroicons/react/24/outline'
 import { usePluginInstallStore } from '@/stores/pluginInstallStore'
 import { usePluginStore } from '@/stores/pluginStore'
@@ -87,7 +87,13 @@ export const PluginsSettingsPanel = () => {
     uninstallPlugin(pluginId)
   }
 
-  const recordList = Object.values(records).sort((a, b) => a.addedAt - b.addedAt)
+  // Sort once per `records` mutation rather than on every keystroke
+  // elsewhere. Object.values returns a fresh array each call so .sort
+  // is a real cost on every render without this.
+  const recordList = useMemo(
+    () => Object.values(records).sort((a, b) => a.addedAt - b.addedAt),
+    [records],
+  )
 
   return (
     <div className="space-y-6">
