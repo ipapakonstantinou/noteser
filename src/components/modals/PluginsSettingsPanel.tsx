@@ -17,9 +17,11 @@ import { useFolderStore } from '@/stores/folderStore'
 import { useUIStore } from '@/stores'
 import {
   fetchPluginForInstallFromVault,
+  setPluginPermissionRevoked,
   uninstallPlugin,
 } from '@/plugins/pluginHostSingleton'
 import { scanVaultForManifests, type VaultManifestCandidate } from '@/plugins/vaultScan'
+import { PERMISSION_DESCRIPTIONS, type PluginPermission } from '@/plugins/manifest'
 
 export const PluginsSettingsPanel = () => {
   const records = usePluginInstallStore((s) => s.records)
@@ -209,60 +211,101 @@ export const PluginsSettingsPanel = () => {
             {recordList.map((r) => {
               const m = r.manifest
               const running = m.id in loadedPlugins
+              const declaredPermissions: PluginPermission[] = m.permissions ?? []
+              const revoked = new Set<PluginPermission>(r.revokedPermissions ?? [])
               return (
-                <li key={m.id} className="p-3 flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-sm font-medium text-obsidianText">{m.name}</span>
-                      <span className="text-[10px] uppercase tracking-wide text-obsidianSecondaryText">
-                        v{m.version}
-                      </span>
-                      {running ? (
-                        <span className="text-[10px] uppercase tracking-wide text-emerald-300">
-                          running
-                        </span>
-                      ) : (
+                <li key={m.id} className="p-3 flex flex-col gap-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-sm font-medium text-obsidianText">{m.name}</span>
                         <span className="text-[10px] uppercase tracking-wide text-obsidianSecondaryText">
-                          stopped
+                          v{m.version}
                         </span>
-                      )}
+                        {running ? (
+                          <span className="text-[10px] uppercase tracking-wide text-emerald-300">
+                            running
+                          </span>
+                        ) : (
+                          <span className="text-[10px] uppercase tracking-wide text-obsidianSecondaryText">
+                            stopped
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-obsidianSecondaryText mt-0.5">
+                        <code className="text-[11px] bg-obsidianHighlight/40 px-1 rounded">{m.id}</code>
+                        {m.author && <span> · by {m.author}</span>}
+                      </div>
+                      <div className="text-[11px] text-obsidianSecondaryText/80 mt-1 truncate">
+                        from {r.sourceUrl}
+                      </div>
                     </div>
-                    <div className="text-xs text-obsidianSecondaryText mt-0.5">
-                      <code className="text-[11px] bg-obsidianHighlight/40 px-1 rounded">{m.id}</code>
-                      {m.author && <span> · by {m.author}</span>}
-                    </div>
-                    <div className="text-[11px] text-obsidianSecondaryText/80 mt-1 truncate">
-                      from {r.sourceUrl}
+                    <div className="flex flex-col items-end gap-1">
+                      <label className="flex items-center gap-1 text-xs text-obsidianText cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={r.enabled}
+                          onChange={(e) => setEnabled(m.id, e.target.checked)}
+                        />
+                        Enabled
+                      </label>
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => window.location.reload()}
+                          title="Reload page to re-boot the plugin"
+                          className="p-1 rounded hover:bg-obsidianHighlight/40 text-obsidianSecondaryText hover:text-obsidianText"
+                        >
+                          <ArrowPathIcon className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleUninstall(m.id)}
+                          title="Uninstall"
+                          className="p-1 rounded hover:bg-obsidianHighlight/40 text-obsidianSecondaryText hover:text-red-300"
+                        >
+                          <TrashIcon className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <label className="flex items-center gap-1 text-xs text-obsidianText cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={r.enabled}
-                        onChange={(e) => setEnabled(m.id, e.target.checked)}
-                      />
-                      Enabled
-                    </label>
-                    <div className="flex gap-1">
-                      <button
-                        type="button"
-                        onClick={() => window.location.reload()}
-                        title="Reload page to re-boot the plugin"
-                        className="p-1 rounded hover:bg-obsidianHighlight/40 text-obsidianSecondaryText hover:text-obsidianText"
-                      >
-                        <ArrowPathIcon className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleUninstall(m.id)}
-                        title="Uninstall"
-                        className="p-1 rounded hover:bg-obsidianHighlight/40 text-obsidianSecondaryText hover:text-red-300"
-                      >
-                        <TrashIcon className="w-4 h-4" />
-                      </button>
+                  {declaredPermissions.length > 0 && (
+                    <div
+                      className="border-t border-obsidianBorder pt-2 mt-1 space-y-2"
+                      data-testid={`settings-plugins-permissions-${m.id}`}
+                    >
+                      <div className="text-[11px] uppercase tracking-wide text-obsidianSecondaryText">
+                        Permissions
+                      </div>
+                      {declaredPermissions.map((perm) => (
+                        <label
+                          key={perm}
+                          className="flex items-start gap-2 text-xs text-obsidianText cursor-pointer"
+                          data-testid={`settings-plugins-permission-${m.id}-${perm}`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={!revoked.has(perm)}
+                            onChange={(e) =>
+                              setPluginPermissionRevoked(m.id, perm, !e.target.checked)
+                            }
+                          />
+                          <span className="flex-1">
+                            <span className="font-medium">{perm}</span>
+                            <span className="block text-[11px] text-obsidianSecondaryText/80 mt-0.5">
+                              {PERMISSION_DESCRIPTIONS[perm]}
+                            </span>
+                            {revoked.has(perm) && (
+                              <span className="block text-[11px] text-amber-300 mt-0.5">
+                                Revoked — the plugin&apos;s next call to this capability will be rejected.
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                      ))}
                     </div>
-                  </div>
+                  )}
                 </li>
               )
             })}

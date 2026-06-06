@@ -13,8 +13,9 @@ import {
   MAX_MESSAGES_PER_SECOND,
   type HostToWorker,
   type WorkerToHost,
+  type NoteWithBodyWire,
 } from './protocol'
-import type { PluginManifest } from './manifest'
+import type { PluginManifest, PluginPermission } from './manifest'
 
 export interface InstalledPlugin {
   manifest: PluginManifest
@@ -24,6 +25,13 @@ export interface InstalledPlugin {
   /** undefined when the plugin is loaded but not yet ready (boot in
    *  flight); set once worker:ready arrives. */
   ready: boolean
+  /** Capability identifiers the user has REVOKED at runtime, after the
+   *  plugin was already installed. The manifest's `permissions` list is
+   *  the declared grant; this set wins over it. Used by the Settings →
+   *  Plugins revocation toggle (v1.2). The host treats a revoked
+   *  capability as if it was never granted and replies with
+   *  `Permission "<name>" was revoked.` to the next call. */
+  revokedPermissions: Set<PluginPermission>
 }
 
 export interface PluginHostOptions {
@@ -70,6 +78,14 @@ export type PluginHostEvent =
       pluginId: string
       requestSeq: number
       accept?: string[]
+    }
+  | {
+      type: 'vaultReadRequested'
+      pluginId: string
+      requestSeq: number
+      mode: 'all' | 'one' | 'stream'
+      noteId?: string
+      chunkSize?: number
     }
   | { type: 'rateLimited'; pluginId: string }
 
@@ -142,6 +158,7 @@ export class PluginHost {
       lastMessageWindowStart: nowMs(),
       messagesInWindow: 0,
       ready: false,
+      revokedPermissions: new Set<PluginPermission>(),
     }
     const entry: WorkerEntry = { plugin, worker }
     this.workers.set(pluginId, entry)
@@ -253,6 +270,43 @@ export class PluginHost {
       source: args.source,
       blockId: args.blockId,
     })
+  }
+
+  /**
+   * Settings → Plugins toggles per-capability grants here. Marks the
+   * permission as revoked for the loaded plugin; subsequent capability
+   * calls reject with `'Permission "<name>" was revoked.'`. The
+   * manifest's declared permission list is unchanged — revocation is
+   * runtime-only and resets on app boot.
+   *
+   * Pre-existing pending requests (e.g. a `getAllNotes()` Promise
+   * already in flight) complete via the same response envelope; if
+   * they have not yet been answered the host short-circuits them with
+   * the same revocation error.
+   */
+  revokePermission(pluginId: string, permission: PluginPermission): void {
+    const entry = this.workers.get(pluginId)
+    if (!entry) return
+    entry.plugin.revokedPermissions.add(permission)
+  }
+
+  /** Inverse of `revokePermission`. Lets the Settings toggle restore a
+   *  capability without re-installing the plugin. */
+  restorePermission(pluginId: string, permission: PluginPermission): void {
+    const entry = this.workers.get(pluginId)
+    if (!entry) return
+    entry.plugin.revokedPermissions.delete(permission)
+  }
+
+  /** True when the manifest declared the capability AND the user has
+   *  not revoked it at runtime. The Settings panel reads this to
+   *  decide whether to render the toggle as on or off. */
+  hasPermission(pluginId: string, permission: PluginPermission): boolean {
+    const entry = this.workers.get(pluginId)
+    if (!entry) return false
+    const declared = entry.plugin.manifest.permissions?.includes(permission) ?? false
+    if (!declared) return false
+    return !entry.plugin.revokedPermissions.has(permission)
   }
 
   // ── private ─────────────────────────────────────────────────────────────
@@ -387,7 +441,73 @@ export class PluginHost {
         })
         return
       }
+
+      case 'worker:requestVaultRead': {
+        // v1.2 capability — every mode is gated on the same
+        // `vault.read.all` permission. Two layers:
+        //   1. declared at install: rejected with "did not declare".
+        //   2. declared but revoked at runtime: rejected with "revoked".
+        // The plugin sees the same Promise rejection either way, but
+        // the error string is distinct so the dev console clarifies.
+        const declared = entry.plugin.manifest.permissions?.includes('vault.read.all') ?? false
+        if (!declared) {
+          this.respondVaultReadError(
+            pluginId,
+            msg.seq,
+            msg.mode,
+            'Plugin did not declare the `vault.read.all` permission.',
+          )
+          return
+        }
+        if (entry.plugin.revokedPermissions.has('vault.read.all')) {
+          this.respondVaultReadError(
+            pluginId,
+            msg.seq,
+            msg.mode,
+            'Permission "vault.read.all" was revoked.',
+          )
+          return
+        }
+        if (msg.mode === 'one' && typeof msg.noteId !== 'string') {
+          this.respondVaultReadError(
+            pluginId,
+            msg.seq,
+            msg.mode,
+            'vault.read.getNote requires a string id.',
+          )
+          return
+        }
+        this.emit({
+          type: 'vaultReadRequested',
+          pluginId,
+          requestSeq: msg.seq,
+          mode: msg.mode,
+          ...(typeof msg.noteId === 'string' ? { noteId: msg.noteId } : {}),
+          ...(typeof msg.chunkSize === 'number' ? { chunkSize: msg.chunkSize } : {}),
+        })
+        return
+      }
     }
+  }
+
+  /** Helper: emit the right error envelope for a vault-read failure.
+   *  `'stream'` mode uses the streaming envelope so the worker's
+   *  AsyncIterable terminates with the error instead of dangling. */
+  private respondVaultReadError(
+    pluginId: string,
+    requestSeq: number,
+    mode: 'all' | 'one' | 'stream',
+    error: string,
+  ): void {
+    if (mode === 'stream') {
+      this.respondVaultStreamChunk(pluginId, requestSeq, {
+        chunkIndex: 0,
+        notes: [],
+        error,
+      })
+      return
+    }
+    this.respondVaultRead(pluginId, requestSeq, { ok: false, error })
   }
 
   /** Surface adapter / singleton wires the native save dialog here.
@@ -403,6 +523,52 @@ export class PluginHost {
       requestSeq,
       ok: result.ok,
       ...(result.ok ? {} : { error: result.error }),
+    })
+  }
+
+  /** Singleton adapter wires the live note-store snapshot here.
+   *  Modes `'all'` / `'one'` come back on this envelope; `'stream'`
+   *  uses `respondVaultStreamChunk` instead. Exactly one of `notes` /
+   *  `note` is set on success. */
+  respondVaultRead(
+    pluginId: string,
+    requestSeq: number,
+    result:
+      | { ok: true; notes: ReadonlyArray<NoteWithBodyWire>; note?: undefined }
+      | { ok: true; note: NoteWithBodyWire | null; notes?: undefined }
+      | { ok: false; error: string },
+  ): void {
+    this.send(pluginId, {
+      type: 'host:vaultReadResult',
+      seq: ++this.seqCounter,
+      requestSeq,
+      ok: result.ok,
+      ...(result.ok && result.notes !== undefined ? { notes: result.notes } : {}),
+      ...(result.ok && result.note !== undefined ? { note: result.note } : {}),
+      ...(!result.ok ? { error: result.error } : {}),
+    })
+  }
+
+  /** Emit one chunk of a vault-stream response. The adapter calls this
+   *  once per page; a chunk with `notes: []` (no error) terminates the
+   *  iterator successfully. An `error` on any chunk terminates with a
+   *  rejection. */
+  respondVaultStreamChunk(
+    pluginId: string,
+    requestSeq: number,
+    chunk: {
+      chunkIndex: number
+      notes: ReadonlyArray<NoteWithBodyWire>
+      error?: string
+    },
+  ): void {
+    this.send(pluginId, {
+      type: 'host:vaultStreamChunk',
+      seq: ++this.seqCounter,
+      requestSeq,
+      chunkIndex: chunk.chunkIndex,
+      notes: chunk.notes,
+      ...(chunk.error ? { error: chunk.error } : {}),
     })
   }
 

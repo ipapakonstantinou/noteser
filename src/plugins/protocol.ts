@@ -34,6 +34,8 @@ export type HostToWorker =
   | HostFileSaveResult
   | HostFileOpenResult
   | HostVNodeEvent
+  | HostVaultReadResult
+  | HostVaultStreamChunk
 
 /** First message the host sends. Worker initialises the plugin module
  *  and replies with WorkerReady on success or WorkerBootError on failure. */
@@ -152,6 +154,62 @@ export interface HostVNodeEvent {
     | { kind: 'fullscreen'; viewId: string }
 }
 
+/** v1.2 capability: snapshot of one note's body / frontmatter, sent
+ *  across the worker bridge as a plain object. The host normalises
+ *  Uint8Arrays / Date / Map into plain types before serialising;
+ *  `frontmatter` is the host's parsed view (never raw YAML). */
+export interface NoteWithBodyWire {
+  id: string
+  title: string
+  folderPath: string
+  body: string
+  /** Plain JSON object or null. The host parses YAML; the worker never
+   *  sees raw YAML, so it cannot probe noteser-core parser bugs through
+   *  this surface. */
+  frontmatter: Record<string, unknown> | null
+  updatedAt: number
+}
+
+/** Host's reply to a `worker:requestVaultRead` in mode `'all'` or
+ *  `'one'`. v1.2 capability — requires `vault.read.all` permission.
+ *  `requestSeq` matches the seq the worker emitted so the plugin's
+ *  pending Promise resolves to the right call.
+ *
+ *  For `mode === 'all'` the host returns `notes`; for `'one'` it
+ *  returns a single `note` (or null when the id is unknown / deleted).
+ *  Errors land here when the permission was revoked, the vault has
+ *  not hydrated yet, or the projected payload exceeds
+ *  `MAX_ENVELOPE_BYTES` and the plugin should fall back to
+ *  `stream()`. */
+export interface HostVaultReadResult {
+  type: 'host:vaultReadResult'
+  seq: number
+  requestSeq: number
+  ok: boolean
+  notes?: ReadonlyArray<NoteWithBodyWire>
+  note?: NoteWithBodyWire | null
+  error?: string
+}
+
+/** One chunk of a vault-wide stream read. v1.2 capability — requires
+ *  `vault.read.all` permission. The host paginates over the in-memory
+ *  notes array on the main thread, chunks at `chunkSize` (capped at
+ *  500 to stay under `MAX_ENVELOPE_BYTES`), and emits one of these per
+ *  page.
+ *
+ *  Termination: a chunk with `notes: []` signals end-of-stream. A
+ *  non-empty `error` on any chunk terminates the iterator with that
+ *  error (used on mid-flight permission revocation). `chunkIndex` is
+ *  1-indexed and strictly increasing per `requestSeq`. */
+export interface HostVaultStreamChunk {
+  type: 'host:vaultStreamChunk'
+  seq: number
+  requestSeq: number
+  chunkIndex: number
+  notes: ReadonlyArray<NoteWithBodyWire>
+  error?: string
+}
+
 // ─── Worker → Host ─────────────────────────────────────────────────────────
 
 export type WorkerToHost =
@@ -164,6 +222,7 @@ export type WorkerToHost =
   | WorkerNotify
   | WorkerRequestFileSave
   | WorkerRequestFileOpen
+  | WorkerRequestVaultRead
   | WorkerError
 
 /** Sent in reply to host:boot once the plugin module loaded and
@@ -259,6 +318,34 @@ export interface WorkerRequestFileOpen {
   accept?: string[]
 }
 
+/** Plugin asking the host for vault-wide note reads. v1.2 capability —
+ *  requires `vault.read.all` permission.
+ *
+ *  Three modes:
+ *  - `'all'`     — return every non-deleted note in one response. Host
+ *                  rejects with `'Vault too large; use stream().'` when
+ *                  projected serialised size exceeds 4 MiB.
+ *  - `'one'`     — return a single note by id (or null when unknown /
+ *                  deleted). `noteId` is required.
+ *  - `'stream'`  — paginate over the vault in chunks. The host emits
+ *                  one `host:vaultStreamChunk` per page; the worker
+ *                  yields each chunk to the plugin's AsyncIterable.
+ *                  Default `chunkSize` is 100; max 500 (the spec
+ *                  ceiling, to stay under `MAX_ENVELOPE_BYTES`).
+ *
+ *  Host replies with `host:vaultReadResult` (modes `'all'` / `'one'`)
+ *  or a sequence of `host:vaultStreamChunk` carrying the same
+ *  `requestSeq`. */
+export interface WorkerRequestVaultRead {
+  type: 'worker:requestVaultRead'
+  seq: number
+  mode: 'all' | 'one' | 'stream'
+  /** Required when `mode === 'one'`. Ignored for the other modes. */
+  noteId?: string
+  /** Only meaningful for `mode === 'stream'`. Default 100, max 500. */
+  chunkSize?: number
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
 export function isHostToWorker(msg: unknown): msg is HostToWorker {
@@ -272,6 +359,8 @@ export function isHostToWorker(msg: unknown): msg is HostToWorker {
     'host:fileSaveResult',
     'host:fileOpenResult',
     'host:vnodeEvent',
+    'host:vaultReadResult',
+    'host:vaultStreamChunk',
   ])
 }
 
@@ -287,6 +376,7 @@ export function isWorkerToHost(msg: unknown): msg is WorkerToHost {
     'worker:error',
     'worker:requestFileSave',
     'worker:requestFileOpen',
+    'worker:requestVaultRead',
   ])
 }
 

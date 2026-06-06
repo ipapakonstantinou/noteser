@@ -10,7 +10,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { idbStorage } from '@/utils/idbStorage'
-import type { PluginManifest } from '@/plugins/manifest'
+import type { PluginManifest, PluginPermission } from '@/plugins/manifest'
 
 export interface InstalledPluginRecord {
   manifest: PluginManifest
@@ -27,6 +27,11 @@ export interface InstalledPluginRecord {
   /** When `false`, the bootstrap skips this plugin on app load.
    *  Lets a user pause a misbehaving plugin without uninstalling. */
   enabled: boolean
+  /** v1.2: per-install capability revocation list. Persisted across
+   *  reboots — a permission revoked here stays revoked until the user
+   *  re-grants it. The manifest's declared `permissions` list is the
+   *  ceiling; revocation can only subtract from it. */
+  revokedPermissions?: PluginPermission[]
 }
 
 interface PluginInstallState {
@@ -36,6 +41,11 @@ interface PluginInstallState {
   install: (record: InstalledPluginRecord) => void
   uninstall: (pluginId: string) => void
   setEnabled: (pluginId: string, enabled: boolean) => void
+  /** Mark a permission revoked for the given plugin. Idempotent. Used
+   *  by Settings → Plugins to disable a capability at runtime; the
+   *  PluginHost reads the same flag on boot to seed its in-memory
+   *  revocation set. */
+  setPermissionRevoked: (pluginId: string, permission: PluginPermission, revoked: boolean) => void
 }
 
 export const usePluginInstallStore = create<PluginInstallState>()(
@@ -62,6 +72,24 @@ export const usePluginInstallStore = create<PluginInstallState>()(
           if (!cur || cur.enabled === enabled) return state
           return {
             records: { ...state.records, [pluginId]: { ...cur, enabled } },
+          }
+        }),
+
+      setPermissionRevoked: (pluginId, permission, revoked) =>
+        set((state) => {
+          const cur = state.records[pluginId]
+          if (!cur) return state
+          const existing = cur.revokedPermissions ?? []
+          const alreadyRevoked = existing.includes(permission)
+          if (revoked === alreadyRevoked) return state
+          const next = revoked
+            ? [...existing, permission]
+            : existing.filter((p) => p !== permission)
+          return {
+            records: {
+              ...state.records,
+              [pluginId]: { ...cur, revokedPermissions: next },
+            },
           }
         }),
     }),

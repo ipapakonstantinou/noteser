@@ -26,6 +26,13 @@ import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { fetchPluginFromUrl, fetchPluginFromManifest, sha256Hex } from './installer'
 import type { VaultManifestCandidate } from './vaultScan'
 import { bootMark, bootMeasure, yieldToMain } from '@/utils/bootTrace'
+import {
+  snapshotAllNotes,
+  snapshotNoteById,
+  streamVaultSnapshot,
+  projectPayloadSize,
+  MAX_GET_ALL_BYTES,
+} from './vaultSnapshot'
 
 let instance: PluginHost | null = null
 
@@ -124,6 +131,13 @@ export async function confirmAndInstallPlugin(record: InstalledPluginRecord): Pr
     pluginId: record.manifest.id,
     pluginSource: record.mainSource,
   })
+  // Apply any persisted revocations from previous sessions. Without
+  // this a user who revokes a capability, restarts the app, and lets
+  // the bootstrap reload the plugin would silently regain the
+  // capability on next call.
+  for (const perm of record.revokedPermissions ?? []) {
+    host.revokePermission(record.manifest.id, perm)
+  }
 }
 
 /**
@@ -182,6 +196,14 @@ export async function bootstrapInstalledPlugins(): Promise<void> {
         pluginId: record.manifest.id,
         pluginSource: record.mainSource,
       })
+      // Re-apply persisted capability revocations from previous
+      // sessions before the worker gets a chance to make any
+      // capability call from onActivate (the load() above already
+      // ran onActivate, but the worker can also fire requests on
+      // the next event loop tick — better to apply right away).
+      for (const perm of record.revokedPermissions ?? []) {
+        host.revokePermission(record.manifest.id, perm)
+      }
     } catch (err) {
       // The host emits bootError separately, which lands in the toast
       // via the listener. Swallow here so one bad plugin does not
@@ -193,6 +215,27 @@ export async function bootstrapInstalledPlugins(): Promise<void> {
 
   bootMark('plugin-bootstrap:end')
   bootMeasure('plugin-bootstrap', 'plugin-bootstrap:start', 'plugin-bootstrap:end')
+}
+
+/**
+ * Toggle a capability grant for an already-installed plugin. Writes
+ * through to BOTH the persisted install record (so the change survives
+ * a reload) and the in-memory PluginHost (so the next capability call
+ * from the running worker rejects immediately).
+ *
+ * No-op when the plugin is unknown. Idempotent for the same value.
+ */
+export function setPluginPermissionRevoked(
+  pluginId: string,
+  permission: import('./manifest').PluginPermission,
+  revoked: boolean,
+): void {
+  usePluginInstallStore.getState().setPermissionRevoked(pluginId, permission, revoked)
+  const host = getPluginHost()
+  if (host) {
+    if (revoked) host.revokePermission(pluginId, permission)
+    else host.restorePermission(pluginId, permission)
+  }
 }
 
 /**
@@ -360,8 +403,118 @@ function wireListener(host: PluginHost): void {
       case 'fileOpenRequested':
         void handleFileOpenRequest(host, event)
         return
+
+      case 'vaultReadRequested':
+        void handleVaultReadRequest(host, event)
+        return
     }
   })
+}
+
+/**
+ * Snapshot the active note store, serialise to plain objects, and post
+ * back to the plugin worker. The `vault.read.all` permission gate has
+ * already been checked in PluginHost; this handler only owns the
+ * snapshot + chunking work.
+ *
+ * Per the perf budget (docs/plugins-v1.2-plan.md §9 + issue #79) the
+ * snapshot may not block the main thread for more than 50 ms on a
+ * 5000-note vault. The streaming path yields between chunks via the
+ * shared `streamVaultSnapshot` helper; the one-shot `getAllNotes` path
+ * relies on the post-snapshot SHA cache (a second call within the same
+ * SHA is a single hash compare).
+ */
+async function handleVaultReadRequest(
+  host: PluginHost,
+  event: Extract<import('./PluginHost').PluginHostEvent, { type: 'vaultReadRequested' }>,
+): Promise<void> {
+  const { pluginId, requestSeq, mode, noteId, chunkSize } = event
+
+  // Guard: the note store hydrates from IndexedDB at boot. A plugin
+  // that fires `getAllNotes()` from `onActivate` may race the hydrate;
+  // surface a clear retry message instead of returning an empty array
+  // that the plugin would silently cache.
+  const notes = useNoteStore.getState().notes
+  const hasHydratedState = (useNoteStore as unknown as {
+    persist?: { hasHydrated: () => boolean }
+  }).persist
+  if (hasHydratedState && typeof hasHydratedState.hasHydrated === 'function' && !hasHydratedState.hasHydrated() && notes.length === 0) {
+    if (mode === 'stream') {
+      host.respondVaultStreamChunk(pluginId, requestSeq, {
+        chunkIndex: 0,
+        notes: [],
+        error: 'Vault not yet loaded.',
+      })
+    } else {
+      host.respondVaultRead(pluginId, requestSeq, { ok: false, error: 'Vault not yet loaded.' })
+    }
+    return
+  }
+
+  try {
+    if (mode === 'one') {
+      const note = snapshotNoteById(noteId ?? '')
+      host.respondVaultRead(pluginId, requestSeq, { ok: true, note })
+      return
+    }
+
+    if (mode === 'all') {
+      const snapshot = snapshotAllNotes()
+      const bytes = projectPayloadSize(snapshot)
+      if (bytes > MAX_GET_ALL_BYTES) {
+        host.respondVaultRead(pluginId, requestSeq, {
+          ok: false,
+          error: 'Vault too large; use stream().',
+        })
+        return
+      }
+      host.respondVaultRead(pluginId, requestSeq, { ok: true, notes: snapshot })
+      return
+    }
+
+    // mode === 'stream' — paginate, yielding between chunks. We poll
+    // the host's revocation state before every chunk so a mid-flight
+    // toggle in Settings terminates the iterator with a clear error.
+    let chunkIndexEmitted = 0
+    await streamVaultSnapshot({
+      ...(typeof chunkSize === 'number' ? { chunkSize } : {}),
+      isAborted: () =>
+        host.hasPermission(pluginId, 'vault.read.all')
+          ? null
+          : 'Permission "vault.read.all" was revoked.',
+      onChunk: (slice, chunkIndex) => {
+        chunkIndexEmitted = chunkIndex
+        host.respondVaultStreamChunk(pluginId, requestSeq, {
+          chunkIndex,
+          notes: slice,
+        })
+      },
+      onAbort: (reason) => {
+        host.respondVaultStreamChunk(pluginId, requestSeq, {
+          chunkIndex: chunkIndexEmitted + 1,
+          notes: [],
+          error: reason,
+        })
+      },
+      onEnd: () => {
+        host.respondVaultStreamChunk(pluginId, requestSeq, {
+          chunkIndex: chunkIndexEmitted + 1,
+          notes: [],
+        })
+      },
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (mode === 'stream') {
+      host.respondVaultStreamChunk(pluginId, requestSeq, {
+        chunkIndex: 0,
+        notes: [],
+        error: message,
+      })
+    } else {
+      host.respondVaultRead(pluginId, requestSeq, { ok: false, error: message })
+    }
+  }
 }
 
 /** Open the native save dialog, write the plugin's bytes to it.
