@@ -48,6 +48,20 @@ const FORWARD_RESPONSE_HEADERS = [
   'content-encoding',
 ]
 
+const CORS_ALLOW_HEADERS = 'authorization, content-type, accept, user-agent, git-protocol'
+const CORS_ALLOW_METHODS = 'GET, POST, OPTIONS'
+
+// Apply CORS response headers that echo the *specific* validated origin
+// rather than a permissive `*`. `Vary: Origin` keeps caches from serving
+// one origin's CORS grant to another. Callers must only pass an origin
+// that already cleared `isOriginAllowed`.
+function applyCors(headers: Headers, origin: string) {
+  headers.set('Access-Control-Allow-Origin', origin)
+  headers.set('Vary', 'Origin')
+  headers.set('Access-Control-Allow-Headers', CORS_ALLOW_HEADERS)
+  headers.set('Access-Control-Allow-Methods', CORS_ALLOW_METHODS)
+}
+
 // Single handler used for both GET and POST — the only difference is
 // whether we forward a body.
 async function handle(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
@@ -110,12 +124,9 @@ async function handle(req: NextRequest, { params }: { params: Promise<{ path: st
     const v = upstream.headers.get(h)
     if (v) outHeaders.set(h, v)
   }
-  // CORS — opens the response back up to the browser. The fetch from
-  // isomorphic-git originated from the same noteser origin, so this
-  // is reasonable.
-  outHeaders.set('Access-Control-Allow-Origin', '*')
-  outHeaders.set('Access-Control-Allow-Headers', 'authorization, content-type, accept, user-agent, git-protocol')
-  outHeaders.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+  // CORS — opens the response back up to the browser. The request already
+  // cleared `isOriginAllowed`, so echo that exact origin (not `*`).
+  applyCors(outHeaders, origin.origin)
 
   return new NextResponse(upstream.body, {
     status: upstream.status,
@@ -131,13 +142,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ path: stri
   return handle(req, ctx)
 }
 
-export async function OPTIONS() {
-  return new NextResponse(null, {
-    status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'authorization, content-type, accept, user-agent, git-protocol',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    },
-  })
+// Preflight. Mirror the GET/POST origin guard so the preflight never
+// advertises a wildcard grant: echo the validated origin on success,
+// refuse with a bare 403 (no CORS headers) otherwise — the browser then
+// blocks the follow-up request.
+export async function OPTIONS(req: NextRequest) {
+  const origin = isOriginAllowed(req)
+  if (!origin.ok) {
+    return new NextResponse(null, { status: 403 })
+  }
+  const headers = new Headers()
+  applyCors(headers, origin.origin)
+  return new NextResponse(null, { status: 204, headers })
 }
