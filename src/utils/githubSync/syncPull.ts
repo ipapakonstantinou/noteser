@@ -13,12 +13,18 @@ import type { Note, SyncRepo } from '@/types'
 import {
   getBranchRefSha,
   getCommitTreeSha,
-  getTreeMap,
-  getBlobContent,
   gitBlobSha,
   gitBlobShaBytes,
   fetchZipball,
 } from '../github'
+// #69: pull-side blob/tree reads go through the ETag-conditional wrappers
+// so a re-sync of an unchanged repo comes back as 304s and doesn't burn
+// quota. Push-side reads in `syncPush.ts` still call the bare helpers from
+// `../github` — the cache is read-side only.
+import {
+  getBlobContentConditional,
+  getTreeMapConditional,
+} from '../githubETagCache'
 import { threeWayMerge } from '../lineDiff'
 import {
   isAttachmentPath,
@@ -73,7 +79,7 @@ export async function pullFromGitHub(input: {
   const { owner, name, branch } = repo
   const headSha = await getBranchRefSha(token, owner, name, branch)
   const treeSha = await getCommitTreeSha(token, owner, name, headSha)
-  const remoteTree = await getTreeMap(token, owner, name, treeSha)
+  const remoteTree = await getTreeMapConditional(token, repo, treeSha)
 
   // Build the gitignore matcher BEFORE walking the tree so step 1's
   // .md loop can short-circuit on ignored paths. The matcher is also
@@ -93,7 +99,7 @@ export async function pullFromGitHub(input: {
   let remoteRaw = ''
   if (gitignoreSha) {
     try {
-      remoteRaw = await getBlobContent(token, owner, name, gitignoreSha)
+      remoteRaw = await getBlobContentConditional(token, repo, gitignoreSha)
     } catch {
       remoteRaw = ''
     }
@@ -176,8 +182,10 @@ export async function pullFromGitHub(input: {
       if (remoteContent === null) {
         // Prefer the blob we already pulled in the first-clone prefetch; only
         // hit the network on a miss (incremental pulls, or a blob the prefetch
-        // didn't cover). decrypt runs here either way.
-        const raw = prefetchedBlobs.get(remoteSha) ?? await getBlobContent(token, owner, name, remoteSha)
+        // didn't cover). The conditional read may itself be served from the
+        // ETag cache and short-circuit before hitting the network. decrypt
+        // runs here either way.
+        const raw = prefetchedBlobs.get(remoteSha) ?? await getBlobContentConditional(token, repo, remoteSha)
         remoteContent = await maybeDecryptFromPull(raw)
       }
       return remoteContent
@@ -333,14 +341,14 @@ export async function pullFromGitHub(input: {
       // and remote edits don't overlap line-wise we can auto-merge and the
       // user never sees the conflict tab. The common ancestor is the REMOTE
       // blob we last synced against (`gitRemoteBaseSha`, fetchable via
-      // getBlobContent) — NOT gitLastPushedSha, which is the SHA of the
-      // transformed local bytes and may not exist as a remote blob at all.
+      // getBlobContentConditional) — NOT gitLastPushedSha, which is the SHA of
+      // the transformed local bytes and may not exist as a remote blob at all.
       // Anything that goes wrong (no ancestor sha, blob GC'd, network hiccup,
       // overlapping edits) falls back to the existing manual conflict flow.
       let autoMerged: string | null = null
       if (remoteBase) {
         try {
-          const ancestorRaw = await getBlobContent(token, owner, name, remoteBase)
+          const ancestorRaw = await getBlobContentConditional(token, repo, remoteBase)
           const ancestor = await maybeDecryptFromPull(ancestorRaw)
           const merged = threeWayMerge(ancestor, localContent, content)
           if (merged.ok) autoMerged = merged.merged
@@ -442,7 +450,7 @@ export async function pullFromGitHub(input: {
     const remoteSettingsSha = remoteTree.get(vaultSettingsPath)
     if (remoteSettingsSha) {
       try {
-        const raw = await getBlobContent(token, owner, name, remoteSettingsSha)
+        const raw = await getBlobContentConditional(token, repo, remoteSettingsSha)
         const { parseVaultSettings, vaultSettingsHash, pickVaultSlice, serializeVaultSettings } = await import('../vaultSettings')
         const parsed = parseVaultSettings(raw)
         if (parsed && parsed.updatedAt > vaultSettingsLocalUpdatedAt) {
