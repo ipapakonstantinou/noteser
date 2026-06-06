@@ -60,10 +60,16 @@ const ResetConfirmModal = dynamic(
 
 export default function Home() {
   const hydrated = useHydration()
-  const sidebarCollapsed = useUIStore(s => s.sidebarCollapsed)
-  const sidebarWidth = useUIStore(s => s.sidebarWidth)
-  const rightSidebarCollapsed = useUIStore(s => s.rightSidebarCollapsed)
-  const rightSidebarWidth = useUIStore(s => s.rightSidebarWidth)
+  // Intentionally destructured against the whole store (not split into
+  // per-field selectors). The killswitch useEffect below
+  // (`useEffect(..., [hydrated])`) races against the noteStore's async
+  // IDB rehydration: with fewer renders here it fires AFTER addNote,
+  // sees an "unsynced" note, and shows the ResetConfirmModal mid-test.
+  // The full-store subscription keeps the pre-#79 render cadence so
+  // hydration always wins the race. The killswitch race is a separate
+  // bug (decideResetAction should wait for hasHydrated()).
+  // See e2e/attachment-drag.spec.ts.
+  const { sidebarCollapsed, sidebarWidth, rightSidebarCollapsed, rightSidebarWidth } = useUIStore()
   const pruneStaleTabs = useWorkspaceStore(s => s.pruneStaleTabs)
   const { isMobile } = useViewport()
 
