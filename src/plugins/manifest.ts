@@ -32,17 +32,19 @@ export interface PluginManifest {
  *  by the validator. The host gates each runtime capability call against
  *  the granted set stored alongside the install record.
  *
- *  v1.1 added the two `file-*` capabilities; v1.2 starts layering the
- *  vault / fs capabilities. `vault.read.all` reads every note's body +
- *  frontmatter (PR C). `vault.events` subscribes to vault-change
- *  pulses (PR F). `fs.open-directory` pops the native directory picker
- *  for importer workflows (PR E). */
+ *  v1.1 added the two `file-*` capabilities; v1.2 layers in vault /
+ *  fs capabilities. PR C lands `vault.read.all` (read every note's
+ *  body + frontmatter); PR D lands `vault.write` (the first
+ *  DESTRUCTIVE permission — see below); PR E lands `fs.open-directory`
+ *  (native directory picker for importer workflows); PR F lands
+ *  `vault.events` (subscribe to vault-change pulses). */
 export const PERMISSIONS = [
   'file-save',         // v1.1
   'file-open',         // v1.1
-  'vault.read.all',    // v1.2 — see docs/plugins-v1.2-plan.md §4.1
-  'vault.events',      // v1.2 — see docs/plugins-v1.2-plan.md §4.4
-  'fs.open-directory', // v1.2 — see docs/plugins-v1.2-plan.md §4.3
+  'vault.read.all',    // v1.2 PR C — see docs/plugins-v1.2-plan.md §4.1
+  'vault.write',       // v1.2 PR D — see docs/plugins-v1.2-plan.md §4.2
+  'fs.open-directory', // v1.2 PR E — see docs/plugins-v1.2-plan.md §4.3
+  'vault.events',      // v1.2 PR F — see docs/plugins-v1.2-plan.md §4.4
 ] as const
 export type PluginPermission = (typeof PERMISSIONS)[number]
 
@@ -53,10 +55,26 @@ export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   'file-open': 'Read a file you pick (opens the native file picker; the plugin sees the bytes of the file you choose, nothing else).',
   'vault.read.all':
     'Read the full content of every note in your vault. Required for features like backlinks, graph views, and AI search.',
+  'vault.write': 'This plugin can create, edit, and delete notes.',
   'vault.events':
     'Listen for changes to the vault. The plugin learns that a note was saved or that you switched notes (by id), but reading the body still requires a separate read permission.',
   'fs.open-directory':
     'Open folders to read files into the plugin. You pick the folder; the plugin sees the file names and contents under that folder, nothing else.',
+}
+
+/** Permissions flagged as DESTRUCTIVE in the install-confirm modal —
+ *  the user sees a red bullet + must opt-in. Required for any
+ *  capability that mutates vault contents.
+ *
+ *  v1.2 introduces `vault.write` as the first destructive permission.
+ *  Future destructive caps (e.g. `network.fetch`, `vault.hard-delete`)
+ *  add themselves here so the UI gating stays single-sourced. */
+export const DESTRUCTIVE_PERMISSIONS: ReadonlyArray<PluginPermission> = [
+  'vault.write',
+]
+
+export function isDestructivePermission(p: PluginPermission): boolean {
+  return DESTRUCTIVE_PERMISSIONS.includes(p)
 }
 
 /** Surface kinds the manifest can declare. Used by the install-preview

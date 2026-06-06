@@ -122,16 +122,18 @@ export interface PluginCtx {
   requestFileOpen(args?: { accept?: string[] }): Promise<{ bytes: Uint8Array; filename: string } | null>
 
   /**
-   * v1.2 vault namespace. Always populated; methods reject when the
-   * matching permission was not granted or has been revoked. Plugins
+   * v1.2 vault capability namespace. Always present on `ctx`. Methods
+   * REJECT with `'Permission "<name>" was not granted.'` (or
+   * `'... was revoked.'`) when the plugin did not declare the matching
+   * permission OR the user revoked it from Settings → Plugins. Plugins
    * can catch and degrade.
    *
    * - `read` ships in PR C (vault.read.all), spec §4.1.
+   * - `write` ships in PR D (vault.write), spec §4.2.
    * - `events` ships in PR F (vault.events), spec §4.4.
-   * - `write` lands in PR D (vault.write), spec §4.2.
    */
-  vault: {
-    read: {
+  readonly vault: {
+    readonly read: {
       /**
        * Snapshot every non-deleted note in the vault. Resolves with a
        * plain array of `NoteWithBody`. For very large vaults the host
@@ -157,7 +159,45 @@ export interface PluginCtx {
        */
       stream(opts?: { chunkSize?: number }): AsyncIterable<ReadonlyArray<NoteWithBody>>
     }
-    events: {
+    readonly write: {
+      /** Create a new note. Returns the new note's id plus a
+       *  `conflictResolved` flag: `'none'` when the title was used
+       *  verbatim, `'suffix'` when " (imported)" had to be appended
+       *  because another note already owned that title in the target
+       *  folder. Requires `vault.write` permission. */
+      createNote(args: {
+        title: string
+        body: string
+        folderPath?: string
+        frontmatter?: Record<string, unknown>
+      }): Promise<{ id: string; conflictResolved: 'none' | 'suffix' }>
+
+      /** Patch an existing note. Each field in `patch` is optional —
+       *  omitted fields are left untouched. Rejects when the note id
+       *  does not resolve to a non-deleted note. Requires
+       *  `vault.write` permission. */
+      updateNote(
+        id: string,
+        patch: {
+          title?: string
+          body?: string
+          frontmatter?: Record<string, unknown>
+        },
+      ): Promise<void>
+
+      /** Move a note to the trash (soft-delete only). Hard-delete is
+       *  intentionally absent — recovery from a plugin bug stays
+       *  possible through the existing trash UI. Requires
+       *  `vault.write` permission. */
+      deleteNote(id: string): Promise<void>
+
+      /** Create a folder at the given forward-slash-separated path
+       *  (e.g. "Imported/Obsidian"). Missing intermediate folders are
+       *  created. Idempotent — existing folders are reused. Requires
+       *  `vault.write` permission. */
+      createFolder(path: string): Promise<void>
+    }
+    readonly events: {
       /** Fires when any note in the vault changes (added / updated /
        *  trashed / restored). Coarse "something changed" pulse — use
        *  `onNoteSaved` if you need the id.

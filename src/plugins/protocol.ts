@@ -53,6 +53,7 @@ export type HostToWorker =
   | HostVNodeEvent
   | HostVaultReadResult
   | HostVaultStreamChunk
+  | HostVaultWriteResult
   | HostVaultChangedEvent
   | HostNoteSavedEvent
   | HostActiveNoteIdChanged
@@ -283,6 +284,23 @@ export interface HostFullscreenOpenResult {
   error?: string
 }
 
+/** Host's reply to a worker:requestVaultWrite. Carries the new note id
+ *  on a successful `create`, plus the `conflictResolved` flag indicating
+ *  whether the host had to suffix the title (`'suffix'` → " (imported)"
+ *  was appended) or accepted the requested title verbatim (`'none'`).
+ *  v1.2 capability — requires `vault.write` permission. */
+export interface HostVaultWriteResult {
+  type: 'host:vaultWriteResult'
+  seq: number
+  requestSeq: number
+  ok: boolean
+  /** Set on successful `create`; identifies the new note. Absent on
+   *  update / delete / createFolder. */
+  id?: string
+  conflictResolved?: 'none' | 'suffix'
+  error?: string
+}
+
 // ─── Worker → Host ─────────────────────────────────────────────────────────
 
 export type WorkerToHost =
@@ -296,6 +314,7 @@ export type WorkerToHost =
   | WorkerRequestFileSave
   | WorkerRequestFileOpen
   | WorkerRequestVaultRead
+  | WorkerRequestVaultWrite
   | WorkerRequestDirectoryOpen
   | WorkerError
   | WorkerSubscribeVault
@@ -540,6 +559,36 @@ export interface WorkerSetFullscreenContent {
   node: unknown
 }
 
+/** Plugin asking the host to mutate the vault — create / update /
+ *  soft-delete a note, or create a folder. v1.2 capability — requires
+ *  `vault.write` permission in the manifest AND granted at install.
+ *
+ *  The host writes through the same `useNoteStore` / `useFolderStore`
+ *  paths a user action would take, so sync, indexing, and undo behave
+ *  identically. Title-collision on `create` resolves by appending
+ *  ` (imported)` and returning `conflictResolved: 'suffix'`. */
+export interface WorkerRequestVaultWrite {
+  type: 'worker:requestVaultWrite'
+  seq: number
+  op:
+    | {
+        kind: 'create'
+        title: string
+        body: string
+        folderPath?: string
+        frontmatter?: Record<string, unknown>
+      }
+    | {
+        kind: 'update'
+        id: string
+        title?: string
+        body?: string
+        frontmatter?: Record<string, unknown>
+      }
+    | { kind: 'delete'; id: string }
+    | { kind: 'createFolder'; path: string }
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
 export function isHostToWorker(msg: unknown): msg is HostToWorker {
@@ -555,6 +604,7 @@ export function isHostToWorker(msg: unknown): msg is HostToWorker {
     'host:vnodeEvent',
     'host:vaultReadResult',
     'host:vaultStreamChunk',
+    'host:vaultWriteResult',
     'host:vaultChanged',
     'host:noteSaved',
     'host:activeNoteIdChanged',
@@ -578,6 +628,7 @@ export function isWorkerToHost(msg: unknown): msg is WorkerToHost {
     'worker:requestFileSave',
     'worker:requestFileOpen',
     'worker:requestVaultRead',
+    'worker:requestVaultWrite',
     'worker:subscribeVault',
     'worker:unsubscribeVault',
     'worker:requestDirectoryOpen',

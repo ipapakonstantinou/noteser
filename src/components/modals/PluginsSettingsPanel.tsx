@@ -9,7 +9,7 @@
 // so the user sees the same preview + permissions screen.
 
 import { useMemo, useState } from 'react'
-import { ArrowPathIcon, TrashIcon } from '@heroicons/react/24/outline'
+import { ArrowPathIcon, ShieldExclamationIcon, TrashIcon } from '@heroicons/react/24/outline'
 import { usePluginInstallStore } from '@/stores/pluginInstallStore'
 import { usePluginStore } from '@/stores/pluginStore'
 import { useNoteStore } from '@/stores/noteStore'
@@ -20,8 +20,13 @@ import {
   setPluginPermissionRevoked,
   uninstallPlugin,
 } from '@/plugins/pluginHostSingleton'
-import { PERMISSION_DESCRIPTIONS, type PluginPermission } from '@/plugins/manifest'
 import { scanVaultForManifests, type VaultManifestCandidate } from '@/plugins/vaultScan'
+import {
+  isDestructivePermission,
+  PERMISSION_DESCRIPTIONS,
+  type PluginPermission,
+} from '@/plugins/manifest'
+import { readPluginAudit, type PluginAuditEntry } from '@/utils/pluginAudit'
 
 export const PluginsSettingsPanel = () => {
   const records = usePluginInstallStore((s) => s.records)
@@ -213,11 +218,16 @@ export const PluginsSettingsPanel = () => {
               const running = m.id in loadedPlugins
               const declaredPermissions: PluginPermission[] = m.permissions ?? []
               const revoked = new Set<PluginPermission>(r.revokedPermissions ?? [])
+              const grantedDestructive = declaredPermissions.filter(isDestructivePermission)
               return (
-                <li key={m.id} className="p-3 flex flex-col gap-2">
+                <li
+                  key={m.id}
+                  className="p-3 flex flex-col gap-2"
+                  data-testid={`settings-plugins-row-${m.id}`}
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-baseline gap-2">
+                      <div className="flex items-baseline gap-2 flex-wrap">
                         <span className="text-sm font-medium text-obsidianText">{m.name}</span>
                         <span className="text-[10px] uppercase tracking-wide text-obsidianSecondaryText">
                           v{m.version}
@@ -229,6 +239,24 @@ export const PluginsSettingsPanel = () => {
                         ) : (
                           <span className="text-[10px] uppercase tracking-wide text-obsidianSecondaryText">
                             stopped
+                          </span>
+                        )}
+                        {/* PR D: destructive-permission badge. Persists for
+                            as long as the destructive permission stays
+                            declared in the manifest — even after the user
+                            revokes it from the toggle row below. The
+                            user always sees at a glance which plugins
+                            were granted dangerous capabilities. */}
+                        {grantedDestructive.length > 0 && (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide font-semibold text-red-300 bg-red-500/10 border border-red-500/40 px-1.5 py-0.5 rounded"
+                            title={grantedDestructive
+                              .map((p) => PERMISSION_DESCRIPTIONS[p])
+                              .join(' ')}
+                            data-testid={`settings-plugins-destructive-badge-${m.id}`}
+                          >
+                            <ShieldExclamationIcon className="w-3 h-3" />
+                            Destructive
                           </span>
                         )}
                       </div>
@@ -277,33 +305,38 @@ export const PluginsSettingsPanel = () => {
                       <div className="text-[11px] uppercase tracking-wide text-obsidianSecondaryText">
                         Permissions
                       </div>
-                      {declaredPermissions.map((perm) => (
-                        <label
-                          key={perm}
-                          className="flex items-start gap-2 text-xs text-obsidianText cursor-pointer"
-                          data-testid={`settings-plugins-permission-${m.id}-${perm}`}
-                        >
-                          <input
-                            type="checkbox"
-                            className="mt-0.5"
-                            checked={!revoked.has(perm)}
-                            onChange={(e) =>
-                              setPluginPermissionRevoked(m.id, perm, !e.target.checked)
-                            }
-                          />
-                          <span className="flex-1">
-                            <span className="font-medium">{perm}</span>
-                            <span className="block text-[11px] text-obsidianSecondaryText/80 mt-0.5">
-                              {PERMISSION_DESCRIPTIONS[perm]}
-                            </span>
-                            {revoked.has(perm) && (
-                              <span className="block text-[11px] text-amber-300 mt-0.5">
-                                Revoked — the plugin&apos;s next call to this capability will be rejected.
+                      {declaredPermissions.map((perm) => {
+                        const destructive = isDestructivePermission(perm)
+                        return (
+                          <label
+                            key={perm}
+                            className={`flex items-start gap-2 text-xs cursor-pointer ${
+                              destructive ? 'text-red-200' : 'text-obsidianText'
+                            }`}
+                            data-testid={`settings-plugins-permission-${m.id}-${perm}`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="mt-0.5"
+                              checked={!revoked.has(perm)}
+                              onChange={(e) =>
+                                setPluginPermissionRevoked(m.id, perm, !e.target.checked)
+                              }
+                            />
+                            <span className="flex-1">
+                              <span className="font-medium">{perm}</span>
+                              <span className="block text-[11px] text-obsidianSecondaryText/80 mt-0.5">
+                                {PERMISSION_DESCRIPTIONS[perm]}
                               </span>
-                            )}
-                          </span>
-                        </label>
-                      ))}
+                              {revoked.has(perm) && (
+                                <span className="block text-[11px] text-amber-300 mt-0.5">
+                                  Revoked — the plugin&apos;s next call to this capability will be rejected.
+                                </span>
+                              )}
+                            </span>
+                          </label>
+                        )
+                      })}
                     </div>
                   )}
                 </li>
@@ -313,6 +346,8 @@ export const PluginsSettingsPanel = () => {
         )}
       </section>
 
+      <PluginAuditPanel />
+
       <section className="text-xs text-obsidianSecondaryText border-t border-obsidianBorder pt-4">
         Plugins run in an isolated Web Worker and only have access to the
         capabilities the host exposes. They cannot read your GitHub token
@@ -321,5 +356,74 @@ export const PluginsSettingsPanel = () => {
         on / off requires a page reload.
       </section>
     </div>
+  )
+}
+
+const PluginAuditPanel = () => {
+  // The audit log is a localStorage-backed ring buffer. We snapshot on
+  // mount + on every Refresh click — no live subscription, because the
+  // log is append-only and the Settings modal is short-lived.
+  const [entries, setEntries] = useState<ReadonlyArray<PluginAuditEntry>>(() => readPluginAudit())
+  const refresh = () => setEntries(readPluginAudit())
+  // Newest first for the table; original buffer is oldest-first.
+  const newestFirst = useMemo(() => entries.slice().reverse(), [entries])
+  return (
+    <section data-testid="settings-plugins-audit">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm text-obsidianText">Plugin activity</div>
+        <button
+          type="button"
+          onClick={refresh}
+          className="text-[11px] text-obsidianSecondaryText hover:text-obsidianText"
+        >
+          Refresh
+        </button>
+      </div>
+      <p className="text-xs text-obsidianSecondaryText mb-2">
+        Every vault change made by a plugin lands here so you can trace
+        unexpected edits. Up to 500 entries are kept locally.
+      </p>
+      {newestFirst.length === 0 ? (
+        <p
+          className="text-xs text-obsidianSecondaryText"
+          data-testid="settings-plugins-audit-empty"
+        >
+          No plugin activity yet.
+        </p>
+      ) : (
+        <ul className="divide-y divide-obsidianBorder rounded-lg border border-obsidianBorder max-h-48 overflow-y-auto">
+          {newestFirst.slice(0, 50).map((e) => (
+            <li
+              key={`${e.ts}-${e.pluginId}-${e.op}-${e.target}`}
+              className="p-2 text-[11px] flex items-start gap-2"
+              data-testid="settings-plugins-audit-entry"
+            >
+              <span className="text-obsidianSecondaryText whitespace-nowrap">
+                {new Date(e.ts).toLocaleString()}
+              </span>
+              <span className="text-obsidianText">
+                <code className="text-[10px] bg-obsidianHighlight/40 px-1 rounded">
+                  {e.pluginId}
+                </code>{' '}
+                <span
+                  className={
+                    e.op === 'delete' ? 'text-red-300 font-medium' : 'text-amber-300 font-medium'
+                  }
+                >
+                  {e.op}
+                </span>{' '}
+                <span className="text-obsidianSecondaryText break-all">{e.target}</span>
+                {e.conflictResolved === 'suffix' && (
+                  <span className="text-[10px] uppercase ml-1 text-amber-300">renamed</span>
+                )}
+                {e.ok === false && (
+                  <span className="text-[10px] uppercase ml-1 text-red-300">failed</span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   )
 }

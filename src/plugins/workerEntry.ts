@@ -86,6 +86,18 @@ interface PendingFullscreenOpen {
   resolve: () => void
   reject: (err: Error) => void
 }
+/** Pending vault.write request awaiting host reply. `create` resolves
+ *  with { id, conflictResolved }; the other ops resolve with void. */
+interface PendingVaultWriteCreate {
+  kind: 'vault.write.create'
+  resolve: (v: { id: string; conflictResolved: 'none' | 'suffix' }) => void
+  reject: (err: Error) => void
+}
+interface PendingVaultWriteVoid {
+  kind: 'vault.write.void'
+  resolve: () => void
+  reject: (err: Error) => void
+}
 const pending = new Map<
   number,
   | PendingFileSave
@@ -95,6 +107,8 @@ const pending = new Map<
   | PendingVaultReadStream
   | PendingDirectoryOpen
   | PendingFullscreenOpen
+  | PendingVaultWriteCreate
+  | PendingVaultWriteVoid
 >()
 
 let nextRequestSeq = 0
@@ -337,6 +351,39 @@ self.onmessage = async (event: MessageEvent<HostToWorker>) => {
       case 'host:fullscreenClosed':
         await handleFullscreenClosed(msg.seq, msg.viewId)
         return
+
+      case 'host:vaultWriteResult': {
+        const p = pending.get(msg.requestSeq)
+        if (!p) return
+        if (p.kind !== 'vault.write.create' && p.kind !== 'vault.write.void') {
+          // Mismatched pending shape — emit a worker:error so the dev
+          // sees the protocol mismatch instead of a silently hung Promise.
+          emit({
+            type: 'worker:error',
+            seq: 0,
+            message: `vaultWriteResult arrived for a non-write pending request (kind=${p.kind}).`,
+          })
+          return
+        }
+        pending.delete(msg.requestSeq)
+        if (!msg.ok) {
+          p.reject(new Error(msg.error ?? 'Vault write failed.'))
+          return
+        }
+        if (p.kind === 'vault.write.create') {
+          if (typeof msg.id !== 'string') {
+            p.reject(new Error('Vault write succeeded but host returned no note id.'))
+            return
+          }
+          p.resolve({
+            id: msg.id,
+            conflictResolved: msg.conflictResolved ?? 'none',
+          })
+        } else {
+          p.resolve()
+        }
+        return
+      }
 
       default:
         // Exhaustiveness — TypeScript will catch missed cases at build,
@@ -602,6 +649,70 @@ function buildCtx(parentSeq: number): PluginCtx {
         },
         stream(opts?: { chunkSize?: number }) {
           return makeVaultStream(opts?.chunkSize)
+        },
+      },
+      write: {
+        createNote(args) {
+          const requestSeq = allocRequestSeq()
+          const promise = new Promise<{ id: string; conflictResolved: 'none' | 'suffix' }>(
+            (resolve, reject) => {
+              pending.set(requestSeq, { kind: 'vault.write.create', resolve, reject })
+            },
+          )
+          emit({
+            type: 'worker:requestVaultWrite',
+            seq: requestSeq,
+            op: {
+              kind: 'create',
+              title: args.title,
+              body: args.body,
+              ...(args.folderPath !== undefined ? { folderPath: args.folderPath } : {}),
+              ...(args.frontmatter !== undefined ? { frontmatter: args.frontmatter } : {}),
+            },
+          })
+          return promise
+        },
+        updateNote(id, patch) {
+          const requestSeq = allocRequestSeq()
+          const promise = new Promise<void>((resolve, reject) => {
+            pending.set(requestSeq, { kind: 'vault.write.void', resolve, reject })
+          })
+          emit({
+            type: 'worker:requestVaultWrite',
+            seq: requestSeq,
+            op: {
+              kind: 'update',
+              id,
+              ...(patch.title !== undefined ? { title: patch.title } : {}),
+              ...(patch.body !== undefined ? { body: patch.body } : {}),
+              ...(patch.frontmatter !== undefined ? { frontmatter: patch.frontmatter } : {}),
+            },
+          })
+          return promise
+        },
+        deleteNote(id) {
+          const requestSeq = allocRequestSeq()
+          const promise = new Promise<void>((resolve, reject) => {
+            pending.set(requestSeq, { kind: 'vault.write.void', resolve, reject })
+          })
+          emit({
+            type: 'worker:requestVaultWrite',
+            seq: requestSeq,
+            op: { kind: 'delete', id },
+          })
+          return promise
+        },
+        createFolder(path) {
+          const requestSeq = allocRequestSeq()
+          const promise = new Promise<void>((resolve, reject) => {
+            pending.set(requestSeq, { kind: 'vault.write.void', resolve, reject })
+          })
+          emit({
+            type: 'worker:requestVaultWrite',
+            seq: requestSeq,
+            op: { kind: 'createFolder', path },
+          })
+          return promise
         },
       },
       events: {

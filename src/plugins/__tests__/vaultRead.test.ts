@@ -81,10 +81,11 @@ describe('manifest accepts vault.read.all', () => {
   })
 
   test('validator still rejects unknown permissions', () => {
-    const r = validateManifest({ ...base, permissions: ['vault.read.all', 'vault.write'] })
+    // PRs C/D/E/F each added a v1.2 permission; pick a name that has
+    // never shipped to verify the rejection arm still works.
+    const r = validateManifest({ ...base, permissions: ['vault.read.all', 'network.fetch'] })
     expect(r.ok).toBe(false)
-    // Error must mention the unknown one specifically.
-    expect(r.errors.some((e) => e.includes('vault.write'))).toBe(true)
+    expect(r.errors.some((e) => e.includes('network.fetch'))).toBe(true)
   })
 
   test('validator deduplicates a repeated vault.read.all', () => {

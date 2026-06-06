@@ -189,15 +189,25 @@ export interface PluginCtx {
   getSetting<T = unknown>(key: string): T | undefined
   setSetting<T = unknown>(key: string, value: T): void
 
+  /** v1.1 file-I/O. Requires `permissions: ['file-save']`. */
+  requestFileSave(args: { suggestedName: string; mimeType: string; bytes: Uint8Array }): Promise<void>
+  /** v1.1 file-I/O. Requires `permissions: ['file-open']`. */
+  requestFileOpen(args?: { accept?: string[] }): Promise<{ bytes: Uint8Array; filename: string } | null>
+
   /**
-   * v1.2 vault namespace. Always populated; methods reject when the
-   * matching permission was not granted or has been revoked. Plugins
-   * can catch and degrade. PR C ships `read`, PR F ships `events`.
+   * v1.2 vault namespace. Always populated; methods reject with
+   * `'Permission "<name>" was not granted.'` (or `'... was revoked.'`)
+   * when the plugin did not declare the matching permission OR the
+   * user revoked it from Settings → Plugins. Plugins can catch and
+   * degrade.
    *
-   * Spec reference: docs/plugins-v1.2-plan.md §4.1 (read), §4.4 (events).
+   * PR C ships `read`; PR D ships `write`; PR F ships `events`.
+   *
+   * Spec reference: docs/plugins-v1.2-plan.md §4.1 (read),
+   * §4.2 (write), §4.4 (events).
    */
-  vault: {
-    read: {
+  readonly vault: {
+    readonly read: {
       /** Snapshot every non-deleted note in the vault. Resolves with a
        *  plain array of `NoteWithBody`. For very large vaults the host
        *  rejects with `'Vault too large; use stream().'`; plugins MUST
@@ -219,7 +229,37 @@ export interface PluginCtx {
        *  Requires `vault.read.all` permission. */
       stream(opts?: { chunkSize?: number }): AsyncIterable<ReadonlyArray<NoteWithBody>>
     }
-    events: {
+    readonly write: {
+      /** Create a note. Returns the new note's id plus a
+       *  `conflictResolved` flag: `'none'` when the title was used
+       *  verbatim, `'suffix'` when " (imported)" was appended to
+       *  avoid a title collision in the target folder. Requires
+       *  `vault.write` permission. */
+      createNote(args: {
+        title: string
+        body: string
+        folderPath?: string
+        frontmatter?: Record<string, unknown>
+      }): Promise<{ id: string; conflictResolved: 'none' | 'suffix' }>
+      /** Patch an existing note. Each field in `patch` is optional —
+       *  omitted fields are left untouched. Requires `vault.write`. */
+      updateNote(
+        id: string,
+        patch: {
+          title?: string
+          body?: string
+          frontmatter?: Record<string, unknown>
+        },
+      ): Promise<void>
+      /** Move a note to the trash (soft-delete only). Requires
+       *  `vault.write` permission. */
+      deleteNote(id: string): Promise<void>
+      /** Create a folder at the given forward-slash-separated path
+       *  (e.g. "Imported/Obsidian"). Missing intermediate folders are
+       *  created. Idempotent. Requires `vault.write` permission. */
+      createFolder(path: string): Promise<void>
+    }
+    readonly events: {
       /** Fires when any note in the vault changes (added / updated /
        *  trashed / restored). Requires `vault.events` permission.
        *  Returns an `Unsubscribe` thunk; the host also auto-unwinds

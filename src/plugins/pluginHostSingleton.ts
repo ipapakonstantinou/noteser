@@ -16,7 +16,7 @@
 // safety: the function returns null on the server, since Workers do
 // not exist there.
 
-import { PluginHost, type MinimalWorker } from './PluginHost'
+import { PluginHost, type MinimalWorker, type VaultWriteOp } from './PluginHost'
 import { MAX_DIRECTORY_ENTRIES } from './protocol'
 import {
   buildExtensionMatcher,
@@ -39,6 +39,7 @@ import {
   projectPayloadSize,
   MAX_GET_ALL_BYTES,
 } from './vaultSnapshot'
+import { recordPluginWrite } from '@/utils/pluginAudit'
 
 let instance: PluginHost | null = null
 
@@ -531,6 +532,10 @@ function wireListener(host: PluginHost): void {
           .getState()
           .updateActiveFullscreenContent(event.pluginId, event.viewId, event.node)
         return
+
+      case 'vaultWriteRequested':
+        handleVaultWriteRequest(host, event)
+        return
     }
   })
 }
@@ -828,6 +833,311 @@ async function handleFileOpenRequest(
       host.respondFileOpen(pluginId, requestSeq, { ok: false, error: message })
     }
   }
+}
+
+// ─── vault.write capability (PR D) ─────────────────────────────────────────
+//
+// The host writes through the same `useNoteStore.addNote` / `updateNote` /
+// `deleteNote` and `useFolderStore.addFolder` / `ensureFolderPath` paths a
+// user action would use, so sync, indexing, undo, and the Trash UI all
+// behave identically whether the user or a plugin made the change.
+//
+// Conflict resolution: when a `create` lands a title that already
+// exists in the target folder, the host appends " (imported)" to the
+// title and reports `conflictResolved: 'suffix'`. The policy lives
+// here — the importer plugin gets the conflict outcome for free in
+// its progress log and never has to retry.
+//
+// Audit: every accepted op (and every rejection that survives the
+// permission gate) calls recordPluginWrite. Destructive permission
+// demands traceability.
+
+const MAX_TITLE_LEN = 200
+const MAX_BODY_BYTES = 1 * 1024 * 1024 // 1 MiB cap; matches plan §4.2.
+const FOLDER_PATH_RE = /^[^\s/][^/]*(\/[^\s/][^/]*)*$/
+
+function handleVaultWriteRequest(
+  host: PluginHost,
+  event: Extract<import('./PluginHost').PluginHostEvent, { type: 'vaultWriteRequested' }>,
+): void {
+  const { pluginId, requestSeq, op } = event
+  try {
+    switch (op.kind) {
+      case 'create': {
+        const result = applyCreate(pluginId, op)
+        host.respondVaultWrite(pluginId, requestSeq, {
+          ok: true,
+          id: result.id,
+          conflictResolved: result.conflictResolved,
+        })
+        recordPluginWrite({
+          pluginId,
+          op: 'create',
+          target: result.id,
+          ok: true,
+          conflictResolved: result.conflictResolved,
+        })
+        return
+      }
+      case 'update': {
+        applyUpdate(pluginId, op)
+        host.respondVaultWrite(pluginId, requestSeq, { ok: true })
+        recordPluginWrite({ pluginId, op: 'update', target: op.id, ok: true })
+        return
+      }
+      case 'delete': {
+        applyDelete(pluginId, op)
+        host.respondVaultWrite(pluginId, requestSeq, { ok: true })
+        recordPluginWrite({ pluginId, op: 'delete', target: op.id, ok: true })
+        return
+      }
+      case 'createFolder': {
+        applyCreateFolder(pluginId, op)
+        host.respondVaultWrite(pluginId, requestSeq, { ok: true })
+        recordPluginWrite({
+          pluginId,
+          op: 'createFolder',
+          target: op.path,
+          ok: true,
+        })
+        return
+      }
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    host.respondVaultWrite(pluginId, requestSeq, { ok: false, error: message })
+    recordPluginWrite({
+      pluginId,
+      op: op.kind,
+      target: extractTarget(op),
+      ok: false,
+      error: message,
+    })
+  }
+}
+
+function extractTarget(op: VaultWriteOp): string {
+  switch (op.kind) {
+    case 'create':
+      return op.title
+    case 'update':
+    case 'delete':
+      return op.id
+    case 'createFolder':
+      return op.path
+  }
+}
+
+/** Resolve a forward-slash folder path to an existing folder id (or
+ *  null for the root). Creates missing segments via
+ *  `useFolderStore.ensureFolderPath` — the same code path the importer
+ *  and pull layer use for "given a path, give me an id". */
+function resolveFolderPath(folderPath: string | undefined): string | null {
+  if (!folderPath || folderPath.length === 0) return null
+  const segments = folderPath.split('/').filter((s) => s.length > 0)
+  if (segments.length === 0) return null
+  return useFolderStore.getState().ensureFolderPath(segments)
+}
+
+function applyCreate(
+  _pluginId: string,
+  op: Extract<VaultWriteOp, { kind: 'create' }>,
+): { id: string; conflictResolved: 'none' | 'suffix' } {
+  const title = (op.title ?? '').trim()
+  if (title.length === 0) throw new Error('createNote: title is required.')
+  if (title.length > MAX_TITLE_LEN) {
+    throw new Error(`createNote: title exceeds ${MAX_TITLE_LEN} chars.`)
+  }
+  const body = op.body ?? ''
+  if (byteLength(body) > MAX_BODY_BYTES) {
+    throw new Error(`createNote: body exceeds ${MAX_BODY_BYTES} bytes.`)
+  }
+  if (op.folderPath !== undefined && op.folderPath.length > 0) {
+    if (!FOLDER_PATH_RE.test(op.folderPath)) {
+      throw new Error(`createNote: invalid folderPath "${op.folderPath}".`)
+    }
+  }
+
+  const folderId = resolveFolderPath(op.folderPath)
+  const noteStore = useNoteStore.getState()
+
+  // Conflict resolution: look for an active (non-trashed) note with the
+  // same title in the same folder. If found, append " (imported)". If
+  // that ALSO collides, append a numeric suffix. The latter case is rare
+  // (two imports of the same source) but we never want to bail entirely.
+  const { resolvedTitle, conflictResolved } = resolveTitleConflict(
+    title,
+    folderId,
+    noteStore.notes,
+  )
+
+  const finalContent = composeContent(resolvedTitle, body, op.frontmatter)
+  const created = noteStore.addNote({
+    title: resolvedTitle,
+    content: finalContent,
+    folderId,
+  })
+  return { id: created.id, conflictResolved }
+}
+
+function applyUpdate(
+  _pluginId: string,
+  op: Extract<VaultWriteOp, { kind: 'update' }>,
+): void {
+  const noteStore = useNoteStore.getState()
+  const note = noteStore.notes.find((n) => n.id === op.id)
+  if (!note || note.isDeleted) {
+    throw new Error(`updateNote: note "${op.id}" does not exist.`)
+  }
+  if (op.body !== undefined && byteLength(op.body) > MAX_BODY_BYTES) {
+    throw new Error(`updateNote: body exceeds ${MAX_BODY_BYTES} bytes.`)
+  }
+  if (op.title !== undefined) {
+    const t = op.title.trim()
+    if (t.length === 0 || t.length > MAX_TITLE_LEN) {
+      throw new Error(`updateNote: title must be 1-${MAX_TITLE_LEN} chars.`)
+    }
+  }
+
+  const patch: { title?: string; content?: string } = {}
+  if (op.title !== undefined) patch.title = op.title.trim()
+  if (op.body !== undefined || op.frontmatter !== undefined) {
+    // Re-compose. If only one of the two was supplied, preserve the
+    // other from the existing note content.
+    const nextTitle = op.title?.trim() ?? note.title ?? 'Untitled'
+    const nextBody = op.body !== undefined ? op.body : stripFrontmatter(note.content ?? '').body
+    const nextFrontmatter =
+      op.frontmatter !== undefined
+        ? op.frontmatter
+        : stripFrontmatter(note.content ?? '').frontmatter
+    patch.content = composeContent(nextTitle, nextBody, nextFrontmatter)
+  }
+  noteStore.updateNote(op.id, patch)
+}
+
+function applyDelete(
+  _pluginId: string,
+  op: Extract<VaultWriteOp, { kind: 'delete' }>,
+): void {
+  const noteStore = useNoteStore.getState()
+  const note = noteStore.notes.find((n) => n.id === op.id)
+  if (!note || note.isDeleted) {
+    throw new Error(`deleteNote: note "${op.id}" does not exist.`)
+  }
+  // SOFT-delete only — the plan §4.2 forbids hard-delete from a
+  // plugin. The note remains recoverable from the Trash UI.
+  noteStore.deleteNote(op.id)
+}
+
+function applyCreateFolder(
+  _pluginId: string,
+  op: Extract<VaultWriteOp, { kind: 'createFolder' }>,
+): void {
+  if (!FOLDER_PATH_RE.test(op.path)) {
+    throw new Error(`createFolder: invalid path "${op.path}".`)
+  }
+  const segments = op.path.split('/').filter((s) => s.length > 0)
+  if (segments.length === 0) throw new Error('createFolder: path is empty.')
+  useFolderStore.getState().ensureFolderPath(segments)
+}
+
+function resolveTitleConflict(
+  desired: string,
+  folderId: string | null,
+  notes: ReadonlyArray<{ id: string; title?: string; folderId: string | null; isDeleted: boolean }>,
+): { resolvedTitle: string; conflictResolved: 'none' | 'suffix' } {
+  const samFolderActive = notes.filter(
+    (n) => !n.isDeleted && (n.folderId ?? null) === folderId,
+  )
+  const titles = new Set(samFolderActive.map((n) => (n.title ?? '').toLowerCase()))
+  if (!titles.has(desired.toLowerCase())) {
+    return { resolvedTitle: desired, conflictResolved: 'none' }
+  }
+  let candidate = `${desired} (imported)`
+  let n = 2
+  while (titles.has(candidate.toLowerCase())) {
+    candidate = `${desired} (imported ${n})`
+    n++
+  }
+  return { resolvedTitle: candidate, conflictResolved: 'suffix' }
+}
+
+function byteLength(s: string): number {
+  if (typeof TextEncoder !== 'undefined') {
+    return new TextEncoder().encode(s).length
+  }
+  // Rough fallback for environments without TextEncoder (none we ship
+  // to; included so unit tests in node-without-DOM don't trip).
+  return s.length
+}
+
+/** Compose the on-disk note content: optional frontmatter block first,
+ *  then the body. Matches the canonical layout the importer / GitHub
+ *  push layer produce so a plugin-created note round-trips identically. */
+function composeContent(
+  _title: string,
+  body: string,
+  frontmatter: Record<string, unknown> | undefined,
+): string {
+  if (!frontmatter || Object.keys(frontmatter).length === 0) return body
+  const lines = ['---']
+  for (const [k, v] of Object.entries(frontmatter)) {
+    lines.push(`${k}: ${serialiseFrontmatterValue(v)}`)
+  }
+  lines.push('---')
+  lines.push('')
+  lines.push(body)
+  return lines.join('\n')
+}
+
+function serialiseFrontmatterValue(v: unknown): string {
+  if (v === null || v === undefined) return ''
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  if (Array.isArray(v)) {
+    return `[${v.map((x) => serialiseFrontmatterValue(x)).join(', ')}]`
+  }
+  if (typeof v === 'object') return JSON.stringify(v)
+  const s = String(v)
+  return /[:#\[\]{}|>"'\n]/.test(s) ? JSON.stringify(s) : s
+}
+
+/** Split a note body into its frontmatter (parsed) + body. Used by the
+ *  update path so a partial patch ({ body } OR { frontmatter }) leaves
+ *  the other half alone. */
+function stripFrontmatter(content: string): {
+  frontmatter: Record<string, unknown> | undefined
+  body: string
+} {
+  if (!content.startsWith('---\n')) return { frontmatter: undefined, body: content }
+  const end = content.indexOf('\n---', 4)
+  if (end < 0) return { frontmatter: undefined, body: content }
+  const block = content.slice(4, end)
+  const after = content.slice(end + 4).replace(/^\n/, '')
+  const fm: Record<string, unknown> = {}
+  for (const line of block.split('\n')) {
+    const idx = line.indexOf(':')
+    if (idx < 0) continue
+    const k = line.slice(0, idx).trim()
+    const raw = line.slice(idx + 1).trim()
+    fm[k] = raw
+  }
+  return { frontmatter: fm, body: after }
+}
+
+/** Test-only: wire the vault.write handler onto a fresh PluginHost.
+ *
+ *  Production code uses `getPluginHost()` which lazily wires every
+ *  listener (including the file-I/O ones). Unit tests want to drive
+ *  the vault.write path in isolation against a FakeWorker, without
+ *  spinning up the toast / install store wiring. This export lets a
+ *  test subscribe just the vault.write event for the duration of the
+ *  test. Not for production use. */
+export function wireSingletonHandlersForTests(host: PluginHost): void {
+  host.on((event) => {
+    if (event.type === 'vaultWriteRequested') {
+      handleVaultWriteRequest(host, event)
+    }
+  })
 }
 
 function pickFileViaInput(accept: string[] | undefined): Promise<File> {
