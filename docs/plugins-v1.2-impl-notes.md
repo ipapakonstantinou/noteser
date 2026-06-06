@@ -172,3 +172,114 @@ test plan: install from a local manifest URL, run "Vault read demo:
 count notes" from the palette, confirm the toast reports the right
 note count; revoke `vault.read.all` from Settings → Plugins, re-run,
 confirm the toast reports the rejection.
+
+## PR F — `vault.events` subscriptions
+
+Plan reference: section 4.4, plus protocol additions in 5.1 / 5.2 and
+SDK shape in 6.
+
+### What landed
+
+- Permission string `vault.events` added to `PERMISSIONS` /
+  `PERMISSION_DESCRIPTIONS` in `src/plugins/manifest.ts`. Modal copy:
+  "Listen for changes to the vault…".
+- Wire protocol envelopes:
+  - Worker → host: `worker:subscribeVault`, `worker:unsubscribeVault`.
+  - Host → worker: `host:vaultChanged`, `host:noteSaved`,
+    `host:activeNoteIdChanged`.
+  - All three host envelopes carry the `subscriptionId` the worker
+    minted, so the worker can pair the delivered event with the right
+    in-worker handler.
+- SDK addition: `ctx.vault.events.{onVaultChange, onNoteSaved,
+  onActiveNoteChange}`, each returning an `Unsubscribe` thunk
+  exported from the SDK package.
+- Host implementation:
+  - `PluginHost.notifyVaultChanged()`, `notifyNoteSaved(noteId)`,
+    `notifyActiveNoteIdChanged(noteId)` walk every loaded plugin and
+    schedule a debounced dispatch.
+  - Debounce window centralised at `VAULT_EVENT_DEBOUNCE_MS` (250 ms)
+    in `protocol.ts`. Per-event-type cap centralised at
+    `MAX_VAULT_SUBSCRIPTIONS_PER_EVENT` (16); the worker enforces it
+    synchronously when the plugin calls subscribe.
+  - `pluginHostSingleton.wireVaultEvents()` wires the noteStore /
+    folderStore / workspaceStore subscriptions:
+    - Any noteStore or folderStore mutation calls
+      `notifyVaultChanged()` (debounced 250 ms).
+    - A noteStore mutation that changes a note's body / title /
+      isDeleted (i.e. a save) calls `notifyNoteSaved(noteId)`
+      (debounced 250 ms; ids coalesced per window via a `Set`).
+    - A workspaceStore mutation that resolves to a different active
+      noteId calls `notifyActiveNoteIdChanged(noteId)` (debounced
+      250 ms; only the most recent id survives the window).
+
+### Cleanup on unload
+
+`PluginHost.unload()` now:
+
+1. Cancels every in-flight debounce timer for the entry.
+2. Clears the worker's vault-subscriptions map.
+3. Calls `worker.terminate()` (existing v1.1 behaviour).
+
+The leak test in `src/__tests__/plugins/vaultEvents.test.ts` mounts +
+unloads a plugin 10 times and asserts `host.vaultSubscriptionCount()`
+is 0 after each iteration. A leaked subscriber would surface as a
+linear growth in that count and a failed assertion.
+
+### Settings revocation
+
+Reuses the `revokedPermissions: PluginPermission[]` field on
+`InstalledPluginRecord` that PR C introduced. Settings → Plugins
+already shows the per-permission toggle (PR C); PR F adds
+`vault.events` to the list of permissions surfaced there.
+
+`PluginHost.isVaultEventsAllowed(entry)` re-checks two sources on
+every dispatch: the in-host `entry.plugin.revokedPermissions` set
+(populated from PR C's boot wiring), and the optional
+`opts.isPermissionRevoked` hook the test harness uses. A revocation
+that lands during the debounce window suppresses delivery at flush
+time, not just at schedule time.
+
+The existing subscriber's `Unsubscribe` thunk is intentionally NOT
+torn down by revocation. The plan calls this out: "toggle off makes
+the subscription handler stop firing (but doesn't crash existing
+subscribers; they just stop receiving events)". A re-grant
+immediately restores delivery on the next signal — the host adds no
+extra state for that path.
+
+### Manifest-preview modal
+
+`PERMISSION_DESCRIPTIONS['vault.events']` is the prose the modal
+renders verbatim. The existing amber bullet renders without further
+changes; `vault.events` is NOT flagged destructive (red).
+
+### Reference plugin
+
+`public/plugins/noteser-event-demo/` subscribes to all three event
+types and toasts on each fire, stamping the event type in the
+message. Useful for manually verifying debounce timing: rapid
+keystrokes collapse to one `noteSaved` toast per 250 ms window.
+Best-effort cleanup in `onPanelUnmount` calls every unsubscribe; the
+host's automatic cleanup on terminate is the safety net.
+
+### Deviations from the plan
+
+- The plan describes `onVaultChange`'s payload as void; that matches.
+  We coalesce `noteSaved` ids into a `Set<string>` at the host so a
+  burst of saves on the same id fires the worker handler exactly
+  once per debounce window. Different ids in the same window
+  produce one worker dispatch per id (not one event with an array)
+  — keeps the SDK signature `(noteId: string) => void` rather than
+  `(noteIds: string[]) => void`.
+- Settings revocation reuses PR C's `revokedPermissions` field on
+  `InstalledPluginRecord` rather than introducing a separate grants
+  store. Same outcome, half the state shape.
+
+### Follow-ups for later PRs
+
+- The graph view / backlinks plugin (#71) and AI plugins (#70) can
+  now build their debounce-respecting invalidation flow on top of
+  `vault.events` + PR C's `vault.read.all`.
+- The 16-subscription cap is enforced worker-side. If a future
+  capability adds host-side subscriptions outside the SDK, the cap
+  should move into the host so the worker boundary stays the cap's
+  enforcement point.

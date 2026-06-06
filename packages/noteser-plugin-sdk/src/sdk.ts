@@ -174,9 +174,9 @@ export interface PluginCtx {
   /**
    * v1.2 vault namespace. Always populated; methods reject when the
    * matching permission was not granted or has been revoked. Plugins
-   * can catch and degrade. PR C wires the `read` sub-namespace.
+   * can catch and degrade. PR C ships `read`, PR F ships `events`.
    *
-   * Spec reference: docs/plugins-v1.2-plan.md §4.1.
+   * Spec reference: docs/plugins-v1.2-plan.md §4.1 (read), §4.4 (events).
    */
   vault: {
     read: {
@@ -201,8 +201,27 @@ export interface PluginCtx {
        *  Requires `vault.read.all` permission. */
       stream(opts?: { chunkSize?: number }): AsyncIterable<ReadonlyArray<NoteWithBody>>
     }
+    events: {
+      /** Fires when any note in the vault changes (added / updated /
+       *  trashed / restored). Requires `vault.events` permission.
+       *  Returns an `Unsubscribe` thunk; the host also auto-unwinds
+       *  every subscription on plugin unload. Debounced host-side at
+       *  250 ms; per-event-type subscription cap is 16. */
+      onVaultChange(handler: () => void): Unsubscribe
+      /** Fires when a specific note's body / title / frontmatter is
+       *  saved. Same debounce / cap rules as `onVaultChange`. */
+      onNoteSaved(handler: (noteId: string) => void): Unsubscribe
+      /** Fires when the editor moves to a different note (or to no
+       *  note). Same debounce / cap rules as `onVaultChange`. */
+      onActiveNoteChange(handler: (noteId: string | null) => void): Unsubscribe
+    }
   }
 }
+
+/** Cleanup thunk returned by every `vault.events` subscription. The
+ *  plugin must call this when it no longer needs the events; the host
+ *  ALSO calls every outstanding unsubscribe when the plugin unloads. */
+export type Unsubscribe = () => void
 
 export interface PluginHandlers {
   /** Optional — fires after the worker boots and the manifest validates. */

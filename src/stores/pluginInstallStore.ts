@@ -30,7 +30,11 @@ export interface InstalledPluginRecord {
   /** v1.2: per-install capability revocation list. Persisted across
    *  reboots — a permission revoked here stays revoked until the user
    *  re-grants it. The manifest's declared `permissions` list is the
-   *  ceiling; revocation can only subtract from it. */
+   *  ceiling; revocation can only subtract from it. Honoured at
+   *  dispatch time for every v1.2 capability (vault.read.all,
+   *  vault.events, …); existing subscribers are not torn down on
+   *  revocation — they just stop receiving events / get a rejection
+   *  on the next call. */
   revokedPermissions?: PluginPermission[]
 }
 
@@ -41,10 +45,14 @@ interface PluginInstallState {
   install: (record: InstalledPluginRecord) => void
   uninstall: (pluginId: string) => void
   setEnabled: (pluginId: string, enabled: boolean) => void
-  /** Mark a permission revoked for the given plugin. Idempotent. Used
-   *  by Settings → Plugins to disable a capability at runtime; the
-   *  PluginHost reads the same flag on boot to seed its in-memory
-   *  revocation set. */
+  /** Toggle a permission's revoked state for the given plugin.
+   *  Idempotent. Used by Settings → Plugins; the PluginHost reads the
+   *  same flag on boot to seed its in-memory revocation set, and
+   *  re-checks on every v1.2 capability dispatch so a runtime change
+   *  takes effect without restarting the plugin. The manifest's
+   *  declared `permissions` list is unchanged — revocation only
+   *  subtracts. Existing event-subscribers stay alive but stop
+   *  receiving events. */
   setPermissionRevoked: (pluginId: string, permission: PluginPermission, revoked: boolean) => void
 }
 

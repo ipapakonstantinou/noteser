@@ -22,6 +22,17 @@ export const MAX_ENVELOPE_BYTES = 256 * 1024 // 256 KB
 /** Per-plugin rate limit. Host drops + warns above this. */
 export const MAX_MESSAGES_PER_SECOND = 60
 
+/** Debounce window (ms) the host applies to every `vault.events`
+ *  dispatch (vaultChanged / noteSaved / activeNoteIdChanged). Plugins
+ *  cannot lower this — the cap is host-side so a runaway plugin cannot
+ *  force a re-derive on every keystroke. Section 4.4 of the v1.2 plan. */
+export const VAULT_EVENT_DEBOUNCE_MS = 250
+
+/** Per-event-type cap on active subscriptions for a single plugin. The
+ *  worker rejects further `onVaultChange` / `onNoteSaved` /
+ *  `onActiveNoteChange` calls synchronously beyond this. */
+export const MAX_VAULT_SUBSCRIPTIONS_PER_EVENT = 16
+
 // ─── Host → Worker ─────────────────────────────────────────────────────────
 
 export type HostToWorker =
@@ -36,6 +47,9 @@ export type HostToWorker =
   | HostVNodeEvent
   | HostVaultReadResult
   | HostVaultStreamChunk
+  | HostVaultChangedEvent
+  | HostNoteSavedEvent
+  | HostActiveNoteIdChanged
 
 /** First message the host sends. Worker initialises the plugin module
  *  and replies with WorkerReady on success or WorkerBootError on failure. */
@@ -224,6 +238,8 @@ export type WorkerToHost =
   | WorkerRequestFileOpen
   | WorkerRequestVaultRead
   | WorkerError
+  | WorkerSubscribeVault
+  | WorkerUnsubscribeVault
 
 /** Sent in reply to host:boot once the plugin module loaded and
  *  `definePlugin` ran. Includes the validated manifest, which the host
@@ -346,6 +362,74 @@ export interface WorkerRequestVaultRead {
   chunkSize?: number
 }
 
+// ─── v1.2 vault.events subscription protocol ─────────────────────────────
+//
+// Subscription model: the worker tells the host which vault events it
+// wants by emitting `worker:subscribeVault` (carrying a worker-allocated
+// `subscriptionId`). The host stores the (pluginId, subscriptionId,
+// event) triple and starts dispatching `host:vaultChanged` /
+// `host:noteSaved` / `host:activeNoteIdChanged` envelopes whose
+// `subscriptionId` matches. To stop receiving events the worker emits
+// `worker:unsubscribeVault` with the same id.
+//
+// Cleanup on plugin unload is automatic — the host drops every
+// subscription whose pluginId matches when the worker is terminated, so
+// a plugin that forgets to unsubscribe does not leak.
+//
+// vaultChanged is a coarse "something in the vault changed" signal the
+// host emits at most every 250 ms (debounce). noteSaved carries the
+// noteId whose body / title was updated; activeNoteIdChanged fires on
+// editor-pane transitions and carries the new id (or null when no note
+// is open).
+
+/** Host telling the worker that the vault changed (any note added /
+ *  updated / deleted / folder mutated). Coalesced at 250 ms; the worker
+ *  must NOT count individual events for keystroke detection. */
+export interface HostVaultChangedEvent {
+  type: 'host:vaultChanged'
+  seq: number
+  subscriptionId: string
+}
+
+/** Host telling the worker that a specific note was saved (content /
+ *  title / frontmatter change). Coalesced at 250 ms — back-to-back
+ *  saves of the same id within the debounce window fire ONCE. */
+export interface HostNoteSavedEvent {
+  type: 'host:noteSaved'
+  seq: number
+  subscriptionId: string
+  noteId: string
+}
+
+/** Host telling the worker that the active editor switched to a new
+ *  note (or to no note). Coalesced at 250 ms. */
+export interface HostActiveNoteIdChanged {
+  type: 'host:activeNoteIdChanged'
+  seq: number
+  subscriptionId: string
+  noteId: string | null
+}
+
+/** Worker subscribing to a vault event. The worker chooses the
+ *  `subscriptionId` (uuid-ish) so it can pair host-delivered events
+ *  with the in-worker handler that registered the subscription. The
+ *  host treats the id as opaque. */
+export interface WorkerSubscribeVault {
+  type: 'worker:subscribeVault'
+  seq: number
+  event: 'vaultChanged' | 'noteSaved' | 'activeNoteIdChanged'
+  subscriptionId: string
+}
+
+/** Worker dropping a subscription it previously registered. The host
+ *  stops delivering events for that id. Idempotent — unknown ids are
+ *  no-ops. */
+export interface WorkerUnsubscribeVault {
+  type: 'worker:unsubscribeVault'
+  seq: number
+  subscriptionId: string
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
 export function isHostToWorker(msg: unknown): msg is HostToWorker {
@@ -361,6 +445,9 @@ export function isHostToWorker(msg: unknown): msg is HostToWorker {
     'host:vnodeEvent',
     'host:vaultReadResult',
     'host:vaultStreamChunk',
+    'host:vaultChanged',
+    'host:noteSaved',
+    'host:activeNoteIdChanged',
   ])
 }
 
@@ -377,6 +464,8 @@ export function isWorkerToHost(msg: unknown): msg is WorkerToHost {
     'worker:requestFileSave',
     'worker:requestFileOpen',
     'worker:requestVaultRead',
+    'worker:subscribeVault',
+    'worker:unsubscribeVault',
   ])
 }
 

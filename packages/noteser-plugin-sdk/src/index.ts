@@ -6,6 +6,7 @@ export type {
   PluginHandlers,
   PluginDefinition,
   NoteWithBody,
+  Unsubscribe,
 } from './sdk'
 
 // v1.2 — VNode shapes plus the shared event-handler record. PR A adds
