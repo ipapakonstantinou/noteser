@@ -48,12 +48,48 @@ export function useAutoSync(): void {
     if (startupRanRef.current) return
     if (!isConnected) return
     if (!autoSyncOnStart) return
+    // Offline-first Step 1 (#68): if the browser already knows it's
+    // offline, skip the startup pull entirely. Notes / folders / tabs
+    // have already hydrated from IDB via Zustand persist, so the app is
+    // fully readable from the cached vault snapshot. Trying to pull
+    // anyway would surface a "Sync failed" toast that's both noisy AND
+    // misleading — the user did not fail anything. The `online`
+    // listener below picks the pull back up the moment connectivity
+    // returns. The pull-on-focus path in PwaProvider also serves as a
+    // backstop.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      startupRanRef.current = true
+      return
+    }
     startupRanRef.current = true
     // Auto-sync NEVER pushes. Pushing happens only on an explicit user action
     // (Commit & Sync, revert, discard, connecting a repo). On boot we PULL
     // only, so the app never rewrites the user's repo without them clicking.
     // Firm product rule: "if I don't click Commit & Sync, it must not push."
     void runPullOnly()
+  }, [hydrated, isConnected, autoSyncOnStart, runPullOnly])
+
+  // ── Catch up when connectivity returns ─────────────────────────────
+  // We may have started up offline (the branch above) OR we may have
+  // dropped the network mid-session — either way an `online` event is the
+  // cue to pull. Throttle via `lastOnlineAtRef` so a flapping connection
+  // doesn't fire a sync per event. autoSyncOnStart gates this just like
+  // the startup branch (a user who disabled auto-sync on start also
+  // doesn't want a surprise pull when they come back online).
+  const lastOnlineAtRef = useRef(0)
+  useEffect(() => {
+    if (!hydrated) return
+    if (!isConnected) return
+    if (!autoSyncOnStart) return
+    const onOnline = () => {
+      const now = Date.now()
+      if (now - lastOnlineAtRef.current < 5_000) return
+      lastOnlineAtRef.current = now
+      if (syncStateRef.current.kind === 'running') return
+      void runPullOnly()
+    }
+    window.addEventListener('online', onOnline)
+    return () => window.removeEventListener('online', onOnline)
   }, [hydrated, isConnected, autoSyncOnStart, runPullOnly])
 
   // ── progressive-clone: resume the body fill after a reload ──────────
