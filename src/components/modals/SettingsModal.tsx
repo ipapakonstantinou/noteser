@@ -34,6 +34,7 @@ import { DailyNotesSection, TemplatesSection } from './DailyNotesSection'
 import { ExportSection } from './ExportSection'
 import { ShortcutsSection } from './ShortcutsSection'
 import { FLAGS } from '@/utils/featureFlags'
+import { sanitizeFilename } from '@/utils/sanitizeFilename'
 import {
   Field,
   SettingsSelect,
@@ -184,6 +185,7 @@ function GeneralPanel() {
   const folderSortMode = useSettingsStore(s => s.folderSortMode)
   const showHiddenFolders = useSettingsStore(s => s.showHiddenFolders)
   const trashMode = useSettingsStore(s => s.trashMode)
+  const trashFolderName = useSettingsStore(s => s.trashFolderName)
   const confirmBulkDelete = useSettingsStore(s => s.confirmBulkDelete)
   const confirmBeforeTrash = useSettingsStore(s => s.confirmBeforeTrash)
   const shareDefaultExpiryDays = useSettingsStore(s => s.shareDefaultExpiryDays)
@@ -192,6 +194,7 @@ function GeneralPanel() {
   const setFolderSortMode = useSettingsStore(s => s.setFolderSortMode)
   const setShowHiddenFolders = useSettingsStore(s => s.setShowHiddenFolders)
   const setTrashMode = useSettingsStore(s => s.setTrashMode)
+  const setTrashFolderName = useSettingsStore(s => s.setTrashFolderName)
   const setConfirmBulkDelete = useSettingsStore(s => s.setConfirmBulkDelete)
   const setConfirmBeforeTrash = useSettingsStore(s => s.setConfirmBeforeTrash)
   const setShareDefaultExpiryDays = useSettingsStore(s => s.setShareDefaultExpiryDays)
@@ -281,6 +284,18 @@ function GeneralPanel() {
             { value: 'trash', label: 'Move to trash (recoverable)' },
             { value: 'hardDelete', label: 'Delete immediately (no trash)' },
           ]}
+        />
+      </Field>
+      <Field
+        label="Trash folder"
+        description="Display name for the trash row in the sidebar. Renaming is cosmetic — trashed notes stay trashed and recoverable across the rename. Defaults to `.trash`."
+      >
+        <SettingsTextInput
+          value={trashFolderName}
+          onCommit={setTrashFolderName}
+          normalize={(raw) => sanitizeFilename(raw) || '.trash'}
+          placeholder=".trash"
+          mono
         />
       </Field>
       <Field
