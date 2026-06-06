@@ -113,7 +113,36 @@ export type PluginHostEvent =
       viewId: string
       node: unknown
     }
+  | {
+      type: 'vaultWriteRequested'
+      pluginId: string
+      requestSeq: number
+      op: VaultWriteOp
+    }
   | { type: 'rateLimited'; pluginId: string }
+
+/** Discriminated union over the four vault.write ops carried in a
+ *  `worker:requestVaultWrite` envelope. Identical shape to the wire
+ *  protocol's `op` field — re-exported here so the singleton's
+ *  vault-write handler can switch on it without re-importing the
+ *  protocol module. */
+export type VaultWriteOp =
+  | {
+      kind: 'create'
+      title: string
+      body: string
+      folderPath?: string
+      frontmatter?: Record<string, unknown>
+    }
+  | {
+      kind: 'update'
+      id: string
+      title?: string
+      body?: string
+      frontmatter?: Record<string, unknown>
+    }
+  | { kind: 'delete'; id: string }
+  | { kind: 'createFolder'; path: string }
 
 interface WorkerEntry {
   plugin: InstalledPlugin
@@ -622,6 +651,13 @@ export class PluginHost {
           })
           return
         }
+        if (entry.plugin.revokedPermissions.has('file-save')) {
+          this.respondFileSave(pluginId, msg.seq, {
+            ok: false,
+            error: 'Permission "file-save" was revoked.',
+          })
+          return
+        }
         this.emit({
           type: 'fileSaveRequested',
           pluginId,
@@ -664,6 +700,13 @@ export class PluginHost {
           this.respondFileOpen(pluginId, msg.seq, {
             ok: false,
             error: 'Plugin did not declare the `file-open` permission.',
+          })
+          return
+        }
+        if (entry.plugin.revokedPermissions.has('file-open')) {
+          this.respondFileOpen(pluginId, msg.seq, {
+            ok: false,
+            error: 'Permission "file-open" was revoked.',
           })
           return
         }
@@ -787,6 +830,36 @@ export class PluginHost {
           node: msg.node,
         })
         return
+
+      case 'worker:requestVaultWrite': {
+        // v1.2 capability — same two-layer gate PR C uses for
+        // vault.read.all: declared in manifest AND not currently
+        // revoked at runtime. Distinct error strings so the dev
+        // console clarifies; the plugin sees the same Promise
+        // rejection either way.
+        const declared = entry.plugin.manifest.permissions?.includes('vault.write') ?? false
+        if (!declared) {
+          this.respondVaultWrite(pluginId, msg.seq, {
+            ok: false,
+            error: 'Plugin did not declare the `vault.write` permission.',
+          })
+          return
+        }
+        if (entry.plugin.revokedPermissions.has('vault.write')) {
+          this.respondVaultWrite(pluginId, msg.seq, {
+            ok: false,
+            error: 'Permission "vault.write" was revoked.',
+          })
+          return
+        }
+        this.emit({
+          type: 'vaultWriteRequested',
+          pluginId,
+          requestSeq: msg.seq,
+          op: msg.op,
+        })
+        return
+      }
     }
   }
 
@@ -911,6 +984,30 @@ export class PluginHost {
       type: 'host:fullscreenClosed',
       seq: ++this.seqCounter,
       viewId,
+    })
+  }
+
+  /** Surface adapter / singleton wires the vault write outcome back to
+   *  the worker. Successful `create` carries the new note id plus the
+   *  conflict-resolution outcome. Other ops omit `id` and
+   *  `conflictResolved`. v1.2 PR D capability. */
+  respondVaultWrite(
+    pluginId: string,
+    requestSeq: number,
+    result:
+      | { ok: true; id: string; conflictResolved: 'none' | 'suffix' }
+      | { ok: true }
+      | { ok: false; error: string },
+  ): void {
+    this.send(pluginId, {
+      type: 'host:vaultWriteResult',
+      seq: ++this.seqCounter,
+      requestSeq,
+      ok: result.ok,
+      ...(result.ok && 'id' in result
+        ? { id: result.id, conflictResolved: result.conflictResolved }
+        : {}),
+      ...(!result.ok ? { error: result.error } : {}),
     })
   }
 

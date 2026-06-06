@@ -572,3 +572,164 @@ fan-out to PluginHostEvent listeners.
   `host:vnodeEvent` with `source: { kind: 'fullscreen', viewId }`.
 - PR D MUST NOT touch the fullscreen surface; the remaining
   capability PR is surface-agnostic by design.
+
+## PR D — `vault.write` capability + audit trail
+
+Implements plan sections 4.2, 5, 6, 7, and 8 as they pertain to
+`vault.write`. Branch `feat/plugins-v1.2-D-vault-write`.
+
+### Permission
+
+`vault.write` joins `file-save` and `file-open` in
+`src/plugins/manifest.ts`'s `PERMISSIONS` tuple. It is the first
+member of a new `DESTRUCTIVE_PERMISSIONS` set — the install-confirm
+modal renders destructive permissions inside a red-bordered section
+with a red bullet, and demands an explicit opt-in checkbox per
+destructive entry before the Install button enables. Informational
+permissions (`file-save`, `file-open`) keep the amber CheckCircle
+styling that landed in v1.1.
+
+### SDK surface
+
+`ctx.vault.write` exposes four async methods:
+
+- `createNote({ title, body, folderPath?, frontmatter? })`
+  → `Promise<{ id, conflictResolved }>`
+- `updateNote(id, { title?, body?, frontmatter? })` → `Promise<void>`
+- `deleteNote(id)` → `Promise<void>` (soft-delete only; landing in the
+  Trash is intentional so the user can recover from a plugin bug)
+- `createFolder(path)` → `Promise<void>` (idempotent, ensures all
+  intermediate segments)
+
+Both `src/plugins/sdk.ts` and `packages/noteser-plugin-sdk/src/sdk.ts`
+gained the namespace. The runtime `definePlugin` is unchanged;
+manifest validation stays host-side.
+
+### Wire protocol
+
+Two new envelopes in `src/plugins/protocol.ts`:
+
+- `WorkerRequestVaultWrite` carries a discriminated `op` union over the
+  four operations.
+- `HostVaultWriteResult` carries `ok`, `requestSeq`, optional `id` +
+  `conflictResolved` for successful `create`s, and `error` on failure.
+
+`isHostToWorker` / `isWorkerToHost` accept the new types; the
+`MAX_ENVELOPE_BYTES` and rate-limit guards apply unchanged.
+
+### Host implementation
+
+`pluginHostSingleton.ts` adds `handleVaultWriteRequest` which writes
+through the EXACT SAME `useNoteStore.addNote` / `updateNote` /
+`deleteNote` and `useFolderStore.ensureFolderPath` paths a user action
+takes. Sync, indexing, and undo behave identically whether the user or
+a plugin made the change.
+
+`folderPath` is resolved via `ensureFolderPath` — the same helper the
+pull layer uses to materialise repo paths. A plugin asking for
+`"Imported/Obsidian"` and the user manually creating that folder
+converge on the same folder ids.
+
+### Conflict resolution
+
+`createNote` runs through `resolveTitleConflict` before delegating to
+the store:
+
+1. No active (non-trashed) note in the same folder shares the
+   requested title (case-insensitive) → use it verbatim.
+   `conflictResolved: 'none'`.
+2. Otherwise, try `"<title> (imported)"`. `conflictResolved: 'suffix'`.
+3. Chained collisions roll forward: `(imported 2)`, `(imported 3)`, …
+   Still `conflictResolved: 'suffix'`.
+
+The host surfaces the renamed title via the `conflictResolved` flag.
+The importer plugin (issue #73) plumbs it into its progress log
+straight from the existing return value.
+
+### Validation
+
+Per plan §4.2: title 1–200 chars, body ≤ 1 MiB,
+`folderPath` matches `/^[^\s/][^/]*(\/[^\s/][^/]*)*$/`. Hard-delete is
+intentionally absent — plugins cannot bypass the Trash UI.
+
+### Revocation
+
+PR D reuses PR C's revocation plumbing rather than introducing a new
+mechanism:
+
+- `revokedPermissions: PluginPermission[]` on `InstalledPluginRecord`,
+  plus the `setPermissionRevoked` / `isPermissionRevoked` store
+  helpers, all from PR C.
+- `PluginHost.revokePermission(pluginId, perm)` /
+  `restorePermission` / `hasPermission` — also from PR C.
+- The vault.write message handler runs the same two-layer gate PR C
+  established for vault.read.all: declared in manifest AND not in
+  `entry.plugin.revokedPermissions`. Distinct error strings so the
+  dev console clarifies; the plugin sees the same Promise rejection
+  either way.
+- file-save / file-open paths now also honour the revocation Set
+  (previously only the declared-permissions list). One-line
+  symmetry fix riding in this PR.
+
+The red "Destructive" badge in Settings → Plugins persists as long
+as the destructive permission stays declared in the manifest — even
+after revocation — so the user always sees at a glance which plugins
+were granted dangerous capabilities historically. The per-permission
+toggle row still uses PR C's `setPluginPermissionRevoked` exported
+from the singleton.
+
+### Audit trail
+
+`src/utils/pluginAudit.ts` is new. Every accepted vault.write op (and
+every host-side rejection that survives the permission gate) records
+an entry: `pluginId`, `op`, `target`, `ok`, optional `error` and
+`conflictResolved`, plus `ts`. Storage is a 500-entry ring buffer in
+memory, flushed to `localStorage` with a 250 ms debounce — chosen over
+the Zustand + IndexedDB path so the log keeps working when the noteser
+stores are mid-migration. A read-only "Plugin activity" panel in
+Settings → Plugins renders the last 50 entries.
+
+Example entry shape (newline-separated for readability — the on-disk
+JSON is one object per push):
+
+    {
+      "ts": 1717718400000,
+      "pluginId": "noteser-write-demo",
+      "op": "create",
+      "target": "8e7a51d3-...",
+      "ok": true,
+      "conflictResolved": "none"
+    }
+
+### Reference plugin
+
+`public/plugins/noteser-write-demo/` ships a single command "Plugin
+demo note" that calls `ctx.vault.write.createNote`. Running it twice
+exercises the title-collision resolver and demonstrates the suffix.
+
+### Tests
+
+`src/__tests__/plugins/vaultWrite.test.ts` covers:
+
+- Manifest validator accepts `vault.write` and rejects malformed
+  values; `isDestructivePermission` flags it.
+- `PluginHost` refuses `worker:requestVaultWrite` when the permission
+  was not declared and when it was revoked.
+- Each of the four ops round-trips through the wire protocol:
+  create returns `{ id, conflictResolved }`; update / delete /
+  createFolder resolve void.
+- `resolveTitleConflict` suffixes correctly on collision (single
+  + chained).
+- Audit log appends one entry per accepted op AND one per failed op.
+
+`src/__tests__/plugins/pluginAudit.test.ts` covers the ring buffer in
+isolation: ordering, MAX_ENTRIES rollover, per-plugin filtering, and
+the localStorage flush.
+
+### Out of scope (deferred)
+
+- Bulk `importNotes(records[])` envelope — plan §4.2 keeps this for
+  v1.3. The 60 messages/sec rate limit means a 5 k-note Obsidian
+  import takes ~83 s; acceptable.
+- Per-plugin "Recent activity" drill-down view — `readPluginAuditFor`
+  exists for it but the UI is the global list for now.

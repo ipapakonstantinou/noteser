@@ -16,14 +16,24 @@ export interface PluginManifest {
   /** Capabilities the plugin asks for at install time. The user grants
    *  each one in the install-preview modal; the host refuses any
    *  capability call that was not granted. v1.1 added `file-save` /
-   *  `file-open`; v1.2 PR E added `fs.open-directory`. */
+   *  `file-open`; v1.2 added `vault.read.all`, `vault.write` (the first
+   *  destructive permission — the modal renders a red bullet),
+   *  `vault.events`, and `fs.open-directory`. */
   permissions?: PluginPermission[]
 }
 
 /** Capability identifiers the validator accepts. Plugins targeting an
  *  older host that does not know a v1.2 permission will fail manifest
- *  validation there — see plugins-v1.2-plan.md section 10. */
-export const PERMISSIONS = ['file-save', 'file-open', 'fs.open-directory'] as const
+ *  validation there — see plugins-v1.2-plan.md section 10. Mirrors
+ *  `src/plugins/manifest.ts` in noteser core. */
+export const PERMISSIONS = [
+  'file-save',
+  'file-open',
+  'vault.read.all',
+  'vault.write',
+  'vault.events',
+  'fs.open-directory',
+] as const
 export type PluginPermission = (typeof PERMISSIONS)[number]
 
 export interface PluginSurfaces {

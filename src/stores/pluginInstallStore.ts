@@ -32,9 +32,10 @@ export interface InstalledPluginRecord {
    *  re-grants it. The manifest's declared `permissions` list is the
    *  ceiling; revocation can only subtract from it. Honoured at
    *  dispatch time for every v1.2 capability (vault.read.all,
-   *  vault.events, fs.open-directory, …); existing subscribers are not
-   *  torn down on revocation — they just stop receiving events / get a
-   *  rejection with `Permission "<name>" was revoked.` on the next call. */
+   *  vault.write, vault.events, fs.open-directory, …); existing
+   *  subscribers are not torn down on revocation — they just stop
+   *  receiving events / get a rejection with
+   *  `Permission "<name>" was revoked.` on the next call. */
   revokedPermissions?: PluginPermission[]
 }
 
@@ -54,11 +55,15 @@ interface PluginInstallState {
    *  subtracts. Existing event-subscribers stay alive but stop
    *  receiving events. */
   setPermissionRevoked: (pluginId: string, permission: PluginPermission, revoked: boolean) => void
+  /** Read-side helper used by PluginHost's permission gate.
+   *  Returns false when the plugin id is unknown — an uninstalled
+   *  plugin cannot have revoked permissions. */
+  isPermissionRevoked: (pluginId: string, permission: string) => boolean
 }
 
 export const usePluginInstallStore = create<PluginInstallState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       records: {},
 
       install: (record) =>
@@ -100,6 +105,12 @@ export const usePluginInstallStore = create<PluginInstallState>()(
             },
           }
         }),
+
+      isPermissionRevoked: (pluginId, permission) => {
+        const rec = get().records[pluginId]
+        if (!rec) return false
+        return rec.revokedPermissions?.includes(permission as PluginPermission) ?? false
+      },
     }),
     {
       name: 'noteser-plugin-installs',

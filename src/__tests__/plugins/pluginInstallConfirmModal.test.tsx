@@ -262,3 +262,63 @@ describe('PluginInstallConfirmModal — pre-fetched record path', () => {
     expect(mockFetchPluginForInstall).not.toHaveBeenCalled()
   })
 })
+
+describe('PluginInstallConfirmModal — destructive permissions (v1.2 PR D)', () => {
+  test('renders vault.write in the destructive section with a red bullet + ack checkbox', async () => {
+    mockFetchPluginForInstall.mockResolvedValueOnce(
+      makeRecord({
+        manifest: {
+          ...baseManifest,
+          permissions: ['vault.write'],
+        },
+      }),
+    )
+    openWithUrl()
+    render(<PluginInstallConfirmModal />)
+    await screen.findByTestId('plugin-preview-body')
+
+    // Destructive section renders.
+    expect(screen.getByTestId('plugin-preview-destructive-section')).toBeInTheDocument()
+    expect(screen.getByTestId('plugin-preview-destructive-vault.write')).toHaveTextContent(
+      'vault.write',
+    )
+    expect(screen.getByTestId('plugin-preview-destructive-vault.write')).toHaveTextContent(
+      PERMISSION_DESCRIPTIONS['vault.write'],
+    )
+
+    // vault.write should NOT also appear in the informational capability list.
+    expect(
+      screen.queryByTestId('plugin-preview-capability-vault.write'),
+    ).not.toBeInTheDocument()
+
+    // Install is disabled until the user acks the destructive permission.
+    const installBtn = screen.getByTestId('plugin-install-confirm') as HTMLButtonElement
+    expect(installBtn).toBeDisabled()
+
+    const ack = screen.getByTestId('plugin-preview-destructive-ack-vault.write')
+    const user = userEvent.setup()
+    await user.click(ack)
+    expect(installBtn).not.toBeDisabled()
+  })
+
+  test('mixed manifest puts file-save in the informational list and vault.write in destructive', async () => {
+    mockFetchPluginForInstall.mockResolvedValueOnce(
+      makeRecord({
+        manifest: {
+          ...baseManifest,
+          permissions: ['file-save', 'vault.write'],
+        },
+      }),
+    )
+    openWithUrl()
+    render(<PluginInstallConfirmModal />)
+    await screen.findByTestId('plugin-preview-body')
+
+    expect(screen.getByTestId('plugin-preview-capability-file-save')).toBeInTheDocument()
+    expect(screen.getByTestId('plugin-preview-destructive-vault.write')).toBeInTheDocument()
+
+    // file-save uses the informational SURFACE_DESCRIPTIONS-style copy; ensure
+    // the SURFACE export is still reachable so the smoke test does not regress.
+    expect(typeof SURFACE_DESCRIPTIONS.commands).toBe('string')
+  })
+})
