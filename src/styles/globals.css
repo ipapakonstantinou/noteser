@@ -252,33 +252,12 @@
   }
 }
 
-/* Preview mode: cursor indicator + completed-task strikethrough.
-   User feedback 2026-06-04: "I don't want a blue line ... in edit
-   nor in preview". Repainted the cursor block + marker in the muted
-   secondary-text colour so the cursor stays visible in preview mode
-   but the persistent vertical blue bar that was reading as a "line"
-   alongside the active line is gone. */
-.preview-cursor-block {
-  border-left: 3px solid theme('colors.obsidianSecondaryText');
-  padding-left: 0.75rem;
-  margin-left: -0.95rem;
-}
-
-.preview-cursor-marker {
-  display: inline-block;
-  width: 2px;
-  height: 1.1em;
-  background: theme('colors.obsidianSecondaryText');
-  vertical-align: text-bottom;
-  margin: 0 -1px;
-  border-radius: 1px;
-  animation: cursor-blink 1.05s steps(2, end) infinite;
-}
-
-@keyframes cursor-blink {
-  0%, 50%   { opacity: 1; }
-  51%, 100% { opacity: 0; }
-}
+/* Preview mode used to paint a vertical bar + blinking caret on the
+   active line. Jon (2026-06-06): the two lines around the active heading
+   are unwanted in preview. Classes still applied by EditorContent so the
+   click-to-edit positioning logic keeps working, but neither paints. */
+.preview-cursor-block {}
+.preview-cursor-marker { display: none; }
 
 /* Completed task (`- [x]`) — strike through the item's own content (links,
    bold, text inside a wrapping <p>) at any nesting depth, WITHOUT bleeding the
