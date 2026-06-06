@@ -43,8 +43,8 @@ interface EditorContentProps {
 }
 
 export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorContentProps) => {
-  const { setPreviewMode } = useUIStore()
-  const { getActiveNotes } = useNoteStore()
+  const setPreviewMode = useUIStore(s => s.setPreviewMode)
+  const getActiveNotes = useNoteStore(s => s.getActiveNotes)
   const openNote = useWorkspaceStore(s => s.openNote)
 
   // progressive-clone: if this note is still a SHELL (body not yet streamed in

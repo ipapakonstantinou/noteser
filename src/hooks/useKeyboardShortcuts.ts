@@ -31,8 +31,12 @@ const ALLOWED_IN_INPUT: ReadonlySet<ShortcutAction> = new Set<ShortcutAction>([
 ])
 
 export const useKeyboardShortcuts = (handlers: ShortcutHandlers = {}) => {
-  const { openSearch, toggleSidebar, togglePreview, openModal } = useUIStore()
-  const { selectedNoteId, deleteNote } = useNoteStore()
+  const openSearch = useUIStore(s => s.openSearch)
+  const toggleSidebar = useUIStore(s => s.toggleSidebar)
+  const togglePreview = useUIStore(s => s.togglePreview)
+  const openModal = useUIStore(s => s.openModal)
+  const selectedNoteId = useNoteStore(s => s.selectedNoteId)
+  const deleteNote = useNoteStore(s => s.deleteNote)
   // Subscribing here means the hook reruns and re-binds when overrides change,
   // so a freshly-saved override takes effect without a page reload.
   const shortcutOverrides = useSettingsStore(s => s.shortcutOverrides)

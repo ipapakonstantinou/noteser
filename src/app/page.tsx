@@ -60,7 +60,10 @@ const ResetConfirmModal = dynamic(
 
 export default function Home() {
   const hydrated = useHydration()
-  const { sidebarCollapsed, sidebarWidth, rightSidebarCollapsed, rightSidebarWidth } = useUIStore()
+  const sidebarCollapsed = useUIStore(s => s.sidebarCollapsed)
+  const sidebarWidth = useUIStore(s => s.sidebarWidth)
+  const rightSidebarCollapsed = useUIStore(s => s.rightSidebarCollapsed)
+  const rightSidebarWidth = useUIStore(s => s.rightSidebarWidth)
   const pruneStaleTabs = useWorkspaceStore(s => s.pruneStaleTabs)
   const { isMobile } = useViewport()
 

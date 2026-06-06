@@ -24,8 +24,9 @@ interface Props {
 }
 
 export const Pane = ({ pane }: Props) => {
-  const { notes, updateNote } = useNoteStore()
-  const { isPreviewMode } = useUIStore()
+  const notes = useNoteStore(s => s.notes)
+  const updateNote = useNoteStore(s => s.updateNote)
+  const isPreviewMode = useUIStore(s => s.isPreviewMode)
   const focusPane = useWorkspaceStore(s => s.focusPane)
   const promoteTab = useWorkspaceStore(s => s.promoteTab)
   const splitTabRight = useWorkspaceStore(s => s.splitTabRight)

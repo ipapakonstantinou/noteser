@@ -15,12 +15,13 @@ interface EditorHeaderProps {
 }
 
 export const EditorHeader = ({ note, paneId, onTitleChange }: EditorHeaderProps) => {
-  const { isPreviewMode, togglePreview } = useUIStore()
+  const isPreviewMode = useUIStore(s => s.isPreviewMode)
+  const togglePreview = useUIStore(s => s.togglePreview)
   const setCurrentView = useUIStore(s => s.setCurrentView)
   const sidebarCollapsed = useUIStore(s => s.sidebarCollapsed)
   const toggleSidebar = useUIStore(s => s.toggleSidebar)
-  const { togglePinNote } = useNoteStore()
-  const { getFolderById } = useFolderStore()
+  const togglePinNote = useNoteStore(s => s.togglePinNote)
+  const getFolderById = useFolderStore(s => s.getFolderById)
   const setActiveFolder = useFolderStore(s => s.setActiveFolder)
   const setFolderExpanded = useFolderStore(s => s.setFolderExpanded)
   const { isMobile } = useViewport()
