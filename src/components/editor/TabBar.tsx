@@ -97,6 +97,8 @@ export const TabBar = ({ pane }: Props) => {
   return (
     <>
     <div
+      role="tablist"
+      aria-label="Editor tabs"
       className={`flex items-stretch border-b overflow-x-auto transition-colors ${
         paneIsActive
           ? 'bg-obsidianBlack border-b-obsidianAccentPurple/60'
@@ -128,6 +130,11 @@ export const TabBar = ({ pane }: Props) => {
                 e.preventDefault()
                 setMenu({ tabId: tab.id, x: e.clientX, y: e.clientY })
               }}
+              role="tab"
+              id={`editor-tab-${tab.id}`}
+              aria-selected={active}
+              aria-controls={`editor-tabpanel-${pane.id}`}
+              tabIndex={active ? 0 : -1}
               className={`flex items-center gap-1.5 px-3 py-2 text-sm border-r border-obsidianBorder cursor-pointer max-w-[200px] flex-shrink-0 select-none min-h-[44px] ${
                 active
                   ? 'bg-obsidianBlack text-obsidianText border-t-2 border-t-obsidianAccentPurple'
