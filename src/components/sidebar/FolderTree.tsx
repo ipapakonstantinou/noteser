@@ -54,6 +54,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   }, [isMobile, sidebarCollapsed, toggleSidebar])
   const folderSortMode = useSettingsStore(s => s.folderSortMode)
   const showHiddenFolders = useSettingsStore(s => s.showHiddenFolders)
+  const trashFolderName = useSettingsStore(s => s.trashFolderName)
   const {
     notes,
     selectedNoteId,
@@ -967,6 +968,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
       {deletedNotes.length > 0 && (
         <TrashSyntheticFolder
           trashTree={trashTree}
+          name={trashFolderName}
           deletedCount={deletedNotes.length}
           expanded={!!expandedFolders[TRASH_FOLDER_ID]}
           onToggle={() => toggleFolderExpanded(TRASH_FOLDER_ID)}
@@ -1071,6 +1073,9 @@ const TrashFolderRow = ({
 // reserved id "__trash__".
 interface TrashSyntheticFolderProps {
   trashTree: ReturnType<typeof buildTrashTree>
+  // Configurable display name for the synthetic trash row (Settings →
+  // Vault). Cosmetic only — the row's identity stays TRASH_FOLDER_ID.
+  name: string
   deletedCount: number
   expanded: boolean
   onToggle: () => void
@@ -1086,7 +1091,7 @@ interface TrashSyntheticFolderProps {
 }
 
 const TrashSyntheticFolder = ({
-  trashTree, deletedCount, expanded, onToggle, onContextMenu,
+  trashTree, name, deletedCount, expanded, onToggle, onContextMenu,
   expandedFolders, toggleFolderExpanded, onFolderRightClick, renderNote,
 }: TrashSyntheticFolderProps) => {
   return (
@@ -1096,13 +1101,13 @@ const TrashSyntheticFolder = ({
         onClick={onToggle}
         onContextMenu={onContextMenu}
         data-folder-id={TRASH_FOLDER_ID}
-        data-folder-name=".trash"
+        data-folder-name={name}
       >
         <button
           type="button"
           className="mr-1 focus:outline-none"
           onClick={e => { e.stopPropagation(); onToggle() }}
-          aria-label={expanded ? 'Collapse .trash' : 'Expand .trash'}
+          aria-label={expanded ? `Collapse ${name}` : `Expand ${name}`}
         >
           {expanded ? (
             <ChevronDownIcon className="w-3.5 h-3.5" />
@@ -1111,7 +1116,7 @@ const TrashSyntheticFolder = ({
           )}
         </button>
         <FolderIcon className="w-4 h-4 mr-1.5 flex-shrink-0" />
-        <span className="flex-1 truncate">.trash</span>
+        <span className="flex-1 truncate">{name}</span>
         <span className="text-[10px] text-obsidianSecondaryText ml-1">
           {deletedCount}
         </span>
