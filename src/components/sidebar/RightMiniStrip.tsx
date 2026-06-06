@@ -98,6 +98,8 @@ export const RightMiniStrip = ({
 
   return (
     <div
+      role="tablist"
+      aria-label="Right sidebar panels"
       className={`relative flex items-center gap-0.5 px-1 py-1 border-b border-obsidianBorder ${
         dropActive ? 'outline outline-2 outline-obsidianAccentPurple/60' : ''
       }`}
@@ -118,6 +120,11 @@ export const RightMiniStrip = ({
           <button
             key={id}
             type="button"
+            role="tab"
+            id={`right-sidebar-tab-${id}`}
+            aria-selected={active}
+            aria-controls={`right-sidebar-tabpanel-${id}`}
+            tabIndex={active ? 0 : -1}
             draggable
             onDragStart={e => {
               if (e.nativeEvent && e.nativeEvent.button !== 0) return
@@ -138,7 +145,6 @@ export const RightMiniStrip = ({
             }}
             title={`${def.title} — drag to reorder, right-click for options`}
             aria-label={def.title}
-            aria-pressed={active}
             data-testid={`right-sidebar-pinned-tab-${id}`}
             className={[
               'relative flex items-center justify-center py-1.5 max-md:py-2.5 px-3 rounded cursor-grab active:cursor-grabbing transition-colors',

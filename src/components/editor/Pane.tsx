@@ -156,7 +156,12 @@ export const Pane = ({ pane }: Props) => {
       onMouseDown={() => { if (!isActive) focusPane(pane.id) }}
     >
       <TabBar pane={pane} />
-      <div className="flex-1 flex flex-col min-h-0">{body}</div>
+      <div
+        className="flex-1 flex flex-col min-h-0"
+        role="tabpanel"
+        id={`editor-tabpanel-${pane.id}`}
+        aria-labelledby={activeTab ? `editor-tab-${activeTab.id}` : undefined}
+      >{body}</div>
 
       {/* Right- and bottom-edge split drop targets — only rendered (and
           only intercepting events) while a tab is actively being

@@ -588,7 +588,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     getFolderRepoPath: (id) => folderRepoPathById.get(id),
   })
 
-  const AttachmentItem = ({ m }: { m: AttachmentMeta }) => (
+  const AttachmentItem = ({ m, depth = 0 }: { m: AttachmentMeta; depth?: number }) => (
     <div
       className="obsidian-file-item"
       draggable
@@ -598,6 +598,9 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
       title={m.path}
       data-testid="attachment-row"
       data-attachment-path={m.path}
+      role="treeitem"
+      aria-level={depth + 1}
+      aria-selected={false}
     >
       <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
       <span className="flex-1 truncate">{attachmentDisplayName(m.path)}</span>
@@ -605,10 +608,11 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   )
 
   // Render note item
-  const NoteItem = ({ note, className = '' }: { note: typeof notes[0]; className?: string }) => {
+  const NoteItem = ({ note, className = '', depth = 0 }: { note: typeof notes[0]; className?: string; depth?: number }) => {
     const kbFocused = isRowFocused('note', note.id)
     const multiSelected = isSelected(note.id)
     const isCompareSource = compareSourceNoteId === note.id
+    const isActive = selectedNoteId === note.id || multiSelected
     // Mobile-only drag-to-pin. Trash rows are excluded because their
     // primary affordance is restore / permanently delete.
     const swipeEnabled = isMobile && currentView !== 'trash' && !note.isDeleted
@@ -635,6 +639,10 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
           data-testid="note-row"
           data-note-id={note.id}
           data-kb-focused={kbFocused ? 'true' : undefined}
+          role="treeitem"
+          aria-level={depth + 1}
+          aria-selected={isActive}
+          aria-current={kbFocused ? 'true' : undefined}
         >
           <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
           <div className="flex-1 min-w-0">
@@ -678,7 +686,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     const isDropTarget = dragOverTarget === folder.id
     const kbFocused = isRowFocused('folder', folder.id)
     return (
-      <div className="mb-0.5">
+      <div className="mb-0.5" role="treeitem" aria-level={depth + 1} aria-expanded={isExpanded} aria-selected={isActive} aria-current={kbFocused ? 'true' : undefined}>
         <div
           className={`obsidian-folder-item ${
             isActive ? 'bg-obsidianHighlight' : ''
@@ -727,7 +735,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
           )}
         </div>
         {isExpanded && (
-          <div>
+          <div role="group">
             {/* Nested child folders first */}
             {childFolders.map(child => (
               <FolderItem key={child.id} folder={child} depth={depth + 1} />
@@ -735,10 +743,10 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
             {/* Then notes + attachments inside this folder */}
             <div style={{ paddingLeft: `${(depth + 1) * 12 + 8}px` }}>
               {folderNotes.map(note => (
-                <NoteItem key={note.id} note={note} />
+                <NoteItem key={note.id} note={note} depth={depth + 1} />
               ))}
               {folderAttachments.map(m => (
-                <AttachmentItem key={m.path} m={m} />
+                <AttachmentItem key={m.path} m={m} depth={depth + 1} />
               ))}
               {folderNotes.length === 0 && childFolders.length === 0 && folderAttachments.length === 0 && (
                 <div className="px-3 py-2 text-xs text-obsidianSecondaryText italic">
@@ -774,7 +782,8 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
             <p className="text-sm">Trash is empty</p>
           </div>
         ) : (
-          deletedNotes.map(note => (
+          <div role="tree" aria-label="Trash">
+          {deletedNotes.map(note => (
             <div
               key={note.id}
               className={`obsidian-file-item ${
@@ -782,6 +791,9 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
               }`}
               onClick={() => handleNoteClick(note.id)}
         onDoubleClick={() => handleNoteDoubleClick(note.id)}
+              role="treeitem"
+              aria-level={1}
+              aria-selected={selectedNoteId === note.id}
             >
               <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
               <span className="flex-1 truncate">{note.title}</span>
@@ -806,7 +818,8 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
                 </button>
               </div>
             </div>
-          ))
+          ))}
+          </div>
         )}
       </div>
     )
@@ -824,9 +837,11 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
             <p className="text-sm">No recent notes</p>
           </div>
         ) : (
-          recentNotes.map(note => (
-            <NoteItem key={note.id} note={note} />
-          ))
+          <div role="tree" aria-label="Recently modified notes">
+            {recentNotes.map(note => (
+              <NoteItem key={note.id} note={note} />
+            ))}
+          </div>
         )}
       </div>
     )
@@ -1014,7 +1029,15 @@ const TrashFolderRow = ({
   const expanded = !!expandedFolders[node.folder.id]
   const childCount = node.childFolders.length + node.notes.length
   return (
-    <div className="mb-0.5" data-testid="trash-folder-row" data-folder-id={node.folder.id}>
+    <div
+      className="mb-0.5"
+      data-testid="trash-folder-row"
+      data-folder-id={node.folder.id}
+      role="treeitem"
+      aria-level={depth + 1}
+      aria-expanded={expanded}
+      aria-selected={false}
+    >
       <div
         className="obsidian-folder-item"
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
@@ -1041,7 +1064,7 @@ const TrashFolderRow = ({
         )}
       </div>
       {expanded && (
-        <div>
+        <div role="group">
           {node.childFolders.map(child => (
             <TrashFolderRow
               key={child.folder.id}
@@ -1095,7 +1118,14 @@ const TrashSyntheticFolder = ({
   expandedFolders, toggleFolderExpanded, onFolderRightClick, renderNote,
 }: TrashSyntheticFolderProps) => {
   return (
-    <div className="mb-0.5" data-testid="trash-synthetic-folder">
+    <div
+      className="mb-0.5"
+      data-testid="trash-synthetic-folder"
+      role="treeitem"
+      aria-level={1}
+      aria-expanded={expanded}
+      aria-selected={false}
+    >
       <div
         className="obsidian-folder-item"
         onClick={onToggle}
@@ -1122,7 +1152,7 @@ const TrashSyntheticFolder = ({
         </span>
       </div>
       {expanded && (
-        <div>
+        <div role="group">
           {/* Deleted folders, nested with their deleted contents. */}
           {trashTree.rootFolders.map(node => (
             <TrashFolderRow
