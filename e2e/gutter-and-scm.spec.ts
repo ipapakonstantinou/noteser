@@ -41,7 +41,10 @@ type TestHooks = {
     } }
     workspaceStore: { getState(): { openNote: (id: string, opt: { preview: boolean }) => void } }
     uiStore: { getState(): { setLastFocusedGroupId: (id: string | null) => void } }
-    settingsStore: { getState(): { setSidebarGroups: (groups: Array<{ id: string; tabs: string[]; activeTab: string | null; collapsed: boolean }>) => void } }
+    settingsStore: { getState(): {
+      setSidebarGroups: (groups: Array<{ id: string; tabs: string[]; activeTab: string | null; collapsed: boolean }>) => void
+      setAutoSyncOnStart: (v: boolean) => void
+    } }
     githubStore: { getState(): {
       setSyncRepo: (r: { owner: string; name: string; branch: string; isPrivate: boolean }) => void
       setSession: (token: string, user: { id: number; login: string; name: string | null; avatar_url: string }) => void
@@ -125,6 +128,13 @@ test('source-control panel groups changes by folder', async ({ page }) => {
   // the freshly-cleared lastSyncedAt).
   await page.evaluate(() => {
     const hooks = (window as unknown as { __noteser_test: TestHooks }).__noteser_test
+    // Disable the startup auto-pull. Once we wire up the fake GitHub
+    // session below, useAutoSync would otherwise kick off runPullOnly,
+    // which calls switchVault to the per-repo IDB key (notesKey(repo))
+    // and abandons the notes we just seeded against the unscoped base
+    // key (mass-clear bug from the user's perspective). Holding
+    // autoSyncOnStart=false keeps the panel stable for the assertions.
+    hooks.stores.settingsStore.getState().setAutoSyncOnStart(false)
     // Set a fake repo so the SCM panel renders the action toolbar
     // and the changes section.
     // GitHubView requires a logged-in user for the SCM body to mount.
@@ -147,19 +157,23 @@ test('source-control panel groups changes by folder', async ({ page }) => {
     ])
   })
 
-  await expect(page.getByTestId('source-control-panel')).toBeVisible({ timeout: 5000 })
+  const scPanel = page.getByTestId('source-control-panel')
+  await expect(scPanel).toBeVisible({ timeout: 5000 })
 
-  // Every seeded note should show up in the panel.
-  await expect(page.getByText('2026-W11.md')).toBeVisible()
-  await expect(page.getByText('2026-W12.md')).toBeVisible()
-  await expect(page.getByText('2026-05-20.md')).toBeVisible()
-  await expect(page.getByText('README.md')).toBeVisible()
+  // Every seeded note should show up in the panel. Scope each lookup
+  // to the panel because the right sidebar's PropertiesPanel also
+  // surfaces the active note's gitPath (its testid is properties-git-path
+  // — strict-mode match collision otherwise).
+  await expect(scPanel.getByText('2026-W11.md')).toBeVisible()
+  await expect(scPanel.getByText('2026-W12.md')).toBeVisible()
+  await expect(scPanel.getByText('2026-05-20.md')).toBeVisible()
+  await expect(scPanel.getByText('README.md')).toBeVisible()
 
   // The folder grouping puts a "Notes" + "Weekly" + "Daily" row in
   // the tree. Verify they all appear.
-  await expect(page.getByText('Notes', { exact: true })).toBeVisible()
-  await expect(page.getByText('Weekly', { exact: true })).toBeVisible()
-  await expect(page.getByText('Daily', { exact: true })).toBeVisible()
+  await expect(scPanel.getByText('Notes', { exact: true })).toBeVisible()
+  await expect(scPanel.getByText('Weekly', { exact: true })).toBeVisible()
+  await expect(scPanel.getByText('Daily', { exact: true })).toBeVisible()
 
   // Each leaf row carries a status badge — M (modified) is what
   // classifyPendingChanges picks for notes with an existing gitPath.
