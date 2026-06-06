@@ -61,11 +61,16 @@ _Nothing right now._
   follow-up from the 2026-05-30 git-proxy security fix (see SECURITY.md
   audit log). Echo only allowed origins rather than `*`. Low priority;
   the actual handler is already guarded.
-- **ESLint rule migration off `next lint`** — the noteser repo is on
-  flat-config via FlatCompat, but `next/core-web-vitals` silently drops
-  custom rule blocks in that wrapping (verified 2026-05-30 trying to
-  add an XSS-sink ban). A hand-written `eslint.config.mjs` without the
-  next preset would let real lint rules land. ~1h scope.
+- ~~**ESLint rule migration off `next lint`**~~ — DONE. The custom-rule
+  drop was NOT inherent to the next preset: placing the rules in their
+  OWN top-level flat-config object (after the `compat.extends(...)`
+  spread, not inside it) lands them cleanly — no need to drop
+  `next/core-web-vitals`. `eslint.config.mjs` now carries the XSS-sink
+  bans (`no-restricted-syntax` for `dangerouslySetInnerHTML` + `.innerHTML
+  =`, `no-restricted-imports` for `rehype-raw`), scoped to skip
+  `__tests__`. They mirror the static-source Jest guards in
+  `markdownXssGuard.test.tsx` and fire live on `npm run lint`. Verified
+  all three catch a planted violation; clean repo still lints green.
 
 ## User feedback pending clarification
 
