@@ -11,6 +11,7 @@ contents; jump to what you need.
 - [Tasks queries (the ```tasks fence)](#tasks-queries)
 - [Workspace: tabs and split editor](#workspace-tabs-and-split-editor)
 - [GitHub sync](#github-sync)
+- [Offline use](#offline-use)
 - [Search](#search)
 - [Export and import](#export-and-import)
 - [Keyboard shortcuts](#keyboard-shortcuts)
@@ -189,6 +190,40 @@ each merges cleanly. Only when both sides edit the same lines does it
 flag a conflict.
 
 For the full deep-dive on the sync pipeline, see [sync.md](./sync.md).
+
+## Offline use
+
+Noteser keeps a full read-only copy of your vault in the browser. If
+you reload while offline (on a plane, on a flaky connection, etc.),
+the app boots straight into the cached vault — every note you had at
+the last sync is there, the tree is there, search works.
+
+**What is cached:**
+
+- Note bodies and frontmatter.
+- The folder tree.
+- Your open tabs (so the workspace looks the same as when you closed it).
+- Attachments you've already viewed.
+- The app shell itself (HTML, JS, CSS, fonts, icons) via the service
+  worker, so the page can boot with no network at all.
+
+**What is NOT cached:**
+
+- New writes do not yet replay automatically when you come back online.
+  Edits made offline are kept locally; you have to click **Sync** once
+  you're connected to push them.
+- GitHub authentication. The first time you connect a repo needs the
+  network. Once connected, the OAuth token is stored locally, so a later
+  offline boot still recognizes you.
+
+**Install as an app:** On Chrome / Android the address bar shows an
+"Install" affordance, or the in-app banner offers it. On iOS Safari,
+tap Share → Add to Home Screen. Installed apps boot in standalone mode
+with no browser chrome and the same cached behaviour.
+
+When you're offline the sync button shows "Offline — using cached
+vault" instead of a red error toast. The moment connectivity returns,
+the next auto-sync runs automatically.
 
 ## Search
 

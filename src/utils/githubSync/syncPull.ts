@@ -569,6 +569,21 @@ export async function pullFromGitHub(input: {
     }
   }
 
+  // Offline-first Step 1 (#68): record an anchor for the next boot. The
+  // snapshot is the pair (commit, tree-map) we just classified against. On
+  // a subsequent reload the offline boot path reads this without needing
+  // the network so the sidebar can show "cached at <sha> · <time>", and
+  // the next online pull can short-circuit if HEAD still matches. Cache
+  // write is fire-and-forget — a write failure must NOT fail the sync.
+  void (async () => {
+    try {
+      const { writeVaultSnapshot, buildSnapshot } = await import('../vaultSnapshotCache')
+      await writeVaultSnapshot(repo, buildSnapshot(headSha, remoteTree))
+    } catch {
+      /* best-effort */
+    }
+  })()
+
   return { classifications: out, latestCommitSha: headSha }
 }
 
