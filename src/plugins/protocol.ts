@@ -33,6 +33,7 @@ export type HostToWorker =
   | HostActiveNoteChanged
   | HostFileSaveResult
   | HostFileOpenResult
+  | HostVNodeEvent
 
 /** First message the host sends. Worker initialises the plugin module
  *  and replies with WorkerReady on success or WorkerBootError on failure. */
@@ -117,6 +118,38 @@ export interface HostFileOpenResult {
   bytesBase64?: string
   filename?: string
   error?: string
+}
+
+/** v1.2 — VNode event delivery. The renderer dispatches one of these
+ *  every time a plugin-rendered control fires (button click, input
+ *  change, radio pick, clickable svg shape). The worker matches
+ *  `event` against handlers the plugin registered via
+ *  `ctx.onVNodeEvent` (registration API ships in a later v1.2 PR;
+ *  this envelope is the wire contract every later PR builds on).
+ *
+ *  `source` tells the worker which surface produced the event so the
+ *  plugin can disambiguate when the same `event` name is used in two
+ *  surfaces. PR B fills `kind: 'fullscreen'`; this PR (A) only emits
+ *  `kind: 'panel'` / `kind: 'codeBlock'`.
+ *
+ *  Per the v1.2 plan section 2.1, the host curates which event types
+ *  are wireable (`onClick`, `onChange`, `onSubmit`, `onKeyDown`). For
+ *  inputs and radios the host augments `payload` with `{ value }`
+ *  before posting, so the worker reads the user's selection without
+ *  guessing the DOM event shape. */
+export interface HostVNodeEvent {
+  type: 'host:vnodeEvent'
+  seq: number
+  /** Plugin-defined event name. Host treats as opaque. */
+  event: string
+  /** Plugin-supplied payload, possibly augmented with `{ value }` for
+   *  inputs and radios. */
+  payload: unknown
+  /** Which rendered surface produced the event. */
+  source:
+    | { kind: 'panel'; panelId: string }
+    | { kind: 'codeBlock'; blockId: string }
+    | { kind: 'fullscreen'; viewId: string }
 }
 
 // ─── Worker → Host ─────────────────────────────────────────────────────────
@@ -238,6 +271,7 @@ export function isHostToWorker(msg: unknown): msg is HostToWorker {
     'host:activeNoteChanged',
     'host:fileSaveResult',
     'host:fileOpenResult',
+    'host:vnodeEvent',
   ])
 }
 

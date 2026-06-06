@@ -13,6 +13,120 @@
 
 import type { PluginManifest } from './manifest'
 
+// ─── v1.2 VNode shapes ────────────────────────────────────────────────────
+//
+// These mirror the curated renderer in `src/plugins/PluginVNode.tsx`.
+// The published SDK ships them as pure types so plugin authors can
+// construct VNodes type-safely without depending on noteser's React
+// renderer. The host re-validates every VNode at render time; the
+// types are advisory, not load-bearing for security.
+
+/**
+ * Plugin-declared event intent. Functions cannot survive postMessage,
+ * so plugins emit this record on `onClick` / `onChange` instead of a
+ * callback. The host dispatches the event back through the wire
+ * protocol; the worker matches by `event` name against handlers the
+ * plugin registers via `ctx.onVNodeEvent` (registration ships in a
+ * later v1.2 PR).
+ */
+export interface VNodeEvent {
+  kind: 'emit'
+  /** Plugin-defined event name. Host treats as opaque. */
+  event: string
+  /** Optional payload echoed back on the wire. */
+  payload?: unknown
+}
+
+export interface VNodeText {
+  tag: 'text'
+  value: string
+}
+
+export interface VNodeCallout {
+  tag: 'callout'
+  kind?: 'note' | 'warn' | 'tip' | 'danger' | 'info'
+  title?: string
+  body: string
+}
+
+export interface VNodeButton {
+  tag: 'button'
+  label: string
+  variant?: 'default' | 'primary' | 'danger' | 'ghost'
+  disabled?: boolean
+  onClick?: VNodeEvent
+}
+
+export interface VNodeInput {
+  tag: 'input'
+  type: 'text' | 'number' | 'search' | 'select'
+  options?: ReadonlyArray<{ value: string; label: string }>
+  value?: string | number
+  placeholder?: string
+  disabled?: boolean
+  onChange?: VNodeEvent
+}
+
+export interface VNodeList {
+  tag: 'list'
+  ordered?: boolean
+  items: ReadonlyArray<VNode>
+}
+
+export interface VNodeLink {
+  tag: 'link'
+  label: string
+  /**
+   * Discriminated union — the renderer constructs the real URL
+   * host-side. Plugins cannot produce a raw href string, so
+   * `javascript:`, `data:`, `mailto:`, and external URLs are
+   * structurally impossible.
+   */
+  href:
+    | { kind: 'note'; noteId: string }
+    | { kind: 'anchor'; fragment: string }
+}
+
+export interface VNodeRadio {
+  tag: 'radio'
+  group: string
+  options: ReadonlyArray<{ value: string; label: string }>
+  value?: string
+  onChange?: VNodeEvent
+}
+
+export type SvgChild =
+  | { tag: 'line'; x1: number; y1: number; x2: number; y2: number; stroke?: string; strokeWidth?: number }
+  | { tag: 'circle'; cx: number; cy: number; r: number; fill?: string; stroke?: string; onClick?: VNodeEvent }
+  | { tag: 'rect'; x: number; y: number; width: number; height: number; fill?: string; stroke?: string; onClick?: VNodeEvent }
+  | { tag: 'text'; x: number; y: number; value: string; fontSize?: number; fill?: string }
+  | { tag: 'path'; d: string; stroke?: string; fill?: string; strokeWidth?: number }
+
+export interface VNodeSvg {
+  tag: 'svg'
+  width: number
+  height: number
+  viewBox?: readonly [number, number, number, number]
+  children: ReadonlyArray<SvgChild>
+}
+
+export interface VNodeBox {
+  tag: 'box'
+  children: ReadonlyArray<VNode>
+  gap?: 0 | 1 | 2 | 3 | 4
+}
+
+export type VNode =
+  | VNodeText
+  | VNodeCallout
+  | VNodeButton
+  | VNodeInput
+  | VNodeList
+  | VNodeLink
+  | VNodeRadio
+  | VNodeSvg
+  | VNodeBox
+
 /** Narrow capability surface exposed to plugin handlers. The plugin
  *  never sees `localStorage`, the GitHub token, or the bodies of notes
  *  it is not currently viewing. v1 read scope is intentionally tight:
