@@ -7,6 +7,24 @@ export type {
   PluginDefinition,
 } from './sdk'
 
+// v1.2 — VNode shapes plus the shared event-handler record. PR A adds
+// the types only; new SDK methods (event registration, fullscreen,
+// vault, fs) ship in later v1.2 PRs.
+export type {
+  VNode,
+  VNodeText,
+  VNodeCallout,
+  VNodeButton,
+  VNodeInput,
+  VNodeList,
+  VNodeLink,
+  VNodeRadio,
+  VNodeSvg,
+  VNodeBox,
+  VNodeEvent,
+  SvgChild,
+} from './sdk'
+
 export type {
   PluginManifest,
   PluginSurfaces,

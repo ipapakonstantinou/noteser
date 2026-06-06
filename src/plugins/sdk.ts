@@ -13,6 +13,25 @@
 
 import type { PluginManifest } from './manifest'
 
+// Re-export the v1.2 VNode types so plugin authors importing from the
+// SDK can construct VNodes type-safely. PR A only adds the types —
+// new SDK methods (event registration, fullscreen, vault, fs) ship in
+// later v1.2 PRs.
+export type {
+  VNode,
+  VNodeText,
+  VNodeCallout,
+  VNodeButton,
+  VNodeInput,
+  VNodeList,
+  VNodeLink,
+  VNodeRadio,
+  VNodeSvg,
+  VNodeBox,
+  VNodeEvent,
+  SvgChild,
+} from './PluginVNode'
+
 /** Narrow capability surface exposed to plugin handlers. The plugin
  *  never sees `localStorage`, the GitHub token, or the bodies of notes
  *  it is not currently viewing. v1 read scope is intentionally tight:

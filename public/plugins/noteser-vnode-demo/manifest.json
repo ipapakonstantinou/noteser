@@ -1,0 +1,13 @@
+{
+  "id": "noteser-vnode-demo",
+  "name": "VNode demo",
+  "version": "0.1.0",
+  "author": "Noteser",
+  "description": "Reference plugin for v1.2 PR A. Exercises every new VNode shape — button, input, list, link, radio, svg, box — inside a sidebar panel.",
+  "main": "./main.js",
+  "surfaces": {
+    "sidebarPanels": [
+      { "id": "demo", "title": "VNode demo" }
+    ]
+  }
+}
