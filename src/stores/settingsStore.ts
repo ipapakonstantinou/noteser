@@ -350,12 +350,6 @@ export interface SettingsState {
   // skip the trash and remove immediately.
   trashMode: TrashMode
 
-  // Display name for the synthetic ".trash" folder in the sidebar. Purely
-  // cosmetic — trashed notes reference the trash by its fixed synthetic id
-  // (TRASH_FOLDER_ID), so renaming never loses anything. Defaults to
-  // `.trash`.
-  trashFolderName: string
-
   // ── Keyboard shortcuts ─────────────────────────────────────────────────
   // Per-shortcut combo override. Keys are `ShortcutDef.id` values from
   // `src/utils/shortcuts.ts`; values are canonical combo strings (e.g.
@@ -486,7 +480,6 @@ export interface SettingsState {
   clearShortcutOverride: (id: string) => void
   resetShortcutOverrides: () => void
   setTrashMode: (mode: TrashMode) => void
-  setTrashFolderName: (name: string) => void
   setConfirmBulkDelete: (value: boolean) => void
   setConfirmBeforeTrash: (value: boolean) => void
   setBetaEnabled: (value: boolean) => void
@@ -579,7 +572,6 @@ export const VAULT_SETTING_KEYS = [
   'dailyNoteTemplateId',
   'weeklyNoteTemplateId',
   'trashMode',
-  'trashFolderName',
   'confirmBulkDelete',
   'betaEnabled',
   'betaFlags',
@@ -628,7 +620,6 @@ const DEFAULTS = {
   calendarWeekStartDay: 1 as CalendarWeekStartDay,
   shortcutOverrides: {} as Record<string, string>,
   trashMode: 'trash' as TrashMode,
-  trashFolderName: '.trash',
   confirmBulkDelete: true,
   confirmBeforeTrash: true,
   betaEnabled: false,
@@ -803,7 +794,6 @@ export const useSettingsStore = create<SettingsState>()(
           }),
         resetShortcutOverrides: () => set({ shortcutOverrides: {} }),
         setTrashMode: (trashMode) => setVault({ trashMode }),
-        setTrashFolderName: (trashFolderName) => setVault({ trashFolderName }),
         setConfirmBulkDelete: (confirmBulkDelete) => setVault({ confirmBulkDelete }),
         // Device-only — same logic as `confirmBulkDelete` lives in the
         // vault slice, but the single-note toggle is per-DEVICE because
