@@ -25,7 +25,8 @@ interface ConflictData {
 type Choice = 'local' | 'remote'
 
 export const VaultSettingsConflictModal = () => {
-  const { modal, closeModal } = useUIStore()
+  const modal = useUIStore(s => s.modal)
+  const closeModal = useUIStore(s => s.closeModal)
   const isOpen = modal.type === 'vault-settings-conflict'
   // Only treat modal.data as conflict-shaped when THIS modal is the one
   // open. `modal.data` is shared across every modal kind, so a delete-

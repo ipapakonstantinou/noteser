@@ -17,6 +17,7 @@ import {
   ShareIcon,
   ArrowsRightLeftIcon,
 } from '@heroicons/react/24/outline'
+import { useShallow } from 'zustand/react/shallow'
 import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore, useSettingsStore, useGitHubStore } from '@/stores'
 import type { ContextMenuState, Folder } from '@/types'
 import { AI_ACTIONS } from '@/utils/aiActions'
@@ -55,7 +56,7 @@ interface ContextMenuProps {
 
 export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   const menuRef = useRef<HTMLDivElement>(null)
-  const { openModal } = useUIStore()
+  const openModal = useUIStore(s => s.openModal)
   const requestRename = useUIStore(s => s.requestRename)
   const {
     getNoteById,
@@ -65,9 +66,40 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
     deleteNote,
     restoreNote,
     restoreNotes,
-    getDeletedNotes
-  } = useNoteStore()
-  const { getFolderById, addFolder, deleteFolder, getActiveFolders, getDeletedFolders, restoreFolders, toggleFolderExpanded, expandedFolders } = useFolderStore()
+    getDeletedNotes,
+  } = useNoteStore(
+    useShallow(s => ({
+      getNoteById: s.getNoteById,
+      addNote: s.addNote,
+      duplicateNote: s.duplicateNote,
+      togglePinNote: s.togglePinNote,
+      deleteNote: s.deleteNote,
+      restoreNote: s.restoreNote,
+      restoreNotes: s.restoreNotes,
+      getDeletedNotes: s.getDeletedNotes,
+    }))
+  )
+  const {
+    getFolderById,
+    addFolder,
+    deleteFolder,
+    getActiveFolders,
+    getDeletedFolders,
+    restoreFolders,
+    toggleFolderExpanded,
+    expandedFolders,
+  } = useFolderStore(
+    useShallow(s => ({
+      getFolderById: s.getFolderById,
+      addFolder: s.addFolder,
+      deleteFolder: s.deleteFolder,
+      getActiveFolders: s.getActiveFolders,
+      getDeletedFolders: s.getDeletedFolders,
+      restoreFolders: s.restoreFolders,
+      toggleFolderExpanded: s.toggleFolderExpanded,
+      expandedFolders: s.expandedFolders,
+    }))
+  )
   const openNote = useWorkspaceStore(s => s.openNote)
   const openCompare = useWorkspaceStore(s => s.openCompare)
   // VS Code-style compare flow: a previously right-clicked note may be

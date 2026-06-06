@@ -5,7 +5,8 @@ import { Modal } from '@/components/ui'
 import { KEYBOARD_SHORTCUTS } from '@/types'
 
 export const ShortcutsModal = () => {
-  const { modal, closeModal } = useUIStore()
+  const modal = useUIStore(s => s.modal)
+  const closeModal = useUIStore(s => s.closeModal)
 
   const isOpen = modal.type === 'shortcuts'
 

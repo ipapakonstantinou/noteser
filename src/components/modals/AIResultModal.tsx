@@ -22,7 +22,8 @@ interface AIResultData {
 // Modal that displays the AI's output and lets the user apply it.
 // Shared across every action — `display` determines the layout.
 export const AIResultModal = () => {
-  const { modal, closeModal } = useUIStore()
+  const modal = useUIStore(s => s.modal)
+  const closeModal = useUIStore(s => s.closeModal)
   const updateNote = useNoteStore(s => s.updateNote)
   const getNoteById = useNoteStore(s => s.getNoteById)
   const [copied, setCopied] = useState(false)

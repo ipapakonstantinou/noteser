@@ -29,7 +29,8 @@ interface PreviewRow {
 }
 
 export const LocalFolderImportModal = () => {
-  const { modal, closeModal } = useUIStore()
+  const modal = useUIStore(s => s.modal)
+  const closeModal = useUIStore(s => s.closeModal)
   const isOpen = modal.type === 'local-folder-import'
 
   const handle = useLocalFolderStore(s => s.handle)

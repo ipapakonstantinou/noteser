@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback, createElement } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo, createElement } from 'react'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import dynamic from 'next/dynamic'
@@ -43,8 +43,12 @@ interface EditorContentProps {
 }
 
 export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorContentProps) => {
-  const { setPreviewMode } = useUIStore()
-  const { getActiveNotes } = useNoteStore()
+  const setPreviewMode = useUIStore(s => s.setPreviewMode)
+  const getActiveNotes = useNoteStore(s => s.getActiveNotes)
+  // Subscribe to the underlying notes array so the memoised activeNotes
+  // below recomputes when any note is added/removed/edited. getActiveNotes
+  // is itself a stable function ref; we need a real state dep to invalidate.
+  const notes = useNoteStore(s => s.notes)
   const openNote = useWorkspaceStore(s => s.openNote)
 
   // progressive-clone: if this note is still a SHELL (body not yet streamed in
@@ -63,7 +67,10 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
   const [cursorLine, setCursorLine] = useState<number | null>(null)
   const [cursorOffset, setCursorOffset] = useState<number | null>(null)
 
-  const activeNotes = getActiveNotes().filter(n => n.id !== note.id)
+  // Memoise the wikilink target list. Recomputes when notes change or when
+  // the current note's id rotates (so the self-exclusion stays correct).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const activeNotes = useMemo(() => getActiveNotes().filter(n => n.id !== note.id), [notes, note.id])
 
   const cmViewRef = useRef<EditorView | null>(null)
   const previewContainerRef = useRef<HTMLDivElement | null>(null)

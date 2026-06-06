@@ -6,9 +6,11 @@ import { DEFAULT_TEMPLATES, type Template } from '@/types'
 import { buildWeeklyReview } from '@/utils/weeklyReview'
 
 export const TemplatesModal = () => {
-  const { modal, closeModal } = useUIStore()
-  const { createFromTemplate, notes } = useNoteStore()
-  const { activeFolderId } = useFolderStore()
+  const modal = useUIStore(s => s.modal)
+  const closeModal = useUIStore(s => s.closeModal)
+  const createFromTemplate = useNoteStore(s => s.createFromTemplate)
+  const notes = useNoteStore(s => s.notes)
+  const activeFolderId = useFolderStore(s => s.activeFolderId)
 
   const isOpen = modal.type === 'template'
 
