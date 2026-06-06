@@ -47,6 +47,29 @@ export interface NoteWithBody {
   updatedAt: number
 }
 
+/**
+ * One entry returned by `ctx.fs.openDirectory`. v1.2 capability — see
+ * docs/plugins-v1.2-plan.md section 4.3.
+ *
+ *  - `name` is the filename (no path prefix), e.g. "note.md".
+ *  - `path` is the forward-slash relative path inside the picked root,
+ *    e.g. "subfolder/note.md".
+ *  - `blob` lets the plugin read the file lazily on demand via
+ *    `blob.text()` or `blob.arrayBuffer()`. The host does not pre-load
+ *    file bytes; this keeps a 500 MB directory pick from blowing the
+ *    Worker's heap before the plugin even iterates.
+ */
+export interface DirectoryEntry {
+  name: string
+  path: string
+  blob: Blob
+}
+
+/** Array form returned by `ctx.fs.openDirectory`. Read-only so plugins
+ *  cannot mutate the host's snapshot in place. */
+export type DirectoryEntries = ReadonlyArray<DirectoryEntry>
+
+
 /** Narrow capability surface exposed to plugin handlers. The plugin
  *  never sees `localStorage`, the GitHub token, or the bodies of notes
  *  it is not currently viewing. v1 read scope is intentionally tight:
@@ -156,6 +179,34 @@ export interface PluginCtx {
        *  debounce / cap rules as `onVaultChange`. */
       onActiveNoteChange(handler: (noteId: string | null) => void): Unsubscribe
     }
+  }
+
+  /**
+   * v1.2 file-system namespace. Always populated; methods reject when
+   * the matching permission was not granted (or was revoked from
+   * Settings → Plugins) with the message
+   * `Permission "fs.open-directory" was not granted.` Plugins can catch
+   * + degrade.
+   */
+  fs: {
+    /**
+     * v1.2 capability: open the native directory picker. Resolves with
+     * an array of `{ name, path, blob }` for every file under the
+     * picked root, or `null` when the user cancelled.
+     *
+     * Requires `permissions: ['fs.open-directory']`. Required for
+     * Obsidian / Logseq importers. See plugins-v1.2-plan.md section 4.3.
+     *
+     *  - `args.extensions` (case-insensitive, leading dot optional):
+     *    filters the response to entries whose name ends with one of
+     *    the listed suffixes, e.g. `['.md', '.markdown']`. Empty /
+     *    undefined returns every file.
+     *
+     * Rejects with `Directory too large` when the picked folder
+     * contains more than 50,000 entries (post-filter). Picks a smaller
+     * folder if you trip this.
+     */
+    openDirectory(args?: { extensions?: string[] }): Promise<DirectoryEntries | null>
   }
 }
 

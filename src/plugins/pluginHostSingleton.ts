@@ -17,6 +17,12 @@
 // not exist there.
 
 import { PluginHost, type MinimalWorker } from './PluginHost'
+import { MAX_DIRECTORY_ENTRIES } from './protocol'
+import {
+  buildExtensionMatcher,
+  walkDirectoryHandle,
+  type FileSystemDirectoryHandleLike,
+} from './directoryPickerHelpers'
 import { usePluginStore } from '@/stores/pluginStore'
 import { usePluginInstallStore, type InstalledPluginRecord } from '@/stores/pluginInstallStore'
 import { useToastStore } from '@/stores/toastStore'
@@ -503,6 +509,10 @@ function wireListener(host: PluginHost): void {
       case 'vaultReadRequested':
         void handleVaultReadRequest(host, event)
         return
+
+      case 'directoryOpenRequested':
+        void handleDirectoryOpenRequest(host, event)
+        return
     }
   })
 }
@@ -726,6 +736,137 @@ function pickFileViaInput(accept: string[] | undefined): Promise<File> {
     input.click()
   })
 }
+
+/**
+ * v1.2 `fs.open-directory` capability handler. Modern path uses
+ * `showDirectoryPicker` (Chrome / Edge / Opera) and walks the returned
+ * `FileSystemDirectoryHandle` recursively. Fallback path uses
+ * `<input type="file" webkitdirectory>` for Safari + Firefox — the
+ * existing single-file fallback at line ~458 above does NOT set
+ * `webkitdirectory`, so the directory equivalent lives here.
+ *
+ * Both paths return `Array<{ name, path, blob }>`. `path` is the
+ * forward-slash relative path inside the picked root; `blob` lets the
+ * plugin read each file's contents lazily.
+ *
+ * See plugins-v1.2-plan.md section 4.3 for the design.
+ */
+async function handleDirectoryOpenRequest(
+  host: PluginHost,
+  event: Extract<import('./PluginHost').PluginHostEvent, { type: 'directoryOpenRequested' }>,
+): Promise<void> {
+  const { pluginId, requestSeq, extensions } = event
+  // Manifest-level + runtime revocation gating already happened inside
+  // PluginHost.handleWorkerMessage (PR C unified that layer). By the
+  // time the singleton receives `directoryOpenRequested` the permission
+  // is known to be both declared AND not revoked.
+  const matcher = buildExtensionMatcher(extensions)
+  try {
+    const w = window as unknown as {
+      showDirectoryPicker?: () => Promise<FileSystemDirectoryHandleLike>
+    }
+    let entries: Array<{ name: string; path: string; blob: Blob }>
+    if (typeof w.showDirectoryPicker === 'function') {
+      const root = await w.showDirectoryPicker()
+      entries = await walkDirectoryHandle(root, matcher)
+    } else {
+      entries = await pickDirectoryViaInput(matcher)
+    }
+
+    if (entries.length > MAX_DIRECTORY_ENTRIES) {
+      host.respondDirectoryOpen(pluginId, requestSeq, {
+        ok: false,
+        error: `Directory too large: ${entries.length} entries exceeds the ${MAX_DIRECTORY_ENTRIES} cap.`,
+      })
+      return
+    }
+
+    host.respondDirectoryOpen(pluginId, requestSeq, { ok: true, entries })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (
+      message.includes('aborted') ||
+      message.includes('Abort') ||
+      message === 'cancelled'
+    ) {
+      // Cancellation is not an error from the plugin's view — return
+      // ok=true with no entries so ctx.fs.openDirectory resolves to
+      // `null`. Mirrors the file-open fallback shape above.
+      host.respondDirectoryOpen(pluginId, requestSeq, { ok: true })
+    } else {
+      host.respondDirectoryOpen(pluginId, requestSeq, { ok: false, error: message })
+    }
+  }
+}
+
+/** Safari + Firefox fallback. `<input type="file" webkitdirectory>`
+ *  surfaces every file under the picked folder, but unlike the single
+ *  `<input type=file>` fallback above this one has to handle:
+ *
+ *   - `webkitRelativePath` on each `File` (used as the `path`),
+ *   - the `cancel` event firing when the user dismisses the picker
+ *     (rejection path the unit tests cover).
+ *
+ *  The `accept` attribute is intentionally NOT set: webkitdirectory
+ *  ignores it on most browsers, and we filter host-side via `matcher`
+ *  anyway so the response stays consistent across paths. */
+function pickDirectoryViaInput(
+  matcher: (name: string) => boolean,
+): Promise<Array<{ name: string; path: string; blob: Blob }>> {
+  return new Promise((resolve, reject) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    // Non-standard but universally supported. The TS lib types it as a
+    // string attribute so we set it via `setAttribute` to avoid a cast.
+    input.setAttribute('webkitdirectory', '')
+    input.setAttribute('directory', '')
+    input.multiple = true
+    input.style.position = 'fixed'
+    input.style.left = '-9999px'
+
+    let settled = false
+    const cleanup = (): void => {
+      input.remove()
+    }
+
+    input.onchange = () => {
+      if (settled) return
+      settled = true
+      const files = input.files
+      cleanup()
+      if (!files || files.length === 0) {
+        reject(new Error('cancelled'))
+        return
+      }
+      const out: Array<{ name: string; path: string; blob: Blob }> = []
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i]
+        if (!matcher(f.name)) continue
+        // webkitRelativePath includes the picked root's name as the
+        // first segment, e.g. "MyVault/notes/a.md". Strip it so the
+        // returned `path` is relative to the picked root, matching the
+        // showDirectoryPicker path.
+        const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath ?? f.name
+        const slashIdx = rel.indexOf('/')
+        const path = slashIdx >= 0 ? rel.slice(slashIdx + 1) : rel
+        out.push({ name: f.name, path, blob: f as Blob })
+      }
+      resolve(out)
+    }
+    // Cancellation: modern browsers fire `cancel` when the picker is
+    // dismissed without a selection. Unit-tested via the rejection
+    // path — see permissions.test.ts / dedicated suite.
+    input.addEventListener('cancel', () => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(new Error('cancelled'))
+    })
+    document.body.appendChild(input)
+    input.click()
+  })
+}
+
 
 function acceptToTypes(accept: string[]): Record<string, string[]> {
   const out: Record<string, string[]> = {}

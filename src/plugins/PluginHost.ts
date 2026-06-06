@@ -94,6 +94,12 @@ export type PluginHostEvent =
       noteId?: string
       chunkSize?: number
     }
+  | {
+      type: 'directoryOpenRequested'
+      pluginId: string
+      requestSeq: number
+      extensions?: string[]
+    }
   | { type: 'rateLimited'; pluginId: string }
 
 interface WorkerEntry {
@@ -702,6 +708,36 @@ export class PluginHost {
         })
         return
       }
+
+      case 'worker:requestDirectoryOpen': {
+        // v1.2 capability — gated like vault.read.all. Manifest must
+        // declare the permission; runtime revocation flips a second
+        // check that surfaces a distinct error string for the dev
+        // console.
+        const declared =
+          entry.plugin.manifest.permissions?.includes('fs.open-directory') ?? false
+        if (!declared) {
+          this.respondDirectoryOpen(pluginId, msg.seq, {
+            ok: false,
+            error: 'Plugin did not declare the `fs.open-directory` permission.',
+          })
+          return
+        }
+        if (entry.plugin.revokedPermissions.has('fs.open-directory')) {
+          this.respondDirectoryOpen(pluginId, msg.seq, {
+            ok: false,
+            error: 'Permission "fs.open-directory" was revoked.',
+          })
+          return
+        }
+        this.emit({
+          type: 'directoryOpenRequested',
+          pluginId,
+          requestSeq: msg.seq,
+          ...(msg.extensions ? { extensions: msg.extensions } : {}),
+        })
+        return
+      }
     }
   }
 
@@ -803,6 +839,30 @@ export class PluginHost {
       ok: result.ok,
       ...(result.ok && 'bytesBase64' in result && result.bytesBase64 !== undefined
         ? { bytesBase64: result.bytesBase64, filename: result.filename ?? 'file' }
+        : {}),
+      ...(!result.ok ? { error: result.error } : {}),
+    })
+  }
+
+  /** Surface adapter / singleton wires the native directory picker
+   *  here. Blobs ride through `postMessage` via structured clone — no
+   *  base64 round-trip, so a 500 MB folder pick stays cheap on the
+   *  main thread. v1.2 capability — see plugins-v1.2-plan.md 4.3. */
+  respondDirectoryOpen(
+    pluginId: string,
+    requestSeq: number,
+    result:
+      | { ok: true; entries: ReadonlyArray<{ name: string; path: string; blob: Blob }> }
+      | { ok: true; entries?: undefined }
+      | { ok: false; error: string },
+  ): void {
+    this.send(pluginId, {
+      type: 'host:directoryOpenResult',
+      seq: ++this.seqCounter,
+      requestSeq,
+      ok: result.ok,
+      ...(result.ok && 'entries' in result && result.entries !== undefined
+        ? { entries: result.entries }
         : {}),
       ...(!result.ok ? { error: result.error } : {}),
     })

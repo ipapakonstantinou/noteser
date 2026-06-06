@@ -32,9 +32,9 @@ export interface InstalledPluginRecord {
    *  re-grants it. The manifest's declared `permissions` list is the
    *  ceiling; revocation can only subtract from it. Honoured at
    *  dispatch time for every v1.2 capability (vault.read.all,
-   *  vault.events, …); existing subscribers are not torn down on
-   *  revocation — they just stop receiving events / get a rejection
-   *  on the next call. */
+   *  vault.events, fs.open-directory, …); existing subscribers are not
+   *  torn down on revocation — they just stop receiving events / get a
+   *  rejection with `Permission "<name>" was revoked.` on the next call. */
   revokedPermissions?: PluginPermission[]
 }
 

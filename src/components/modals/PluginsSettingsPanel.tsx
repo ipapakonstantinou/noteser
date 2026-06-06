@@ -20,8 +20,8 @@ import {
   setPluginPermissionRevoked,
   uninstallPlugin,
 } from '@/plugins/pluginHostSingleton'
-import { scanVaultForManifests, type VaultManifestCandidate } from '@/plugins/vaultScan'
 import { PERMISSION_DESCRIPTIONS, type PluginPermission } from '@/plugins/manifest'
+import { scanVaultForManifests, type VaultManifestCandidate } from '@/plugins/vaultScan'
 
 export const PluginsSettingsPanel = () => {
   const records = usePluginInstallStore((s) => s.records)

@@ -13,7 +13,18 @@ export interface PluginManifest {
   version: string
   author?: string
   surfaces: PluginSurfaces
+  /** Capabilities the plugin asks for at install time. The user grants
+   *  each one in the install-preview modal; the host refuses any
+   *  capability call that was not granted. v1.1 added `file-save` /
+   *  `file-open`; v1.2 PR E added `fs.open-directory`. */
+  permissions?: PluginPermission[]
 }
+
+/** Capability identifiers the validator accepts. Plugins targeting an
+ *  older host that does not know a v1.2 permission will fail manifest
+ *  validation there — see plugins-v1.2-plan.md section 10. */
+export const PERMISSIONS = ['file-save', 'file-open', 'fs.open-directory'] as const
+export type PluginPermission = (typeof PERMISSIONS)[number]
 
 export interface PluginSurfaces {
   commands?: PluginCommand[]
@@ -104,6 +115,7 @@ export function validateManifest(input: unknown): ManifestValidationResult {
   const commands = validateCommands(surfaces.commands, errors)
   const sidebarPanels = validateSidebarPanels(surfaces.sidebarPanels, errors)
   const codeBlockRenderers = validateCodeBlockRenderers(surfaces.codeBlockRenderers, errors)
+  const permissions = validatePermissions(m.permissions, errors)
 
   if (errors.length > 0) return { ok: false, errors }
 
@@ -132,6 +144,7 @@ export function validateManifest(input: unknown): ManifestValidationResult {
         ? { codeBlockRenderers }
         : {}),
     },
+    ...(permissions && permissions.length > 0 ? { permissions } : {}),
   }
   return { ok: true, errors: [], manifest: normalised }
 }
@@ -217,6 +230,36 @@ function validateCodeBlockRenderers(
     }
     return { language: r.language.toLowerCase() }
   }).filter((x): x is PluginCodeBlockRenderer => x !== null)
+}
+
+function validatePermissions(
+  input: unknown,
+  errors: string[],
+): PluginPermission[] | undefined {
+  if (input === undefined) return undefined
+  if (!Array.isArray(input)) {
+    errors.push('"permissions" must be an array when present.')
+    return undefined
+  }
+  const out: PluginPermission[] = []
+  const seen = new Set<string>()
+  for (let i = 0; i < input.length; i++) {
+    const entry = input[i]
+    if (typeof entry !== 'string') {
+      errors.push(`permissions[${i}] must be a string.`)
+      continue
+    }
+    if (!(PERMISSIONS as readonly string[]).includes(entry)) {
+      errors.push(
+        `permissions[${i}] "${entry}" is not a known capability. Known: ${PERMISSIONS.join(', ')}.`,
+      )
+      continue
+    }
+    if (seen.has(entry)) continue
+    seen.add(entry)
+    out.push(entry as PluginPermission)
+  }
+  return out
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
