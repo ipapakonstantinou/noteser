@@ -20,7 +20,8 @@ import { resetToRemote } from '@/utils/resetToRemote'
 // surface) → confirm → wipe + auto-pull.
 
 export const DiscardLocalChangesModal = () => {
-  const { modal, closeModal } = useUIStore()
+  const modal = useUIStore(s => s.modal)
+  const closeModal = useUIStore(s => s.closeModal)
   const isOpen = modal.type === 'discard-local-changes'
   // Discard is a RESET-TO-REMOTE: we want to PULL the remote version, never
   // push. Using runSync here re-pushed settings.json + attachments after the

@@ -36,7 +36,8 @@ interface PublishGistData {
 }
 
 export const PublishGistModal = () => {
-  const { modal, closeModal } = useUIStore()
+  const modal = useUIStore(s => s.modal)
+  const closeModal = useUIStore(s => s.closeModal)
   const data = modal.data as PublishGistData | undefined
   const isOpen = modal.type === 'publish-gist'
 

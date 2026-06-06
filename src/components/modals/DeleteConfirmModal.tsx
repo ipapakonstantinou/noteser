@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { useUIStore, useNoteStore, useFolderStore, useSettingsStore } from '@/stores'
 import { Modal, Button } from '@/components/ui'
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline'
@@ -9,10 +10,27 @@ import { TRASH_FOLDER_ID } from '@/utils/systemFolder'
 import { buildTrashTree, collectTrashFolderIds, collectTrashNoteIds } from '@/utils/trashTree'
 
 export const DeleteConfirmModal = () => {
-  const { modal, closeModal } = useUIStore()
-  const { deleteNote, permanentlyDeleteNote, permanentlyDeleteNotes, getNoteById, emptyTrash, getDeletedNotes } = useNoteStore()
-  const { permanentlyDeleteFolder, permanentlyDeleteFolders, getFolderById, getDeletedFolders } = useFolderStore()
-  const { notes } = useNoteStore()
+  const modal = useUIStore(s => s.modal)
+  const closeModal = useUIStore(s => s.closeModal)
+  const { deleteNote, permanentlyDeleteNote, permanentlyDeleteNotes, getNoteById, emptyTrash, getDeletedNotes } = useNoteStore(
+    useShallow(s => ({
+      deleteNote: s.deleteNote,
+      permanentlyDeleteNote: s.permanentlyDeleteNote,
+      permanentlyDeleteNotes: s.permanentlyDeleteNotes,
+      getNoteById: s.getNoteById,
+      emptyTrash: s.emptyTrash,
+      getDeletedNotes: s.getDeletedNotes,
+    }))
+  )
+  const { permanentlyDeleteFolder, permanentlyDeleteFolders, getFolderById, getDeletedFolders } = useFolderStore(
+    useShallow(s => ({
+      permanentlyDeleteFolder: s.permanentlyDeleteFolder,
+      permanentlyDeleteFolders: s.permanentlyDeleteFolders,
+      getFolderById: s.getFolderById,
+      getDeletedFolders: s.getDeletedFolders,
+    }))
+  )
+  const notes = useNoteStore(s => s.notes)
   const trashMode = useSettingsStore(s => s.trashMode)
 
   const isOpen = modal.type === 'delete'

@@ -11,10 +11,14 @@ import type { ExportOptions } from '@/types'
 // remains in the main bundle — only the heavy zip/saver code splits.
 
 export const ExportModal = () => {
-  const { modal, closeModal } = useUIStore()
-  const { selectedNoteId, getNoteById, getActiveNotes } = useNoteStore()
-  const { folders, getActiveFolders } = useFolderStore()
-  const { tags } = useTagStore()
+  const modal = useUIStore(s => s.modal)
+  const closeModal = useUIStore(s => s.closeModal)
+  const selectedNoteId = useNoteStore(s => s.selectedNoteId)
+  const getNoteById = useNoteStore(s => s.getNoteById)
+  const getActiveNotes = useNoteStore(s => s.getActiveNotes)
+  const folders = useFolderStore(s => s.folders)
+  const getActiveFolders = useFolderStore(s => s.getActiveFolders)
+  const tags = useTagStore(s => s.tags)
 
   const [options, setOptions] = useState<ExportOptions>({
     format: 'markdown',

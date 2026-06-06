@@ -12,11 +12,15 @@ import { cosineSimilarity, listAllEmbeddings } from '@/utils/embeddings'
 type SearchMode = 'fuzzy' | 'semantic'
 
 export const SearchModal = () => {
-  const { isSearchOpen, closeSearch, searchQuery, setSearchQuery } = useUIStore()
-  const { notes, getActiveNotes } = useNoteStore()
+  const isSearchOpen = useUIStore(s => s.isSearchOpen)
+  const closeSearch = useUIStore(s => s.closeSearch)
+  const searchQuery = useUIStore(s => s.searchQuery)
+  const setSearchQuery = useUIStore(s => s.setSearchQuery)
+  const notes = useNoteStore(s => s.notes)
+  const getActiveNotes = useNoteStore(s => s.getActiveNotes)
   const openNote = useWorkspaceStore(s => s.openNote)
   const recentIds = useWorkspaceStore(s => s.recents)
-  const { getFolderById } = useFolderStore()
+  const getFolderById = useFolderStore(s => s.getFolderById)
   const aiEmbeddingsEnabled = useSettingsStore(s => s.aiEmbeddingsEnabled)
   const aiProvider = useSettingsStore(s => s.aiProvider)
   const aiApiKey = useSettingsStore(s => s.aiApiKey)

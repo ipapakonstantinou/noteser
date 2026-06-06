@@ -46,7 +46,8 @@ interface CapabilityRow {
 }
 
 export const PluginInstallConfirmModal = () => {
-  const { modal, closeModal } = useUIStore()
+  const modal = useUIStore(s => s.modal)
+  const closeModal = useUIStore(s => s.closeModal)
   const isOpen = modal.type === 'plugin-install-confirm'
   const data = modal.data ?? {}
   const initialRecord = (data.record as InstalledPluginRecord | undefined) ?? null

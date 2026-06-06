@@ -34,7 +34,8 @@ type View =
   | { kind: 'error'; message: string }
 
 export const GitHubRepoModal = () => {
-  const { modal, closeModal } = useUIStore()
+  const modal = useUIStore(s => s.modal)
+  const closeModal = useUIStore(s => s.closeModal)
   const token = useGitHubStore((s) => s.token)
   const syncRepo = useGitHubStore((s) => s.syncRepo)
   const setSyncRepo = useGitHubStore((s) => s.setSyncRepo)

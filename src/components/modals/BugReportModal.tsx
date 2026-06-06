@@ -17,7 +17,8 @@ type Status =
   | { kind: 'err'; message: string; body: string }
 
 export const BugReportModal = () => {
-  const { modal, closeModal } = useUIStore()
+  const modal = useUIStore(s => s.modal)
+  const closeModal = useUIStore(s => s.closeModal)
   const token = useGitHubStore(s => s.token)
   const isOpen = modal.type === 'bug-report'
 

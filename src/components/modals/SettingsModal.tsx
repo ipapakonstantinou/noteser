@@ -95,7 +95,8 @@ const CATEGORIES: readonly CategoryDef[] = [
 ]
 
 export const SettingsModal = () => {
-  const { modal, closeModal } = useUIStore()
+  const modal = useUIStore(s => s.modal)
+  const closeModal = useUIStore(s => s.closeModal)
   const isOpen = modal.type === 'settings'
 
   // Remembers the active category for the lifetime of the modal. Reset
