@@ -390,6 +390,7 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
             <Link href="/help/getting-started" className="text-obsidianAccentPurple hover:underline">Docs</Link>
             <Link href="/changelog" className="text-obsidianAccentPurple hover:underline">Changelog</Link>
             <a href="https://github.com/ipapakonstantinou/noteser" target="_blank" rel="noopener noreferrer" className="text-obsidianAccentPurple hover:underline">GitHub</a>
+            <a href="https://beta.noteser.app" target="_blank" rel="noopener noreferrer" className="text-obsidianAccentPurple hover:underline">Try the beta</a>
           </div>
           <div>
             Close this tab to dismiss the welcome view. You can always reopen it from
