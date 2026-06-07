@@ -39,6 +39,9 @@ There are two end-to-end layers on top of the unit tests:
   round-trip against a test repo). It needs a token and is not part of
   the default loop; touch it only when you change sync logic.
 
+See [`docs/testing.md`](./docs/testing.md) for the full testing process and
+the rules every tester follows (unit + E2E).
+
 If you changed `package.json` `overrides` or shifted a nested dependency,
 run `rm -rf .next` before the next build so the Webpack cache does not keep
 resolving the old module paths.
