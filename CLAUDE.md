@@ -21,6 +21,23 @@ After changing `package.json` `overrides` (or any dependency shift that deduplic
 
 **Next.js 15 / React 19 app.** Single-page layout in `src/app/page.tsx`: a `<Sidebar>` on the left, the `<Editor>` (which renders 1–2 panes of tabs) on the right, modals at the root.
 
+### Implemented feature surface (don't re-propose these as "missing")
+
+This file historically undersold the product. The following are **already
+shipped** — verify against the code before adding any of them to a backlog:
+
+- **Block references** `^block-id` — `src/utils/blockRef.ts`
+- **Note aliases** + alias-aware wikilink resolution — `src/utils/aliases.ts`, `src/components/editor/linksLivePreview.tsx`
+- **Backlinks panel** — `src/components/sidebar/BacklinksView.tsx` (right sidebar). NOTE: a force-directed **graph view** is NOT yet built.
+- **Bases / properties** — query blocks + table views + frontmatter UI: `src/utils/basesQuery.ts`, `src/components/editor/BasesBlock.tsx`, `basesLivePreview.tsx`, `FrontmatterPanel.tsx`, `src/components/sidebar/PropertiesPanel.tsx`
+- **Recurring tasks** (`🔁`) — `src/utils/recurrence.ts`, `src/components/modals/TaskEditModal.tsx`
+- **Outline pane** — `src/utils/outline.ts`
+- **Random note** — `src/utils/randomNote.ts`
+- **Bookmarks / pinned notes** — in `useUIStore` / `useSettingsStore`
+- **AI client + embeddings + semantic search** — `src/utils/aiClient.ts`, `src/utils/embeddings.ts`, `src/__tests__/semanticSearch.test.tsx`. NOTE: a conversational "chat / ask-your-notes" (RAG) UI on top of this is NOT yet built.
+- **Plugin host** — `src/components/editor/PluginCodeBlock.tsx`, `src/components/modals/PluginsSettingsPanel.tsx`, `PluginInstallConfirmModal.tsx`
+- **Local-folder sync** (File System Access API) — `src/utils/localFolderSync.ts`, `src/utils/fsaFs.ts` (alongside the GitHub sync)
+
 ### State management (Zustand)
 
 All state lives in `src/stores/`. Most stores use `zustand/middleware/persist` to write to `localStorage` under the key prefix `noteser-*`:
