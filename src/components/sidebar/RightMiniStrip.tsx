@@ -147,7 +147,7 @@ export const RightMiniStrip = ({
             aria-label={def.title}
             data-testid={`right-sidebar-pinned-tab-${id}`}
             className={[
-              'relative flex items-center justify-center py-1.5 max-md:py-2.5 px-3 rounded cursor-grab active:cursor-grabbing transition-colors',
+              'relative flex items-center justify-center py-1.5 max-md:py-2.5 px-3 rounded cursor-default active:cursor-grabbing transition-colors',
               showInsertBefore ? 'border-l-2 border-obsidianAccentPurple -ml-[2px]' : '',
               showInsertAfter ? 'border-r-2 border-obsidianAccentPurple -mr-[2px]' : '',
               active
