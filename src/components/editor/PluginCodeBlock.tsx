@@ -10,9 +10,9 @@
 // source) so that two structurally-identical blocks share the same
 // pending render request and the same cached result.
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { getPluginHost } from '@/plugins/pluginHostSingleton'
-import { PluginNode } from '@/plugins/PluginVNode'
+import { PluginNode, type PluginVNodeEvent } from '@/plugins/PluginVNode'
 import type { PluginHostEvent } from '@/plugins/PluginHost'
 
 interface Props {
@@ -49,6 +49,18 @@ export const PluginCodeBlock = ({ pluginId, language, source }: Props) => {
     }
   }, [pluginId, language, source, blockId])
 
+  // VNode event dispatch — wraps the renderer's event tuple with the
+  // `codeBlock` source descriptor and forwards through the plugin host.
+  // Rate-limited per plugin in PluginHost.sendVNodeEvent.
+  const handleEvent = useCallback(
+    (e: PluginVNodeEvent) => {
+      const host = getPluginHost()
+      if (!host) return
+      host.sendVNodeEvent(pluginId, { kind: 'codeBlock', blockId }, e.event, e.payload)
+    },
+    [pluginId, blockId],
+  )
+
   if (error) {
     return (
       <pre className="my-2 rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-xs text-red-200">
@@ -67,7 +79,7 @@ export const PluginCodeBlock = ({ pluginId, language, source }: Props) => {
 
   return (
     <div className="my-2 rounded-lg border border-obsidianBorder bg-obsidianDarkGray p-3 text-sm text-obsidianText overflow-x-auto">
-      <PluginNode node={node} />
+      <PluginNode node={node} onEvent={handleEvent} />
     </div>
   )
 }

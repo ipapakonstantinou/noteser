@@ -18,10 +18,10 @@
 // in the real VNode → React mapper (see docs/plugins-plan.md
 // "VNode" section).
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { usePluginStore, selectAllPluginPanels, type PluginPanelEntry } from '@/stores/pluginStore'
 import { getPluginHost } from '@/plugins/pluginHostSingleton'
-import { PluginNode } from '@/plugins/PluginVNode'
+import { PluginNode, type PluginVNodeEvent } from '@/plugins/PluginVNode'
 import type { PluginHostEvent } from '@/plugins/PluginHost'
 
 export const PluginsPanel = () => {
@@ -57,6 +57,23 @@ export const PluginsPanel = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panels.map((p) => `${p.pluginId}:${p.panelId}`).join('|')])
 
+  // Build a `PluginNode` event handler scoped to a single (pluginId,
+  // panelId). The renderer hands us the wire-level `PluginVNodeEvent`
+  // (just `event` + `payload`); we wrap it with the `source` descriptor
+  // and forward to the host. Rate-limited per plugin in PluginHost.
+  //
+  // Declared above the early return so the hook order stays stable —
+  // rules-of-hooks forbids calling useCallback past a conditional.
+  const makeHandler = useCallback(
+    (pluginId: string, panelId: string) =>
+      (e: PluginVNodeEvent) => {
+        const host = getPluginHost()
+        if (!host) return
+        host.sendVNodeEvent(pluginId, { kind: 'panel', panelId }, e.event, e.payload)
+      },
+    [],
+  )
+
   if (panels.length === 0) {
     return (
       <div className="p-4 text-sm text-obsidianSecondaryText">
@@ -86,7 +103,7 @@ export const PluginsPanel = () => {
               {node === undefined ? (
                 <span className="text-obsidianSecondaryText">(awaiting first render…)</span>
               ) : (
-                <PluginNode node={node} />
+                <PluginNode node={node} onEvent={makeHandler(p.pluginId, p.panelId)} />
               )}
             </div>
           </section>
