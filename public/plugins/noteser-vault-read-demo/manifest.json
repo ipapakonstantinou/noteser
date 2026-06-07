@@ -1,0 +1,15 @@
+{
+  "id": "noteser-vault-read-demo",
+  "name": "Vault read demo",
+  "version": "0.1.0",
+  "author": "Noteser",
+  "description": "Reference plugin for the v1.2 vault.read.all capability. Prints a count of the notes in the vault to the worker console.",
+  "main": "./main.js",
+  "permissions": ["vault.read.all"],
+  "surfaces": {
+    "commands": [
+      { "id": "count", "title": "Vault read demo: count notes" },
+      { "id": "stream", "title": "Vault read demo: stream notes" }
+    ]
+  }
+}

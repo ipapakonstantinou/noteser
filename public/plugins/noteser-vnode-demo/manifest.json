@@ -1,0 +1,19 @@
+{
+  "id": "noteser-vnode-demo",
+  "name": "VNode demo",
+  "version": "0.2.0",
+  "author": "Noteser",
+  "description": "Reference plugin for v1.2 PRs A and B. Exercises every new VNode shape inside a sidebar panel, and opens a fullscreen view from the command palette.",
+  "main": "./main.js",
+  "surfaces": {
+    "sidebarPanels": [
+      { "id": "demo", "title": "VNode demo" }
+    ],
+    "commands": [
+      { "id": "show-fullscreen", "title": "VNode demo: show fullscreen" }
+    ],
+    "fullscreenViews": [
+      { "id": "demo-view", "title": "VNode fullscreen demo" }
+    ]
+  }
+}

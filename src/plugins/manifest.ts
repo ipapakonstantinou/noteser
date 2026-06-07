@@ -28,10 +28,24 @@ export interface PluginManifest {
   permissions?: PluginPermission[]
 }
 
-/** v1.1 capability identifiers. Unknown values are rejected by the
- *  validator. The host gates each runtime capability call against the
- *  granted set stored alongside the install record. */
-export const PERMISSIONS = ['file-save', 'file-open'] as const
+/** Capability identifiers known to the host. Unknown values are rejected
+ *  by the validator. The host gates each runtime capability call against
+ *  the granted set stored alongside the install record.
+ *
+ *  v1.1 added the two `file-*` capabilities; v1.2 layers in vault /
+ *  fs capabilities. PR C lands `vault.read.all` (read every note's
+ *  body + frontmatter); PR D lands `vault.write` (the first
+ *  DESTRUCTIVE permission — see below); PR E lands `fs.open-directory`
+ *  (native directory picker for importer workflows); PR F lands
+ *  `vault.events` (subscribe to vault-change pulses). */
+export const PERMISSIONS = [
+  'file-save',         // v1.1
+  'file-open',         // v1.1
+  'vault.read.all',    // v1.2 PR C — see docs/plugins-v1.2-plan.md §4.1
+  'vault.write',       // v1.2 PR D — see docs/plugins-v1.2-plan.md §4.2
+  'fs.open-directory', // v1.2 PR E — see docs/plugins-v1.2-plan.md §4.3
+  'vault.events',      // v1.2 PR F — see docs/plugins-v1.2-plan.md §4.4
+] as const
 export type PluginPermission = (typeof PERMISSIONS)[number]
 
 /** Human-readable text shown to the user in the install confirmation
@@ -39,23 +53,52 @@ export type PluginPermission = (typeof PERMISSIONS)[number]
 export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   'file-save': 'Save a file to your computer (opens the native save dialog when the plugin needs to write a file).',
   'file-open': 'Read a file you pick (opens the native file picker; the plugin sees the bytes of the file you choose, nothing else).',
+  'vault.read.all':
+    'Read the full content of every note in your vault. Required for features like backlinks, graph views, and AI search.',
+  'vault.write': 'This plugin can create, edit, and delete notes.',
+  'vault.events':
+    'Listen for changes to the vault. The plugin learns that a note was saved or that you switched notes (by id), but reading the body still requires a separate read permission.',
+  'fs.open-directory':
+    'Open folders to read files into the plugin. You pick the folder; the plugin sees the file names and contents under that folder, nothing else.',
+}
+
+/** Permissions flagged as DESTRUCTIVE in the install-confirm modal —
+ *  the user sees a red bullet + must opt-in. Required for any
+ *  capability that mutates vault contents.
+ *
+ *  v1.2 introduces `vault.write` as the first destructive permission.
+ *  Future destructive caps (e.g. `network.fetch`, `vault.hard-delete`)
+ *  add themselves here so the UI gating stays single-sourced. */
+export const DESTRUCTIVE_PERMISSIONS: ReadonlyArray<PluginPermission> = [
+  'vault.write',
+]
+
+export function isDestructivePermission(p: PluginPermission): boolean {
+  return DESTRUCTIVE_PERMISSIONS.includes(p)
 }
 
 /** Surface kinds the manifest can declare. Used by the install-preview
  *  modal to render a one-line explanation per kind alongside the count.
  *  Keep the prose short — these appear as bullets next to a count. */
-export type PluginSurfaceKind = 'commands' | 'sidebarPanels' | 'codeBlockRenderers'
+export type PluginSurfaceKind =
+  | 'commands'
+  | 'sidebarPanels'
+  | 'codeBlockRenderers'
+  | 'fullscreenViews'
 
 export const SURFACE_DESCRIPTIONS: Record<PluginSurfaceKind, string> = {
   commands: 'Adds entries to the command palette you can run with the keyboard.',
   sidebarPanels: 'Adds a panel to the sidebar showing plugin-rendered content.',
   codeBlockRenderers: 'Renders fenced code blocks of a given language inside notes.',
+  fullscreenViews:
+    'Opens a full-window view when the plugin asks. You can close it any time with Esc or the X button.',
 }
 
 export interface PluginSurfaces {
   commands?: PluginCommand[]
   sidebarPanels?: PluginSidebarPanel[]
   codeBlockRenderers?: PluginCodeBlockRenderer[]
+  fullscreenViews?: PluginFullscreenView[]
 }
 
 export interface PluginCommand {
@@ -81,6 +124,21 @@ export interface PluginCodeBlockRenderer {
    *  insensitive; the host lowercases on register. First plugin to
    *  claim a language wins; later registrations log a warning. */
   language: string
+}
+
+/** v1.2 PR B — a full-window view the plugin can request the host to
+ *  mount. Only one fullscreen view (across all installed plugins) is
+ *  open at a time; the host rejects a second `openFullscreen` call
+ *  while another view is showing. */
+export interface PluginFullscreenView {
+  /** Stable id within the plugin, kebab-case. Plugin references the
+   *  same id in `ctx.openFullscreen` / `setFullscreenContent`. */
+  id: string
+  /** Human title shown in the modal chrome. */
+  title: string
+  /** Heroicon name from the curated set, same contract as
+   *  `PluginSidebarPanel.icon`. */
+  icon?: string
 }
 
 /** Stable identifier shape: lowercase letters, digits, dashes; 2-60
@@ -153,6 +211,7 @@ export function validateManifest(input: unknown): ManifestValidationResult {
   const commands = validateCommands(surfaces.commands, errors)
   const sidebarPanels = validateSidebarPanels(surfaces.sidebarPanels, errors)
   const codeBlockRenderers = validateCodeBlockRenderers(surfaces.codeBlockRenderers, errors)
+  const fullscreenViews = validateFullscreenViews(surfaces.fullscreenViews, errors)
   const permissions = validatePermissions(m.permissions, errors)
 
   if (errors.length > 0) return { ok: false, errors }
@@ -162,11 +221,12 @@ export function validateManifest(input: unknown): ManifestValidationResult {
   const total =
     (commands?.length ?? 0) +
     (sidebarPanels?.length ?? 0) +
-    (codeBlockRenderers?.length ?? 0)
+    (codeBlockRenderers?.length ?? 0) +
+    (fullscreenViews?.length ?? 0)
   if (total === 0) {
     return {
       ok: false,
-      errors: ['Manifest must declare at least one surface (command, panel, or renderer).'],
+      errors: ['Manifest must declare at least one surface (command, panel, renderer, or fullscreen view).'],
     }
   }
 
@@ -182,6 +242,9 @@ export function validateManifest(input: unknown): ManifestValidationResult {
       ...(sidebarPanels && sidebarPanels.length > 0 ? { sidebarPanels } : {}),
       ...(codeBlockRenderers && codeBlockRenderers.length > 0
         ? { codeBlockRenderers }
+        : {}),
+      ...(fullscreenViews && fullscreenViews.length > 0
+        ? { fullscreenViews }
         : {}),
     },
     ...(permissions && permissions.length > 0 ? { permissions } : {}),
@@ -270,6 +333,49 @@ function validateCodeBlockRenderers(
     }
     return { language: r.language.toLowerCase() }
   }).filter((x): x is PluginCodeBlockRenderer => x !== null)
+}
+
+function validateFullscreenViews(
+  input: unknown,
+  errors: string[],
+): PluginFullscreenView[] | undefined {
+  if (input === undefined) return undefined
+  if (!Array.isArray(input)) {
+    errors.push('"surfaces.fullscreenViews" must be an array when present.')
+    return undefined
+  }
+  const seen = new Set<string>()
+  return input.map((entry, idx) => {
+    if (!isPlainObject(entry)) {
+      errors.push(`surfaces.fullscreenViews[${idx}] must be an object.`)
+      return null
+    }
+    const v = entry as Record<string, unknown>
+    if (typeof v.id !== 'string' || !ID_RE.test(v.id)) {
+      errors.push(`surfaces.fullscreenViews[${idx}].id must be lowercase kebab-case.`)
+      return null
+    }
+    if (typeof v.title !== 'string' || v.title.length === 0 || v.title.length > 80) {
+      errors.push(
+        `surfaces.fullscreenViews[${idx}].title must be a non-empty string up to 80 chars.`,
+      )
+      return null
+    }
+    if (v.icon !== undefined && typeof v.icon !== 'string') {
+      errors.push(`surfaces.fullscreenViews[${idx}].icon must be a string when present.`)
+      return null
+    }
+    if (seen.has(v.id)) {
+      errors.push(`surfaces.fullscreenViews[${idx}].id "${v.id}" is duplicated.`)
+      return null
+    }
+    seen.add(v.id)
+    return {
+      id: v.id,
+      title: v.title,
+      ...(typeof v.icon === 'string' ? { icon: v.icon } : {}),
+    }
+  }).filter((x): x is PluginFullscreenView => x !== null)
 }
 
 function validatePermissions(

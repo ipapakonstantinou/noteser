@@ -19,7 +19,7 @@
 // in src/plugins/manifest.ts — do not invent new strings here.
 
 import { useEffect, useRef, useState } from 'react'
-import { CheckCircleIcon, ShieldCheckIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
+import { CheckCircleIcon, ShieldCheckIcon, ShieldExclamationIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
 import { Modal, Button } from '@/components/ui'
 import { useUIStore } from '@/stores'
 import {
@@ -29,6 +29,7 @@ import {
 import {
   PERMISSION_DESCRIPTIONS,
   SURFACE_DESCRIPTIONS,
+  isDestructivePermission,
   type PluginPermission,
   type PluginSurfaceKind,
 } from '@/plugins/manifest'
@@ -187,6 +188,15 @@ const PreviewBody = ({ record, busy, installError, onCancel, onInstall }: Previe
   const { manifest } = record
   const surfaceRows = buildSurfaceRows(manifest.surfaces)
   const permissions: PluginPermission[] = manifest.permissions ?? []
+  const destructivePerms = permissions.filter(isDestructivePermission)
+  const informationalPerms = permissions.filter((p) => !isDestructivePermission(p))
+
+  // Per-destructive-permission opt-in. Install button stays disabled
+  // until the user explicitly acknowledges EACH destructive capability.
+  // Section 8 of the plan mandates this gate.
+  const [acknowledged, setAcknowledged] = useState<Record<string, boolean>>({})
+  const allAcknowledged = destructivePerms.every((p) => acknowledged[p] === true)
+  const installDisabled = busy || !allAcknowledged
 
   return (
     <div className="space-y-4" data-testid="plugin-preview-body">
@@ -250,7 +260,7 @@ const PreviewBody = ({ record, busy, installError, onCancel, onInstall }: Previe
                 </div>
               </li>
             ))}
-            {permissions.map((perm) => (
+            {informationalPerms.map((perm) => (
               <li
                 key={perm}
                 className="flex items-start gap-2 text-sm"
@@ -269,13 +279,59 @@ const PreviewBody = ({ record, busy, installError, onCancel, onInstall }: Previe
         )}
       </section>
 
+      {destructivePerms.length > 0 && (
+        <section
+          className="rounded-md border border-red-500/40 bg-red-500/5 p-3 space-y-2"
+          data-testid="plugin-preview-destructive-section"
+        >
+          <div className="text-xs uppercase tracking-wide text-red-300 mb-1 flex items-center gap-1 font-semibold">
+            <ShieldExclamationIcon className="w-4 h-4" />
+            Destructive permissions
+          </div>
+          <ul className="space-y-2">
+            {destructivePerms.map((perm) => (
+              <li
+                key={perm}
+                className="flex items-start gap-2 text-sm"
+                data-testid={`plugin-preview-destructive-${perm}`}
+              >
+                <span
+                  className="mt-2 w-2 h-2 rounded-full bg-red-500 flex-shrink-0"
+                  aria-hidden="true"
+                />
+                <div className="flex-1">
+                  <span className="font-medium text-red-200">{perm}</span>
+                  <div className="text-xs text-red-100/80 mt-0.5">
+                    {PERMISSION_DESCRIPTIONS[perm]}
+                  </div>
+                  <label className="mt-2 flex items-start gap-2 text-xs text-red-100 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={acknowledged[perm] === true}
+                      onChange={(e) =>
+                        setAcknowledged((s) => ({ ...s, [perm]: e.target.checked }))
+                      }
+                      data-testid={`plugin-preview-destructive-ack-${perm}`}
+                    />
+                    <span>
+                      I understand this plugin can make irreversible changes to my vault.
+                    </span>
+                  </label>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {installError && <div className="text-xs text-red-300">{installError}</div>}
 
       <div className="flex justify-end gap-2 pt-2 border-t border-obsidianBorder">
         <Button variant="ghost" onClick={onCancel} disabled={busy} data-testid="plugin-install-cancel">
           Cancel
         </Button>
-        <Button onClick={onInstall} disabled={busy} data-testid="plugin-install-confirm">
+        <Button onClick={onInstall} disabled={installDisabled} data-testid="plugin-install-confirm">
           {busy ? 'Installing…' : 'Install'}
         </Button>
       </div>
@@ -305,6 +361,13 @@ function buildSurfaceRows(surfaces: InstalledPluginRecord['manifest']['surfaces'
       key: 'codeBlockRenderers' satisfies PluginSurfaceKind,
       label: `code-block renderer${surfaces.codeBlockRenderers.length === 1 ? '' : 's'} (${langs})`,
       description: SURFACE_DESCRIPTIONS.codeBlockRenderers,
+    })
+  }
+  if (surfaces.fullscreenViews && surfaces.fullscreenViews.length > 0) {
+    rows.push({
+      key: 'fullscreenViews' satisfies PluginSurfaceKind,
+      label: `Provides full-screen view${surfaces.fullscreenViews.length === 1 ? '' : 's'}`,
+      description: SURFACE_DESCRIPTIONS.fullscreenViews,
     })
   }
   return rows

@@ -1,0 +1,14 @@
+{
+  "id": "noteser-write-demo",
+  "name": "Write demo",
+  "version": "0.1.0",
+  "author": "Noteser",
+  "description": "Reference plugin for the v1.2 vault.write capability. Adds a command 'Plugin demo note' that creates a note in your vault to confirm the wire works.",
+  "main": "./main.js",
+  "permissions": ["vault.write"],
+  "surfaces": {
+    "commands": [
+      { "id": "create", "title": "Plugin demo note" }
+    ]
+  }
+}

@@ -22,21 +22,43 @@ export interface LoadedPlugin {
   errors: string[]
 }
 
+/** v1.2 PR B — descriptor of the currently-mounted fullscreen view.
+ *  Only one is ever populated at a time. The PluginFullscreenView
+ *  modal subscribes to this; `pluginHostSingleton` writes to it from
+ *  the singleton fullscreen open/close handlers. */
+export interface ActiveFullscreenView {
+  pluginId: string
+  pluginName: string
+  viewId: string
+  title: string
+  node: unknown
+}
+
 interface PluginState {
   /** Plugins keyed by manifest.id. */
   loaded: Record<string, LoadedPlugin>
+
+  /** Active fullscreen view, or null when no plugin has one mounted. */
+  activeFullscreen: ActiveFullscreenView | null
 
   // ── mutations (called from pluginHostSingleton only) ─────────────
   addReady: (manifest: PluginManifest) => void
   remove: (pluginId: string) => void
   appendError: (pluginId: string, message: string) => void
   clear: () => void
+  setActiveFullscreen: (next: ActiveFullscreenView | null) => void
+  updateActiveFullscreenContent: (
+    pluginId: string,
+    viewId: string,
+    node: unknown,
+  ) => void
 }
 
 const MAX_ERRORS = 20
 
 export const usePluginStore = create<PluginState>()((set) => ({
   loaded: {},
+  activeFullscreen: null,
 
   addReady: (manifest) =>
     set((state) => ({
@@ -48,7 +70,14 @@ export const usePluginStore = create<PluginState>()((set) => ({
       if (!(pluginId in state.loaded)) return state
       const next = { ...state.loaded }
       delete next[pluginId]
-      return { loaded: next }
+      // If the removed plugin owns the active fullscreen view, drop
+      // it. Otherwise the modal would render against a torn-down
+      // worker.
+      const activeFullscreen =
+        state.activeFullscreen && state.activeFullscreen.pluginId === pluginId
+          ? null
+          : state.activeFullscreen
+      return { loaded: next, activeFullscreen }
     }),
 
   appendError: (pluginId, message) =>
@@ -59,7 +88,17 @@ export const usePluginStore = create<PluginState>()((set) => ({
       return { loaded: { ...state.loaded, [pluginId]: { ...cur, errors } } }
     }),
 
-  clear: () => set({ loaded: {} }),
+  clear: () => set({ loaded: {}, activeFullscreen: null }),
+
+  setActiveFullscreen: (next) => set({ activeFullscreen: next }),
+
+  updateActiveFullscreenContent: (pluginId, viewId, node) =>
+    set((state) => {
+      const cur = state.activeFullscreen
+      if (!cur) return state
+      if (cur.pluginId !== pluginId || cur.viewId !== viewId) return state
+      return { activeFullscreen: { ...cur, node } }
+    }),
 }))
 
 /** Flat list of every command across every loaded plugin, with the

@@ -13,12 +13,34 @@ export interface PluginManifest {
   version: string
   author?: string
   surfaces: PluginSurfaces
+  /** Capabilities the plugin asks for at install time. The user grants
+   *  each one in the install-preview modal; the host refuses any
+   *  capability call that was not granted. v1.1 added `file-save` /
+   *  `file-open`; v1.2 added `vault.read.all`, `vault.write` (the first
+   *  destructive permission — the modal renders a red bullet),
+   *  `vault.events`, and `fs.open-directory`. */
+  permissions?: PluginPermission[]
 }
+
+/** Capability identifiers the validator accepts. Plugins targeting an
+ *  older host that does not know a v1.2 permission will fail manifest
+ *  validation there — see plugins-v1.2-plan.md section 10. Mirrors
+ *  `src/plugins/manifest.ts` in noteser core. */
+export const PERMISSIONS = [
+  'file-save',
+  'file-open',
+  'vault.read.all',
+  'vault.write',
+  'vault.events',
+  'fs.open-directory',
+] as const
+export type PluginPermission = (typeof PERMISSIONS)[number]
 
 export interface PluginSurfaces {
   commands?: PluginCommand[]
   sidebarPanels?: PluginSidebarPanel[]
   codeBlockRenderers?: PluginCodeBlockRenderer[]
+  fullscreenViews?: PluginFullscreenView[]
 }
 
 export interface PluginCommand {
@@ -44,6 +66,15 @@ export interface PluginCodeBlockRenderer {
    *  insensitive; the host lowercases on register. First plugin to
    *  claim a language wins; later registrations log a warning. */
   language: string
+}
+
+/** v1.2 PR B — a full-window view the plugin can request the host to
+ *  mount. Only one fullscreen view (across all installed plugins) is
+ *  open at a time. */
+export interface PluginFullscreenView {
+  id: string
+  title: string
+  icon?: string
 }
 
 /** Stable identifier shape: lowercase letters, digits, dashes; 2-60
@@ -104,6 +135,8 @@ export function validateManifest(input: unknown): ManifestValidationResult {
   const commands = validateCommands(surfaces.commands, errors)
   const sidebarPanels = validateSidebarPanels(surfaces.sidebarPanels, errors)
   const codeBlockRenderers = validateCodeBlockRenderers(surfaces.codeBlockRenderers, errors)
+  const fullscreenViews = validateFullscreenViews(surfaces.fullscreenViews, errors)
+  const permissions = validatePermissions(m.permissions, errors)
 
   if (errors.length > 0) return { ok: false, errors }
 
@@ -112,11 +145,12 @@ export function validateManifest(input: unknown): ManifestValidationResult {
   const total =
     (commands?.length ?? 0) +
     (sidebarPanels?.length ?? 0) +
-    (codeBlockRenderers?.length ?? 0)
+    (codeBlockRenderers?.length ?? 0) +
+    (fullscreenViews?.length ?? 0)
   if (total === 0) {
     return {
       ok: false,
-      errors: ['Manifest must declare at least one surface (command, panel, or renderer).'],
+      errors: ['Manifest must declare at least one surface (command, panel, renderer, or fullscreen view).'],
     }
   }
 
@@ -131,7 +165,11 @@ export function validateManifest(input: unknown): ManifestValidationResult {
       ...(codeBlockRenderers && codeBlockRenderers.length > 0
         ? { codeBlockRenderers }
         : {}),
+      ...(fullscreenViews && fullscreenViews.length > 0
+        ? { fullscreenViews }
+        : {}),
     },
+    ...(permissions && permissions.length > 0 ? { permissions } : {}),
   }
   return { ok: true, errors: [], manifest: normalised }
 }
@@ -217,6 +255,79 @@ function validateCodeBlockRenderers(
     }
     return { language: r.language.toLowerCase() }
   }).filter((x): x is PluginCodeBlockRenderer => x !== null)
+}
+
+function validatePermissions(
+  input: unknown,
+  errors: string[],
+): PluginPermission[] | undefined {
+  if (input === undefined) return undefined
+  if (!Array.isArray(input)) {
+    errors.push('"permissions" must be an array when present.')
+    return undefined
+  }
+  const out: PluginPermission[] = []
+  const seen = new Set<string>()
+  for (let i = 0; i < input.length; i++) {
+    const entry = input[i]
+    if (typeof entry !== 'string') {
+      errors.push(`permissions[${i}] must be a string.`)
+      continue
+    }
+    if (!(PERMISSIONS as readonly string[]).includes(entry)) {
+      errors.push(
+        `permissions[${i}] "${entry}" is not a known capability. Known: ${PERMISSIONS.join(', ')}.`,
+      )
+      continue
+    }
+    if (seen.has(entry)) continue
+    seen.add(entry)
+    out.push(entry as PluginPermission)
+  }
+  return out
+}
+
+function validateFullscreenViews(
+  input: unknown,
+  errors: string[],
+): PluginFullscreenView[] | undefined {
+  if (input === undefined) return undefined
+  if (!Array.isArray(input)) {
+    errors.push('"surfaces.fullscreenViews" must be an array when present.')
+    return undefined
+  }
+  const seen = new Set<string>()
+  return input.map((entry, idx) => {
+    if (!isPlainObject(entry)) {
+      errors.push(`surfaces.fullscreenViews[${idx}] must be an object.`)
+      return null
+    }
+    const v = entry as Record<string, unknown>
+    if (typeof v.id !== 'string' || !ID_RE.test(v.id)) {
+      errors.push(`surfaces.fullscreenViews[${idx}].id must be lowercase kebab-case.`)
+      return null
+    }
+    if (typeof v.title !== 'string' || v.title.length === 0 || v.title.length > 80) {
+      errors.push(
+        `surfaces.fullscreenViews[${idx}].title must be a non-empty string up to 80 chars.`,
+      )
+      return null
+    }
+    if (v.icon !== undefined && typeof v.icon !== 'string') {
+      errors.push(`surfaces.fullscreenViews[${idx}].icon must be a string when present.`)
+      return null
+    }
+    if (seen.has(v.id)) {
+      errors.push(`surfaces.fullscreenViews[${idx}].id "${v.id}" is duplicated.`)
+      return null
+    }
+    seen.add(v.id)
+    return {
+      id: v.id,
+      title: v.title,
+      ...(typeof v.icon === 'string' ? { icon: v.icon } : {}),
+    }
+  }).filter((x): x is PluginFullscreenView => x !== null)
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {

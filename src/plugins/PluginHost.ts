@@ -11,10 +11,12 @@ import {
   isWorkerToHost,
   MAX_ENVELOPE_BYTES,
   MAX_MESSAGES_PER_SECOND,
+  VAULT_EVENT_DEBOUNCE_MS,
   type HostToWorker,
   type WorkerToHost,
+  type NoteWithBodyWire,
 } from './protocol'
-import type { PluginManifest } from './manifest'
+import type { PluginManifest, PluginPermission } from './manifest'
 
 export interface InstalledPlugin {
   manifest: PluginManifest
@@ -24,6 +26,13 @@ export interface InstalledPlugin {
   /** undefined when the plugin is loaded but not yet ready (boot in
    *  flight); set once worker:ready arrives. */
   ready: boolean
+  /** Capability identifiers the user has REVOKED at runtime, after the
+   *  plugin was already installed. The manifest's `permissions` list is
+   *  the declared grant; this set wins over it. Used by the Settings →
+   *  Plugins revocation toggle (v1.2). The host treats a revoked
+   *  capability as if it was never granted and replies with
+   *  `Permission "<name>" was revoked.` to the next call. */
+  revokedPermissions: Set<PluginPermission>
 }
 
 export interface PluginHostOptions {
@@ -37,6 +46,12 @@ export interface PluginHostOptions {
    *  bundled `workerEntry.ts` module via `new URL(..., import.meta.url)`
    *  — see `pluginHostSingleton.ts`. */
   createWorker?: () => MinimalWorker
+  /** Look up whether a permission has been revoked for a plugin at
+   *  Settings level. Re-checked on every vault.events dispatch so a
+   *  user toggling the permission off makes the handler stop firing
+   *  without restarting the plugin (the existing subscriber's
+   *  unsubscribe is still callable; it just receives no events). */
+  isPermissionRevoked?: (pluginId: string, permission: PluginPermission) => boolean
 }
 
 export interface MinimalWorker {
@@ -71,11 +86,98 @@ export type PluginHostEvent =
       requestSeq: number
       accept?: string[]
     }
+  | {
+      type: 'vaultReadRequested'
+      pluginId: string
+      requestSeq: number
+      mode: 'all' | 'one' | 'stream'
+      noteId?: string
+      chunkSize?: number
+    }
+  | {
+      type: 'directoryOpenRequested'
+      pluginId: string
+      requestSeq: number
+      extensions?: string[]
+    }
+  | {
+      type: 'fullscreenOpenRequested'
+      pluginId: string
+      requestSeq: number
+      viewId: string
+    }
+  | { type: 'fullscreenCloseRequested'; pluginId: string; viewId: string }
+  | {
+      type: 'fullscreenContent'
+      pluginId: string
+      viewId: string
+      node: unknown
+    }
+  | {
+      type: 'vaultWriteRequested'
+      pluginId: string
+      requestSeq: number
+      op: VaultWriteOp
+    }
   | { type: 'rateLimited'; pluginId: string }
+
+/** Discriminated union over the four vault.write ops carried in a
+ *  `worker:requestVaultWrite` envelope. Identical shape to the wire
+ *  protocol's `op` field — re-exported here so the singleton's
+ *  vault-write handler can switch on it without re-importing the
+ *  protocol module. */
+export type VaultWriteOp =
+  | {
+      kind: 'create'
+      title: string
+      body: string
+      folderPath?: string
+      frontmatter?: Record<string, unknown>
+    }
+  | {
+      kind: 'update'
+      id: string
+      title?: string
+      body?: string
+      frontmatter?: Record<string, unknown>
+    }
+  | { kind: 'delete'; id: string }
+  | { kind: 'createFolder'; path: string }
 
 interface WorkerEntry {
   plugin: InstalledPlugin
   worker: MinimalWorker
+  /** Vault-events subscriptions the worker has registered. Cleared on
+   *  unload; the host drops every entry whose pluginId matches. */
+  vaultSubs: Map<string, VaultSubscription>
+  /** Per-event-type debounce timers + pending coalesced payload. Each
+   *  event type has at most one in-flight timer for the lifetime of
+   *  the entry. */
+  vaultDebounce: {
+    vaultChanged: PendingEvent<null>
+    noteSaved: PendingEvent<Set<string>>
+    activeNoteIdChanged: PendingEvent<{ noteId: string | null }>
+  }
+}
+
+interface VaultSubscription {
+  event: VaultEventName
+  subscriptionId: string
+}
+
+type VaultEventName = 'vaultChanged' | 'noteSaved' | 'activeNoteIdChanged'
+
+interface PendingEvent<P> {
+  timer: ReturnType<typeof setTimeout> | null
+  payload: P | null
+}
+
+function makePendingState(): WorkerEntry['vaultDebounce'] {
+  return {
+    vaultChanged: { timer: null, payload: null },
+    noteSaved: { timer: null, payload: null },
+    activeNoteIdChanged: { timer: null, payload: null },
+  }
 }
 
 export class PluginHost {
@@ -142,8 +244,14 @@ export class PluginHost {
       lastMessageWindowStart: nowMs(),
       messagesInWindow: 0,
       ready: false,
+      revokedPermissions: new Set<PluginPermission>(),
     }
-    const entry: WorkerEntry = { plugin, worker }
+    const entry: WorkerEntry = {
+      plugin,
+      worker,
+      vaultSubs: new Map(),
+      vaultDebounce: makePendingState(),
+    }
     this.workers.set(pluginId, entry)
 
     return new Promise<PluginManifest>((resolve, reject) => {
@@ -188,16 +296,35 @@ export class PluginHost {
     })
   }
 
-  /** Terminate a plugin's worker and forget it. */
+  /** Terminate a plugin's worker and forget it. Also drops every
+   *  vault.events subscription the worker had open and cancels any
+   *  in-flight debounce timer — a forgotten unsubscribe in the plugin
+   *  cannot leak across reboots. */
   unload(pluginId: string): void {
     const entry = this.workers.get(pluginId)
     if (!entry) return
+    this.clearVaultDebounce(entry)
+    entry.vaultSubs.clear()
     try {
       entry.worker.terminate()
     } catch {
       // Some test fakes do not implement terminate; ignore.
     }
     this.workers.delete(pluginId)
+  }
+
+  /** Inspect — used by tests to assert subscription cleanup. Returns
+   *  the count of active vault.events subscriptions across every loaded
+   *  plugin. */
+  vaultSubscriptionCount(): number {
+    let n = 0
+    for (const e of this.workers.values()) n += e.vaultSubs.size
+    return n
+  }
+
+  /** Inspect — used by tests. Subscriptions for a single plugin. */
+  vaultSubscriptionCountForPlugin(pluginId: string): number {
+    return this.workers.get(pluginId)?.vaultSubs.size ?? 0
   }
 
   /** User picked one of the plugin's commands from the palette. */
@@ -253,6 +380,171 @@ export class PluginHost {
       source: args.source,
       blockId: args.blockId,
     })
+  }
+
+  /**
+   * Settings → Plugins toggles per-capability grants here. Marks the
+   * permission as revoked for the loaded plugin; subsequent capability
+   * calls reject with `'Permission "<name>" was revoked.'`. The
+   * manifest's declared permission list is unchanged — revocation is
+   * runtime-only and resets on app boot.
+   *
+   * Pre-existing pending requests (e.g. a `getAllNotes()` Promise
+   * already in flight) complete via the same response envelope; if
+   * they have not yet been answered the host short-circuits them with
+   * the same revocation error.
+   */
+  revokePermission(pluginId: string, permission: PluginPermission): void {
+    const entry = this.workers.get(pluginId)
+    if (!entry) return
+    entry.plugin.revokedPermissions.add(permission)
+  }
+
+  /** Inverse of `revokePermission`. Lets the Settings toggle restore a
+   *  capability without re-installing the plugin. */
+  restorePermission(pluginId: string, permission: PluginPermission): void {
+    const entry = this.workers.get(pluginId)
+    if (!entry) return
+    entry.plugin.revokedPermissions.delete(permission)
+  }
+
+  /** True when the manifest declared the capability AND the user has
+   *  not revoked it at runtime. The Settings panel reads this to
+   *  decide whether to render the toggle as on or off. */
+  hasPermission(pluginId: string, permission: PluginPermission): boolean {
+    const entry = this.workers.get(pluginId)
+    if (!entry) return false
+    const declared = entry.plugin.manifest.permissions?.includes(permission) ?? false
+    if (!declared) return false
+    return !entry.plugin.revokedPermissions.has(permission)
+  }
+
+  // ── v1.2 vault.events fan-out ───────────────────────────────────────────
+  //
+  // The singleton glue calls these when the underlying noteStore /
+  // workspaceStore mutates. The host walks every loaded plugin, checks
+  // the `vault.events` permission, and posts a coalesced debounced
+  // envelope per subscription.
+
+  /** Coarse "something in the vault changed" pulse. Called by the
+   *  pluginHostSingleton on every noteStore or folderStore mutation.
+   *  Coalesced at `VAULT_EVENT_DEBOUNCE_MS` per (plugin, subscription)
+   *  pair. */
+  notifyVaultChanged(): void {
+    for (const entry of this.workers.values()) {
+      if (!this.isVaultEventsAllowed(entry)) continue
+      if (!hasSub(entry, 'vaultChanged')) continue
+      this.scheduleVaultEvent(entry, 'vaultChanged', null)
+    }
+  }
+
+  /** Note-save pulse. Carries the note id so plugins can re-derive
+   *  cheaply. Multiple saves of the same id within the debounce
+   *  window collapse into one envelope; saves of different ids fan
+   *  out as one envelope per id at the trailing edge. */
+  notifyNoteSaved(noteId: string): void {
+    for (const entry of this.workers.values()) {
+      if (!this.isVaultEventsAllowed(entry)) continue
+      if (!hasSub(entry, 'noteSaved')) continue
+      const pending = entry.vaultDebounce.noteSaved
+      if (!pending.payload) pending.payload = new Set<string>()
+      pending.payload.add(noteId)
+      this.scheduleVaultEvent(entry, 'noteSaved', pending.payload)
+    }
+  }
+
+  /** Active-note transition. Coalesced — back-to-back switches keep
+   *  only the most recent id. */
+  notifyActiveNoteIdChanged(noteId: string | null): void {
+    for (const entry of this.workers.values()) {
+      if (!this.isVaultEventsAllowed(entry)) continue
+      if (!hasSub(entry, 'activeNoteIdChanged')) continue
+      this.scheduleVaultEvent(entry, 'activeNoteIdChanged', { noteId })
+    }
+  }
+
+  /** Internal — re-checked on every dispatch so a settings-level
+   *  revocation takes effect without restarting the plugin. The in-host
+   *  `revokedPermissions` set (populated by PR C from the install
+   *  store) is the canonical source; `opts.isPermissionRevoked` is the
+   *  test-side override that lets a fake host inject revocation without
+   *  spinning up the store. */
+  private isVaultEventsAllowed(entry: WorkerEntry): boolean {
+    const granted = entry.plugin.manifest.permissions?.includes('vault.events') ?? false
+    if (!granted) return false
+    if (entry.plugin.revokedPermissions.has('vault.events')) return false
+    const optRevoked =
+      this.opts.isPermissionRevoked?.(entry.plugin.manifest.id, 'vault.events') ?? false
+    return !optRevoked
+  }
+
+  private scheduleVaultEvent<E extends VaultEventName>(
+    entry: WorkerEntry,
+    event: E,
+    payload: WorkerEntry['vaultDebounce'][E]['payload'],
+  ): void {
+    const slot = entry.vaultDebounce[event] as PendingEvent<unknown>
+    slot.payload = payload as unknown
+    if (slot.timer !== null) return // existing trailing-edge timer will pick up the latest payload
+    slot.timer = setTimeout(() => {
+      slot.timer = null
+      const finalPayload = slot.payload
+      slot.payload = null
+      this.flushVaultEvent(entry, event, finalPayload)
+    }, VAULT_EVENT_DEBOUNCE_MS)
+  }
+
+  private flushVaultEvent(entry: WorkerEntry, event: VaultEventName, payload: unknown): void {
+    const pluginId = entry.plugin.manifest.id
+    // Re-check permission at flush time so a Settings revocation that
+    // landed during the debounce window still suppresses delivery.
+    if (!this.isVaultEventsAllowed(entry)) return
+    for (const sub of entry.vaultSubs.values()) {
+      if (sub.event !== event) continue
+      switch (event) {
+        case 'vaultChanged':
+          this.send(pluginId, {
+            type: 'host:vaultChanged',
+            seq: ++this.seqCounter,
+            subscriptionId: sub.subscriptionId,
+          })
+          break
+        case 'noteSaved': {
+          const ids = (payload as Set<string> | null) ?? new Set<string>()
+          for (const noteId of ids) {
+            this.send(pluginId, {
+              type: 'host:noteSaved',
+              seq: ++this.seqCounter,
+              subscriptionId: sub.subscriptionId,
+              noteId,
+            })
+          }
+          break
+        }
+        case 'activeNoteIdChanged': {
+          const p = (payload as { noteId: string | null } | null) ?? { noteId: null }
+          this.send(pluginId, {
+            type: 'host:activeNoteIdChanged',
+            seq: ++this.seqCounter,
+            subscriptionId: sub.subscriptionId,
+            noteId: p.noteId,
+          })
+          break
+        }
+      }
+    }
+  }
+
+  private clearVaultDebounce(entry: WorkerEntry): void {
+    for (const slot of [
+      entry.vaultDebounce.vaultChanged,
+      entry.vaultDebounce.noteSaved,
+      entry.vaultDebounce.activeNoteIdChanged,
+    ]) {
+      if (slot.timer !== null) clearTimeout(slot.timer)
+      slot.timer = null
+      slot.payload = null
+    }
   }
 
   // ── private ─────────────────────────────────────────────────────────────
@@ -359,6 +651,13 @@ export class PluginHost {
           })
           return
         }
+        if (entry.plugin.revokedPermissions.has('file-save')) {
+          this.respondFileSave(pluginId, msg.seq, {
+            ok: false,
+            error: 'Permission "file-save" was revoked.',
+          })
+          return
+        }
         this.emit({
           type: 'fileSaveRequested',
           pluginId,
@@ -370,12 +669,44 @@ export class PluginHost {
         return
       }
 
+      case 'worker:subscribeVault': {
+        // Permission gate. Plugin MUST declare `vault.events` in the
+        // manifest. We still accept the subscribe so cleanup logic is
+        // uniform (the worker tracks an unsubscribe even when it never
+        // received any event), but never deliver events.
+        const granted = entry.plugin.manifest.permissions?.includes('vault.events') ?? false
+        if (!granted) {
+          this.emit({
+            type: 'workerError',
+            pluginId,
+            message: 'Plugin did not declare the `vault.events` permission; subscription will receive no events.',
+          })
+          return
+        }
+        entry.vaultSubs.set(msg.subscriptionId, {
+          event: msg.event,
+          subscriptionId: msg.subscriptionId,
+        })
+        return
+      }
+
+      case 'worker:unsubscribeVault':
+        entry.vaultSubs.delete(msg.subscriptionId)
+        return
+
       case 'worker:requestFileOpen': {
         const granted = entry.plugin.manifest.permissions?.includes('file-open') ?? false
         if (!granted) {
           this.respondFileOpen(pluginId, msg.seq, {
             ok: false,
             error: 'Plugin did not declare the `file-open` permission.',
+          })
+          return
+        }
+        if (entry.plugin.revokedPermissions.has('file-open')) {
+          this.respondFileOpen(pluginId, msg.seq, {
+            ok: false,
+            error: 'Permission "file-open" was revoked.',
           })
           return
         }
@@ -387,7 +718,169 @@ export class PluginHost {
         })
         return
       }
+
+      case 'worker:requestVaultRead': {
+        // v1.2 capability — every mode is gated on the same
+        // `vault.read.all` permission. Two layers:
+        //   1. declared at install: rejected with "did not declare".
+        //   2. declared but revoked at runtime: rejected with "revoked".
+        // The plugin sees the same Promise rejection either way, but
+        // the error string is distinct so the dev console clarifies.
+        const declared = entry.plugin.manifest.permissions?.includes('vault.read.all') ?? false
+        if (!declared) {
+          this.respondVaultReadError(
+            pluginId,
+            msg.seq,
+            msg.mode,
+            'Plugin did not declare the `vault.read.all` permission.',
+          )
+          return
+        }
+        if (entry.plugin.revokedPermissions.has('vault.read.all')) {
+          this.respondVaultReadError(
+            pluginId,
+            msg.seq,
+            msg.mode,
+            'Permission "vault.read.all" was revoked.',
+          )
+          return
+        }
+        if (msg.mode === 'one' && typeof msg.noteId !== 'string') {
+          this.respondVaultReadError(
+            pluginId,
+            msg.seq,
+            msg.mode,
+            'vault.read.getNote requires a string id.',
+          )
+          return
+        }
+        this.emit({
+          type: 'vaultReadRequested',
+          pluginId,
+          requestSeq: msg.seq,
+          mode: msg.mode,
+          ...(typeof msg.noteId === 'string' ? { noteId: msg.noteId } : {}),
+          ...(typeof msg.chunkSize === 'number' ? { chunkSize: msg.chunkSize } : {}),
+        })
+        return
+      }
+
+      case 'worker:requestDirectoryOpen': {
+        // v1.2 capability — gated like vault.read.all. Manifest must
+        // declare the permission; runtime revocation flips a second
+        // check that surfaces a distinct error string for the dev
+        // console.
+        const declared =
+          entry.plugin.manifest.permissions?.includes('fs.open-directory') ?? false
+        if (!declared) {
+          this.respondDirectoryOpen(pluginId, msg.seq, {
+            ok: false,
+            error: 'Plugin did not declare the `fs.open-directory` permission.',
+          })
+          return
+        }
+        if (entry.plugin.revokedPermissions.has('fs.open-directory')) {
+          this.respondDirectoryOpen(pluginId, msg.seq, {
+            ok: false,
+            error: 'Permission "fs.open-directory" was revoked.',
+          })
+          return
+        }
+        this.emit({
+          type: 'directoryOpenRequested',
+          pluginId,
+          requestSeq: msg.seq,
+          ...(msg.extensions ? { extensions: msg.extensions } : {}),
+        })
+        return
+      }
+
+      case 'worker:openFullscreen': {
+        // Validate against the manifest. Anything not declared is
+        // rejected here, before any singleton coordination, so a
+        // plugin that simply made a typo gets a clear error and the
+        // host modal never blinks open.
+        const declared =
+          entry.plugin.manifest.surfaces.fullscreenViews?.some((v) => v.id === msg.viewId) ?? false
+        if (!declared) {
+          this.respondFullscreenOpen(pluginId, msg.seq, {
+            ok: false,
+            error: `Fullscreen view "${msg.viewId}" is not declared in the manifest.`,
+          })
+          return
+        }
+        this.emit({
+          type: 'fullscreenOpenRequested',
+          pluginId,
+          requestSeq: msg.seq,
+          viewId: msg.viewId,
+        })
+        return
+      }
+
+      case 'worker:closeFullscreen':
+        this.emit({ type: 'fullscreenCloseRequested', pluginId, viewId: msg.viewId })
+        return
+
+      case 'worker:setFullscreenContent':
+        this.emit({
+          type: 'fullscreenContent',
+          pluginId,
+          viewId: msg.viewId,
+          node: msg.node,
+        })
+        return
+
+      case 'worker:requestVaultWrite': {
+        // v1.2 capability — same two-layer gate PR C uses for
+        // vault.read.all: declared in manifest AND not currently
+        // revoked at runtime. Distinct error strings so the dev
+        // console clarifies; the plugin sees the same Promise
+        // rejection either way.
+        const declared = entry.plugin.manifest.permissions?.includes('vault.write') ?? false
+        if (!declared) {
+          this.respondVaultWrite(pluginId, msg.seq, {
+            ok: false,
+            error: 'Plugin did not declare the `vault.write` permission.',
+          })
+          return
+        }
+        if (entry.plugin.revokedPermissions.has('vault.write')) {
+          this.respondVaultWrite(pluginId, msg.seq, {
+            ok: false,
+            error: 'Permission "vault.write" was revoked.',
+          })
+          return
+        }
+        this.emit({
+          type: 'vaultWriteRequested',
+          pluginId,
+          requestSeq: msg.seq,
+          op: msg.op,
+        })
+        return
+      }
     }
+  }
+
+  /** Helper: emit the right error envelope for a vault-read failure.
+   *  `'stream'` mode uses the streaming envelope so the worker's
+   *  AsyncIterable terminates with the error instead of dangling. */
+  private respondVaultReadError(
+    pluginId: string,
+    requestSeq: number,
+    mode: 'all' | 'one' | 'stream',
+    error: string,
+  ): void {
+    if (mode === 'stream') {
+      this.respondVaultStreamChunk(pluginId, requestSeq, {
+        chunkIndex: 0,
+        notes: [],
+        error,
+      })
+      return
+    }
+    this.respondVaultRead(pluginId, requestSeq, { ok: false, error })
   }
 
   /** Surface adapter / singleton wires the native save dialog here.
@@ -403,6 +896,118 @@ export class PluginHost {
       requestSeq,
       ok: result.ok,
       ...(result.ok ? {} : { error: result.error }),
+    })
+  }
+
+  /** Singleton adapter wires the live note-store snapshot here.
+   *  Modes `'all'` / `'one'` come back on this envelope; `'stream'`
+   *  uses `respondVaultStreamChunk` instead. Exactly one of `notes` /
+   *  `note` is set on success. */
+  respondVaultRead(
+    pluginId: string,
+    requestSeq: number,
+    result:
+      | { ok: true; notes: ReadonlyArray<NoteWithBodyWire>; note?: undefined }
+      | { ok: true; note: NoteWithBodyWire | null; notes?: undefined }
+      | { ok: false; error: string },
+  ): void {
+    this.send(pluginId, {
+      type: 'host:vaultReadResult',
+      seq: ++this.seqCounter,
+      requestSeq,
+      ok: result.ok,
+      ...(result.ok && result.notes !== undefined ? { notes: result.notes } : {}),
+      ...(result.ok && result.note !== undefined ? { note: result.note } : {}),
+      ...(!result.ok ? { error: result.error } : {}),
+    })
+  }
+
+  /** Emit one chunk of a vault-stream response. The adapter calls this
+   *  once per page; a chunk with `notes: []` (no error) terminates the
+   *  iterator successfully. An `error` on any chunk terminates with a
+   *  rejection. */
+  respondVaultStreamChunk(
+    pluginId: string,
+    requestSeq: number,
+    chunk: {
+      chunkIndex: number
+      notes: ReadonlyArray<NoteWithBodyWire>
+      error?: string
+    },
+  ): void {
+    this.send(pluginId, {
+      type: 'host:vaultStreamChunk',
+      seq: ++this.seqCounter,
+      requestSeq,
+      chunkIndex: chunk.chunkIndex,
+      notes: chunk.notes,
+      ...(chunk.error ? { error: chunk.error } : {}),
+    })
+  }
+
+  /** Surface adapter wires the fullscreen mount here. Reports
+   *  whether the modal mounted; on `ok: true` the host should also
+   *  emit `notifyFullscreenOpened` so the plugin's
+   *  `onFullscreenMount` runs and the plugin can populate content. */
+  respondFullscreenOpen(
+    pluginId: string,
+    requestSeq: number,
+    result: { ok: true } | { ok: false; error: string },
+  ): void {
+    this.send(pluginId, {
+      type: 'host:fullscreenOpenResult',
+      seq: ++this.seqCounter,
+      requestSeq,
+      ok: result.ok,
+      ...(result.ok ? {} : { error: result.error }),
+    })
+  }
+
+  /** Notify the worker that the fullscreen modal is now mounted.
+   *  Fire-and-forget — the worker uses this to run
+   *  `onFullscreenMount`. Separate from `respondFullscreenOpen` so
+   *  the open call's Promise can resolve before the mount handler
+   *  starts emitting content updates. */
+  notifyFullscreenOpened(pluginId: string, viewId: string): void {
+    this.send(pluginId, {
+      type: 'host:fullscreenOpened',
+      seq: ++this.seqCounter,
+      viewId,
+    })
+  }
+
+  /** Notify the worker that the fullscreen modal is now unmounted
+   *  (X click, Esc, page unload, or explicit closeFullscreen). The
+   *  worker runs `onFullscreenUnmount`. */
+  notifyFullscreenClosed(pluginId: string, viewId: string): void {
+    this.send(pluginId, {
+      type: 'host:fullscreenClosed',
+      seq: ++this.seqCounter,
+      viewId,
+    })
+  }
+
+  /** Surface adapter / singleton wires the vault write outcome back to
+   *  the worker. Successful `create` carries the new note id plus the
+   *  conflict-resolution outcome. Other ops omit `id` and
+   *  `conflictResolved`. v1.2 PR D capability. */
+  respondVaultWrite(
+    pluginId: string,
+    requestSeq: number,
+    result:
+      | { ok: true; id: string; conflictResolved: 'none' | 'suffix' }
+      | { ok: true }
+      | { ok: false; error: string },
+  ): void {
+    this.send(pluginId, {
+      type: 'host:vaultWriteResult',
+      seq: ++this.seqCounter,
+      requestSeq,
+      ok: result.ok,
+      ...(result.ok && 'id' in result
+        ? { id: result.id, conflictResolved: result.conflictResolved }
+        : {}),
+      ...(!result.ok ? { error: result.error } : {}),
     })
   }
 
@@ -422,6 +1027,30 @@ export class PluginHost {
       ok: result.ok,
       ...(result.ok && 'bytesBase64' in result && result.bytesBase64 !== undefined
         ? { bytesBase64: result.bytesBase64, filename: result.filename ?? 'file' }
+        : {}),
+      ...(!result.ok ? { error: result.error } : {}),
+    })
+  }
+
+  /** Surface adapter / singleton wires the native directory picker
+   *  here. Blobs ride through `postMessage` via structured clone — no
+   *  base64 round-trip, so a 500 MB folder pick stays cheap on the
+   *  main thread. v1.2 capability — see plugins-v1.2-plan.md 4.3. */
+  respondDirectoryOpen(
+    pluginId: string,
+    requestSeq: number,
+    result:
+      | { ok: true; entries: ReadonlyArray<{ name: string; path: string; blob: Blob }> }
+      | { ok: true; entries?: undefined }
+      | { ok: false; error: string },
+  ): void {
+    this.send(pluginId, {
+      type: 'host:directoryOpenResult',
+      seq: ++this.seqCounter,
+      requestSeq,
+      ok: result.ok,
+      ...(result.ok && 'entries' in result && result.entries !== undefined
+        ? { entries: result.entries }
         : {}),
       ...(!result.ok ? { error: result.error } : {}),
     })
@@ -467,4 +1096,11 @@ function estimateSize(value: unknown): number {
   } catch {
     return Number.POSITIVE_INFINITY
   }
+}
+
+function hasSub(entry: WorkerEntry, event: VaultEventName): boolean {
+  for (const sub of entry.vaultSubs.values()) {
+    if (sub.event === event) return true
+  }
+  return false
 }
