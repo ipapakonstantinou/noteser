@@ -865,3 +865,102 @@ src/plugins/workerEntry.ts
 src/plugins/__tests__/pluginLinkWikilinkIntercept.test.tsx          (new)
 src/plugins/__tests__/vnodeEventDelivery.test.ts                    (new)
 ```
+
+## Post-v1.2: noteser-importer reference plugin (closes #73)
+
+The first end-to-end consumer of the v1.2 surface. Lands at
+`public/plugins/noteser-importer/` and exercises the full stack:
+`fullscreenView` surface, `ctx.fs.openDirectory`, the existing v1.1
+`ctx.requestFileOpen`, `ctx.vault.write.createNote` (with the
+`conflictResolved` flag for collision tallies), `ctx.onVNodeEvent`
+for radio + button routing, and `ctx.setFullscreenContent` for the
+progress / summary phases.
+
+### Format coverage
+
+Three source formats, picked via a `radio` VNode:
+
+- **Obsidian** — directory pick filtered to `.md` / `.markdown`.
+  Files round-trip verbatim; wikilinks and frontmatter survive.
+  Folder path becomes the noteser `folderPath` (host's
+  `ensureFolderPath` resolver creates missing segments).
+- **Notion** — single-file `.zip` pick via `requestFileOpen`. fflate
+  unzipSync inflates into a `{ path: bytes }` map. The 32-character
+  hex Notion ids that decorate every page filename ("Page name
+  abcdef0123456789abcdef0123456789.md") get stripped from BOTH the
+  filename and the folder segments. Intra-vault links
+  (`[Label](Page%20name%20abc...md)`) rewrite to `[[Label]]`;
+  external `https://` links pass through.
+- **Logseq** — directory pick. Wikilinks pass through; `((block-id))`
+  references degrade to a literal blockquote
+  (`> note from Logseq import: block ref <id>`) because the cross-
+  page block index is not portable. Lossy count surfaces in the
+  final summary.
+
+### Conflict policy
+
+The host's `vault.write.createNote` already owns title-collision
+resolution: an existing title in the target folder triggers a
+` (imported)` suffix and the response carries
+`conflictResolved: 'suffix'`. The plugin tallies suffix responses
+into the summary. No plugin-side rename logic; one chokepoint, one
+test path.
+
+### Lib choice
+
+The Notion pick needs ZIP inflate. Options considered:
+
+- `jszip` — already a noteser core dependency, but ~96 KB minified
+  (~28 KB gz) and pulled into the core bundle, not the plugin's.
+  Adding it via the plugin wire would mean a second copy at the
+  user's plugin URL.
+- `fflate` — ~22 KB gz for the browser ESM (`fflate.module.js`,
+  91 KB raw), MIT-licensed, ships `unzipSync` as a named export.
+
+We ship the browser ESM verbatim under
+`public/plugins/noteser-importer/fflate.module.js` (same pattern as
+`noteser-pdf-export/jspdf.es.min.js`). The 22 KB gz figure is
+inflated by fflate exposing the full compress + decompress surface;
+the plugin only calls `unzipSync`. A future v0.2 could replace it
+with the UMD-min (`~12 KB gz`) build or a hand-trimmed inflate-only
+fork if bundle size pressure shows up. For v0.1 the standard ESM
+keeps the plugin reviewable.
+
+### Reference-plugin tests
+
+`src/plugins/__tests__/importerPlugin.test.ts` covers:
+
+- Parser-level fixture for each format: Obsidian wikilink + folder
+  path preservation, Notion id stripping + link rewrite, Logseq
+  block-ref blockquote conversion.
+- Conflict tally: posting two records that the fake host responds
+  to with `conflictResolved: 'suffix'` increments
+  `STATE.summary.conflicts` and leaves the imported count at 3.
+- Lossy tally: a record carrying `lossy: 1` increments
+  `STATE.summary.lossy` after import.
+- Error path: a rejecting `createNote` advances to the next record,
+  bumps the error counter, and surfaces a toast (first three only).
+
+The test imports the plugin's `main.js` and `parsers.js` directly
+via dynamic-import (next/jest's SWC transforms them as plain ES
+modules). The plugin exposes `__TEST_STATE` and `__test*` named
+exports for this purpose; the worker entry only reads the default
+export, so the named exports cost nothing at runtime.
+
+### Voice rules
+
+Per Jon's rule the command label, radio labels, and button labels
+are em-dash-free and contraction-free. The user-facing copy is
+centralised in a `COPY` map at the top of `main.js` so a copy edit
+touches one place.
+
+### Files touched
+
+```
+docs/plugins-v1.2-impl-notes.md                                     (appended)
+public/plugins/noteser-importer/manifest.json                       (new)
+public/plugins/noteser-importer/main.js                             (new)
+public/plugins/noteser-importer/parsers.js                          (new)
+public/plugins/noteser-importer/fflate.module.js                    (new — vendored)
+src/plugins/__tests__/importerPlugin.test.ts                        (new)
+```
