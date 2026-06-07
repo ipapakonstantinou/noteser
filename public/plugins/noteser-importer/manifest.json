@@ -1,0 +1,13 @@
+{
+  "id": "noteser-importer",
+  "name": "Importer",
+  "version": "0.1.0",
+  "author": "Noteser",
+  "description": "Import notes from an Obsidian vault folder, a Notion ZIP export, or a Logseq export folder. Wikilinks survive; conflicts auto-suffix; Logseq block refs degrade to a quoted note.",
+  "main": "./main.js",
+  "permissions": ["fs.open-directory", "vault.write", "file-open"],
+  "surfaces": {
+    "commands": [{ "id": "open-import", "title": "Import notes from..." }],
+    "fullscreenViews": [{ "id": "import", "title": "Import notes" }]
+  }
+}
