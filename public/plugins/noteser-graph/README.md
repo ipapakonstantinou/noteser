@@ -3,7 +3,7 @@
 Reference plugin that delivers the graph view + backlinks panel called for
 in issue #71. Built on the Plugin API v1.2 (PRs A, B, C, F + the post-v1.2
 VNode event delivery / wikilink intercept follow-up). Self-contained ES
-module — the worker dynamic-imports `main.js` via a Blob URL.
+module - the worker dynamic-imports `main.js` via a Blob URL.
 
 ## What it provides
 
@@ -11,9 +11,9 @@ module — the worker dynamic-imports `main.js` via a Blob URL.
 
 Shown for the active note. Two sections plus an action button:
 
-- **Backlinks** — every other note whose body contains a `[[Title]]`
+- **Backlinks** - every other note whose body contains a `[[Title]]`
   wikilink that resolves (case-insensitive) to the active note's title.
-- **Unlinked mentions** — every other note that contains the active note's
+- **Unlinked mentions** - every other note that contains the active note's
   title as plain text, with these exclusions:
   - inside existing `[[wikilinks]]`
   - inside fenced code blocks (triple backticks)
@@ -50,11 +50,11 @@ mode); production installs require HTTPS.
 
 ## Permissions
 
-- `vault.read.all` — needed to scan every note's body for wikilinks
+- `vault.read.all` - needed to scan every note's body for wikilinks
   and unlinked mentions. The plugin uses `getAllNotes()` for the
   current vault size and falls back to `stream({ chunkSize: 200 })`
   when the host reports "Vault too large".
-- `vault.events` — re-derives the panel + graph when a note saves or
+- `vault.events` - re-derives the panel + graph when a note saves or
   when the active note changes. The host debounces every event at
   250 ms, so a burst of keystrokes collapses to one re-derive.
 
@@ -71,8 +71,11 @@ same SHA returns from cache without re-asking the host.
 - **Graph layout open:** target under 500 ms for 1 k nodes. The plugin
   logs `[noteser-graph] graph layout: derive=<ms> simulate=<ms>` on
   every rebuild. The force simulator is hand-rolled O(n^2) repulsion
-  + spring attraction + center pull at 220 iterations; Barnes-Hut is
-  not required at this scale.
+  + spring attraction + center pull, with an adaptive iteration
+  count (220 for small graphs, 40 for 1 k nodes, 25 above that) so
+  the open budget stays in reach without Barnes-Hut. Measured on
+  the worktree: derive ~6 ms, simulate ~400 ms for 1 000 nodes /
+  3 000 edges.
 
 ## Co-existence with core BacklinksView
 
@@ -93,11 +96,11 @@ the core view, the swap is:
    plugin currently matches on title only; surface aliases via a
    future `vault.read.all` enrichment that exposes parsed
    frontmatter consistently (the existing `NoteWithBody.frontmatter`
-   field already does — wire the alias scanner across).
+   field already does - wire the alias scanner across).
 3. **Delete the core view.** Remove `src/components/sidebar/BacklinksView.tsx`
    and its right-sidebar registry entry once the plugin handles aliases.
    The core `findBacklinks(notes, target)` helper in
-   `src/utils/backlinks.ts` stays for now — it backs internal tooling
+   `src/utils/backlinks.ts` stays for now - it backs internal tooling
    (e.g. the sync layer's "broken link" check).
 
 The plugin's panel id (`graph`) intentionally does not collide with the
