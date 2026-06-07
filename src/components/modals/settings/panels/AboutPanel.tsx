@@ -99,6 +99,18 @@ export function AboutPanel() {
             noteser.thetechjon.com
           </a>
         </p>
+        <p>
+          <a
+            href="https://beta.noteser.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-obsidianAccentPurple hover:underline"
+            data-testid="settings-beta-link"
+          >
+            beta.noteser.app
+          </a>
+          <span className="text-obsidianSecondaryText"> (beta channel: tracks the dev branch, new features land here first)</span>
+        </p>
         <p className="text-xs text-obsidianSecondaryText pt-2">
           MIT licence.
         </p>
