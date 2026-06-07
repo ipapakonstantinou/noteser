@@ -128,7 +128,7 @@ export const SidebarSection = ({
             e.dataTransfer.effectAllowed = 'move'
           }}
           className={`flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium uppercase tracking-wide text-obsidianSecondaryText hover:bg-obsidianDarkGray transition-colors w-full text-left ${
-            draggablePanelId ? 'cursor-grab active:cursor-grabbing' : ''
+            draggablePanelId ? 'cursor-default active:cursor-grabbing' : ''
           }`}
           aria-expanded={!collapsed}
           aria-controls={`sidebar-section-content-${id}`}
