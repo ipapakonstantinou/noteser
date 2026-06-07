@@ -22,6 +22,20 @@ export const MAX_ENVELOPE_BYTES = 256 * 1024 // 256 KB
 /** Per-plugin rate limit. Host drops + warns above this. */
 export const MAX_MESSAGES_PER_SECOND = 60
 
+/** Per-plugin cap on VNode events the host forwards to the worker in a
+ *  1-second sliding window. A run of click / change events from a busy
+ *  surface (radio + input + svg circle in the same render) easily
+ *  exceeds a single keystroke; the cap is tighter than the general
+ *  60/sec ceiling so an accidental loop in a plugin's render function
+ *  cannot spiral into a worker-pinning event flood. Anything above the
+ *  cap is silently dropped on the host side — the plugin's `onVNodeEvent`
+ *  handler simply stops being invoked until the window closes.
+ *
+ *  16 events/sec is roughly one event per repaint at 60Hz with three
+ *  surface render passes per frame headroom. Plenty for interactive
+ *  controls; too few for a runaway loop. */
+export const MAX_VNODE_EVENTS_PER_SECOND = 16
+
 /** Debounce window (ms) the host applies to every `vault.events`
  *  dispatch (vaultChanged / noteSaved / activeNoteIdChanged). Plugins
  *  cannot lower this — the cap is host-side so a runaway plugin cannot

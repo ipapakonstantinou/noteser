@@ -733,3 +733,135 @@ the localStorage flush.
   import takes ~83 s; acceptable.
 - Per-plugin "Recent activity" drill-down view — `readPluginAuditFor`
   exists for it but the UI is the global list for now.
+
+## Post-v1.2: VNode event delivery + wikilink intercept
+
+Branch: `fix/plugin-vnode-event-delivery`. Closes two gaps left over
+from the v1.2 ship-train: the VNode event envelope was shaped (PR A
+under §2 of the plan) but neither the host-side dispatcher nor the
+worker-side handler registration API existed yet. Plugins that tried
+to use `{ tag: 'button', onClick: { kind: 'emit', event: ... } }` got
+silent drops — every PR-A reference plugin update flagged the same
+wall. The wikilink rendering shape worked structurally (host
+constructs the URL from the typed parts) but `wikilink://<noteId>` is
+an unrecognised scheme, so a click on a plugin-rendered note link did
+nothing.
+
+### Gap 1 — VNode event delivery
+
+The wire envelope (`HostVNodeEvent` in `src/plugins/protocol.ts`) was
+already correct: `event` + `payload` + `source: { kind:
+'panel' | 'fullscreen' | 'codeBlock', ... }`. Three new pieces wired
+both sides up:
+
+- `PluginHost.sendVNodeEvent(pluginId, source, event, payload)` —
+  constructs the envelope and posts to the worker. Rate-limited per
+  plugin at `MAX_VNODE_EVENTS_PER_SECOND` (16 events / sec / plugin)
+  in a 1-second sliding window. Past the cap the host SILENTLY drops
+  the event AND emits a single `vnodeEventRateLimited`
+  `PluginHostEvent` per window so a runaway loop surfaces in the dev
+  console without spamming the toast layer. The cap is tighter than
+  the general 60/sec ceiling — a render that emits one onClick is
+  typically one event per repaint, so 16 leaves three frames of
+  headroom at 60Hz and bottoms out runaway loops fast. Picked over
+  60/sec because the event family has no acknowledged use case for
+  high-rate streaming (the high-rate paths are setPanelContent +
+  vault.events, both already capped elsewhere).
+- `workerEntry.ts` handles `host:vnodeEvent` by fanning out to every
+  handler registered through the new `ctx.onVNodeEvent`. The set is
+  scoped to the worker module — the host's `unload()` calls
+  `worker.terminate()`, which drops the entire module and every
+  handler with it. No host-side bookkeeping needed beyond the
+  existing worker-termination path.
+- `ctx.onVNodeEvent(handler)` ships in BOTH `src/plugins/sdk.ts` and
+  `packages/noteser-plugin-sdk/src/sdk.ts`. Handler signature:
+  `({ event, payload, source }) => void`. ONE handler shape rather
+  than the plan-section-6 `(event, cb)` pair so the SDK contract
+  delivers the `source` discriminator (panel id / view id / block id)
+  to the same callback. Returns an `Unsubscribe` thunk. Backwards
+  compatible: plugins that never call `onVNodeEvent` keep working;
+  their fired events are simply dropped by the empty handler set.
+
+Surface wiring:
+
+- `PluginsPanel.tsx` — the `<PluginNode>` mount now passes an
+  `onEvent` callback that wraps `host.sendVNodeEvent` with
+  `{ kind: 'panel', panelId }`.
+- `PluginFullscreenView.tsx` — `handleEvent` is no longer a no-op; it
+  forwards via `{ kind: 'fullscreen', viewId }` using the
+  already-resolved `active.pluginId` / `active.viewId`.
+- `PluginCodeBlock.tsx` — same shape, with `{ kind: 'codeBlock',
+  blockId }`. The block id was already in scope (it identifies the
+  render request).
+
+### Gap 2 — `wikilink://` click intercept
+
+Browser navigation to an unrecognised scheme does nothing, so a
+plugin-rendered `<a href="wikilink://<encodedId>">` was clickable but
+inert. The renderer's `renderLink` now attaches an `onClick` that:
+
+- If the href starts with `wikilink://` AND the click is unmodified
+  (no meta / ctrl / shift / alt, primary button only), the handler
+  calls `e.preventDefault()` and dispatches
+  `useWorkspaceStore.getState().openNote(noteId)`. The noteId comes
+  from the typed `VNodeLink.href` shape (`{ kind: 'note', noteId }`),
+  NOT from re-decoding the URL — the URL parsing surface stays at one
+  chokepoint (`linkHrefToString`).
+- Modifier-clicks are NOT intercepted. The user's intent is "follow
+  the URL natively", which is a no-op for `wikilink://` but we don't
+  pretend otherwise — same shape as a browser's Ctrl+click on any
+  other custom-scheme link.
+- Anchor (`#fragment`) links are NOT intercepted; the browser's
+  native fragment-scroll owns that case.
+
+The plan's §2.6 `VNodeLink.href` does not permit external URLs at all
+(the discriminated union only allows `note` or `anchor`), so the
+"external links open via `target=_blank`" path from the task brief is
+structurally unreachable today and the renderer does not set
+`target="_blank"` on any plugin link. If a future v1.3 shape adds an
+opt-in raw-href variant the click handler will need a new branch
+there; for now the contract is "if it's not `wikilink://`, default
+browser behaviour".
+
+### Reference plugin update
+
+`public/plugins/noteser-vnode-demo` bumps to `0.3.0`. The plugin now:
+
+- Subscribes to `ctx.onVNodeEvent` from `onActivate` and notifies on
+  every event, stamping the event name + source kind in the toast.
+  Also `console.log`s every event for the manual smoke check.
+- Tracks the active note via `onActiveNoteChange` and renders a
+  `link` VNode pointing at it (`{ kind: 'note', noteId }`). Clicking
+  the link opens the note via the new wikilink intercept.
+- Bumped manifest version. No new permissions — the follow-up is
+  pure plumbing.
+
+### Tests
+
+- `src/plugins/__tests__/vnodeEventDelivery.test.ts` — `sendVNodeEvent`
+  posts the correct envelope per surface, rate-limit caps the
+  delivered count, per-plugin window does not starve sibling plugins,
+  `unload()` stops further deliveries.
+- `src/plugins/__tests__/pluginLinkWikilinkIntercept.test.tsx` —
+  plain click dispatches `openNote(noteId)` with the typed id;
+  modifier-clicks pass through; `#fragment` links are untouched;
+  `preventDefault` fires for wikilink clicks.
+
+### Files touched
+
+```
+docs/plugins-v1.2-impl-notes.md                                     (appended)
+packages/noteser-plugin-sdk/src/sdk.ts
+public/plugins/noteser-vnode-demo/main.js
+public/plugins/noteser-vnode-demo/manifest.json
+src/components/editor/PluginCodeBlock.tsx
+src/components/plugins/PluginFullscreenView.tsx
+src/components/sidebar/PluginsPanel.tsx
+src/plugins/PluginHost.ts
+src/plugins/PluginVNode.tsx
+src/plugins/protocol.ts
+src/plugins/sdk.ts
+src/plugins/workerEntry.ts
+src/plugins/__tests__/pluginLinkWikilinkIntercept.test.tsx          (new)
+src/plugins/__tests__/vnodeEventDelivery.test.ts                    (new)
+```

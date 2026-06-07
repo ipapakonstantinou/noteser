@@ -116,6 +116,57 @@ function allocRequestSeq(): number {
   return ++nextRequestSeq
 }
 
+// ─── VNode event handlers (v1.2) ────────────────────────────────────────
+//
+// Plugins call `ctx.onVNodeEvent(handler)` to receive every event a
+// rendered surface (sidebar panel, fullscreen modal, code block) fires
+// back. The renderer attached the event names to the VNode shapes; the
+// host bundles them into a `host:vnodeEvent` envelope and posts here.
+//
+// Handler shape: `({ event, payload, source }) => void`. ONE handler
+// per registration; the plugin owns its own dispatch table. Returning
+// `Unsubscribe` removes it. On plugin teardown the worker module is
+// terminated so the handlers vanish along with everything else; we do
+// not need to drain the set manually.
+//
+// Multiple registrations stack — each handler fires for every event.
+// Plugins typically register one, but the SDK contract allows N so a
+// plugin that wraps `onVNodeEvent` for telemetry doesn't have to be
+// the only owner.
+
+type VNodeEventSource =
+  | { kind: 'panel'; panelId: string }
+  | { kind: 'codeBlock'; blockId: string }
+  | { kind: 'fullscreen'; viewId: string }
+
+type VNodeEventHandler = (args: {
+  event: string
+  payload: unknown
+  source: VNodeEventSource
+}) => void
+
+const vnodeEventHandlers = new Set<VNodeEventHandler>()
+
+function dispatchVNodeEvent(
+  event: string,
+  payload: unknown,
+  source: VNodeEventSource,
+): void {
+  // Snapshot before iterating — a handler that calls `unsubscribe()`
+  // would otherwise mutate the set mid-iteration.
+  for (const handler of Array.from(vnodeEventHandlers)) {
+    try {
+      handler({ event, payload, source })
+    } catch (err) {
+      emit({
+        type: 'worker:error',
+        seq: 0,
+        message: `onVNodeEvent handler threw: ${err instanceof Error ? err.message : String(err)}`,
+      })
+    }
+  }
+}
+
 // ─── vault.events subscriptions ─────────────────────────────────────────
 //
 // One handler table per event type. The worker mints opaque
@@ -301,6 +352,10 @@ self.onmessage = async (event: MessageEvent<HostToWorker>) => {
         p.push(msg.notes as ReadonlyArray<NoteWithBody>, null)
         return
       }
+
+      case 'host:vnodeEvent':
+        dispatchVNodeEvent(msg.event, msg.payload, msg.source)
+        return
 
       case 'host:vaultChanged':
         dispatchVault(msg.subscriptionId, undefined)
@@ -740,6 +795,16 @@ function buildCtx(parentSeq: number): PluginCtx {
         })
         return promise
       },
+    },
+    onVNodeEvent(handler) {
+      // No envelope round-trip — registration is worker-local. The host
+      // already posts every event for the plugin (the renderer attaches
+      // event names per surface). Stacking handlers is allowed; the
+      // dispatcher fans out to every one of them in registration order.
+      vnodeEventHandlers.add(handler)
+      return () => {
+        vnodeEventHandlers.delete(handler)
+      }
     },
     openFullscreen(viewId: string) {
       const requestSeq = allocRequestSeq()

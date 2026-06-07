@@ -166,19 +166,18 @@ export const PluginFullscreenView = () => {
   // VNode event dispatch — forward into the wire protocol with the
   // `fullscreen` source kind PR A pre-shipped. The host queues these
   // via the PluginHost rate limiter and posts them as
-  // `host:vnodeEvent` envelopes.
-  const handleEvent = (event: PluginVNodeEvent) => {
+  // `host:vnodeEvent` envelopes; the worker routes to whatever the
+  // plugin registered via `ctx.onVNodeEvent`. Wired in the
+  // "Post-v1.2: VNode event delivery + wikilink intercept" follow-up.
+  const handleEvent = (e: PluginVNodeEvent) => {
     const host = getPluginHost()
     if (!host) return
-    // PluginHost exposes a typed sendVNodeEvent helper in a later
-    // PR; for now we go through the wire envelope directly via the
-    // worker postMessage on the host side. PR A wired the contract
-    // but not the dispatcher; the panel surface (PluginsPanel) does
-    // not deliver events either yet. PR B keeps parity — events are
-    // structurally correct and the modal does not crash on click,
-    // but the worker does not receive them until the event
-    // registration API ships.
-    void event
+    host.sendVNodeEvent(
+      active.pluginId,
+      { kind: 'fullscreen', viewId: active.viewId },
+      e.event,
+      e.payload,
+    )
   }
 
   return (

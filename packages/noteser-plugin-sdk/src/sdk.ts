@@ -302,6 +302,37 @@ export interface PluginCtx {
   }
 
   /**
+   * v1.2 — register a handler for every VNode event a rendered surface
+   * fires back. The renderer attached event intents to VNode shapes
+   * (`{ kind: 'emit', event, payload? }` on a button's `onClick`, a
+   * radio's `onChange`, etc.); the host packages those firings into
+   * `host:vnodeEvent` envelopes and the worker dispatches them here.
+   *
+   * `source` tells the handler WHICH rendered surface produced the
+   * event so a plugin that uses the same event name in two surfaces
+   * (e.g. a "save" button in both the sidebar panel and a fullscreen
+   * modal) can disambiguate without renaming.
+   *
+   * Multiple registrations stack — every handler fires for every
+   * event. Returns an `Unsubscribe` thunk; the host also auto-drops
+   * every handler on plugin unload (the worker itself is terminated).
+   *
+   * Backwards-compatible: existing v1.2 plugins that never call this
+   * API see no behaviour change — events fired by their rendered
+   * controls are simply discarded by the worker.
+   */
+  onVNodeEvent(
+    handler: (args: {
+      event: string
+      payload: unknown
+      source:
+        | { kind: 'panel'; panelId: string }
+        | { kind: 'codeBlock'; blockId: string }
+        | { kind: 'fullscreen'; viewId: string }
+    }) => void,
+  ): Unsubscribe
+
+  /**
    * v1.2 PR B — request that the host mount one of this plugin's
    * declared fullscreen views. The view id must appear in
    * `surfaces.fullscreenViews` of the manifest. Only one fullscreen

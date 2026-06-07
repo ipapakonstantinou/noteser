@@ -31,7 +31,8 @@
 //
 // All shapes carry `tag` as discriminator.
 
-import type { CSSProperties, ReactNode } from 'react'
+import type { CSSProperties, MouseEvent, ReactNode } from 'react'
+import { useWorkspaceStore } from '@/stores/workspaceStore'
 
 // ─── v1 shapes (unchanged) ────────────────────────────────────────────────
 
@@ -486,15 +487,58 @@ function renderLink(v: VNodeLink): ReactNode | null {
   // and #fragment, but the named guard keeps the security contract
   // explicit at the render site.
   if (!isSafePluginHref(href)) return null
+  // Pull the noteId off the typed `href.kind === 'note'` branch so the
+  // click handler can dispatch openNote without re-decoding the URL.
+  // Same goes for the anchor fragment — keeps the security contract on
+  // the typed shape, not on string parsing.
+  const noteId = v.href.kind === 'note' ? v.href.noteId : null
   return (
     <a
       href={href}
       className="text-blue-500 underline hover:text-blue-400"
       rel="noopener noreferrer"
+      onClick={(e) => handlePluginLinkClick(e, href, noteId)}
     >
       {v.label}
     </a>
   )
+}
+
+/**
+ * Click handler for plugin-rendered `<a>` shapes. The renderer emits
+ * two URL forms via `linkHrefToString`:
+ *   - `wikilink://<encodedNoteId>` for `{ kind: 'note' }` links
+ *   - `#<encodedFragment>` for `{ kind: 'anchor' }` links
+ *
+ * Browser navigation to `wikilink://` does nothing (unknown scheme), so
+ * the renderer must intercept the click and dispatch the host's
+ * `workspaceStore.openNote(noteId)` action instead. The `noteId` lives
+ * on the typed `VNodeLink.href.kind === 'note'` branch — we pass it
+ * down here rather than re-decoding the URL string so the parsing
+ * surface stays at one chokepoint (`linkHrefToString`).
+ *
+ * Anchor (`#fragment`) links keep default browser behaviour, which is
+ * the native anchor-scroll inside the document.
+ *
+ * Documented in `docs/plugins-v1.2-impl-notes.md` under "Post-v1.2:
+ * VNode event delivery + wikilink intercept".
+ */
+function handlePluginLinkClick(
+  e: MouseEvent<HTMLAnchorElement>,
+  href: string,
+  noteId: string | null,
+): void {
+  // Anchor / fragment links — let the browser do its thing.
+  if (!href.startsWith('wikilink://')) return
+  // Modifier-click should follow native semantics (no-op for an
+  // unrecognised scheme); we only intercept the unmodified primary
+  // click so a power user is not surprised.
+  if (e.defaultPrevented) return
+  if (e.button !== 0) return
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+  e.preventDefault()
+  if (noteId === null) return
+  useWorkspaceStore.getState().openNote(noteId)
 }
 
 function renderRadio(v: VNodeRadio, ctx: RenderContext): ReactNode | null {

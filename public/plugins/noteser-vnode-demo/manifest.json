@@ -1,9 +1,9 @@
 {
   "id": "noteser-vnode-demo",
   "name": "VNode demo",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "Noteser",
-  "description": "Reference plugin for v1.2 PRs A and B. Exercises every new VNode shape inside a sidebar panel, and opens a fullscreen view from the command palette.",
+  "description": "Reference plugin for v1.2 PRs A, B, and the VNode event delivery follow-up. Renders every new VNode shape in a sidebar panel, opens a fullscreen view from the palette, and logs every VNode event the host forwards.",
   "main": "./main.js",
   "surfaces": {
     "sidebarPanels": [

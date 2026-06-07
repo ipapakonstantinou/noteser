@@ -11,8 +11,10 @@ import {
   isWorkerToHost,
   MAX_ENVELOPE_BYTES,
   MAX_MESSAGES_PER_SECOND,
+  MAX_VNODE_EVENTS_PER_SECOND,
   VAULT_EVENT_DEBOUNCE_MS,
   type HostToWorker,
+  type HostVNodeEvent,
   type WorkerToHost,
   type NoteWithBodyWire,
 } from './protocol'
@@ -120,6 +122,7 @@ export type PluginHostEvent =
       op: VaultWriteOp
     }
   | { type: 'rateLimited'; pluginId: string }
+  | { type: 'vnodeEventRateLimited'; pluginId: string }
 
 /** Discriminated union over the four vault.write ops carried in a
  *  `worker:requestVaultWrite` envelope. Identical shape to the wire
@@ -158,6 +161,14 @@ interface WorkerEntry {
     noteSaved: PendingEvent<Set<string>>
     activeNoteIdChanged: PendingEvent<{ noteId: string | null }>
   }
+  /** Per-plugin VNode event rate-limit window. The host forwards at
+   *  most `MAX_VNODE_EVENTS_PER_SECOND` host:vnodeEvent envelopes per
+   *  1-second sliding window. The first event past the cap also emits
+   *  a `vnodeEventRateLimited` PluginHostEvent so the dev console can
+   *  spot a runaway loop. */
+  vnodeEventWindowStart: number
+  vnodeEventsInWindow: number
+  vnodeEventRateLimitWarned: boolean
 }
 
 interface VaultSubscription {
@@ -251,6 +262,9 @@ export class PluginHost {
       worker,
       vaultSubs: new Map(),
       vaultDebounce: makePendingState(),
+      vnodeEventWindowStart: nowMs(),
+      vnodeEventsInWindow: 0,
+      vnodeEventRateLimitWarned: false,
     }
     this.workers.set(pluginId, entry)
 
@@ -379,6 +393,57 @@ export class PluginHost {
       language: args.language,
       source: args.source,
       blockId: args.blockId,
+    })
+  }
+
+  /**
+   * v1.2 — forward a VNode event from a rendered surface (panel,
+   * fullscreen modal, code-block) into the plugin's worker. The
+   * worker's `host:vnodeEvent` handler routes the event to whatever
+   * the plugin registered via `ctx.onVNodeEvent`.
+   *
+   * Rate-limited per plugin at `MAX_VNODE_EVENTS_PER_SECOND` over a
+   * 1-second sliding window. Events past the cap are silently dropped
+   * on the host side; the first drop within a window also emits a
+   * `vnodeEventRateLimited` PluginHostEvent (one per window) so the
+   * dev console can flag a runaway loop without spamming the user.
+   *
+   * No-op when the plugin is not loaded. The `source` discriminator
+   * follows the wire shape in `protocol.ts:HostVNodeEvent` exactly —
+   * the renderer-side surfaces (`PluginsPanel`, `PluginFullscreenView`,
+   * `PluginCodeBlock`) wrap this call with their own source descriptor.
+   */
+  sendVNodeEvent(
+    pluginId: string,
+    source: HostVNodeEvent['source'],
+    event: string,
+    payload: unknown,
+  ): void {
+    const entry = this.workers.get(pluginId)
+    if (!entry) return
+    if (typeof event !== 'string' || event.length === 0) return
+
+    const now = nowMs()
+    if (now - entry.vnodeEventWindowStart >= 1000) {
+      entry.vnodeEventWindowStart = now
+      entry.vnodeEventsInWindow = 0
+      entry.vnodeEventRateLimitWarned = false
+    }
+    entry.vnodeEventsInWindow++
+    if (entry.vnodeEventsInWindow > MAX_VNODE_EVENTS_PER_SECOND) {
+      if (!entry.vnodeEventRateLimitWarned) {
+        entry.vnodeEventRateLimitWarned = true
+        this.emit({ type: 'vnodeEventRateLimited', pluginId })
+      }
+      return
+    }
+
+    this.send(pluginId, {
+      type: 'host:vnodeEvent',
+      seq: ++this.seqCounter,
+      event,
+      payload,
+      source,
     })
   }
 
