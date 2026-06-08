@@ -363,7 +363,6 @@ function SettingsFooterBar() {
         onReset={reset}
         onApply={() => {
           ;(document.activeElement as HTMLElement | null)?.blur?.()
-          closeModal()
         }}
       />
     </div>
