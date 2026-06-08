@@ -294,15 +294,31 @@ const renumberOnEdit = EditorView.updateListener.of((update) => {
   if (update.view.composing) return
 
   let touchedNewline = false
-  update.changes.iterChanges((_fA, _tA, _fB, _tB, inserted) => {
+  let touchedOrderedLineStart = false
+  update.changes.iterChanges((_fA, _tA, fB, tB, inserted) => {
     if (inserted.toString().includes('\n')) touchedNewline = true
+    // Indent/dedent on an ordered-list line (Tab / Shift+Tab) changes the
+    // line's effective list depth without inserting a newline, so renumber
+    // must still re-run. Check whether the changed range overlaps the
+    // leading whitespace of an ordered-list line in the NEW doc.
+    if (!touchedOrderedLineStart) {
+      const startLine = update.state.doc.lineAt(fB)
+      const endLine = update.state.doc.lineAt(tB)
+      for (let n = startLine.number; n <= endLine.number; n++) {
+        const line = update.state.doc.line(n)
+        if (/^\s*\d+\.\s/.test(line.text)) {
+          touchedOrderedLineStart = true
+          break
+        }
+      }
+    }
   })
   // Deletions of a newline also matter. iterChanges' inserted is the new text;
   // detect removed newlines by comparing line counts.
   if (!touchedNewline && update.startState.doc.lines !== update.state.doc.lines) {
     touchedNewline = true
   }
-  if (!touchedNewline) return
+  if (!touchedNewline && !touchedOrderedLineStart) return
   if (!ORDERED_LINE_PROBE.test(update.state.doc.toString())) return
 
   renumberInFlight = true
