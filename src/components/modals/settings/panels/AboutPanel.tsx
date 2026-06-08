@@ -59,6 +59,29 @@ export function AboutPanel() {
         </p>
         <p>
           <a
+            href="https://noteser.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-obsidianAccentPurple hover:underline"
+          >
+            noteser.app
+          </a>
+          <span className="text-obsidianSecondaryText"> (stable channel: production releases)</span>
+        </p>
+        <p>
+          <a
+            href="https://beta.noteser.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-obsidianAccentPurple hover:underline"
+            data-testid="settings-beta-link"
+          >
+            beta.noteser.app
+          </a>
+          <span className="text-obsidianSecondaryText"> (beta channel: tracks the dev branch, new features land here first)</span>
+        </p>
+        <p>
+          <a
             href="https://github.com/ipapakonstantinou/noteser"
             target="_blank"
             rel="noopener noreferrer"
@@ -66,6 +89,7 @@ export function AboutPanel() {
           >
             github.com/ipapakonstantinou/noteser
           </a>
+          <span className="text-obsidianSecondaryText"> (source code, MIT-licensed)</span>
         </p>
         <p>
           <a
@@ -81,35 +105,14 @@ export function AboutPanel() {
         </p>
         <p>
           <a
-            href="https://noteser.app"
+            href="https://thetechjon.com"
             target="_blank"
             rel="noopener noreferrer"
             className="text-obsidianAccentPurple hover:underline"
           >
-            noteser.app
+            builder
           </a>
-        </p>
-        <p>
-          <a
-            href="https://noteser.thetechjon.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-obsidianAccentPurple hover:underline"
-          >
-            noteser.thetechjon.com
-          </a>
-        </p>
-        <p>
-          <a
-            href="https://beta.noteser.app"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-obsidianAccentPurple hover:underline"
-            data-testid="settings-beta-link"
-          >
-            beta.noteser.app
-          </a>
-          <span className="text-obsidianSecondaryText"> (beta channel: tracks the dev branch, new features land here first)</span>
+          <span className="text-obsidianSecondaryText"> (thetechjon.com, the side-project builder behind noteser)</span>
         </p>
         <p className="text-xs text-obsidianSecondaryText pt-2">
           MIT licence.
