@@ -28,6 +28,8 @@ optionally sync to a GitHub repo or a local folder on disk.
 
 ## Your first note
 
+![Editor with a sample note open, sidebar on the left listing folders and notes](/screenshots/help/getting-started-first-note.png)
+
 - Press \`Alt+N\` to create a new note, or click the **New note** button in the file tree toolbar.
 - Type a title at the top, then markdown content below.
 - Notes save automatically — there's no Save button.
@@ -79,6 +81,8 @@ clean three-way merge, no plugins or extensions required — it talks
 to the GitHub Git Data API directly from the browser.
 
 ## Connect a repo
+
+![Settings panel open on the GitHub sync section, showing auto-sync, default commit message, and vault gitignore fields](/screenshots/help/github-sync-settings.png)
 
 1. Click the **GitHub** ribbon icon or open **Settings → GitHub sync**.
 2. Click **Connect to GitHub**. The device-code modal opens — copy the code, click the GitHub link, paste, and authorise.
@@ -173,6 +177,8 @@ const SHORTCUTS_PINS: HelpPage = {
 
 ## Pinning panels
 
+![Sidebar showing a pinned Calendar panel at the top and the Files panel below it, with the mini tab strip in between](/screenshots/help/sidebar-pane-model.png)
+
 The left sidebar's bottom strip has tab icons (Calendar, Files, Outline, etc.). To keep a panel visible at the top of the sidebar:
 
 - **Right-click** the tab icon → **Pin to top**.
@@ -201,6 +207,8 @@ The right edge of the screen has a thin strip with a panel-toggle icon. Click �
 The body is hidden by default; the strip stays as a quick-access affordance.
 
 ## Keyboard shortcuts
+
+![Quick search modal open with a query typed and three note results listed below it](/screenshots/help/search-quick-switcher.png)
 
 Open the shortcuts cheatsheet with \`Ctrl+/\`. Some highlights:
 
@@ -286,6 +294,8 @@ These tools live inside the note editor and turn it from "a textarea" into
 something closer to VS Code or Obsidian.
 
 ## Per-line revert (after sync)
+
+![Editor showing the note body in live-preview mode with formatted headings, bullet points, and inline tags](/screenshots/help/editor-live-preview.png)
 
 When you've synced a note to GitHub, the editor paints a thin colored
 bar in the left gutter next to lines that differ from the version you
