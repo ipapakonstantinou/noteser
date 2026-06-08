@@ -537,82 +537,18 @@
   color: #f3f4f6;
 }
 
-/* /help disclosure sections.
- * Each H2 section is rendered as a <details> with a chevron-stamped
- * <summary> that wraps the heading. Default state is collapsed. The
- * native <details> element already handles open/close, keyboard
- * activation, and matches the deep-link hook in HelpShell that sets
- * `el.open = true` when the URL hash points at a section. */
-.help-prose .help-disclosure {
-  margin-top: 2em;
-  border-top: 1px solid #2a2e36;
-  padding-top: 0.25em;
-}
-
-.help-prose .help-disclosure:first-of-type {
-  margin-top: 2.4em;
-}
-
-.help-prose .help-disclosure-summary {
-  display: flex;
-  align-items: center;
-  gap: 0.55em;
-  list-style: none;
-  cursor: pointer;
-  padding: 0.6em 0;
-  border-radius: 6px;
-  transition: color 120ms ease;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.help-prose .help-disclosure-summary::-webkit-details-marker {
-  display: none;
-}
-
-.help-prose .help-disclosure-summary:hover {
-  color: #f3f4f6;
-}
-
-.help-prose .help-disclosure-summary:focus-visible {
-  outline: 2px solid #60a5fa;
-  outline-offset: 2px;
-}
-
-.help-prose .help-disclosure-chevron {
-  display: inline-block;
-  width: 0;
-  height: 0;
-  flex: none;
-  border-top: 5px solid transparent;
-  border-bottom: 5px solid transparent;
-  border-left: 6px solid #6b7280;
-  transition: transform 160ms ease;
-  transform-origin: 30% 50%;
-}
-
-.help-prose .help-disclosure[open] > .help-disclosure-summary .help-disclosure-chevron {
-  transform: rotate(90deg);
-}
-
-.help-prose .help-disclosure-heading {
-  /* Override the .help-prose h2 baseline rules: no top margin, no
-     bottom border. The disclosure container provides the rhythm. */
-  margin: 0;
-  padding: 0;
-  border-bottom: 0;
-  font-size: 1.3rem;
-}
-
-.help-prose .help-disclosure-body {
-  padding: 0.2em 0 1em 1.55em;
-}
-
-.help-prose .help-disclosure-body > * + * {
-  margin-top: 1.1em;
-}
-
-.help-prose .help-disclosure-body > :first-child {
-  margin-top: 0.6em;
+/* Caption styling for inline GIFs / screenshots. The help markdown
+   uses `*caption text*` (italic) on the line directly after an image
+   to label it; this rule tightens the spacing so the caption visually
+   binds to the image rather than reading as a standalone paragraph. */
+.help-prose p > img + em,
+.help-prose p:has(> img) + p > em:only-child {
+  display: block;
+  font-style: normal;
+  color: #9ca3af;
+  font-size: 0.9em;
+  text-align: center;
+  margin-top: -0.4em;
 }
 
 /* Inline screenshots inside help articles. Keep them inside the

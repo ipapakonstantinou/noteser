@@ -9,7 +9,7 @@ import { HelpShell } from '../HelpShell'
 //
 // Layout:
 //   [ topbar (back link) ............................................. ]
-//   [ sidebar TOC ] [ markdown content with per-section disclosures   ]
+//   [ left tree nav | markdown content (flowing, no inline details)   ]
 //
 // Static. Generated at build time via `generateStaticParams`. All
 // content lives in `src/help/content.ts` as plain markdown strings.
@@ -17,12 +17,14 @@ import { HelpShell } from '../HelpShell'
 // preview (without the wikilink / attachment custom renderers, which
 // don't make sense in standalone help).
 //
-// The intro chunk (H1 + lead paragraph before the first H2) renders
-// always-visible at the top. Every H2 section becomes a default-
-// collapsed `<details>` block: heading text in the `<summary>`, body
-// markdown in the panel. Deep links into a specific section
-// (e.g. /help/faq#vault-locked) are handled by the HelpShell hash hook,
-// which opens the matching `<details>` on load + on hashchange.
+// PR #154: H2 sections used to render as `<details>` disclosures. The
+// nesting moved into the LEFT NAV as a tree, so the body now renders
+// as a single flowing markdown document. The page still calls
+// parseHelpBody to keep H2 anchor ids stable (so deep links from the
+// left nav scroll correctly), then concatenates intro + sections back
+// into one ReactMarkdown render. Concatenation preserves source order;
+// duplicate-heading slugs stay deterministic because we feed all
+// h2s through the same per-render slug counter in `makeComponents`.
 
 export function generateStaticParams() {
   return HELP_PAGES.map(p => ({ slug: p.slug }))
@@ -38,9 +40,9 @@ export function generateMetadata({ params }: { params: Promise<{ slug: string }>
   })
 }
 
-// Heading-id slugger used inside the intro chunk so any h1/h3 still gets
-// an anchor target. Section h2 headings are anchored by their disclosure
-// container instead — see the section render loop below.
+// Heading-id slugger. Mirrors parseHelpBody so a link in the left nav
+// (`/help/<slug>#<section-slug>`) lands on the matching <h2 id="...">
+// inside the rendered article.
 function slugifyHeading(text: string): string {
   return text
     .toLowerCase()
@@ -80,35 +82,16 @@ export default async function HelpPage({ params }: { params: Promise<{ slug: str
   const page = findHelpPage(slug)
   if (!page) notFound()
 
-  const { intro, sections } = parseHelpBody(page.body)
-  const sectionSlugs = sections.map(s => s.slug)
+  // We still call parseHelpBody so adding a new H2 to content.ts
+  // automatically populates the left-nav tree. The body itself is
+  // rendered as a single flowing markdown string.
+  parseHelpBody(page.body)
 
   return (
-    <HelpShell activeSlug={slug} sectionSlugs={sectionSlugs}>
-      {intro && (
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={makeComponents()}>
-          {intro}
-        </ReactMarkdown>
-      )}
-      {sections.map(section => (
-        <details
-          key={section.slug}
-          id={`help-section-${section.slug}`}
-          className="help-disclosure"
-        >
-          <summary className="help-disclosure-summary">
-            <span className="help-disclosure-chevron" aria-hidden="true" />
-            <h2 id={section.slug} className="help-disclosure-heading">
-              {section.heading}
-            </h2>
-          </summary>
-          <div className="help-disclosure-body">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={makeComponents()}>
-              {section.body}
-            </ReactMarkdown>
-          </div>
-        </details>
-      ))}
+    <HelpShell activeSlug={slug}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={makeComponents()}>
+        {page.body}
+      </ReactMarkdown>
     </HelpShell>
   )
 }
