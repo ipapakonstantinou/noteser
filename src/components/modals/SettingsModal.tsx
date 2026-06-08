@@ -364,6 +364,10 @@ function SettingsFooterBar() {
         onApply={() => {
           ;(document.activeElement as HTMLElement | null)?.blur?.()
         }}
+        onSaveAndClose={() => {
+          ;(document.activeElement as HTMLElement | null)?.blur?.()
+          closeModal()
+        }}
       />
     </div>
   ), [reset, closeModal])
