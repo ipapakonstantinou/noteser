@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronDownIcon, ChevronRightIcon, ArrowTopRightOnSquareIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/outline'
-import { useNoteStore, useGitHubStore, useWorkspaceStore, useUIStore } from '@/stores'
+import { useNoteStore, useGitHubStore, useWorkspaceStore, useUIStore, useFolderStore } from '@/stores'
 import {
   classifyPendingChanges,
   totalPendingCount,
@@ -81,13 +81,19 @@ function repoWebUrl(repo: { owner: string; name: string; branch: string }): stri
 
 export function SourceControlPanel() {
   const notes = useNoteStore(s => s.notes)
+  const folders = useFolderStore(s => s.folders)
   const lastSyncedAt = useGitHubStore(s => s.lastSyncedAt)
   const syncRepo = useGitHubStore(s => s.syncRepo)
   const openNote = useWorkspaceStore(s => s.openNote)
 
+  // Pass `folders` so created (never-pushed) notes carry a synthetic
+  // gitPath derived from their folder hierarchy — that's what lets
+  // groupChangesByFolder below nest them under the right directory
+  // instead of dumping them at the root (the
+  // fix/created-note-source-control-tree-bug fix).
   const changes = useMemo(
-    () => classifyPendingChanges(notes, lastSyncedAt),
-    [notes, lastSyncedAt],
+    () => classifyPendingChanges(notes, lastSyncedAt, folders),
+    [notes, lastSyncedAt, folders],
   )
   const total = totalPendingCount(changes)
 
