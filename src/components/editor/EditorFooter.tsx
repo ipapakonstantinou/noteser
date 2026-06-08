@@ -3,7 +3,7 @@
 import { useMemo } from 'react'
 import { ArrowPathIcon, FireIcon, SignalIcon, SignalSlashIcon } from '@heroicons/react/24/outline'
 import { extractTags } from '@/utils/tags'
-import { useGitHubStore, useNoteStore, useUIStore, useSettingsStore } from '@/stores'
+import { useGitHubStore, useNoteStore, useUIStore, useSettingsStore, useFolderStore } from '@/stores'
 import { classifyPendingChanges, totalPendingCount } from '@/utils/syncChanges'
 import { computeStreakFromDateStrings, dailyDateSet } from '@/utils/dailyStreak'
 import { useCollaboration } from '@/hooks/useCollaboration'
@@ -20,6 +20,7 @@ export const EditorFooter = ({ note }: EditorFooterProps) => {
   const lastSyncedAt = useGitHubStore(s => s.lastSyncedAt)
   const isSyncing = useGitHubStore(s => s.isSyncing)
   const notes = useNoteStore(s => s.notes)
+  const folders = useFolderStore(s => s.folders)
   const setCurrentView = useUIStore(s => s.setCurrentView)
 
   const tagCount = extractTags(note.content).length
@@ -41,8 +42,8 @@ export const EditorFooter = ({ note }: EditorFooterProps) => {
   // Reuses the same classifier the Source Control panel uses so the
   // numbers always agree.
   const pendingCount = useMemo(
-    () => syncRepo ? totalPendingCount(classifyPendingChanges(notes, lastSyncedAt)) : 0,
-    [syncRepo, notes, lastSyncedAt],
+    () => syncRepo ? totalPendingCount(classifyPendingChanges(notes, lastSyncedAt, folders)) : 0,
+    [syncRepo, notes, lastSyncedAt, folders],
   )
 
   const formatDate = (timestamp: number) =>

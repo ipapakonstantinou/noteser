@@ -7,14 +7,14 @@
  */
 
 import { classifyPendingChanges, totalPendingCount } from '../utils/syncChanges'
-import type { Note } from '@/types'
+import type { Note, Folder } from '@/types'
 
 function n(input: Partial<Note> & { id: string; title: string }): Note {
   return {
     id: input.id,
     title: input.title,
     content: input.content ?? '',
-    folderId: null,
+    folderId: input.folderId ?? null,
     createdAt: 0,
     updatedAt: input.updatedAt ?? 0,
     isDeleted: input.isDeleted ?? false,
@@ -25,6 +25,19 @@ function n(input: Partial<Note> & { id: string; title: string }): Note {
     gitLastPushedSha: input.gitLastPushedSha ?? null,
     contentLoaded: input.contentLoaded,
   } as Note
+}
+
+function f(input: Partial<Folder> & { id: string; name: string }): Folder {
+  return {
+    id: input.id,
+    name: input.name,
+    parentId: input.parentId ?? null,
+    createdAt: 0,
+    updatedAt: 0,
+    isDeleted: input.isDeleted ?? false,
+    deletedAt: null,
+    order: input.order ?? 0,
+  } as Folder
 }
 
 describe('classifyPendingChanges', () => {
@@ -136,5 +149,82 @@ describe('classifyPendingChanges', () => {
       null,
     )
     expect(totalPendingCount(c)).toBe(2)
+  })
+})
+
+// fix/created-note-source-control-tree-bug: a created note (gitPath null)
+// used to surface in the Source Control tree at the repo root because
+// classifyPendingChanges left its gitPath null and groupChangesByFolder
+// then fell back to the title (which has no `/`). When `folders` is
+// threaded through, the classifier synthesises a path from the folder
+// hierarchy so the panel groups the new note under the folder it'll be
+// pushed to. Verified manually against the 2026-06-08 screenshot of a
+// fresh "2026-06-16" daily note appearing at root instead of under
+// Notes/Daily.
+describe('classifyPendingChanges — synthetic gitPath for created notes', () => {
+  test('created note in root folder → "<title>.md"', () => {
+    const c = classifyPendingChanges(
+      [n({ id: 'a', title: '2026-06-16', content: 'x' })],
+      null,
+      [],
+    )
+    expect(c.created.map(x => x.gitPath)).toEqual(['2026-06-16.md'])
+  })
+
+  test('created note in nested Notes/Daily → "Notes/Daily/<title>.md"', () => {
+    const folders: Folder[] = [
+      f({ id: 'notes', name: 'Notes' }),
+      f({ id: 'daily', name: 'Daily', parentId: 'notes' }),
+    ]
+    const c = classifyPendingChanges(
+      [n({ id: 'a', title: '2026-06-16', content: 'x', folderId: 'daily' })],
+      null,
+      folders,
+    )
+    expect(c.created.map(x => x.gitPath)).toEqual(['Notes/Daily/2026-06-16.md'])
+  })
+
+  test('created note with no title → "Untitled.md"', () => {
+    const c = classifyPendingChanges(
+      [n({ id: 'a', title: '' })],
+      null,
+      [],
+    )
+    expect(c.created.map(x => x.gitPath)).toEqual(['Untitled.md'])
+  })
+
+  test('modified note with existing gitPath → unchanged', () => {
+    const c = classifyPendingChanges(
+      [n({ id: 'a', title: 'Edit', gitPath: 'Notes/Edit.md', updatedAt: 200 })],
+      100,
+      [f({ id: 'somewhere', name: 'Somewhere' })],
+    )
+    // Stored gitPath wins — synthetic derivation only fires for created notes.
+    expect(c.modified.map(x => x.gitPath)).toEqual(['Notes/Edit.md'])
+  })
+
+  test('created note: folders=undefined falls back to bare "<title>.md" (legacy callers)', () => {
+    const c = classifyPendingChanges(
+      [n({ id: 'a', title: 'Standalone', content: 'x', folderId: 'orphan' })],
+      null,
+    )
+    expect(c.created.map(x => x.gitPath)).toEqual(['Standalone.md'])
+  })
+
+  test('created note whose folderId points to a deleted folder → stops the walk', () => {
+    // A folder mid-walk that's been soft-deleted shouldn't pollute the
+    // synthetic path. Walk halts at the deleted folder, leaving any
+    // higher ancestors out — matches buildFolderPath's behaviour.
+    const folders: Folder[] = [
+      f({ id: 'parent', name: 'Parent' }),
+      f({ id: 'child', name: 'Child', parentId: 'parent', isDeleted: true }),
+    ]
+    const c = classifyPendingChanges(
+      [n({ id: 'a', title: 'Stray', content: 'x', folderId: 'child' })],
+      null,
+      folders,
+    )
+    // Walk halts at 'child' (deleted) → only filename remains.
+    expect(c.created.map(x => x.gitPath)).toEqual(['Stray.md'])
   })
 })
