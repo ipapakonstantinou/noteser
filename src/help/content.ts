@@ -19,12 +19,21 @@ const GETTING_STARTED: HelpPage = {
   slug: 'getting-started',
   title: 'Getting started',
   summary: 'A 60-second tour of noteser — the editor, sidebar, and your first note.',
+  // Intro prose is copied (not iframed) from the in-app WelcomePane so a
+  // first-time visitor reading /help sees the same product framing as a
+  // first-time user inside the app. Keeping the prose as plain markdown
+  // avoids mounting the live component, which assumes a connected store.
   body: `
 # Getting started
 
-Welcome to noteser. This is a browser-first markdown note-taking app
-inspired by Obsidian — your notes live in localStorage by default and
-optionally sync to a GitHub repo or a local folder on disk.
+Edit Markdown notes in your browser, on top of a GitHub repo you own.
+When the same note changed in two places, you see every conflict line
+by line and pick yours, theirs, or both. The merge UX from VS Code,
+in the browser, on your repo.
+
+![Typing a note in noteser: live-preview Markdown with wikilinks, tags, and tasks](/demo/noteser-demo.gif)
+
+*Live-preview editing with wikilinks, tags, and tasks.*
 
 ## Your first note
 
@@ -79,6 +88,10 @@ const GITHUB_SYNC: HelpPage = {
 Noteser can sync your vault with a GitHub repo. One commit per sync,
 clean three-way merge, no plugins or extensions required — it talks
 to the GitHub Git Data API directly from the browser.
+
+![Source control panel: pending changes, Commit and Sync, recent commit history](/demo/noteser-git-demo.gif)
+
+*Commit and sync, view pending changes, scroll through history.*
 
 ## Connect a repo
 
@@ -293,6 +306,10 @@ const EDITOR_POWER: HelpPage = {
 These tools live inside the note editor and turn it from "a textarea" into
 something closer to VS Code or Obsidian.
 
+![Live preview rendering as you type, with a tasks code block aggregating items across the vault](/demo/noteser-tasks-demo.gif)
+
+*Live-preview formatting and a tasks query rendering inline.*
+
 ## Per-line revert (after sync)
 
 ![Editor showing the note body in live-preview mode with formatted headings, bullet points, and inline tags](/screenshots/help/editor-live-preview.png)
@@ -378,6 +395,10 @@ const MOBILE_HELP: HelpPage = {
 
 Below 768px the layout switches to a single-pane mobile mode with an
 off-canvas drawer for the sidebar.
+
+![Noteser on iPhone: open the drawer, navigate the file tree, open a note](/demo/noteser-mobile-demo.gif)
+
+*The mobile drawer and single-pane editor.*
 
 ## Edge-swipe drawer
 
