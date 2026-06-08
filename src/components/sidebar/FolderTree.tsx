@@ -6,8 +6,10 @@ import {
   ChevronRightIcon,
   FolderIcon,
   DocumentTextIcon,
+  DocumentMagnifyingGlassIcon,
   TrashIcon,
 } from '@heroicons/react/24/outline'
+import { useToastStore } from '@/stores/toastStore'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
 import { useShallow } from 'zustand/react/shallow'
 import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore, useSettingsStore } from '@/stores'
@@ -633,8 +635,51 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     </div>
   )
 
+  // Foreign-vault-file row: a non-md, non-attachment file we mirror from the
+  // remote vault as a non-openable entry (e.g. `.canvas`, `.base`). It uses
+  // a distinct icon + muted italic styling to signal "not openable"; a click
+  // surfaces a toast instead of opening the editor. Right-click hands the
+  // existing `onRightClick` handler the note id — the ContextMenu special-
+  // cases foreign-kind notes to only show Reveal in folder / Show on GitHub
+  // (no Rename / Delete on files we cannot edit).
+  const ForeignFileItem = ({ note, depth = 0 }: { note: typeof notes[0]; depth?: number }) => {
+    const kbFocused = isRowFocused('note', note.id)
+    const handleClick = () => {
+      useToastStore.getState().addToast({
+        kind: 'info',
+        message: `noteser cannot open ${note.title} yet. The file is in your vault and visible in the tree.`,
+        source: 'foreign-file-open',
+      })
+    }
+    return (
+      <div
+        className={`obsidian-file-item italic text-obsidianSecondaryText ${
+          kbFocused ? 'ring-1 ring-inset ring-obsidianAccentPurple' : ''
+        }`}
+        onClick={handleClick}
+        onContextMenu={e => onRightClick(e, 'note', note.id)}
+        title="File type not supported yet"
+        tabIndex={-1}
+        data-testid="foreign-file-row"
+        data-note-id={note.id}
+        data-foreign="true"
+        role="treeitem"
+        aria-level={depth + 1}
+        aria-selected={false}
+        aria-disabled="true"
+      >
+        <DocumentMagnifyingGlassIcon className="w-4 h-4 mr-2 flex-shrink-0" />
+        <span className="flex-1 truncate">{note.title}</span>
+      </div>
+    )
+  }
+
   // Render note item
   const NoteItem = ({ note, className = '', depth = 0 }: { note: typeof notes[0]; className?: string; depth?: number }) => {
+    // Foreign files render through a separate row component — no editor open,
+    // no drag-and-drop into other folders, no multi-select bulk delete. See
+    // ForeignFileItem above.
+    if (note.kind === 'foreign') return <ForeignFileItem note={note} depth={depth} />
     const kbFocused = isRowFocused('note', note.id)
     const multiSelected = isSelected(note.id)
     const isCompareSource = compareSourceNoteId === note.id

@@ -15,6 +15,7 @@ import type { Note, Folder } from '@/types'
 // importing sanitizeFilename from '../export' dragged jszip + file-saver
 // into the first-load bundle. '../sanitizeFilename' is jszip-free.
 import { sanitizeFilename } from '../sanitizeFilename'
+import { isAttachmentPath } from '../attachments'
 import { encryptNoteContent, decryptNoteContent, isEncryptedContent } from '../vaultCrypto'
 import { getVaultKey, VaultLockedError } from '../vaultKey'
 
@@ -128,6 +129,29 @@ export function pushPath(note: Note, folders: Folder[]): string {
   // derived path no longer matches it.
   const derived = notePath(note, folders)
   return derived === note.gitPath ? note.gitPath : derived
+}
+
+// Foreign vault file detection. A "foreign" file is something the remote
+// vault holds that noteser does NOT yet know how to render (e.g. `.canvas`,
+// `.base`, custom Obsidian plugin files). We mirror them into the sidebar
+// tree as un-openable entries so the user can see the full vault layout —
+// future work will add openable renderers per format.
+//
+// The check is intentionally narrow:
+//   - `.md` files are notes, never foreign.
+//   - Anything under the attachments folder is handled by the binary-
+//     attachment pipeline (`.attachments/` etc.); it has its own classify
+//     path and must not be picked up here.
+//   - Everything else is foreign.
+//
+// Paths to files at the repo root (no extension at all) also count as
+// foreign — they are still files the user can see in GitHub, and refusing
+// to render them in the tree would hide vault content.
+export function isForeignVaultFile(path: string): boolean {
+  if (!path) return false
+  if (path.endsWith('.md')) return false
+  if (isAttachmentPath(path)) return false
+  return true
 }
 
 // Map common image extensions to MIME types so attachment pulls hand the

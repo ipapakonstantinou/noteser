@@ -35,6 +35,15 @@ function splitRepoPath(path: string): { segments: string[]; title: string } {
   return { segments: parts, title }
 }
 
+// Same as splitRepoPath but preserves the extension in `title` — foreign vault
+// files surface with their full filename ("Untitled 1.canvas") so the user can
+// see what type of file the entry is at a glance.
+function splitRepoForeignPath(path: string): { segments: string[]; title: string } {
+  const parts = path.split('/')
+  const file = parts.pop() ?? ''
+  return { segments: parts, title: file }
+}
+
 // ── Apply ──────────────────────────────────────────────────────────────────
 
 export interface ApplyCounts {
@@ -101,6 +110,41 @@ export async function applyNonConflicts(classifications: PullClassification[]): 
       // re-implement that here — folder creation is rare relative to
       // notes, and the folderStore set() already coalesces in practice.
       ensureFolderPath(c.path.split('/'))
+      continue
+    }
+
+    if (c.kind === 'foreignFile') {
+      // Foreign vault file (non-md, non-attachment). We materialise a
+      // placeholder Note with `kind: 'foreign'` so the file appears in the
+      // sidebar tree as an un-openable entry, mirroring the remote vault
+      // layout. The body is intentionally empty — canvas / base files can be
+      // megabytes and we have no renderer for them yet. The push pipeline
+      // (`syncPush.ts`) skips foreign notes so this mirror can never overwrite
+      // the real remote file with empty bytes; the editor likewise refuses to
+      // open them. See Note.kind in `src/types/index.ts`.
+      const { segments, title } = splitRepoForeignPath(c.path)
+      const folderId = ensureFolderPath(segments)
+      const foreignNote = {
+        id: uuid(),
+        title,
+        content: '',
+        folderId,
+        gitPath: c.path,
+        // Pin both SHAs to the raw remote blob SHA so the classifier reads
+        // the entry as `unchanged` on subsequent pulls and never re-emits a
+        // foreignFile for it.
+        gitLastPushedSha: c.remoteSha,
+        gitRemoteBaseSha: c.remoteSha,
+        kind: 'foreign' as const,
+        createdAt: now,
+        updatedAt: now,
+        isDeleted: false,
+        deletedAt: null,
+        isPinned: false,
+        templateId: null,
+      }
+      byId.set(foreignNote.id, foreignNote as ReturnType<typeof useNoteStore.getState>['notes'][number])
+      counts.created++
       continue
     }
 

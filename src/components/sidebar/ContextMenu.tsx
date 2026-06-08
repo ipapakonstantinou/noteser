@@ -16,7 +16,10 @@ import {
   ClockIcon,
   ShareIcon,
   ArrowsRightLeftIcon,
+  EyeIcon,
+  ArrowTopRightOnSquareIcon,
 } from '@heroicons/react/24/outline'
+import { revealNote } from '@/utils/revealNote'
 import { useShallow } from 'zustand/react/shallow'
 import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore, useSettingsStore, useGitHubStore } from '@/stores'
 import type { ContextMenuState, Folder } from '@/types'
@@ -232,6 +235,71 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   }
 
   if (!item) return null
+
+  // foreign-vault-files: a note with `kind: 'foreign'` is a read-only mirror
+  // of a remote vault file (e.g. `.canvas`, `.base`) — Rename / Delete /
+  // Duplicate / Pin all make no sense (we cannot edit the file). Render a
+  // short menu with Reveal in folder (sidebar focus) and Show on GitHub
+  // (open the raw file in a new tab) so the user can still find or inspect
+  // the file. Everything destructive is excluded by design.
+  const isForeignNote = isNote && (item as { kind?: string }).kind === 'foreign'
+  if (isForeignNote) {
+    const foreignNote = item as { gitPath?: string | null }
+    const { token, syncRepo } = useGitHubStore.getState()
+    const gitPath = foreignNote.gitPath ?? null
+    const githubUrl = syncRepo && gitPath
+      ? `https://github.com/${syncRepo.owner}/${syncRepo.name}/blob/${syncRepo.branch}/${gitPath
+          .split('/')
+          .map(encodeURIComponent)
+          .join('/')}`
+      : null
+    const handleReveal = () => {
+      revealNote(contextMenu.id)
+      onClose()
+    }
+    const handleShowOnGitHub = () => {
+      if (githubUrl) window.open(githubUrl, '_blank', 'noopener')
+      onClose()
+    }
+    // We hide Show on GitHub when we don't have a repo to link to (e.g. the
+    // user hasn't connected GitHub yet). The Reveal action stays available
+    // because it works purely against local state. `token` is read so a
+    // future enhancement can gate features that need an authenticated
+    // request, but currently the URL is public-readable so we don't depend
+    // on it here.
+    void token
+    // MenuButton is declared further down the function body so we inline the
+    // two buttons here instead of forward-referencing it. The styling matches
+    // MenuButton verbatim to keep the menu consistent with the other entries.
+    return (
+      <div
+        ref={menuRef}
+        className="fixed bg-obsidianGray border border-obsidianBorder rounded-lg shadow-obsidian py-1 min-w-[180px] z-50"
+        style={{ top: contextMenu.y, left: contextMenu.x }}
+        role="menu"
+        data-testid="context-menu"
+      >
+        <button
+          onClick={handleReveal}
+          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-obsidianText hover:bg-obsidianHighlight transition-colors"
+          data-testid="context-menu-foreign-reveal"
+        >
+          <EyeIcon className="w-4 h-4" />
+          Reveal in folder
+        </button>
+        {githubUrl && (
+          <button
+            onClick={handleShowOnGitHub}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-obsidianText hover:bg-obsidianHighlight transition-colors"
+            data-testid="context-menu-foreign-github"
+          >
+            <ArrowTopRightOnSquareIcon className="w-4 h-4" />
+            Show on GitHub
+          </button>
+        )}
+      </div>
+    )
+  }
 
   // Note-only: is the right-clicked note in the trash? Drives the
   // Restore option visibility — and we hide the rest of the note

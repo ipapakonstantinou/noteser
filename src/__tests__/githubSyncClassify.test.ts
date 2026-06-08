@@ -910,3 +910,107 @@ test('PROBE: identical local + remote content despite drifted ancestor → uncha
   const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
   expect(classifications[0].kind).toBe('unchanged')
 })
+
+// ── foreign vault files (.canvas / .base / etc.) ────────────────────────────
+//
+// Non-md, non-attachment files we cannot render yet. The pull emits a
+// `foreignFile` classification per remote file so the apply layer can mirror
+// each one as an un-openable entry in the sidebar tree.
+
+test('classifies a remote .canvas file with no local match as foreignFile', async () => {
+  mockGetTreeMap.mockResolvedValue(new Map([['Untitled.canvas', 'sha-canvas']]))
+
+  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: [], folders: [] })
+
+  // Exactly one classification, exactly the foreignFile entry — no body fetch.
+  const foreign = classifications.filter(c => c.kind === 'foreignFile')
+  expect(foreign).toHaveLength(1)
+  expect(foreign[0]).toEqual({ kind: 'foreignFile', path: 'Untitled.canvas', remoteSha: 'sha-canvas' })
+  expect(mockGetBlobContent).not.toHaveBeenCalled()
+})
+
+test('classifies both a .canvas and a .base remote file as foreignFile', async () => {
+  mockGetTreeMap.mockResolvedValue(new Map([
+    ['Untitled.canvas', 'sha-canvas'],
+    ['Untitled.base', 'sha-base'],
+  ]))
+
+  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: [], folders: [] })
+
+  const foreign = classifications.filter(c => c.kind === 'foreignFile')
+  expect(foreign).toHaveLength(2)
+  const byPath = new Map(foreign.map(f => [(f as { path: string }).path, f]))
+  expect(byPath.get('Untitled.canvas')).toEqual({ kind: 'foreignFile', path: 'Untitled.canvas', remoteSha: 'sha-canvas' })
+  expect(byPath.get('Untitled.base')).toEqual({ kind: 'foreignFile', path: 'Untitled.base', remoteSha: 'sha-base' })
+})
+
+test('does not re-emit foreignFile when a local foreign note already mirrors the path', async () => {
+  mockGetTreeMap.mockResolvedValue(new Map([['Untitled.canvas', 'sha-canvas']]))
+
+  // Local already has a foreign mirror for this exact path (a prior pull).
+  const local: Note[] = [
+    note({
+      id: '1',
+      title: 'Untitled.canvas',
+      content: '',
+      gitPath: 'Untitled.canvas',
+      gitLastPushedSha: 'sha-canvas',
+      gitRemoteBaseSha: 'sha-canvas',
+    } as Note & { kind: 'foreign' }),
+  ]
+  // Tag it as foreign — note() helper doesn't expose `kind` directly.
+  ;(local[0] as { kind?: string }).kind = 'foreign'
+
+  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+
+  expect(classifications.find(c => c.kind === 'foreignFile')).toBeUndefined()
+})
+
+test('local foreign mirror whose remote file is gone classifies as remoteDeleted (no content hashing)', async () => {
+  mockGetTreeMap.mockResolvedValue(new Map())
+  // gitBlobSha should NOT be called for the foreign-shortcut path — keep the
+  // mock implementation strict so an unexpected call would explode visibly.
+  mockGitBlobSha.mockImplementation(() => { throw new Error('foreign branch should not hash content') })
+
+  const local: Note[] = [
+    note({
+      id: '1',
+      title: 'Untitled.canvas',
+      content: '',
+      gitPath: 'Untitled.canvas',
+      gitLastPushedSha: 'sha-canvas',
+      gitRemoteBaseSha: 'sha-canvas',
+    }),
+  ]
+  ;(local[0] as { kind?: string }).kind = 'foreign'
+
+  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+
+  expect(classifications).toHaveLength(1)
+  expect(classifications[0]).toEqual({ kind: 'remoteDeleted', noteId: '1' })
+})
+
+test('non-md non-attachment file under an ignored path does NOT classify as foreignFile', async () => {
+  // The default gitignore matcher drops `.DS_Store` and *.tmp. Drop a
+  // .canvas alongside one of those in an ignored subtree and confirm the
+  // gitignore wins (the matcher gate runs BEFORE the foreign check).
+  // Note: the default ignore set doesn't currently cover .canvas in any
+  // path, so we use the per-device overlay (settingsStore) to ignore a
+  // specific name and assert it gets filtered out.
+  const { useSettingsStore } = await import('../stores/settingsStore')
+  useSettingsStore.setState({ localGitignoreOverlay: 'ignored.canvas' })
+  try {
+    mockGetTreeMap.mockResolvedValue(new Map([
+      ['Untitled.canvas', 'sha-canvas'],
+      ['ignored.canvas',  'sha-ignored'],
+    ]))
+
+    const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: [], folders: [] })
+
+    const foreign = classifications.filter(c => c.kind === 'foreignFile')
+    expect(foreign).toHaveLength(1)
+    expect((foreign[0] as { path: string }).path).toBe('Untitled.canvas')
+  } finally {
+    useSettingsStore.setState({ localGitignoreOverlay: '' })
+  }
+})
