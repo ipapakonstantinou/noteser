@@ -450,6 +450,12 @@ export function CodeMirrorEditor({
   useEffect(() => { activeNotesRef.current = activeNotes }, [activeNotes])
   useEffect(() => { navigateRef.current = onWikilinkNavigate }, [onWikilinkNavigate])
   useEffect(() => { noteIdRef.current = noteId }, [noteId])
+  // Switching active note dismisses any open autocomplete dropdowns. Without
+  // this, the popup floats over the new note's editor (visible bug 2026-06-08).
+  useEffect(() => {
+    setTagState(null)
+    setWikilinkState(null)
+  }, [noteId])
 
   // Diff-gutter baseline (109): when the note changes — or after a
   // successful sync writes a fresh snapshot — fetch the last-pushed
