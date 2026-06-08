@@ -342,7 +342,13 @@ export const useNoteStore = create<NoteState>()(
     {
       name: STORAGE_KEYS.notes,
       storage: idbStorage,
-      version: 2,
+      // v3 — foreign-vault-files: stamp `kind: 'markdown'` on every persisted
+      // note so the new `kind` field is explicit on existing data. v2 records
+      // (kind absent) are treated as markdown by every read path, so the
+      // migration is idempotent — re-running it on a v3 store leaves it
+      // unchanged and adding `kind` to a brand-new note via addNote uses the
+      // same default.
+      version: 3,
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as NoteState
         if (version === 0 || version === 1) {
@@ -358,8 +364,19 @@ export const useNoteStore = create<NoteState>()(
               deletedAt: note.deletedAt || null,
               isPinned: note.isPinned || false,
               templateId: note.templateId || null,
-              folderId: note.folderId ? String(note.folderId) : null
+              folderId: note.folderId ? String(note.folderId) : null,
+              // Every pre-v3 note is markdown.
+              kind: (note as Note).kind ?? 'markdown',
             }))
+          }
+        }
+        if (version === 2) {
+          return {
+            ...state,
+            notes: (state.notes || []).map((note: Note) => ({
+              ...note,
+              kind: note.kind ?? 'markdown',
+            })),
           }
         }
         return state

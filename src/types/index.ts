@@ -65,6 +65,14 @@ export interface Note {
   // persisted before this field existed, and for all normally-created notes.
   // Only an explicit `false` marks a shell.
   contentLoaded?: boolean
+  // Classification of what this entry actually is. Default 'markdown' for every
+  // existing note. 'foreign' marks a non-markdown vault file (e.g. `.canvas`,
+  // `.base`) that we mirror in the sidebar tree so the user can see it, but
+  // cannot open or edit. Foreign entries always carry empty `content` (the real
+  // body lives only in the remote repo); they are excluded from the push plan
+  // so a "read-only mirror" entry can never overwrite the remote file with an
+  // empty body. Future work will add openable renderers per format.
+  kind?: 'markdown' | 'foreign'
 }
 
 export interface Folder {

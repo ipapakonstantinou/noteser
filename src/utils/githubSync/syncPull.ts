@@ -38,6 +38,7 @@ import {
   serializeNote,
   parseNote,
   guessMimeFromPath,
+  isForeignVaultFile,
 } from './internal'
 import type { PullClassification, PullOutcome } from './syncClassify'
 
@@ -526,6 +527,23 @@ export async function pullFromGitHub(input: {
     }
   }
 
+  // 1c-foreign. Non-md, non-attachment files we want visible in the tree as
+  // un-openable entries. We emit a `foreignFile` classification only when no
+  // local foreign Note already mirrors the path — every other case (already
+  // mirrored, soft-deleted locally) is a no-op so we never resurrect a
+  // tombstoned mirror or duplicate-create on repeated pulls. The body is
+  // intentionally NOT fetched: a canvas/base file can be megabytes and is not
+  // rendered locally yet. The push side (`syncPush.ts`) skips `kind: 'foreign'`
+  // notes so a mirror can never overwrite the real remote file with empty
+  // bytes.
+  for (const [path, remoteSha] of remoteTree) {
+    if (!isForeignVaultFile(path)) continue
+    if (gitignoreMatcher.isIgnored(path)) continue
+    const existing = notes.find(n => n.gitPath === path)
+    if (existing) continue
+    out.push({ kind: 'foreignFile', path, remoteSha })
+  }
+
   // 1c. Binary attachments under `attachments/`. Compare each remote entry
   // against the local IDB store; queue creates/updates so syncApply can fetch
   // the bytes lazily (each blob fetch is its own API call, so we only pay
@@ -551,6 +569,14 @@ export async function pullFromGitHub(input: {
   for (const note of notes) {
     if (note.isDeleted || !note.gitPath || seenLocalIds.has(note.id)) continue
     if (remoteTree.has(note.gitPath)) continue
+    // foreign-vault-files: a foreign mirror whose remote file is gone is a
+    // clean delete. There is nothing the user could have edited locally (the
+    // mirror is empty + read-only), so always `remoteDeleted` — no conflict
+    // path to consider, no content-SHA computation needed.
+    if (note.kind === 'foreign') {
+      out.push({ kind: 'remoteDeleted', noteId: note.id })
+      continue
+    }
     // Was it deleted on the remote?
     const lastPushed = note.gitLastPushedSha ?? null
     const localContent = serializeNote(note)

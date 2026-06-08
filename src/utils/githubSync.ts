@@ -21,6 +21,9 @@ export {
   pushPath,
   // MIME helpers (also used by tests)
   guessMimeFromPath,
+  // Foreign-vault-file classifier (non-md, non-attachment vault files we
+  // mirror in the tree as un-openable entries — see syncPull / syncPush).
+  isForeignVaultFile,
   // Note serialization + parser
   serializeNote,
   normalizeForPush,

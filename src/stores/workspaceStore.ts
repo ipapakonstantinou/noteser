@@ -547,6 +547,27 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       recents: [],
 
       openNote: (noteId, opts) => {
+        // foreign-vault-files: refuse to open a foreign-kind note. These are
+        // read-only mirrors of remote vault files (e.g. `.canvas`, `.base`)
+        // that noteser does not yet know how to render. Show a toast and
+        // bail without touching the workspace state so the user sees the
+        // file in the tree but the editor stays on whatever was previously
+        // open. Same dynamic-import pattern the rest of openNote uses to
+        // avoid a static cycle with toastStore (which is fine to load lazily
+        // since toasts are point-in-time feedback, not on the render path).
+        const target = useNoteStore.getState().notes.find(n => n.id === noteId)
+        if (target && target.kind === 'foreign') {
+          if (typeof window !== 'undefined') {
+            void import('./toastStore').then(({ useToastStore }) => {
+              useToastStore.getState().addToast({
+                kind: 'info',
+                message: `noteser cannot open ${target.title} yet. The file is in your vault and visible in the tree.`,
+                source: 'foreign-file-open',
+              })
+            }).catch(() => { /* swallow — toast is best-effort */ })
+          }
+          return
+        }
         const preview = opts?.preview ?? true
         const state = get()
         // Default target pane: caller-specified, else active pane, else first.

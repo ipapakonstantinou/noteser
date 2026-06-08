@@ -66,6 +66,13 @@ export type PullClassification =
       path: string
       localContent: string
     }
+  // Foreign vault file (non-md, non-attachment) we don't yet know how to render
+  // but want visible in the sidebar as an un-openable entry. Apply materialises
+  // a Note with `kind: 'foreign'`, empty content, gitPath = path, so the user
+  // sees the file in the tree. The push path skips foreign notes so they can
+  // never overwrite the real remote file with an empty body. See
+  // `isForeignVaultFile` in `./internal.ts`.
+  | { kind: 'foreignFile'; path: string; remoteSha: string }
   // Binary attachment: remote has this file, local doesn't. Apply step fetches
   // the bytes and writes them to IDB at the same path.
   | { kind: 'attachmentCreated'; path: string; remoteSha: string; mime: string }

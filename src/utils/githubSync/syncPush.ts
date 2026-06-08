@@ -152,7 +152,14 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   // until its body loads and contentLoaded flips true. This is the push-side
   // half of the #1 sync-safety rule (the pull-side half is the classifier
   // guard in pullFromGitHub).
-  const activeNotes = notes.filter(n => !n.isDeleted && n.contentLoaded !== false)
+  //
+  // foreign-vault-files: ALSO exclude `kind: 'foreign'` notes. They are
+  // read-only mirrors of remote files we cannot edit (e.g. `.canvas`,
+  // `.base`) — their `content` is intentionally empty and pushing them would
+  // overwrite the real remote file with empty bytes. Same dropping pattern
+  // as shells: out of `activeNotes` keeps them out of BOTH `desired` and the
+  // deletion loop in step 4.
+  const activeNotes = notes.filter(n => !n.isDeleted && n.contentLoaded !== false && n.kind !== 'foreign')
   const desired = new Map<string, { content: string; note: Note }>()
   for (const note of activeNotes) {
     // preserve-gitpath-on-push: a synced note pushes to its EXISTING gitPath
@@ -511,6 +518,10 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     }
   }
   for (const note of notes) {
+    // foreign-vault-files: a `kind: 'foreign'` note is a read-only mirror —
+    // it must never push a delete to the remote even if the user (somehow)
+    // soft-deletes the mirror locally. Just skip it; the real file stays put.
+    if (note.kind === 'foreign') continue
     if (note.isDeleted && note.gitPath && remoteTree.has(note.gitPath)) {
       // Only delete if no active note has already moved into that path AND no
       // live note's content maps to it. The protectedRemotePaths check is the
