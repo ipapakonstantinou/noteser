@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { checkRateLimit, getClientIp } from '@/utils/rateLimit'
+import { isOriginAllowed } from '@/utils/originAllowlist'
 
 // Proxies `GET /repos/{owner}/{repo}/zipball/{ref}`. The endpoint is normally
 // callable directly from the browser, but GitHub returns a 302 redirect to
@@ -13,6 +14,16 @@ import { checkRateLimit, getClientIp } from '@/utils/rateLimit'
 //
 // Rate-limited tightly because each call can pull tens of MB.
 export async function POST(request: Request) {
+  // Same-origin guard: refuse calls that didn't originate from the noteser
+  // app itself. Without it this is the only proxy route a cross-origin page
+  // could use to burn our egress on multi-MB archive downloads.
+  const origin = isOriginAllowed(request)
+  if (!origin.ok) {
+    return NextResponse.json(
+      { error: 'forbidden', error_description: origin.reason },
+      { status: 403 },
+    )
+  }
   const limit = checkRateLimit(`zipball:${getClientIp(request)}`, { max: 6, windowMs: 60_000 })
   if (!limit.ok) {
     return NextResponse.json(
