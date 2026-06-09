@@ -385,34 +385,39 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
     }
   }, [isPreviewMode, previewContent])
 
-  const handleChange = (content: string) => {
+  const handleChange = useCallback((content: string) => {
     setPreviewContent(content)
     onContentChange(content)
-  }
+  }, [onContentChange])
 
-  // Helper: does this rendered block contain the editor's cursor line?
-  const isCursorBlock = (node: { position?: { start?: { line?: number }; end?: { line?: number } } } | undefined): boolean => {
-    if (cursorLine == null) return false
-    const start = node?.position?.start?.line
-    const end = node?.position?.end?.line
-    return start != null && end != null && cursorLine >= start && cursorLine <= end
-  }
-
-  // Custom code block renderer with syntax highlighting + plugin
-  // pass-through. Languages claimed by an installed plugin are routed
-  // into the plugin Worker via PluginCodeBlock; everything else falls
-  // back to the built-in renderers below.
-  //
   // selectAllPluginRenderers builds a fresh array on every call, so we
   // wrap it in useShallow — without that, Zustand v5's default Object.is
   // equality compares two fresh arrays as unequal and the hook
   // re-renders forever (React error #185).
   const pluginRenderers = usePluginStore(useShallow(selectAllPluginRenderers))
-  const pluginRendererByLang = new Map(
-    pluginRenderers.map((r) => [r.language.toLowerCase(), r] as const),
-  )
 
-  const CodeBlock = ({
+  // ReactMarkdown compares `components` by reference and re-renders the
+  // whole preview tree when it changes. Building the renderers + the map
+  // inline made a fresh object every render → full re-render on every
+  // keystroke. Memoise them together, keyed on the values they close over.
+  const components = useMemo(() => {
+    // Helper: does this rendered block contain the editor's cursor line?
+    const isCursorBlock = (node: { position?: { start?: { line?: number }; end?: { line?: number } } } | undefined): boolean => {
+      if (cursorLine == null) return false
+      const start = node?.position?.start?.line
+      const end = node?.position?.end?.line
+      return start != null && end != null && cursorLine >= start && cursorLine <= end
+    }
+
+    const pluginRendererByLang = new Map(
+      pluginRenderers.map((r) => [r.language.toLowerCase(), r] as const),
+    )
+
+    // Custom code block renderer with syntax highlighting + plugin
+    // pass-through. Languages claimed by an installed plugin are routed
+    // into the plugin Worker via PluginCodeBlock; everything else falls
+    // back to the built-in renderers below.
+    const CodeBlock = ({
     inline,
     className,
     children,
@@ -548,21 +553,22 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
   ListItem.displayName = 'MdListItem'
   const TypedListItem = ListItem as unknown as React.ComponentType<unknown>
 
-  const components = {
-    code: CodeBlock as React.ComponentType<{ className?: string; children?: React.ReactNode }>,
-    a: WikilinkAnchor as React.ComponentType<{ href?: string; children?: React.ReactNode }>,
-    img: AttachmentImage as unknown as React.ComponentType<React.ImgHTMLAttributes<HTMLImageElement>>,
-    p: wrapBlock('p'),
-    h1: wrapBlock('h1'),
-    h2: wrapBlock('h2'),
-    h3: wrapBlock('h3'),
-    h4: wrapBlock('h4'),
-    h5: wrapBlock('h5'),
-    h6: wrapBlock('h6'),
-    blockquote: wrapBlock('blockquote'),
-    pre: wrapBlock('pre'),
-    li: TypedListItem,
-  }
+    return {
+      code: CodeBlock as React.ComponentType<{ className?: string; children?: React.ReactNode }>,
+      a: WikilinkAnchor as React.ComponentType<{ href?: string; children?: React.ReactNode }>,
+      img: AttachmentImage as unknown as React.ComponentType<React.ImgHTMLAttributes<HTMLImageElement>>,
+      p: wrapBlock('p'),
+      h1: wrapBlock('h1'),
+      h2: wrapBlock('h2'),
+      h3: wrapBlock('h3'),
+      h4: wrapBlock('h4'),
+      h5: wrapBlock('h5'),
+      h6: wrapBlock('h6'),
+      blockquote: wrapBlock('blockquote'),
+      pre: wrapBlock('pre'),
+      li: TypedListItem,
+    }
+  }, [cursorLine, pluginRenderers, activeNotes, openNote])
 
   return (
     <div className="relative flex-1 h-full overflow-hidden flex flex-col">
