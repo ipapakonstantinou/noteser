@@ -1,0 +1,17 @@
+{
+  "id": "noteser-kanban",
+  "name": "Kanban",
+  "version": "0.1.0",
+  "author": "Noteser",
+  "description": "Kanban board over the YAML frontmatter status field. Notes are grouped into user-defined columns; a per-card move button writes the new status back to the frontmatter.",
+  "main": "./main.js",
+  "permissions": ["vault.read.all", "vault.write", "vault.events"],
+  "surfaces": {
+    "fullscreenViews": [
+      { "id": "kanban", "title": "Kanban" }
+    ],
+    "commands": [
+      { "id": "open-kanban", "title": "Open Kanban board" }
+    ]
+  }
+}

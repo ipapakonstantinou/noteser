@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback, createElement } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo, createElement } from 'react'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import dynamic from 'next/dynamic'
@@ -24,6 +24,7 @@ import { resolveAttachmentPath } from '@/utils/attachments'
 import { findNoteByTitleOrAlias } from '@/utils/aliases'
 import { toggleTaskLineText, removeTaskPrefixFromLine } from '@/utils/tasks'
 import { isTaskItemDone, type HastNode } from '@/utils/taskListItem'
+import { splitTaskDoneChildren } from '@/utils/previewTaskDoneSplit'
 import { SCROLL_TO_LINE_EVENT } from '@/utils/events'
 import { CodeMirrorEditor } from './CodeMirrorEditor'
 import { FrontmatterPanel } from './FrontmatterPanel'
@@ -42,8 +43,12 @@ interface EditorContentProps {
 }
 
 export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorContentProps) => {
-  const { setPreviewMode } = useUIStore()
-  const { getActiveNotes } = useNoteStore()
+  const setPreviewMode = useUIStore(s => s.setPreviewMode)
+  const getActiveNotes = useNoteStore(s => s.getActiveNotes)
+  // Subscribe to the underlying notes array so the memoised activeNotes
+  // below recomputes when any note is added/removed/edited. getActiveNotes
+  // is itself a stable function ref; we need a real state dep to invalidate.
+  const notes = useNoteStore(s => s.notes)
   const openNote = useWorkspaceStore(s => s.openNote)
 
   // progressive-clone: if this note is still a SHELL (body not yet streamed in
@@ -62,7 +67,10 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
   const [cursorLine, setCursorLine] = useState<number | null>(null)
   const [cursorOffset, setCursorOffset] = useState<number | null>(null)
 
-  const activeNotes = getActiveNotes().filter(n => n.id !== note.id)
+  // Memoise the wikilink target list. Recomputes when notes change or when
+  // the current note's id rotates (so the self-exclusion stays correct).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const activeNotes = useMemo(() => getActiveNotes().filter(n => n.id !== note.id), [notes, note.id])
 
   const cmViewRef = useRef<EditorView | null>(null)
   const previewContainerRef = useRef<HTMLDivElement | null>(null)
@@ -517,6 +525,24 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
       isCursorBlock(node) ? 'preview-cursor-block' : '',
       isChecked ? 'preview-task-done' : '',
     ].filter(Boolean).join(' ')
+    // For a DONE task we split children into (a) the item's own content and
+    // (b) any nested <ul>/<ol> sub-lists. The own content is wrapped in a
+    // `.preview-task-done-line` span that carries the line-through; the
+    // nested sub-list sits OUTSIDE the span so the strike line does not get
+    // painted through its descendant text — even when a descendant <li> sets
+    // text-decoration: none, modern browsers still paint the ancestor's
+    // strike line across the descendant's box (the bug the older
+    // descendant-reset CSS rules could not fix). Sibling-relationship is the
+    // only reliable separator.
+    if (isChecked) {
+      const { ownContent, nestedLists } = splitTaskDoneChildren(children)
+      return (
+        <li className={cls || undefined} {...rest}>
+          <span className="preview-task-done-line">{ownContent}</span>
+          {nestedLists}
+        </li>
+      )
+    }
     return <li className={cls || undefined} {...rest}>{children}</li>
   }
   ListItem.displayName = 'MdListItem'

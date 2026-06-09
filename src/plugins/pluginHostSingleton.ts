@@ -16,14 +16,30 @@
 // safety: the function returns null on the server, since Workers do
 // not exist there.
 
-import { PluginHost, type MinimalWorker } from './PluginHost'
+import { PluginHost, type MinimalWorker, type VaultWriteOp } from './PluginHost'
+import { MAX_DIRECTORY_ENTRIES } from './protocol'
+import {
+  buildExtensionMatcher,
+  walkDirectoryHandle,
+  type FileSystemDirectoryHandleLike,
+} from './directoryPickerHelpers'
 import { usePluginStore } from '@/stores/pluginStore'
 import { usePluginInstallStore, type InstalledPluginRecord } from '@/stores/pluginInstallStore'
 import { useToastStore } from '@/stores/toastStore'
 import { useNoteStore } from '@/stores/noteStore'
 import { useFolderStore } from '@/stores/folderStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { fetchPluginFromUrl, sha256Hex } from './installer'
+import { fetchPluginFromUrl, fetchPluginFromManifest, sha256Hex } from './installer'
+import type { VaultManifestCandidate } from './vaultScan'
+import { bootMark, bootMeasure, yieldToMain } from '@/utils/bootTrace'
+import {
+  snapshotAllNotes,
+  snapshotNoteById,
+  streamVaultSnapshot,
+  projectPayloadSize,
+  MAX_GET_ALL_BYTES,
+} from './vaultSnapshot'
+import { recordPluginWrite } from '@/utils/pluginAudit'
 
 let instance: PluginHost | null = null
 
@@ -32,9 +48,16 @@ let instance: PluginHost | null = null
 export function getPluginHost(): PluginHost | null {
   if (typeof window === 'undefined') return null
   if (instance === null) {
-    instance = new PluginHost({ createWorker: spawnPluginWorker })
+    instance = new PluginHost({
+      createWorker: spawnPluginWorker,
+      isPermissionRevoked: (pluginId, permission) => {
+        const rec = usePluginInstallStore.getState().records[pluginId]
+        return rec?.revokedPermissions?.includes(permission) ?? false
+      },
+    })
     wireListener(instance)
     wireActiveNoteTracker(instance)
+    wireVaultEvents(instance)
   }
   return instance
 }
@@ -89,6 +112,30 @@ export async function fetchPluginForInstall(
   }
 }
 
+/**
+ * Vault-scan equivalent of fetchPluginForInstall. Takes a candidate
+ * from scanVaultForManifests (manifest already parsed + validated)
+ * and fetches the bundle, returning a record the existing confirm
+ * modal accepts unchanged.
+ */
+export async function fetchPluginForInstallFromVault(
+  candidate: VaultManifestCandidate,
+): Promise<InstalledPluginRecord> {
+  const fetched = await fetchPluginFromManifest({
+    manifest: candidate.manifest,
+    mainUrl: candidate.mainUrl,
+    sourceLabel: `vault: ${candidate.pathInVault}`,
+  })
+  return {
+    manifest: fetched.manifest,
+    mainSource: fetched.mainSource,
+    hash: fetched.hash,
+    sourceUrl: fetched.sourceUrl,
+    addedAt: Date.now(),
+    enabled: true,
+  }
+}
+
 export async function confirmAndInstallPlugin(record: InstalledPluginRecord): Promise<void> {
   const host = getPluginHost()
   if (host === null) throw new Error('Plugins are unavailable during server-side rendering.')
@@ -98,6 +145,13 @@ export async function confirmAndInstallPlugin(record: InstalledPluginRecord): Pr
     pluginId: record.manifest.id,
     pluginSource: record.mainSource,
   })
+  // Apply any persisted revocations from previous sessions. Without
+  // this a user who revokes a capability, restarts the app, and lets
+  // the bootstrap reload the plugin would silently regain the
+  // capability on next call.
+  for (const perm of record.revokedPermissions ?? []) {
+    host.revokePermission(record.manifest.id, perm)
+  }
 }
 
 /**
@@ -124,11 +178,26 @@ export async function bootstrapInstalledPlugins(): Promise<void> {
   if (host === null) return
 
   const records = Object.values(usePluginInstallStore.getState().records)
-  for (const record of records) {
-    if (!record.enabled) continue
+  if (records.length === 0) return
 
-    const actualHash = await sha256Hex(record.mainSource)
-    if (actualHash !== record.hash) {
+  bootMark('plugin-bootstrap:start')
+
+  // Hash every enabled plugin's bundle IN PARALLEL — sha256Hex is the
+  // dominant cost in this path (each call hashes the full plugin source
+  // through SubtleCrypto). Running them serially used to block ~80ms
+  // per plugin on a cold iOS boot. Promise.all lets the browser fan the
+  // work out across cores and yields to the main thread between each
+  // SubtleCrypto await.
+  const enabled = records.filter(r => r.enabled)
+  const hashes = await Promise.all(enabled.map(r => sha256Hex(r.mainSource)))
+
+  // Load each verified plugin, yielding to main between spawns so the
+  // iOS watchdog never sees a single long task. Worker creation itself
+  // is async (postMessage / module-fetch), but the synchronous setup
+  // around it can still pile up if a user has a dozen plugins.
+  for (let i = 0; i < enabled.length; i++) {
+    const record = enabled[i]
+    if (hashes[i] !== record.hash) {
       useToastStore.getState().addToast({
         kind: 'error',
         message: `Plugin "${record.manifest.id}" failed an integrity check and was not loaded.`,
@@ -141,12 +210,45 @@ export async function bootstrapInstalledPlugins(): Promise<void> {
         pluginId: record.manifest.id,
         pluginSource: record.mainSource,
       })
+      // Re-apply persisted capability revocations from previous
+      // sessions before the worker gets a chance to make any
+      // capability call from onActivate (the load() above already
+      // ran onActivate, but the worker can also fire requests on
+      // the next event loop tick — better to apply right away).
+      for (const perm of record.revokedPermissions ?? []) {
+        host.revokePermission(record.manifest.id, perm)
+      }
     } catch (err) {
       // The host emits bootError separately, which lands in the toast
       // via the listener. Swallow here so one bad plugin does not
       // prevent the rest from booting.
       void err
     }
+    await yieldToMain()
+  }
+
+  bootMark('plugin-bootstrap:end')
+  bootMeasure('plugin-bootstrap', 'plugin-bootstrap:start', 'plugin-bootstrap:end')
+}
+
+/**
+ * Toggle a capability grant for an already-installed plugin. Writes
+ * through to BOTH the persisted install record (so the change survives
+ * a reload) and the in-memory PluginHost (so the next capability call
+ * from the running worker rejects immediately).
+ *
+ * No-op when the plugin is unknown. Idempotent for the same value.
+ */
+export function setPluginPermissionRevoked(
+  pluginId: string,
+  permission: import('./manifest').PluginPermission,
+  revoked: boolean,
+): void {
+  usePluginInstallStore.getState().setPermissionRevoked(pluginId, permission, revoked)
+  const host = getPluginHost()
+  if (host) {
+    if (revoked) host.revokePermission(pluginId, permission)
+    else host.restorePermission(pluginId, permission)
   }
 }
 
@@ -235,6 +337,95 @@ function wireActiveNoteTracker(host: PluginHost): void {
   })
 }
 
+/**
+ * Wire `vault.events` fan-out. Subscribes to the note + workspace +
+ * folder stores and translates each mutation into the right host call:
+ *
+ *   - Any noteStore / folderStore change → notifyVaultChanged()
+ *   - A `notes` array mutation that changes a note's content / title /
+ *     frontmatter (i.e. a save) → notifyNoteSaved(noteId)
+ *   - A workspace active-tab transition that resolves to a different
+ *     noteId → notifyActiveNoteIdChanged(noteId)
+ *
+ * The host debounces every signal at 250 ms (VAULT_EVENT_DEBOUNCE_MS),
+ * so this wrapper does NOT bother coalescing — it just dispatches as
+ * the store fires. Keystrokes in the editor are noisy; the debounce
+ * absorbs the burst.
+ */
+function wireVaultEvents(host: PluginHost): void {
+  type NoteSnap = { id: string; title: string; content: string; updatedAt: number; isDeleted: boolean }
+  let lastNotes: Map<string, NoteSnap> = snapshotNotes(useNoteStore.getState().notes)
+  let lastActiveNoteId: string | null = resolveActiveNoteId()
+
+  useNoteStore.subscribe((state) => {
+    const next = snapshotNotes(state.notes)
+    let vaultDirty = false
+
+    // Detect adds, deletions, and content / title changes.
+    for (const [id, cur] of next) {
+      const prev = lastNotes.get(id)
+      if (!prev) {
+        vaultDirty = true
+        host.notifyNoteSaved(id)
+        continue
+      }
+      if (
+        prev.content !== cur.content ||
+        prev.title !== cur.title ||
+        prev.isDeleted !== cur.isDeleted
+      ) {
+        vaultDirty = true
+        host.notifyNoteSaved(id)
+      }
+    }
+    for (const id of lastNotes.keys()) {
+      if (!next.has(id)) vaultDirty = true
+    }
+
+    if (vaultDirty) host.notifyVaultChanged()
+    lastNotes = next
+  })
+
+  useFolderStore.subscribe(() => {
+    host.notifyVaultChanged()
+  })
+
+  useWorkspaceStore.subscribe(() => {
+    const cur = resolveActiveNoteId()
+    if (cur !== lastActiveNoteId) {
+      lastActiveNoteId = cur
+      host.notifyActiveNoteIdChanged(cur)
+    }
+  })
+}
+
+function snapshotNotes(
+  notes: ReadonlyArray<{ id: string; title?: string; content?: string; updatedAt?: number; isDeleted?: boolean }>,
+): Map<string, { id: string; title: string; content: string; updatedAt: number; isDeleted: boolean }> {
+  const map = new Map<string, { id: string; title: string; content: string; updatedAt: number; isDeleted: boolean }>()
+  for (const n of notes) {
+    map.set(n.id, {
+      id: n.id,
+      title: n.title ?? '',
+      content: n.content ?? '',
+      updatedAt: n.updatedAt ?? 0,
+      isDeleted: n.isDeleted ?? false,
+    })
+  }
+  return map
+}
+
+function resolveActiveNoteId(): string | null {
+  const ws = useWorkspaceStore.getState()
+  const activePane = ws.panes.find((p) => p.id === ws.activePaneId) ?? ws.panes[0]
+  const activeTab = activePane?.tabs.find((t) => t.id === activePane?.activeTabId)
+  if (!activeTab) return null
+  if (activeTab.kind !== 'note') return null
+  const note = useNoteStore.getState().notes.find((n) => n.id === activeTab.noteId)
+  if (!note || note.isDeleted) return null
+  return note.id
+}
+
 function buildFolderPath(
   folderId: string | null,
   folders: ReadonlyArray<{ id: string; name: string; parentId: string | null }>,
@@ -315,8 +506,242 @@ function wireListener(host: PluginHost): void {
       case 'fileOpenRequested':
         void handleFileOpenRequest(host, event)
         return
+
+      case 'vaultReadRequested':
+        void handleVaultReadRequest(host, event)
+        return
+
+      case 'directoryOpenRequested':
+        void handleDirectoryOpenRequest(host, event)
+        return
+
+      case 'fullscreenOpenRequested':
+        handleFullscreenOpenRequest(host, event)
+        return
+
+      case 'fullscreenCloseRequested':
+        handleFullscreenCloseRequest(host, event)
+        return
+
+      case 'fullscreenContent':
+        // Plugin pushed new content for its open fullscreen view. The
+        // store ignores updates for views that are not active, so a
+        // plugin that races a setFullscreenContent with a close does
+        // not zombie state in.
+        usePluginStore
+          .getState()
+          .updateActiveFullscreenContent(event.pluginId, event.viewId, event.node)
+        return
+
+      case 'vaultWriteRequested':
+        handleVaultWriteRequest(host, event)
+        return
     }
   })
+}
+
+/**
+ * Snapshot the active note store, serialise to plain objects, and post
+ * back to the plugin worker. The `vault.read.all` permission gate has
+ * already been checked in PluginHost; this handler only owns the
+ * snapshot + chunking work.
+ *
+ * Per the perf budget (docs/plugins-v1.2-plan.md §9 + issue #79) the
+ * snapshot may not block the main thread for more than 50 ms on a
+ * 5000-note vault. The streaming path yields between chunks via the
+ * shared `streamVaultSnapshot` helper; the one-shot `getAllNotes` path
+ * relies on the post-snapshot SHA cache (a second call within the same
+ * SHA is a single hash compare).
+ */
+async function handleVaultReadRequest(
+  host: PluginHost,
+  event: Extract<import('./PluginHost').PluginHostEvent, { type: 'vaultReadRequested' }>,
+): Promise<void> {
+  const { pluginId, requestSeq, mode, noteId, chunkSize } = event
+
+  // Guard: the note store hydrates from IndexedDB at boot. A plugin
+  // that fires `getAllNotes()` from `onActivate` may race the hydrate;
+  // surface a clear retry message instead of returning an empty array
+  // that the plugin would silently cache.
+  const notes = useNoteStore.getState().notes
+  const hasHydratedState = (useNoteStore as unknown as {
+    persist?: { hasHydrated: () => boolean }
+  }).persist
+  if (hasHydratedState && typeof hasHydratedState.hasHydrated === 'function' && !hasHydratedState.hasHydrated() && notes.length === 0) {
+    if (mode === 'stream') {
+      host.respondVaultStreamChunk(pluginId, requestSeq, {
+        chunkIndex: 0,
+        notes: [],
+        error: 'Vault not yet loaded.',
+      })
+    } else {
+      host.respondVaultRead(pluginId, requestSeq, { ok: false, error: 'Vault not yet loaded.' })
+    }
+    return
+  }
+
+  try {
+    if (mode === 'one') {
+      const note = snapshotNoteById(noteId ?? '')
+      host.respondVaultRead(pluginId, requestSeq, { ok: true, note })
+      return
+    }
+
+    if (mode === 'all') {
+      const snapshot = snapshotAllNotes()
+      const bytes = projectPayloadSize(snapshot)
+      if (bytes > MAX_GET_ALL_BYTES) {
+        host.respondVaultRead(pluginId, requestSeq, {
+          ok: false,
+          error: 'Vault too large; use stream().',
+        })
+        return
+      }
+      host.respondVaultRead(pluginId, requestSeq, { ok: true, notes: snapshot })
+      return
+    }
+
+    // mode === 'stream' — paginate, yielding between chunks. We poll
+    // the host's revocation state before every chunk so a mid-flight
+    // toggle in Settings terminates the iterator with a clear error.
+    let chunkIndexEmitted = 0
+    await streamVaultSnapshot({
+      ...(typeof chunkSize === 'number' ? { chunkSize } : {}),
+      isAborted: () =>
+        host.hasPermission(pluginId, 'vault.read.all')
+          ? null
+          : 'Permission "vault.read.all" was revoked.',
+      onChunk: (slice, chunkIndex) => {
+        chunkIndexEmitted = chunkIndex
+        host.respondVaultStreamChunk(pluginId, requestSeq, {
+          chunkIndex,
+          notes: slice,
+        })
+      },
+      onAbort: (reason) => {
+        host.respondVaultStreamChunk(pluginId, requestSeq, {
+          chunkIndex: chunkIndexEmitted + 1,
+          notes: [],
+          error: reason,
+        })
+      },
+      onEnd: () => {
+        host.respondVaultStreamChunk(pluginId, requestSeq, {
+          chunkIndex: chunkIndexEmitted + 1,
+          notes: [],
+        })
+      },
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (mode === 'stream') {
+      host.respondVaultStreamChunk(pluginId, requestSeq, {
+        chunkIndex: 0,
+        notes: [],
+        error: message,
+      })
+    } else {
+      host.respondVaultRead(pluginId, requestSeq, { ok: false, error: message })
+    }
+  }
+}
+
+/**
+ * v1.2 PR B — host-side fullscreen lifecycle.
+ *
+ * Single-view invariant: only one fullscreen view is mounted at a
+ * time, across all installed plugins. When a second plugin (or the
+ * same plugin twice) calls `openFullscreen` we REJECT rather than
+ * replace — replacing would silently kill the original view's state
+ * and surprise the user mid-flow. The error message names the
+ * conflict so the plugin can fall back gracefully.
+ *
+ * Note focus loss: opening a fullscreen view does NOT suspend the
+ * editor, and does NOT auto-close when the active note changes. The
+ * plugin is in control. The store-backed view persists until the
+ * user dismisses (X, Esc) or the plugin calls `closeFullscreen`.
+ * That matches the plan section 3.1 decision and the issue #71 graph
+ * + issue #70 chat use cases, both of which need to stay open across
+ * note switches.
+ */
+function handleFullscreenOpenRequest(
+  host: PluginHost,
+  event: Extract<import('./PluginHost').PluginHostEvent, { type: 'fullscreenOpenRequested' }>,
+): void {
+  const { pluginId, requestSeq, viewId } = event
+  const store = usePluginStore.getState()
+
+  // Single-view invariant. PluginHost already validated the view id
+  // against the manifest; this is the cross-plugin coordination
+  // check.
+  if (store.activeFullscreen !== null) {
+    host.respondFullscreenOpen(pluginId, requestSeq, {
+      ok: false,
+      error: 'Another fullscreen view is already open.',
+    })
+    return
+  }
+
+  const plugin = store.loaded[pluginId]
+  if (!plugin) {
+    host.respondFullscreenOpen(pluginId, requestSeq, {
+      ok: false,
+      error: 'Plugin is not loaded.',
+    })
+    return
+  }
+
+  const view = plugin.manifest.surfaces.fullscreenViews?.find((v) => v.id === viewId)
+  if (!view) {
+    // Defence in depth — PluginHost checks the same condition, but
+    // the manifest snapshot here might be newer.
+    host.respondFullscreenOpen(pluginId, requestSeq, {
+      ok: false,
+      error: `Fullscreen view "${viewId}" is not declared in the manifest.`,
+    })
+    return
+  }
+
+  store.setActiveFullscreen({
+    pluginId,
+    pluginName: plugin.manifest.name,
+    viewId,
+    title: view.title,
+    node: null,
+  })
+
+  host.respondFullscreenOpen(pluginId, requestSeq, { ok: true })
+  // Notify the worker AFTER resolving the open promise so the
+  // plugin's openFullscreen() awaits cleanly; the mount handler then
+  // emits the initial setFullscreenContent.
+  host.notifyFullscreenOpened(pluginId, viewId)
+}
+
+function handleFullscreenCloseRequest(
+  host: PluginHost,
+  event: Extract<import('./PluginHost').PluginHostEvent, { type: 'fullscreenCloseRequested' }>,
+): void {
+  const { pluginId, viewId } = event
+  const cur = usePluginStore.getState().activeFullscreen
+  // Silently no-op when the request does not match the currently
+  // open view. Lets a plugin call closeFullscreen defensively
+  // without spamming errors.
+  if (!cur || cur.pluginId !== pluginId || cur.viewId !== viewId) return
+  usePluginStore.getState().setActiveFullscreen(null)
+  host.notifyFullscreenClosed(pluginId, viewId)
+}
+
+/**
+ * Surfaced to the host modal component — when the user hits X or
+ * Esc, the modal calls this to tear the view down and notify the
+ * plugin. Imported by `PluginFullscreenView.tsx`.
+ */
+export function dismissActiveFullscreen(): void {
+  const host = getPluginHost()
+  const cur = usePluginStore.getState().activeFullscreen
+  if (!cur) return
+  usePluginStore.getState().setActiveFullscreen(null)
+  if (host) host.notifyFullscreenClosed(cur.pluginId, cur.viewId)
 }
 
 /** Open the native save dialog, write the plugin's bytes to it.
@@ -410,6 +835,311 @@ async function handleFileOpenRequest(
   }
 }
 
+// ─── vault.write capability (PR D) ─────────────────────────────────────────
+//
+// The host writes through the same `useNoteStore.addNote` / `updateNote` /
+// `deleteNote` and `useFolderStore.addFolder` / `ensureFolderPath` paths a
+// user action would use, so sync, indexing, undo, and the Trash UI all
+// behave identically whether the user or a plugin made the change.
+//
+// Conflict resolution: when a `create` lands a title that already
+// exists in the target folder, the host appends " (imported)" to the
+// title and reports `conflictResolved: 'suffix'`. The policy lives
+// here — the importer plugin gets the conflict outcome for free in
+// its progress log and never has to retry.
+//
+// Audit: every accepted op (and every rejection that survives the
+// permission gate) calls recordPluginWrite. Destructive permission
+// demands traceability.
+
+const MAX_TITLE_LEN = 200
+const MAX_BODY_BYTES = 1 * 1024 * 1024 // 1 MiB cap; matches plan §4.2.
+const FOLDER_PATH_RE = /^[^\s/][^/]*(\/[^\s/][^/]*)*$/
+
+function handleVaultWriteRequest(
+  host: PluginHost,
+  event: Extract<import('./PluginHost').PluginHostEvent, { type: 'vaultWriteRequested' }>,
+): void {
+  const { pluginId, requestSeq, op } = event
+  try {
+    switch (op.kind) {
+      case 'create': {
+        const result = applyCreate(pluginId, op)
+        host.respondVaultWrite(pluginId, requestSeq, {
+          ok: true,
+          id: result.id,
+          conflictResolved: result.conflictResolved,
+        })
+        recordPluginWrite({
+          pluginId,
+          op: 'create',
+          target: result.id,
+          ok: true,
+          conflictResolved: result.conflictResolved,
+        })
+        return
+      }
+      case 'update': {
+        applyUpdate(pluginId, op)
+        host.respondVaultWrite(pluginId, requestSeq, { ok: true })
+        recordPluginWrite({ pluginId, op: 'update', target: op.id, ok: true })
+        return
+      }
+      case 'delete': {
+        applyDelete(pluginId, op)
+        host.respondVaultWrite(pluginId, requestSeq, { ok: true })
+        recordPluginWrite({ pluginId, op: 'delete', target: op.id, ok: true })
+        return
+      }
+      case 'createFolder': {
+        applyCreateFolder(pluginId, op)
+        host.respondVaultWrite(pluginId, requestSeq, { ok: true })
+        recordPluginWrite({
+          pluginId,
+          op: 'createFolder',
+          target: op.path,
+          ok: true,
+        })
+        return
+      }
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    host.respondVaultWrite(pluginId, requestSeq, { ok: false, error: message })
+    recordPluginWrite({
+      pluginId,
+      op: op.kind,
+      target: extractTarget(op),
+      ok: false,
+      error: message,
+    })
+  }
+}
+
+function extractTarget(op: VaultWriteOp): string {
+  switch (op.kind) {
+    case 'create':
+      return op.title
+    case 'update':
+    case 'delete':
+      return op.id
+    case 'createFolder':
+      return op.path
+  }
+}
+
+/** Resolve a forward-slash folder path to an existing folder id (or
+ *  null for the root). Creates missing segments via
+ *  `useFolderStore.ensureFolderPath` — the same code path the importer
+ *  and pull layer use for "given a path, give me an id". */
+function resolveFolderPath(folderPath: string | undefined): string | null {
+  if (!folderPath || folderPath.length === 0) return null
+  const segments = folderPath.split('/').filter((s) => s.length > 0)
+  if (segments.length === 0) return null
+  return useFolderStore.getState().ensureFolderPath(segments)
+}
+
+function applyCreate(
+  _pluginId: string,
+  op: Extract<VaultWriteOp, { kind: 'create' }>,
+): { id: string; conflictResolved: 'none' | 'suffix' } {
+  const title = (op.title ?? '').trim()
+  if (title.length === 0) throw new Error('createNote: title is required.')
+  if (title.length > MAX_TITLE_LEN) {
+    throw new Error(`createNote: title exceeds ${MAX_TITLE_LEN} chars.`)
+  }
+  const body = op.body ?? ''
+  if (byteLength(body) > MAX_BODY_BYTES) {
+    throw new Error(`createNote: body exceeds ${MAX_BODY_BYTES} bytes.`)
+  }
+  if (op.folderPath !== undefined && op.folderPath.length > 0) {
+    if (!FOLDER_PATH_RE.test(op.folderPath)) {
+      throw new Error(`createNote: invalid folderPath "${op.folderPath}".`)
+    }
+  }
+
+  const folderId = resolveFolderPath(op.folderPath)
+  const noteStore = useNoteStore.getState()
+
+  // Conflict resolution: look for an active (non-trashed) note with the
+  // same title in the same folder. If found, append " (imported)". If
+  // that ALSO collides, append a numeric suffix. The latter case is rare
+  // (two imports of the same source) but we never want to bail entirely.
+  const { resolvedTitle, conflictResolved } = resolveTitleConflict(
+    title,
+    folderId,
+    noteStore.notes,
+  )
+
+  const finalContent = composeContent(resolvedTitle, body, op.frontmatter)
+  const created = noteStore.addNote({
+    title: resolvedTitle,
+    content: finalContent,
+    folderId,
+  })
+  return { id: created.id, conflictResolved }
+}
+
+function applyUpdate(
+  _pluginId: string,
+  op: Extract<VaultWriteOp, { kind: 'update' }>,
+): void {
+  const noteStore = useNoteStore.getState()
+  const note = noteStore.notes.find((n) => n.id === op.id)
+  if (!note || note.isDeleted) {
+    throw new Error(`updateNote: note "${op.id}" does not exist.`)
+  }
+  if (op.body !== undefined && byteLength(op.body) > MAX_BODY_BYTES) {
+    throw new Error(`updateNote: body exceeds ${MAX_BODY_BYTES} bytes.`)
+  }
+  if (op.title !== undefined) {
+    const t = op.title.trim()
+    if (t.length === 0 || t.length > MAX_TITLE_LEN) {
+      throw new Error(`updateNote: title must be 1-${MAX_TITLE_LEN} chars.`)
+    }
+  }
+
+  const patch: { title?: string; content?: string } = {}
+  if (op.title !== undefined) patch.title = op.title.trim()
+  if (op.body !== undefined || op.frontmatter !== undefined) {
+    // Re-compose. If only one of the two was supplied, preserve the
+    // other from the existing note content.
+    const nextTitle = op.title?.trim() ?? note.title ?? 'Untitled'
+    const nextBody = op.body !== undefined ? op.body : stripFrontmatter(note.content ?? '').body
+    const nextFrontmatter =
+      op.frontmatter !== undefined
+        ? op.frontmatter
+        : stripFrontmatter(note.content ?? '').frontmatter
+    patch.content = composeContent(nextTitle, nextBody, nextFrontmatter)
+  }
+  noteStore.updateNote(op.id, patch)
+}
+
+function applyDelete(
+  _pluginId: string,
+  op: Extract<VaultWriteOp, { kind: 'delete' }>,
+): void {
+  const noteStore = useNoteStore.getState()
+  const note = noteStore.notes.find((n) => n.id === op.id)
+  if (!note || note.isDeleted) {
+    throw new Error(`deleteNote: note "${op.id}" does not exist.`)
+  }
+  // SOFT-delete only — the plan §4.2 forbids hard-delete from a
+  // plugin. The note remains recoverable from the Trash UI.
+  noteStore.deleteNote(op.id)
+}
+
+function applyCreateFolder(
+  _pluginId: string,
+  op: Extract<VaultWriteOp, { kind: 'createFolder' }>,
+): void {
+  if (!FOLDER_PATH_RE.test(op.path)) {
+    throw new Error(`createFolder: invalid path "${op.path}".`)
+  }
+  const segments = op.path.split('/').filter((s) => s.length > 0)
+  if (segments.length === 0) throw new Error('createFolder: path is empty.')
+  useFolderStore.getState().ensureFolderPath(segments)
+}
+
+function resolveTitleConflict(
+  desired: string,
+  folderId: string | null,
+  notes: ReadonlyArray<{ id: string; title?: string; folderId: string | null; isDeleted: boolean }>,
+): { resolvedTitle: string; conflictResolved: 'none' | 'suffix' } {
+  const samFolderActive = notes.filter(
+    (n) => !n.isDeleted && (n.folderId ?? null) === folderId,
+  )
+  const titles = new Set(samFolderActive.map((n) => (n.title ?? '').toLowerCase()))
+  if (!titles.has(desired.toLowerCase())) {
+    return { resolvedTitle: desired, conflictResolved: 'none' }
+  }
+  let candidate = `${desired} (imported)`
+  let n = 2
+  while (titles.has(candidate.toLowerCase())) {
+    candidate = `${desired} (imported ${n})`
+    n++
+  }
+  return { resolvedTitle: candidate, conflictResolved: 'suffix' }
+}
+
+function byteLength(s: string): number {
+  if (typeof TextEncoder !== 'undefined') {
+    return new TextEncoder().encode(s).length
+  }
+  // Rough fallback for environments without TextEncoder (none we ship
+  // to; included so unit tests in node-without-DOM don't trip).
+  return s.length
+}
+
+/** Compose the on-disk note content: optional frontmatter block first,
+ *  then the body. Matches the canonical layout the importer / GitHub
+ *  push layer produce so a plugin-created note round-trips identically. */
+function composeContent(
+  _title: string,
+  body: string,
+  frontmatter: Record<string, unknown> | undefined,
+): string {
+  if (!frontmatter || Object.keys(frontmatter).length === 0) return body
+  const lines = ['---']
+  for (const [k, v] of Object.entries(frontmatter)) {
+    lines.push(`${k}: ${serialiseFrontmatterValue(v)}`)
+  }
+  lines.push('---')
+  lines.push('')
+  lines.push(body)
+  return lines.join('\n')
+}
+
+function serialiseFrontmatterValue(v: unknown): string {
+  if (v === null || v === undefined) return ''
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  if (Array.isArray(v)) {
+    return `[${v.map((x) => serialiseFrontmatterValue(x)).join(', ')}]`
+  }
+  if (typeof v === 'object') return JSON.stringify(v)
+  const s = String(v)
+  return /[:#\[\]{}|>"'\n]/.test(s) ? JSON.stringify(s) : s
+}
+
+/** Split a note body into its frontmatter (parsed) + body. Used by the
+ *  update path so a partial patch ({ body } OR { frontmatter }) leaves
+ *  the other half alone. */
+function stripFrontmatter(content: string): {
+  frontmatter: Record<string, unknown> | undefined
+  body: string
+} {
+  if (!content.startsWith('---\n')) return { frontmatter: undefined, body: content }
+  const end = content.indexOf('\n---', 4)
+  if (end < 0) return { frontmatter: undefined, body: content }
+  const block = content.slice(4, end)
+  const after = content.slice(end + 4).replace(/^\n/, '')
+  const fm: Record<string, unknown> = {}
+  for (const line of block.split('\n')) {
+    const idx = line.indexOf(':')
+    if (idx < 0) continue
+    const k = line.slice(0, idx).trim()
+    const raw = line.slice(idx + 1).trim()
+    fm[k] = raw
+  }
+  return { frontmatter: fm, body: after }
+}
+
+/** Test-only: wire the vault.write handler onto a fresh PluginHost.
+ *
+ *  Production code uses `getPluginHost()` which lazily wires every
+ *  listener (including the file-I/O ones). Unit tests want to drive
+ *  the vault.write path in isolation against a FakeWorker, without
+ *  spinning up the toast / install store wiring. This export lets a
+ *  test subscribe just the vault.write event for the duration of the
+ *  test. Not for production use. */
+export function wireSingletonHandlersForTests(host: PluginHost): void {
+  host.on((event) => {
+    if (event.type === 'vaultWriteRequested') {
+      handleVaultWriteRequest(host, event)
+    }
+  })
+}
+
 function pickFileViaInput(accept: string[] | undefined): Promise<File> {
   return new Promise((resolve, reject) => {
     const input = document.createElement('input')
@@ -432,6 +1162,137 @@ function pickFileViaInput(accept: string[] | undefined): Promise<File> {
     input.click()
   })
 }
+
+/**
+ * v1.2 `fs.open-directory` capability handler. Modern path uses
+ * `showDirectoryPicker` (Chrome / Edge / Opera) and walks the returned
+ * `FileSystemDirectoryHandle` recursively. Fallback path uses
+ * `<input type="file" webkitdirectory>` for Safari + Firefox — the
+ * existing single-file fallback at line ~458 above does NOT set
+ * `webkitdirectory`, so the directory equivalent lives here.
+ *
+ * Both paths return `Array<{ name, path, blob }>`. `path` is the
+ * forward-slash relative path inside the picked root; `blob` lets the
+ * plugin read each file's contents lazily.
+ *
+ * See plugins-v1.2-plan.md section 4.3 for the design.
+ */
+async function handleDirectoryOpenRequest(
+  host: PluginHost,
+  event: Extract<import('./PluginHost').PluginHostEvent, { type: 'directoryOpenRequested' }>,
+): Promise<void> {
+  const { pluginId, requestSeq, extensions } = event
+  // Manifest-level + runtime revocation gating already happened inside
+  // PluginHost.handleWorkerMessage (PR C unified that layer). By the
+  // time the singleton receives `directoryOpenRequested` the permission
+  // is known to be both declared AND not revoked.
+  const matcher = buildExtensionMatcher(extensions)
+  try {
+    const w = window as unknown as {
+      showDirectoryPicker?: () => Promise<FileSystemDirectoryHandleLike>
+    }
+    let entries: Array<{ name: string; path: string; blob: Blob }>
+    if (typeof w.showDirectoryPicker === 'function') {
+      const root = await w.showDirectoryPicker()
+      entries = await walkDirectoryHandle(root, matcher)
+    } else {
+      entries = await pickDirectoryViaInput(matcher)
+    }
+
+    if (entries.length > MAX_DIRECTORY_ENTRIES) {
+      host.respondDirectoryOpen(pluginId, requestSeq, {
+        ok: false,
+        error: `Directory too large: ${entries.length} entries exceeds the ${MAX_DIRECTORY_ENTRIES} cap.`,
+      })
+      return
+    }
+
+    host.respondDirectoryOpen(pluginId, requestSeq, { ok: true, entries })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (
+      message.includes('aborted') ||
+      message.includes('Abort') ||
+      message === 'cancelled'
+    ) {
+      // Cancellation is not an error from the plugin's view — return
+      // ok=true with no entries so ctx.fs.openDirectory resolves to
+      // `null`. Mirrors the file-open fallback shape above.
+      host.respondDirectoryOpen(pluginId, requestSeq, { ok: true })
+    } else {
+      host.respondDirectoryOpen(pluginId, requestSeq, { ok: false, error: message })
+    }
+  }
+}
+
+/** Safari + Firefox fallback. `<input type="file" webkitdirectory>`
+ *  surfaces every file under the picked folder, but unlike the single
+ *  `<input type=file>` fallback above this one has to handle:
+ *
+ *   - `webkitRelativePath` on each `File` (used as the `path`),
+ *   - the `cancel` event firing when the user dismisses the picker
+ *     (rejection path the unit tests cover).
+ *
+ *  The `accept` attribute is intentionally NOT set: webkitdirectory
+ *  ignores it on most browsers, and we filter host-side via `matcher`
+ *  anyway so the response stays consistent across paths. */
+function pickDirectoryViaInput(
+  matcher: (name: string) => boolean,
+): Promise<Array<{ name: string; path: string; blob: Blob }>> {
+  return new Promise((resolve, reject) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    // Non-standard but universally supported. The TS lib types it as a
+    // string attribute so we set it via `setAttribute` to avoid a cast.
+    input.setAttribute('webkitdirectory', '')
+    input.setAttribute('directory', '')
+    input.multiple = true
+    input.style.position = 'fixed'
+    input.style.left = '-9999px'
+
+    let settled = false
+    const cleanup = (): void => {
+      input.remove()
+    }
+
+    input.onchange = () => {
+      if (settled) return
+      settled = true
+      const files = input.files
+      cleanup()
+      if (!files || files.length === 0) {
+        reject(new Error('cancelled'))
+        return
+      }
+      const out: Array<{ name: string; path: string; blob: Blob }> = []
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i]
+        if (!matcher(f.name)) continue
+        // webkitRelativePath includes the picked root's name as the
+        // first segment, e.g. "MyVault/notes/a.md". Strip it so the
+        // returned `path` is relative to the picked root, matching the
+        // showDirectoryPicker path.
+        const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath ?? f.name
+        const slashIdx = rel.indexOf('/')
+        const path = slashIdx >= 0 ? rel.slice(slashIdx + 1) : rel
+        out.push({ name: f.name, path, blob: f as Blob })
+      }
+      resolve(out)
+    }
+    // Cancellation: modern browsers fire `cancel` when the picker is
+    // dismissed without a selection. Unit-tested via the rejection
+    // path — see permissions.test.ts / dedicated suite.
+    input.addEventListener('cancel', () => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(new Error('cancelled'))
+    })
+    document.body.appendChild(input)
+    input.click()
+  })
+}
+
 
 function acceptToTypes(accept: string[]): Record<string, string[]> {
   const out: Record<string, string[]> = {}

@@ -1,0 +1,20 @@
+{
+  "id": "noteser-properties",
+  "name": "Properties+",
+  "version": "0.1.0",
+  "author": "Noteser",
+  "description": "Sidebar editor for a note's frontmatter properties plus an Obsidian Bases-style vault-wide table view. Reads + writes notes via the v1.2 vault capabilities.",
+  "main": "./main.js",
+  "permissions": ["vault.read.all", "vault.write", "vault.events"],
+  "surfaces": {
+    "sidebarPanels": [
+      { "id": "properties-plus", "title": "Properties+" }
+    ],
+    "fullscreenViews": [
+      { "id": "tables", "title": "Vault tables" }
+    ],
+    "commands": [
+      { "id": "open-tables", "title": "Open Vault tables" }
+    ]
+  }
+}

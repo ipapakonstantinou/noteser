@@ -13,6 +13,13 @@
   --obsidian-dark-gray: #333333;
   --obsidian-accent: #3a3a3a;
   --obsidian-highlight: #4d4d4d;
+  /* Editor selection background — painted into `.cm-selectionBackground`
+     by drawSelection() and reused for the global `::selection`. Kept
+     SEPARATE from --obsidian-highlight (the hover surface) so a
+     selection-visible value can't tint every sidebar hover state.
+     Picked to clear ≥ 2:1 against --obsidian-black and ≥ 4.5:1
+     against --obsidian-text, in family with the noteser blue accent. */
+  --obsidian-selection: #2b5a9b;
   /* Softer divider lines per user feedback (2026-06-04). Was
      #444444 against the #1b1b1b background — too high contrast for
      a calm UI. Dropped to #2e2e2e for a more Obsidian-like subtlety
@@ -245,67 +252,30 @@
   }
 }
 
-/* Preview mode: cursor indicator + completed-task strikethrough.
-   User feedback 2026-06-04: "I don't want a blue line ... in edit
-   nor in preview". Repainted the cursor block + marker in the muted
-   secondary-text colour so the cursor stays visible in preview mode
-   but the persistent vertical blue bar that was reading as a "line"
-   alongside the active line is gone. */
-.preview-cursor-block {
-  border-left: 3px solid theme('colors.obsidianSecondaryText');
-  padding-left: 0.75rem;
-  margin-left: -0.95rem;
-}
-
-.preview-cursor-marker {
-  display: inline-block;
-  width: 2px;
-  height: 1.1em;
-  background: theme('colors.obsidianSecondaryText');
-  vertical-align: text-bottom;
-  margin: 0 -1px;
-  border-radius: 1px;
-  animation: cursor-blink 1.05s steps(2, end) infinite;
-}
-
-@keyframes cursor-blink {
-  0%, 50%   { opacity: 1; }
-  51%, 100% { opacity: 0; }
-}
+/* Preview mode used to paint a vertical bar + blinking caret on the
+   active line. Jon (2026-06-06): the two lines around the active heading
+   are unwanted in preview. Classes still applied by EditorContent so the
+   click-to-edit positioning logic keeps working, but neither paints. */
+.preview-cursor-block {}
+.preview-cursor-marker { display: none; }
 
 /* Completed task (`- [x]`) — strike through the item's own content (links,
    bold, text inside a wrapping <p>) at any nesting depth, WITHOUT bleeding the
-   strike onto its nested sub-tasks. A blanket `.preview-task-done *` would also
-   strike every descendant list item, so an UN-done subtask under a done parent
-   would wrongly look complete. Instead we:
-     1. strike the item's own non-list children (and their inline content), but
-        never descend into a nested <ul>/<ol>;
-     2. reset decoration inside any nested list at any depth, so each child
-        decides for itself;
-     3. re-apply the strike to nested items that carry the done class.
-   The checkbox input is always kept readable. */
-.preview-task-done {
+   strike onto its nested sub-tasks.
+   ListItem in EditorContent.tsx wraps the done item's own (non-list) children
+   in a `.preview-task-done-line` span and keeps any nested <ul>/<ol> as a
+   sibling of that span. We therefore decorate the SPAN only — never the outer
+   <li> — so the line-through never paints across nested rows. Older versions
+   put text-decoration on `.preview-task-done` itself, but browsers still draw
+   the ancestor's strike across descendant text even when the descendant sets
+   `text-decoration: none`, so an UN-done child under a done parent looked
+   completed. The span sibling boundary is the only reliable fix. The checkbox
+   input is kept readable. */
+.preview-task-done-line {
   text-decoration: line-through;
   opacity: 0.55;
 }
-.preview-task-done > :not(ul):not(ol),
-.preview-task-done > :not(ul):not(ol) * {
-  text-decoration: line-through;
-  opacity: 0.55;
-}
-.preview-task-done ul,
-.preview-task-done ol,
-.preview-task-done :is(ul, ol) * {
-  text-decoration: none;
-  opacity: 1;
-}
-.preview-task-done .preview-task-done,
-.preview-task-done .preview-task-done > :not(ul):not(ol),
-.preview-task-done .preview-task-done > :not(ul):not(ol) * {
-  text-decoration: line-through;
-  opacity: 0.55;
-}
-.preview-task-done input[type='checkbox'] {
+.preview-task-done-line input[type='checkbox'] {
   text-decoration: none;
   opacity: 1;
 }
@@ -378,6 +348,220 @@
 /* Focus visible for accessibility */
 :focus-visible {
   @apply outline-none ring-2 ring-obsidianAccentPurple ring-offset-2 ring-offset-obsidianBlack;
+}
+
+/* /help typography (hp1)
+ * GitBook-aesthetic prose for the /help route only. Separate from
+ * .prose (which is sized to match the editor) so help articles can
+ * use a wider reading column, generous line-height, and tighter
+ * vertical rhythm without leaking into note preview. The help route
+ * inherits the main app theme (dark) from the root <html class="dark">,
+ * so only the .help-prose-dark palette is applied. */
+.help-prose {
+  font-family: var(--font-interface);
+  font-size: 16px;
+  line-height: 1.7;
+  scroll-margin-top: 80px;
+}
+
+.help-prose > * + * {
+  margin-top: 1.1em;
+}
+
+.help-prose h1,
+.help-prose h2,
+.help-prose h3,
+.help-prose h4 {
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.help-prose h1 {
+  font-size: 2.25rem;
+  margin-top: 0;
+  margin-bottom: 0.5em;
+}
+
+.help-prose h2 {
+  font-size: 1.5rem;
+  margin-top: 2em;
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid;
+}
+
+.help-prose h3 {
+  font-size: 1.2rem;
+  margin-top: 1.6em;
+}
+
+.help-prose h4 {
+  font-size: 1rem;
+  margin-top: 1.4em;
+}
+
+.help-prose p {
+  margin: 1em 0;
+}
+
+.help-prose ul,
+.help-prose ol {
+  padding-left: 1.4em;
+  margin: 1em 0;
+}
+
+.help-prose ul { list-style: disc; }
+.help-prose ol { list-style: decimal; }
+.help-prose li { margin: 0.4em 0; }
+.help-prose li > ul,
+.help-prose li > ol { margin: 0.4em 0; }
+
+.help-prose a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+
+.help-prose strong {
+  font-weight: 600;
+}
+
+.help-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+}
+
+.help-prose pre {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  padding: 1em 1.2em;
+  border-radius: 8px;
+  overflow-x: auto;
+  line-height: 1.6;
+  margin: 1.4em 0;
+}
+
+.help-prose pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.help-prose blockquote {
+  border-left: 3px solid;
+  padding: 0.4em 0 0.4em 1.1em;
+  margin: 1.4em 0;
+  font-style: italic;
+}
+
+.help-prose hr {
+  border: none;
+  border-top: 1px solid;
+  margin: 2.5em 0;
+}
+
+.help-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.4em 0;
+  font-size: 0.95em;
+}
+
+.help-prose th,
+.help-prose td {
+  padding: 0.55em 0.9em;
+  border-bottom: 1px solid;
+  text-align: left;
+}
+
+.help-prose th {
+  font-weight: 600;
+}
+
+/* Dark palette: softened from the editor preview, GitBook spacing. */
+.help-prose-dark h1,
+.help-prose-dark h2,
+.help-prose-dark h3,
+.help-prose-dark h4 {
+  color: #f3f4f6;
+}
+
+.help-prose-dark h2 {
+  border-bottom-color: #2a2e36;
+}
+
+.help-prose-dark p,
+.help-prose-dark li {
+  color: #d1d5db;
+}
+
+.help-prose-dark a {
+  color: #60a5fa;
+}
+
+.help-prose-dark a:hover {
+  color: #93c5fd;
+}
+
+.help-prose-dark code {
+  background-color: #23262d;
+  color: #e5e7eb;
+}
+
+.help-prose-dark pre {
+  background-color: #1a1c20;
+  color: #e5e7eb;
+  border: 1px solid #23262d;
+}
+
+.help-prose-dark blockquote {
+  border-left-color: #3a3f4a;
+  color: #9ca3af;
+}
+
+.help-prose-dark hr {
+  border-top-color: #23262d;
+}
+
+.help-prose-dark th {
+  color: #f3f4f6;
+  border-bottom-color: #3a3f4a;
+}
+
+.help-prose-dark td {
+  border-bottom-color: #23262d;
+}
+
+.help-prose-dark strong {
+  color: #f3f4f6;
+}
+
+/* Caption styling for inline GIFs / screenshots. The help markdown
+   uses `*caption text*` (italic) on the line directly after an image
+   to label it; this rule tightens the spacing so the caption visually
+   binds to the image rather than reading as a standalone paragraph. */
+.help-prose p > img + em,
+.help-prose p:has(> img) + p > em:only-child {
+  display: block;
+  font-style: normal;
+  color: #9ca3af;
+  font-size: 0.9em;
+  text-align: center;
+  margin-top: -0.4em;
+}
+
+/* Inline screenshots inside help articles. Keep them inside the
+   reading column, soften corners + add a hairline border so they read
+   as artifacts rather than full-bleed visuals. */
+.help-prose img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1.2em 0;
+  border-radius: 8px;
+  border: 1px solid #23262d;
+  background-color: #1a1c20;
 }
 
 /* Reveal-in-tree flash — used by src/utils/revealNote.ts when the

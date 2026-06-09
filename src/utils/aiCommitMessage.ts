@@ -15,7 +15,7 @@
 
 import { runPrompt } from './aiClient'
 import { classifyPendingChanges, totalPendingCount, type SyncChangeSets } from './syncChanges'
-import { useNoteStore, useGitHubStore } from '@/stores'
+import { useNoteStore, useGitHubStore, useFolderStore } from '@/stores'
 
 const SYSTEM_PROMPT =
   'You write short, factual git commit messages for a personal note-taking app. ' +
@@ -36,8 +36,9 @@ const SYSTEM_PROMPT =
 // Errors are swallowed by design — never block a sync.
 export async function draftAiCommitMessage(): Promise<string | null> {
   const notes = useNoteStore.getState().notes
+  const folders = useFolderStore.getState().folders
   const lastSyncedAt = useGitHubStore.getState().lastSyncedAt
-  const changes = classifyPendingChanges(notes, lastSyncedAt)
+  const changes = classifyPendingChanges(notes, lastSyncedAt, folders)
   const total = totalPendingCount(changes)
   if (total === 0) return null
 

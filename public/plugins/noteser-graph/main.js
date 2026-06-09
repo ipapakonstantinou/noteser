@@ -1,0 +1,949 @@
+// noteser-graph v0.1.0
+//
+// Closes issue #71. Built on Plugin API v1.2 (PRs A, B, C, F + the
+// VNode event delivery follow-up).
+//
+// Provides two surfaces:
+//
+//   1. A sidebar panel "Graph" for the ACTIVE note. Shows two
+//      sections:
+//        - Backlinks: notes whose body contains a wikilink that
+//          resolves to the active note's title (case-insensitive,
+//          aliases not handled here - the core BacklinksView still
+//          handles aliases until this plugin supersedes it).
+//        - Unlinked mentions: notes containing the active note's
+//          title as plain text, NOT inside an existing wikilink, NOT
+//          inside a fenced or inline code block. Whole-word match.
+//      A button at the bottom opens the global graph in a fullscreen
+//      view.
+//
+//   2. A fullscreen view "Graph" containing a force-directed SVG of
+//      the entire vault. Nodes are notes, edges are wikilinks. Click
+//      a node to open the note (wikilink:// scheme; the host's
+//      wikilink-intercept handler dispatches openNote). A
+//      "Recompute" button at top-right re-runs the layout.
+//
+// Permissions: vault.read.all, vault.events.
+//
+// Self-contained ES module. The worker dynamic-imports via Blob URL,
+// so the file cannot rely on sibling imports - every pure helper is
+// inline. A parallel `lib.mjs` mirrors the pure helpers so the Jest
+// suite can re-use the same logic without parsing this file.
+
+// ------------------------- Pure helpers (exported) -------------------------
+//
+// These are exported by name so the Jest test suite can import the
+// plugin module and verify the derivation logic. Runtime callers
+// (the plugin's own handlers) reach them through the closure.
+
+// Same wikilink shape the core scanner uses. We only look at the
+// pre-pipe portion (the "real" target), not the alias / display.
+const WIKILINK_RE = /\[\[([^\]|]+?)(?:\|[^\]]+?)?\]\]/g
+
+/** Pull every wikilink target out of a body, lowercased + trimmed. */
+export function extractWikilinks(body) {
+  if (!body || body.indexOf('[[') === -1) return []
+  const out = []
+  WIKILINK_RE.lastIndex = 0
+  let m
+  while ((m = WIKILINK_RE.exec(body)) !== null) {
+    const q = (m[1] ?? '').trim().toLowerCase()
+    if (q) out.push(q)
+  }
+  return out
+}
+
+/**
+ * Build the masked body: replace every fenced code block, inline
+ * code span, and existing wikilink with same-length runs of spaces.
+ * Same-length means character offsets line up with the original
+ * body, so callers can still report line numbers if needed.
+ *
+ * Order matters: code blocks first (multi-line, greedy on the
+ * delimiters), then wikilinks (single-line, non-greedy), then
+ * inline code. Inline code can sit inside a paragraph that also
+ * contains a wikilink, so wikilinks land first to avoid masking a
+ * `[[` inside an inline-code span (which already got masked).
+ */
+export function maskCodeAndWikilinks(body) {
+  if (!body) return ''
+  let out = body
+  // Fenced code blocks: ```lang? ... ```
+  out = out.replace(/```[\s\S]*?```/g, (m) => ' '.repeat(m.length))
+  // Wikilinks: [[Target]] or [[Target|Display]]
+  out = out.replace(/\[\[[^\]\n]+?\]\]/g, (m) => ' '.repeat(m.length))
+  // Inline code: `code` (greedy across single ticks, non-greedy
+  // across newlines so it stays on one line).
+  out = out.replace(/`[^`\n]+?`/g, (m) => ' '.repeat(m.length))
+  return out
+}
+
+/**
+ * Escape a string for embedding inside a RegExp. Standard form.
+ */
+export function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Find unlinked mentions of `title` in `body`.
+ *
+ *  - title is matched case-insensitively, as a whole word
+ *    (alphanumeric / underscore word boundaries on each side).
+ *  - existing `[[wikilinks]]`, fenced code blocks, and inline code
+ *    are masked out before matching, so a mention inside one of
+ *    those is not counted.
+ *  - returns the count of unlinked occurrences. The panel only
+ *    needs a count + a single-snippet preview, so we return both.
+ *
+ * Returns null when `title` is empty/whitespace; callers should
+ * skip rather than count "nothing" as zero mentions.
+ */
+export function findUnlinkedMentions(body, title) {
+  const t = (title ?? '').trim()
+  if (!t) return null
+  const masked = maskCodeAndWikilinks(body ?? '')
+  if (!masked) return { count: 0, snippet: null }
+  // \b only counts ascii word chars; for titles with spaces or
+  // punctuation we still want a whole-word match. Lookarounds on
+  // both sides accept either a non-word char or string boundary.
+  const re = new RegExp(`(^|[^A-Za-z0-9_])(${escapeRegExp(t)})(?=$|[^A-Za-z0-9_])`, 'gi')
+  let count = 0
+  let snippet = null
+  let m
+  while ((m = re.exec(masked)) !== null) {
+    count++
+    if (snippet === null) {
+      const matchStart = m.index + m[1].length
+      const sliceStart = Math.max(0, matchStart - 50)
+      const sliceEnd = Math.min(body.length, matchStart + t.length + 50)
+      let text = body.slice(sliceStart, sliceEnd)
+      if (sliceStart > 0) text = '...' + text
+      if (sliceEnd < body.length) text = text + '...'
+      snippet = text.replace(/\s+/g, ' ').trim()
+    }
+  }
+  return { count, snippet }
+}
+
+/**
+ * Derive the link graph from a vault snapshot.
+ *
+ * Input:  notes - array of { id, title, body } (extra fields ok).
+ * Output: { nodes, edges }
+ *           nodes: [{ id, title, degree }]   (degree = in + out)
+ *           edges: [{ source, target }]      (unique ordered pair)
+ *
+ *  - Edges are de-duplicated: two wikilinks from A -> B produce one
+ *    edge. Self-links are dropped.
+ *  - Unresolved targets (wikilinks whose query matches no note
+ *    title) are dropped silently.
+ *  - Case-insensitive title resolution; duplicate titles map to the
+ *    first note that owns them (stable by input order).
+ */
+export function deriveGraph(notes) {
+  const titleToId = new Map()
+  for (const n of notes) {
+    const t = (n.title ?? '').trim().toLowerCase()
+    if (!t) continue
+    if (!titleToId.has(t)) titleToId.set(t, n.id)
+  }
+  const edgeKeys = new Set()
+  const edges = []
+  const degree = new Map()
+  for (const n of notes) {
+    const links = extractWikilinks(n.body ?? '')
+    for (const q of links) {
+      const targetId = titleToId.get(q)
+      if (!targetId) continue
+      if (targetId === n.id) continue
+      const key = n.id + ' ' + targetId
+      if (edgeKeys.has(key)) continue
+      edgeKeys.add(key)
+      edges.push({ source: n.id, target: targetId })
+      degree.set(n.id, (degree.get(n.id) ?? 0) + 1)
+      degree.set(targetId, (degree.get(targetId) ?? 0) + 1)
+    }
+  }
+  const nodes = notes.map((n) => ({
+    id: n.id,
+    title: (n.title ?? '').trim() || '(untitled)',
+    degree: degree.get(n.id) ?? 0,
+  }))
+  return { nodes, edges }
+}
+
+/**
+ * Find every linker to a given note. Used for the sidebar
+ * "Backlinks" section.
+ *
+ *   notes      - full vault array
+ *   targetId   - note we want incoming links for
+ *   targetTitle- resolved title (case-insensitive match)
+ *
+ * Returns [{ id, title }, ...] - one entry per distinct linker.
+ */
+export function findBacklinks(notes, targetId, targetTitle) {
+  const t = (targetTitle ?? '').trim().toLowerCase()
+  if (!t) return []
+  const out = []
+  const seen = new Set()
+  for (const n of notes) {
+    if (n.id === targetId) continue
+    const links = extractWikilinks(n.body ?? '')
+    if (!links.includes(t)) continue
+    if (seen.has(n.id)) continue
+    seen.add(n.id)
+    out.push({ id: n.id, title: (n.title ?? '').trim() || '(untitled)' })
+  }
+  return out
+}
+
+/**
+ * Find every note (excluding the target itself and existing
+ * backlinkers) that contains the target title as an unlinked
+ * mention. Returns [{ id, title, count, snippet }, ...].
+ */
+export function findUnlinkedMentionsAcross(notes, targetId, targetTitle) {
+  const t = (targetTitle ?? '').trim()
+  if (!t) return []
+  const backlinkerIds = new Set(
+    findBacklinks(notes, targetId, t).map((b) => b.id),
+  )
+  const out = []
+  for (const n of notes) {
+    if (n.id === targetId) continue
+    if (backlinkerIds.has(n.id)) continue
+    const r = findUnlinkedMentions(n.body ?? '', t)
+    if (!r || r.count === 0) continue
+    out.push({
+      id: n.id,
+      title: (n.title ?? '').trim() || '(untitled)',
+      count: r.count,
+      snippet: r.snippet,
+    })
+  }
+  return out
+}
+
+/**
+ * FNV-1a 32-bit rolling hash over (id, updatedAt) pairs. Used as a
+ * cheap snapshot identity for the getAllNotes cache. Not
+ * cryptographic - just an identity key.
+ */
+export function snapshotSha(notes) {
+  let h = 0x811c9dc5
+  for (const n of notes) {
+    const s = String(n.id) + ':' + String(n.updatedAt ?? 0)
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i)
+      h = Math.imul(h, 0x01000193) >>> 0
+    }
+  }
+  return h.toString(16)
+}
+
+// --------------------------- Force layout ------------------------------
+//
+// Hand-rolled O(n^2) force simulator. Good enough for 1k nodes in
+// well under the 500ms budget the brief calls out. No Barnes-Hut,
+// no quadtree - just paired repulsion + spring attraction + center
+// pull, with a step decay.
+
+const LAYOUT_WIDTH = 1024
+const LAYOUT_HEIGHT = 768
+const LAYOUT_REPULSION = 600 // node-node repulsion strength
+const LAYOUT_SPRING_K = 0.04 // edge spring constant
+const LAYOUT_SPRING_REST = 60 // edge target length
+const LAYOUT_CENTER_K = 0.005 // pull toward (cx, cy)
+const LAYOUT_DAMPING = 0.85
+const LAYOUT_MAX_SPEED = 18
+
+/**
+ * Scale iterations down for large graphs so the open-graph budget
+ * (<500 ms for 1 k nodes per the brief) stays in reach. Smaller
+ * graphs still get the high iteration count they need for a clean
+ * layout; larger graphs settle in fewer iterations because the
+ * repulsion field is denser anyway.
+ */
+function defaultIterations(n) {
+  if (n <= 100) return 220
+  if (n <= 250) return 140
+  if (n <= 500) return 80
+  if (n <= 1000) return 40
+  return 25
+}
+
+export function runForceSimulation(nodes, edges, opts) {
+  const width = opts?.width ?? LAYOUT_WIDTH
+  const height = opts?.height ?? LAYOUT_HEIGHT
+  const iterations = opts?.iterations ?? defaultIterations(nodes.length)
+  const cx = width / 2
+  const cy = height / 2
+
+  // Mulberry32: deterministic seeded PRNG so the layout is
+  // reproducible per call. Seeded by the node id list so the same
+  // vault returns the same layout each time.
+  const seed = makeSeed(nodes)
+  const rand = mulberry32(seed)
+
+  // Seed positions on a circle around the center, jittered.
+  const N = nodes.length
+  const radius = Math.min(width, height) * 0.4
+  const sim = nodes.map((n, i) => {
+    const angle = (i / Math.max(1, N)) * Math.PI * 2
+    return {
+      id: n.id,
+      x: cx + Math.cos(angle) * radius + (rand() - 0.5) * 20,
+      y: cy + Math.sin(angle) * radius + (rand() - 0.5) * 20,
+      vx: 0,
+      vy: 0,
+    }
+  })
+  const indexById = new Map(sim.map((s, i) => [s.id, i]))
+
+  for (let step = 0; step < iterations; step++) {
+    // Pair repulsion (O(n^2)). Acceptable up to ~1k nodes.
+    for (let i = 0; i < N; i++) {
+      for (let j = i + 1; j < N; j++) {
+        const a = sim[i]
+        const b = sim[j]
+        let dx = a.x - b.x
+        let dy = a.y - b.y
+        let d2 = dx * dx + dy * dy
+        if (d2 < 0.01) {
+          // Coincident nodes: nudge apart by a tiny random vector
+          // so the next iteration can separate them cleanly.
+          dx = (rand() - 0.5) * 0.5
+          dy = (rand() - 0.5) * 0.5
+          d2 = dx * dx + dy * dy + 0.01
+        }
+        const d = Math.sqrt(d2)
+        const f = LAYOUT_REPULSION / d2
+        const fx = (dx / d) * f
+        const fy = (dy / d) * f
+        a.vx += fx
+        a.vy += fy
+        b.vx -= fx
+        b.vy -= fy
+      }
+    }
+
+    // Spring attraction along edges.
+    for (const e of edges) {
+      const ai = indexById.get(e.source)
+      const bi = indexById.get(e.target)
+      if (ai === undefined || bi === undefined) continue
+      const a = sim[ai]
+      const b = sim[bi]
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      const d = Math.sqrt(dx * dx + dy * dy) || 0.01
+      const delta = d - LAYOUT_SPRING_REST
+      const fx = (dx / d) * delta * LAYOUT_SPRING_K
+      const fy = (dy / d) * delta * LAYOUT_SPRING_K
+      a.vx += fx
+      a.vy += fy
+      b.vx -= fx
+      b.vy -= fy
+    }
+
+    // Center pull + damping + integration.
+    for (let i = 0; i < N; i++) {
+      const p = sim[i]
+      p.vx += (cx - p.x) * LAYOUT_CENTER_K
+      p.vy += (cy - p.y) * LAYOUT_CENTER_K
+      p.vx *= LAYOUT_DAMPING
+      p.vy *= LAYOUT_DAMPING
+      // Cap speed so a high-degree node cannot fling itself off
+      // the canvas in one step.
+      const sp = Math.sqrt(p.vx * p.vx + p.vy * p.vy)
+      if (sp > LAYOUT_MAX_SPEED) {
+        p.vx = (p.vx / sp) * LAYOUT_MAX_SPEED
+        p.vy = (p.vy / sp) * LAYOUT_MAX_SPEED
+      }
+      p.x += p.vx
+      p.y += p.vy
+    }
+  }
+
+  // Clamp to canvas (allow a small margin).
+  const margin = 16
+  for (const p of sim) {
+    if (p.x < margin) p.x = margin
+    if (p.x > width - margin) p.x = width - margin
+    if (p.y < margin) p.y = margin
+    if (p.y > height - margin) p.y = height - margin
+  }
+  return sim.map((p) => ({ id: p.id, x: p.x, y: p.y }))
+}
+
+function mulberry32(seed) {
+  let s = seed >>> 0
+  return function () {
+    s = (s + 0x6d2b79f5) >>> 0
+    let t = s
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+function makeSeed(nodes) {
+  let h = 0x811c9dc5
+  for (const n of nodes) {
+    const s = String(n.id)
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i)
+      h = Math.imul(h, 0x01000193) >>> 0
+    }
+  }
+  return h >>> 0
+}
+
+// ------------------------ Plugin runtime --------------------------------
+
+const PANEL_ID = 'graph'
+const VIEW_ID = 'graph'
+
+// State the runtime keeps across handler firings.
+const state = {
+  ctx: null,
+  // Cached snapshot: notes + sha. Re-derived lazily on save.
+  notes: null,
+  sha: null,
+  // Active note id from the most recent onActiveNoteChange or
+  // onPanelMount call.
+  activeNoteId: null,
+  // Active note title looked up from the cached snapshot. We re-read
+  // on every panel render so a title rename surfaces immediately.
+  // Layout state for the fullscreen view.
+  layout: null, // { nodes: [{id,title,degree}], edges, positions: [{id,x,y}] }
+  fullscreenMounted: false,
+  // Pan/zoom for the fullscreen viewport. v1.2 has no wheel or drag
+  // VNode events (the curated event set is onClick / onChange /
+  // onSubmit / onKeyDown only), so the fullscreen view ships zoom
+  // and pan via buttons in the header instead. See the plugin's
+  // README for the design notes + the v1.2 API gap call-out.
+  viewport: { x: 0, y: 0, scale: 1 },
+  // The id of the node the user most recently clicked in the SVG.
+  // We render a clickable `link` VNode for that id in the header so
+  // the host's wikilink:// intercept opens the note on a single
+  // confirmation click. Two-click flow because the SVG circle's
+  // `onClick` produces a VNode event, not a navigation, and v1.2
+  // exposes no `ctx.openNote(id)` API.
+  pickedNodeId: null,
+}
+
+/** Lazily load + cache the vault snapshot. Re-uses the previous
+ *  cached list when the snapshot SHA matches. */
+async function loadNotesSnapshot(ctx) {
+  // ctx.vault.read.getAllNotes() rejects when the vault exceeds 4 MiB;
+  // fall back to stream() in that case so a large vault still works.
+  let notes
+  try {
+    notes = await ctx.vault.read.getAllNotes()
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (/Vault too large/i.test(msg)) {
+      const acc = []
+      for await (const chunk of ctx.vault.read.stream({ chunkSize: 200 })) {
+        acc.push(...chunk)
+      }
+      notes = acc
+    } else {
+      throw err
+    }
+  }
+  const sha = snapshotSha(notes)
+  if (state.sha === sha && state.notes) return state.notes
+  state.sha = sha
+  state.notes = notes
+  // The cached graph layout is now stale.
+  state.layout = null
+  return notes
+}
+
+function nowMs() {
+  return typeof performance !== 'undefined' && performance.now
+    ? performance.now()
+    : Date.now()
+}
+
+/** Pull the active note id from the most recent event. Falls back
+ *  to ctx.activeNote (set when the panel mounts during a hot
+ *  reload). */
+function resolveActiveNoteId(ctx) {
+  return state.activeNoteId ?? ctx.activeNote?.id ?? null
+}
+
+/** Render the sidebar panel for the active note. */
+async function renderPanel(ctx) {
+  const activeId = resolveActiveNoteId(ctx)
+  if (!activeId) {
+    ctx.setPanelContent(PANEL_ID, {
+      tag: 'box',
+      gap: 3,
+      children: [
+        { tag: 'text', value: 'Graph' },
+        {
+          tag: 'callout',
+          kind: 'info',
+          title: 'No active note',
+          body: 'Open a note to see its backlinks and unlinked mentions.',
+        },
+        {
+          tag: 'button',
+          label: 'Open global graph',
+          variant: 'primary',
+          onClick: { kind: 'emit', event: 'graph.open' },
+        },
+      ],
+    })
+    return
+  }
+
+  const t0 = nowMs()
+  const notes = await loadNotesSnapshot(ctx)
+  const active = notes.find((n) => n.id === activeId)
+  const activeTitle = (active?.title ?? '').trim()
+
+  if (!activeTitle) {
+    ctx.setPanelContent(PANEL_ID, {
+      tag: 'box',
+      gap: 3,
+      children: [
+        { tag: 'text', value: 'Graph' },
+        {
+          tag: 'callout',
+          kind: 'info',
+          title: 'Untitled note',
+          body: 'Give this note a title to see backlinks and unlinked mentions.',
+        },
+        {
+          tag: 'button',
+          label: 'Open global graph',
+          variant: 'primary',
+          onClick: { kind: 'emit', event: 'graph.open' },
+        },
+      ],
+    })
+    return
+  }
+
+  const backlinks = findBacklinks(notes, activeId, activeTitle)
+  const mentions = findUnlinkedMentionsAcross(notes, activeId, activeTitle)
+  const t1 = nowMs()
+
+  // Perf log: brief calls for verification that the derivation
+  // completes in under 50 ms on a switch.
+  // eslint-disable-next-line no-console
+  console.log(
+    `[noteser-graph] panel derive: ${(t1 - t0).toFixed(1)} ms, ` +
+      `${notes.length} notes, ${backlinks.length} backlinks, ${mentions.length} mentions`,
+  )
+
+  const backlinkItems = backlinks.length
+    ? backlinks.map((b) => ({
+        tag: 'link',
+        label: b.title,
+        href: { kind: 'note', noteId: b.id },
+      }))
+    : [{ tag: 'text', value: 'No backlinks to this note yet.' }]
+
+  const mentionItems = mentions.length
+    ? mentions.map((m) => ({
+        tag: 'list',
+        ordered: false,
+        items: [
+          {
+            tag: 'link',
+            label: `${m.title} (${m.count})`,
+            href: { kind: 'note', noteId: m.id },
+          },
+          ...(m.snippet
+            ? [{ tag: 'text', value: m.snippet }]
+            : []),
+        ],
+      }))
+    : [{ tag: 'text', value: 'No unlinked mentions.' }]
+
+  ctx.setPanelContent(PANEL_ID, {
+    tag: 'box',
+    gap: 3,
+    children: [
+      { tag: 'text', value: `Linking to: ${activeTitle}` },
+      { tag: 'text', value: 'Backlinks' },
+      { tag: 'list', ordered: false, items: backlinkItems },
+      { tag: 'text', value: 'Unlinked mentions' },
+      { tag: 'box', gap: 2, children: mentionItems },
+      {
+        tag: 'button',
+        label: 'Open global graph',
+        variant: 'primary',
+        onClick: { kind: 'emit', event: 'graph.open' },
+      },
+    ],
+  })
+}
+
+/** Build the fullscreen SVG VNode from the cached layout. */
+function renderFullscreen(ctx) {
+  if (!state.layout) {
+    ctx.setFullscreenContent(VIEW_ID, {
+      tag: 'box',
+      gap: 3,
+      children: [
+        {
+          tag: 'callout',
+          kind: 'info',
+          title: 'Computing layout',
+          body: 'Loading the vault and running the force simulation. This usually takes well under a second.',
+        },
+      ],
+    })
+    return
+  }
+  const { nodes, edges, positions } = state.layout
+  const posById = new Map(positions.map((p) => [p.id, p]))
+
+  // Apply viewport transform via viewBox. Larger scale = zoomed
+  // out; scale < 1 = zoomed in. We bias the viewBox by viewport.x/y
+  // for pan.
+  const vw = Math.max(64, Math.round(LAYOUT_WIDTH * state.viewport.scale))
+  const vh = Math.max(64, Math.round(LAYOUT_HEIGHT * state.viewport.scale))
+  const vx = Math.round(state.viewport.x)
+  const vy = Math.round(state.viewport.y)
+
+  const lineNodes = []
+  for (const e of edges) {
+    const a = posById.get(e.source)
+    const b = posById.get(e.target)
+    if (!a || !b) continue
+    lineNodes.push({
+      tag: 'line',
+      x1: a.x,
+      y1: a.y,
+      x2: b.x,
+      y2: b.y,
+      stroke: '#475569',
+      strokeWidth: 1,
+    })
+  }
+  const circleNodes = []
+  for (const n of nodes) {
+    const p = posById.get(n.id)
+    if (!p) continue
+    const r = 4 + Math.min(8, n.degree)
+    circleNodes.push({
+      tag: 'circle',
+      cx: p.x,
+      cy: p.y,
+      r,
+      fill: '#8b5cf6',
+      stroke: '#0f172a',
+      onClick: { kind: 'emit', event: 'graph.pickNode', payload: { id: n.id } },
+    })
+  }
+
+  const headerChildren = [
+    {
+      tag: 'text',
+      value: `Note graph: ${nodes.length} notes, ${edges.length} links`,
+    },
+    {
+      tag: 'button',
+      label: 'Recompute',
+      variant: 'ghost',
+      onClick: { kind: 'emit', event: 'graph.recompute' },
+    },
+    {
+      tag: 'button',
+      label: 'Reset view',
+      variant: 'ghost',
+      onClick: { kind: 'emit', event: 'graph.resetView' },
+    },
+    {
+      tag: 'button',
+      label: 'Zoom in',
+      variant: 'ghost',
+      onClick: { kind: 'emit', event: 'graph.zoomIn' },
+    },
+    {
+      tag: 'button',
+      label: 'Zoom out',
+      variant: 'ghost',
+      onClick: { kind: 'emit', event: 'graph.zoomOut' },
+    },
+    {
+      tag: 'button',
+      label: 'Pan left',
+      variant: 'ghost',
+      onClick: { kind: 'emit', event: 'graph.panLeft' },
+    },
+    {
+      tag: 'button',
+      label: 'Pan right',
+      variant: 'ghost',
+      onClick: { kind: 'emit', event: 'graph.panRight' },
+    },
+    {
+      tag: 'button',
+      label: 'Pan up',
+      variant: 'ghost',
+      onClick: { kind: 'emit', event: 'graph.panUp' },
+    },
+    {
+      tag: 'button',
+      label: 'Pan down',
+      variant: 'ghost',
+      onClick: { kind: 'emit', event: 'graph.panDown' },
+    },
+  ]
+
+  // Persistent "Selected" row - when the user clicks a circle, this
+  // shows a `link` VNode whose href is `{ kind: 'note', noteId }`.
+  // Clicking the link goes through the host's wikilink:// intercept
+  // and opens the note. Two-click flow because v1.2 has no
+  // `ctx.openNote(id)` API and no link wrapper for SVG children.
+  const pickedRow = (() => {
+    if (!state.pickedNodeId) {
+      return { tag: 'text', value: 'Selected: (click a node)' }
+    }
+    const picked = nodes.find((n) => n.id === state.pickedNodeId)
+    if (!picked) {
+      return { tag: 'text', value: 'Selected: (no longer in graph)' }
+    }
+    return {
+      tag: 'box',
+      gap: 2,
+      children: [
+        { tag: 'text', value: 'Selected:' },
+        {
+          tag: 'link',
+          label: `Open "${picked.title}"`,
+          href: { kind: 'note', noteId: picked.id },
+        },
+      ],
+    }
+  })()
+
+  ctx.setFullscreenContent(VIEW_ID, {
+    tag: 'box',
+    gap: 3,
+    children: [
+      { tag: 'box', gap: 2, children: headerChildren },
+      pickedRow,
+      {
+        tag: 'svg',
+        width: LAYOUT_WIDTH,
+        height: LAYOUT_HEIGHT,
+        viewBox: [vx, vy, vw, vh],
+        children: [
+          {
+            tag: 'rect',
+            x: vx,
+            y: vy,
+            width: vw,
+            height: vh,
+            fill: '#0f172a',
+          },
+          ...lineNodes,
+          ...circleNodes,
+        ],
+      },
+    ],
+  })
+}
+
+async function rebuildLayout(ctx) {
+  const t0 = nowMs()
+  const notes = await loadNotesSnapshot(ctx)
+  const { nodes, edges } = deriveGraph(notes)
+  const t1 = nowMs()
+  const positions = runForceSimulation(nodes, edges)
+  const t2 = nowMs()
+  state.layout = { nodes, edges, positions }
+  state.viewport = { x: 0, y: 0, scale: 1 }
+  // eslint-disable-next-line no-console
+  console.log(
+    `[noteser-graph] graph layout: derive=${(t1 - t0).toFixed(1)}ms ` +
+      `simulate=${(t2 - t1).toFixed(1)}ms ` +
+      `nodes=${nodes.length} edges=${edges.length}`,
+  )
+}
+
+export default {
+  id: 'noteser-graph',
+  name: 'Graph',
+  version: '0.1.0',
+  author: 'Noteser',
+  description:
+    'Backlinks and unlinked mentions for the active note in the sidebar, plus a force-directed graph of the entire vault in a fullscreen view. Closes issue #71.',
+  permissions: ['vault.read.all', 'vault.events'],
+  surfaces: {
+    sidebarPanels: [{ id: PANEL_ID, title: 'Graph', icon: 'link' }],
+    fullscreenViews: [{ id: VIEW_ID, title: 'Note graph' }],
+    commands: [
+      { id: 'open-graph', title: 'Graph: open global graph' },
+      { id: 'recompute', title: 'Graph: recompute layout' },
+    ],
+  },
+
+  onActivate(ctx) {
+    state.ctx = ctx
+
+    // Re-derive the panel + invalidate caches on every vault save.
+    // The host already debounces these at 250 ms, so a burst of
+    // keystrokes coalesces into one re-derive.
+    ctx.vault.events.onNoteSaved(() => {
+      // Invalidate the cached snapshot so the next loadNotesSnapshot
+      // call refetches from the host.
+      state.sha = null
+      state.notes = null
+      state.layout = null
+      // Re-render whichever surface is currently mounted.
+      void renderPanel(ctx).catch(() => {})
+      if (state.fullscreenMounted) {
+        void (async () => {
+          await rebuildLayout(ctx)
+          renderFullscreen(ctx)
+        })().catch(() => {})
+      }
+    })
+
+    // onActiveNoteChange also fires when the user opens a different
+    // note, even without a save. Update the panel.
+    ctx.vault.events.onActiveNoteChange((noteId) => {
+      state.activeNoteId = noteId
+      void renderPanel(ctx).catch(() => {})
+    })
+
+    // Wire VNode events: button clicks from the panel + fullscreen.
+    ctx.onVNodeEvent(async ({ event, payload }) => {
+      try {
+        if (event === 'graph.open') {
+          await ctx.openFullscreen(VIEW_ID)
+          return
+        }
+        if (event === 'graph.recompute') {
+          state.sha = null
+          state.notes = null
+          state.layout = null
+          await rebuildLayout(ctx)
+          renderFullscreen(ctx)
+          return
+        }
+        if (event === 'graph.resetView') {
+          state.viewport = { x: 0, y: 0, scale: 1 }
+          renderFullscreen(ctx)
+          return
+        }
+        if (event === 'graph.zoomIn') {
+          state.viewport.scale = Math.max(0.25, state.viewport.scale * 0.8)
+          renderFullscreen(ctx)
+          return
+        }
+        if (event === 'graph.zoomOut') {
+          state.viewport.scale = Math.min(4, state.viewport.scale * 1.25)
+          renderFullscreen(ctx)
+          return
+        }
+        if (event === 'graph.panLeft') {
+          state.viewport.x -= LAYOUT_WIDTH * state.viewport.scale * 0.15
+          renderFullscreen(ctx)
+          return
+        }
+        if (event === 'graph.panRight') {
+          state.viewport.x += LAYOUT_WIDTH * state.viewport.scale * 0.15
+          renderFullscreen(ctx)
+          return
+        }
+        if (event === 'graph.panUp') {
+          state.viewport.y -= LAYOUT_HEIGHT * state.viewport.scale * 0.15
+          renderFullscreen(ctx)
+          return
+        }
+        if (event === 'graph.panDown') {
+          state.viewport.y += LAYOUT_HEIGHT * state.viewport.scale * 0.15
+          renderFullscreen(ctx)
+          return
+        }
+        if (event === 'graph.pickNode' && payload && typeof payload === 'object') {
+          // Two-click open: the v1.2 VNode surface has no
+          // `ctx.openNote(id)` API and SVG children cannot be
+          // wrapped in a `link` VNode (the host's wikilink://
+          // intercept only fires on real `<a>` elements). So a
+          // click on a circle stores the picked id; the next
+          // render shows a `link` VNode pointing at that note in
+          // the header. The user clicks the link and the
+          // wikilink:// intercept dispatches openNote(noteId).
+          // The README documents this gap + the follow-up API
+          // addition that would close it.
+          const id = String(payload.id ?? '')
+          if (!id) return
+          state.pickedNodeId = id
+          renderFullscreen(ctx)
+          return
+        }
+      } catch (err) {
+        ctx.notify(
+          err instanceof Error ? err.message : 'Graph action failed.',
+        )
+      }
+    })
+  },
+
+  onPanelMount(panelId, ctx) {
+    if (panelId !== PANEL_ID) return
+    state.ctx = ctx
+    state.activeNoteId = ctx.activeNote?.id ?? null
+    return renderPanel(ctx)
+  },
+
+  onActiveNoteChange(note, ctx) {
+    state.activeNoteId = note?.id ?? null
+    return renderPanel(ctx)
+  },
+
+  async onCommand(commandId, ctx) {
+    if (commandId === 'open-graph') {
+      try {
+        await ctx.openFullscreen(VIEW_ID)
+      } catch (err) {
+        ctx.notify(
+          err instanceof Error ? err.message : 'Could not open graph view.',
+        )
+      }
+      return
+    }
+    if (commandId === 'recompute') {
+      state.sha = null
+      state.notes = null
+      state.layout = null
+      if (state.fullscreenMounted) {
+        await rebuildLayout(ctx)
+        renderFullscreen(ctx)
+      } else {
+        void renderPanel(ctx)
+      }
+      return
+    }
+  },
+
+  async onFullscreenMount(viewId, ctx) {
+    if (viewId !== VIEW_ID) return
+    state.fullscreenMounted = true
+    state.ctx = ctx
+    // Push the "computing" placeholder right away.
+    renderFullscreen(ctx)
+    await rebuildLayout(ctx)
+    renderFullscreen(ctx)
+  },
+
+  onFullscreenUnmount(viewId) {
+    if (viewId !== VIEW_ID) return
+    state.fullscreenMounted = false
+    state.pickedNodeId = null
+  },
+}

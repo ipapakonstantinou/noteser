@@ -52,6 +52,11 @@ export function TagAutocomplete({ query, tags, position, onSelect, onClose }: Ta
       } else if (e.key === 'Escape') {
         e.preventDefault()
         onClose()
+      } else if (e.key === ' ') {
+        // Space dismisses the dropdown but lets the space character land in
+        // the editor — close without preventDefault so CodeMirror still gets
+        // the input.
+        onClose()
       }
     }
     window.addEventListener('keydown', onKey, true)

@@ -11,6 +11,7 @@ import { EditorContent } from './EditorContent'
 import { TabBar } from './TabBar'
 import { MergeEditorView } from './MergeEditorView'
 import { MergeBatchView } from './MergeBatchView'
+import { CompareView } from './CompareView'
 import { WelcomePane } from './WelcomePane'
 import { EmptyState } from '@/components/ui'
 import type { PaneState } from '@/stores/workspaceStore'
@@ -20,21 +21,21 @@ import type { PaneState } from '@/stores/workspaceStore'
 // elsewhere to create a split.
 interface Props {
   pane: PaneState
-  // True when this is the only pane and we should expose the right-edge
-  // drop zone for creating a split. The second pane never offers it (we
-  // only support 2 panes for now).
-  allowSplitDropZone: boolean
 }
 
-export const Pane = ({ pane, allowSplitDropZone }: Props) => {
-  const { notes, updateNote } = useNoteStore()
-  const { isPreviewMode } = useUIStore()
+export const Pane = ({ pane }: Props) => {
+  const notes = useNoteStore(s => s.notes)
+  const updateNote = useNoteStore(s => s.updateNote)
+  const isPreviewMode = useUIStore(s => s.isPreviewMode)
   const focusPane = useWorkspaceStore(s => s.focusPane)
   const promoteTab = useWorkspaceStore(s => s.promoteTab)
   const splitTabRight = useWorkspaceStore(s => s.splitTabRight)
+  const splitTabDown = useWorkspaceStore(s => s.splitTabDown)
   const activePaneId = useWorkspaceStore(s => s.activePaneId)
+  const paneCount = useWorkspaceStore(s => s.panes.length)
+  const canSplitMore = paneCount < 3
 
-  const [splitDropActive, setSplitDropActive] = useState(false)
+  const [splitDropActive, setSplitDropActive] = useState<null | 'right' | 'bottom'>(null)
   const tabDragActive = useTabDragActive()
   const activeTab = pane.tabs.find(t => t.id === pane.activeTabId) ?? null
   const isActive = pane.id === activePaneId
@@ -44,18 +45,21 @@ export const Pane = ({ pane, allowSplitDropZone }: Props) => {
   // even mount in that case (see render below).
   const { isMobile } = useViewport()
 
-  const handleRightEdgeDragOver = (e: React.DragEvent) => {
+  const makeEdgeDragOver = (zone: 'right' | 'bottom') => (e: React.DragEvent) => {
     if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-    setSplitDropActive(true)
+    setSplitDropActive(zone)
   }
-  const handleRightEdgeDrop = (e: React.DragEvent) => {
+  const handleEdgeDrop = (zone: 'right' | 'bottom') => (e: React.DragEvent) => {
     if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
     e.preventDefault()
     const tabId = e.dataTransfer.getData(TAB_DRAG_MIME)
-    if (tabId) splitTabRight(tabId)
-    setSplitDropActive(false)
+    if (tabId) {
+      if (zone === 'right') splitTabRight(tabId)
+      else splitTabDown(tabId)
+    }
+    setSplitDropActive(null)
   }
 
   let body: React.ReactNode
@@ -104,6 +108,14 @@ export const Pane = ({ pane, allowSplitDropZone }: Props) => {
     body = <MergeEditorView tabId={activeTab.id} conflict={activeTab.conflict} />
   } else if (activeTab.kind === 'merge-batch') {
     body = <MergeBatchView tabId={activeTab.id} conflicts={activeTab.conflicts} />
+  } else if (activeTab.kind === 'compare') {
+    body = (
+      <CompareView
+        tabId={activeTab.id}
+        leftNoteId={activeTab.leftNoteId}
+        rightNoteId={activeTab.rightNoteId}
+      />
+    )
   } else if (activeTab.kind === 'welcome') {
     body = <WelcomePane tabId={activeTab.id} />
   } else {
@@ -145,28 +157,53 @@ export const Pane = ({ pane, allowSplitDropZone }: Props) => {
       onMouseDown={() => { if (!isActive) focusPane(pane.id) }}
     >
       <TabBar pane={pane} />
-      <div className="flex-1 flex flex-col min-h-0">{body}</div>
+      <div
+        className="flex-1 flex flex-col min-h-0"
+        role="tabpanel"
+        id={`editor-tabpanel-${pane.id}`}
+        aria-labelledby={activeTab ? `editor-tab-${activeTab.id}` : undefined}
+      >{body}</div>
 
-      {/* Right-edge split drop target — only rendered (and only intercepts
-          events) while a tab is actively being dragged. Otherwise clicks in
-          the right portion of the editor would get eaten. */}
-      {allowSplitDropZone && tabDragActive && !isMobile && (
-        <div
-          onDragOver={handleRightEdgeDragOver}
-          onDragLeave={() => setSplitDropActive(false)}
-          onDrop={handleRightEdgeDrop}
-          className={`absolute top-0 right-0 h-full w-1/3 z-10 transition-colors ${
-            splitDropActive
-              ? 'bg-obsidianAccentPurple/20 border-l-2 border-obsidianAccentPurple'
-              : 'bg-obsidianAccentPurple/5 border-l border-obsidianAccentPurple/40 border-dashed'
-          }`}
-        >
-          {!splitDropActive && (
-            <div className="absolute top-1/2 -translate-y-1/2 right-3 text-xs text-obsidianAccentPurple/80 font-medium pointer-events-none">
-              Drop to split →
-            </div>
-          )}
-        </div>
+      {/* Right- and bottom-edge split drop targets — only rendered (and
+          only intercepting events) while a tab is actively being
+          dragged. Otherwise clicks in those regions would get eaten. */}
+      {canSplitMore && tabDragActive && !isMobile && (
+        <>
+          <div
+            onDragOver={makeEdgeDragOver('right')}
+            onDragLeave={() => setSplitDropActive(null)}
+            onDrop={handleEdgeDrop('right')}
+            data-testid="pane-drop-right"
+            className={`absolute top-0 right-0 h-2/3 w-1/3 z-10 transition-colors ${
+              splitDropActive === 'right'
+                ? 'bg-obsidianAccentPurple/20 border-l-2 border-obsidianAccentPurple'
+                : 'bg-obsidianAccentPurple/5 border-l border-obsidianAccentPurple/40 border-dashed'
+            }`}
+          >
+            {splitDropActive !== 'right' && (
+              <div className="absolute top-1/2 -translate-y-1/2 right-3 text-xs text-obsidianAccentPurple/80 font-medium pointer-events-none">
+                Drop to split right →
+              </div>
+            )}
+          </div>
+          <div
+            onDragOver={makeEdgeDragOver('bottom')}
+            onDragLeave={() => setSplitDropActive(null)}
+            onDrop={handleEdgeDrop('bottom')}
+            data-testid="pane-drop-bottom"
+            className={`absolute bottom-0 left-0 right-0 h-1/3 z-10 transition-colors ${
+              splitDropActive === 'bottom'
+                ? 'bg-obsidianAccentPurple/20 border-t-2 border-obsidianAccentPurple'
+                : 'bg-obsidianAccentPurple/5 border-t border-obsidianAccentPurple/40 border-dashed'
+            }`}
+          >
+            {splitDropActive !== 'bottom' && (
+              <div className="absolute left-1/2 -translate-x-1/2 bottom-3 text-xs text-obsidianAccentPurple/80 font-medium pointer-events-none">
+                Drop to split down ↓
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   )

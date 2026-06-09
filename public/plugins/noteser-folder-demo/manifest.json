@@ -1,0 +1,12 @@
+{
+  "id": "noteser-folder-demo",
+  "name": "Folder demo",
+  "version": "0.1.0",
+  "author": "Noteser",
+  "description": "Smoke-test for the v1.2 fs.open-directory capability. Adds a command that opens a folder picker and toasts the file count.",
+  "main": "./main.js",
+  "permissions": ["fs.open-directory"],
+  "surfaces": {
+    "commands": [{ "id": "pick", "title": "Folder demo: count files in a folder" }]
+  }
+}

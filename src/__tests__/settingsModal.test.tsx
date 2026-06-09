@@ -77,11 +77,11 @@ describe('SettingsModal — 2-pane layout', () => {
     expect(screen.getByTestId('settings-cat-general')).not.toHaveAttribute('aria-current')
   })
 
-  test('About panel exposes the production link and GitHub link', () => {
+  test('About panel exposes the builder link and GitHub link', () => {
     render(<SettingsModal />)
     fireEvent.click(screen.getByTestId('settings-cat-about'))
     const links = screen.getAllByRole('link')
-    expect(links.some(a => a.getAttribute('href') === 'https://noteser.thetechjon.com')).toBe(true)
+    expect(links.some(a => a.getAttribute('href') === 'https://thetechjon.com')).toBe(true)
     expect(links.some(a => a.getAttribute('href')?.includes('github.com'))).toBe(true)
   })
 

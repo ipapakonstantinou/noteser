@@ -33,6 +33,7 @@ const RevertToCommitModal = dynamic(() => import('@/components/modals/RevertToCo
 const LocalFolderImportModal = dynamic(() => import('@/components/modals/LocalFolderImportModal').then(m => ({ default: m.LocalFolderImportModal })), { ssr: false })
 const DiscardLocalChangesModal = dynamic(() => import('@/components/modals/DiscardLocalChangesModal').then(m => ({ default: m.DiscardLocalChangesModal })), { ssr: false })
 const PluginInstallConfirmModal = dynamic(() => import('@/components/modals/PluginInstallConfirmModal').then(m => ({ default: m.PluginInstallConfirmModal })), { ssr: false })
+const PluginFullscreenView = dynamic(() => import('@/components/plugins/PluginFullscreenView').then(m => ({ default: m.PluginFullscreenView })), { ssr: false })
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useKeyboardShortcuts, useHydration, useAutoSync, useAutoEmbedNotes, useApplyTheme, useApplyFonts, useViewport } from '@/hooks'
 import { useUIStore, useWorkspaceStore, useGitHubStore, DEFAULT_SIDEBAR_WIDTH, DEFAULT_RIGHT_SIDEBAR_WIDTH } from '@/stores'
@@ -42,6 +43,7 @@ import { useNoteStore } from '@/stores/noteStore'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
 import { installTestHooks } from '@/utils/testHooks'
 import { shouldTrackSwipe, detectSwipeAction } from '@/utils/edgeSwipe'
+import { bootMark, bootMeasure, forEachWithYield } from '@/utils/bootTrace'
 import {
   wipeNoteserState,
   isResetRequestedFromURL,
@@ -59,6 +61,15 @@ const ResetConfirmModal = dynamic(
 
 export default function Home() {
   const hydrated = useHydration()
+  // Intentionally destructured against the whole store (not split into
+  // per-field selectors). The killswitch useEffect below
+  // (`useEffect(..., [hydrated])`) races against the noteStore's async
+  // IDB rehydration: with fewer renders here it fires AFTER addNote,
+  // sees an "unsynced" note, and shows the ResetConfirmModal mid-test.
+  // The full-store subscription keeps the pre-#79 render cadence so
+  // hydration always wins the race. The killswitch race is a separate
+  // bug (decideResetAction should wait for hasHydrated()).
+  // See e2e/attachment-drag.spec.ts.
   const { sidebarCollapsed, sidebarWidth, rightSidebarCollapsed, rightSidebarWidth } = useUIStore()
   const pruneStaleTabs = useWorkspaceStore(s => s.pruneStaleTabs)
   const { isMobile } = useViewport()
@@ -296,9 +307,15 @@ export default function Home() {
     })()
   }, [hydrated])
 
-  // Migrate old data on first load
+  // Migrate old data on first load. Async-yielding migration so a
+  // legacy vault with hundreds of notes does not block first paint on
+  // iOS (the watchdog kills any task held longer than its window).
   useEffect(() => {
-    migrateOldData()
+    bootMark('migrate:start')
+    void migrateOldData().then(() => {
+      bootMark('migrate:end')
+      bootMeasure('migrate', 'migrate:start', 'migrate:end')
+    })
   }, [])
 
   // Self-hosted client-error capture. Installs window.onerror +
@@ -477,6 +494,7 @@ export default function Home() {
       <LocalFolderImportModal />
       <DiscardLocalChangesModal />
       <PluginInstallConfirmModal />
+      <PluginFullscreenView />
       <ResetConfirmModal
         isOpen={showResetModal}
         hasUnsynced={resetHasUnsynced}
@@ -617,8 +635,10 @@ export default function Home() {
   )
 }
 
-// Migrate data from old localStorage format
-function migrateOldData() {
+// Migrate data from old localStorage format. Yields to the main
+// thread between batches so a legacy vault with hundreds of notes
+// does not block first paint on iOS Safari.
+async function migrateOldData() {
   try {
     // Check if old data exists
     const oldNotes = localStorage.getItem('notes')
@@ -630,31 +650,33 @@ function migrateOldData() {
     const newFoldersData = localStorage.getItem(STORAGE_KEYS.folders)
 
     if (oldNotes && !newNotesData) {
-      // Parse old notes
       const notes = JSON.parse(oldNotes)
       if (Array.isArray(notes) && notes.length > 0) {
-        // Convert to new format
-        const migratedNotes = notes.map((note: { id: number | string; title?: string; content?: string; folderId?: number | string | null }) => ({
-          id: String(note.id),
-          title: note.title || 'Untitled Note',
-          content: note.content || '',
-          folderId: note.folderId ? String(note.folderId) : null,
-          tags: [],
-          createdAt: typeof note.id === 'number' ? note.id : Date.now(),
-          updatedAt: Date.now(),
-          isDeleted: false,
-          deletedAt: null,
-          isPinned: false,
-          templateId: null
-        }))
+        const migratedNotes: unknown[] = []
+        await forEachWithYield(
+          notes as Array<{ id: number | string; title?: string; content?: string; folderId?: number | string | null }>,
+          (note) => {
+            migratedNotes.push({
+              id: String(note.id),
+              title: note.title || 'Untitled Note',
+              content: note.content || '',
+              folderId: note.folderId ? String(note.folderId) : null,
+              tags: [],
+              createdAt: typeof note.id === 'number' ? note.id : Date.now(),
+              updatedAt: Date.now(),
+              isDeleted: false,
+              deletedAt: null,
+              isPinned: false,
+              templateId: null,
+            })
+          },
+        )
 
-        // Store in new format
         localStorage.setItem(STORAGE_KEYS.notes, JSON.stringify({
           state: { notes: migratedNotes, selectedNoteId: null },
           version: 2
         }))
 
-        // Remove old data
         localStorage.removeItem('notes')
       }
     }
@@ -662,16 +684,22 @@ function migrateOldData() {
     if (oldFolders && !newFoldersData) {
       const folders = JSON.parse(oldFolders)
       if (Array.isArray(folders) && folders.length > 0) {
-        const migratedFolders = folders.map((folder: { id: number | string; name?: string }, index: number) => ({
-          id: String(folder.id),
-          name: folder.name || 'Folder',
-          parentId: null,
-          createdAt: typeof folder.id === 'number' ? folder.id : Date.now(),
-          updatedAt: Date.now(),
-          isDeleted: false,
-          deletedAt: null,
-          order: index
-        }))
+        const migratedFolders: unknown[] = []
+        await forEachWithYield(
+          folders as Array<{ id: number | string; name?: string }>,
+          (folder, index) => {
+            migratedFolders.push({
+              id: String(folder.id),
+              name: folder.name || 'Folder',
+              parentId: null,
+              createdAt: typeof folder.id === 'number' ? folder.id : Date.now(),
+              updatedAt: Date.now(),
+              isDeleted: false,
+              deletedAt: null,
+              order: index,
+            })
+          },
+        )
 
         localStorage.setItem(STORAGE_KEYS.folders, JSON.stringify({
           state: { folders: migratedFolders, activeFolderId: null, expandedFolders: {} },

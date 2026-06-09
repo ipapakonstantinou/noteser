@@ -45,18 +45,22 @@ export const RightSidebar = ({ hidden = false }: Props) => {
           collapse toggle on the right. Borders the body. */}
       <div className="flex items-center justify-between border-b border-obsidianBorder">
         {open ? (
-          <div className="flex-1 flex items-center px-1 py-1 gap-0.5" role="tablist">
+          <div className="flex-1 flex items-center px-1 py-1 gap-0.5" role="tablist" aria-label="Right sidebar tabs">
             <TabPill
               active={tab === 'properties'}
               label="Properties"
               onClick={() => setTab('properties')}
               testid="right-sidebar-tab-properties"
+              id="right-sidebar-pill-properties"
+              controls="right-sidebar-body"
             />
             <TabPill
               active={tab === 'backlinks'}
               label="Backlinks"
               onClick={() => setTab('backlinks')}
               testid="right-sidebar-tab-backlinks"
+              id="right-sidebar-pill-backlinks"
+              controls="right-sidebar-body"
             />
           </div>
         ) : (
@@ -84,6 +88,9 @@ export const RightSidebar = ({ hidden = false }: Props) => {
           id="right-sidebar-body"
           className="flex-1 min-h-0 overflow-y-auto"
           role="tabpanel"
+          aria-labelledby={
+            tab === 'properties' ? 'right-sidebar-pill-properties' : 'right-sidebar-pill-backlinks'
+          }
         >
           {tab === 'properties' ? <PropertiesPanel /> : <BacklinksView />}
         </div>
@@ -93,12 +100,15 @@ export const RightSidebar = ({ hidden = false }: Props) => {
 }
 
 const TabPill = ({
-  active, label, onClick, testid,
-}: { active: boolean; label: string; onClick: () => void; testid: string }) => (
+  active, label, onClick, testid, id, controls,
+}: { active: boolean; label: string; onClick: () => void; testid: string; id?: string; controls?: string }) => (
   <button
     type="button"
     role="tab"
+    id={id}
     aria-selected={active}
+    aria-controls={controls}
+    tabIndex={active ? 0 : -1}
     onClick={onClick}
     className={`px-2 py-1 text-xs rounded transition-colors ${
       active

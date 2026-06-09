@@ -15,14 +15,11 @@ import {
  *      so Next stamps it with the per-request CSP nonce; sw.js itself is
  *      same-origin and allowed by the `worker-src 'self'` directive.
  *
- *   2. Offer a light, dismissable, one-time install hint:
- *        - Chrome / Android fire `beforeinstallprompt`; we capture it and
- *          surface an "Install" button that calls prompt().
- *        - iOS Safari has no install API, so when running in a normal
- *          Safari tab (not already standalone) we show a one-time tip
- *          pointing at Share -> Add to Home Screen.
- *      Either way the hint shows at most once (tracked in localStorage) and
- *      stays out of the workspace's way (bottom, safe-area aware).
+ *   2. Capture the install prompt on Chromium browsers via
+ *      `beforeinstallprompt` and surface a dismissable, one-time
+ *      "Install noteser" banner. iOS Safari has no install API at all,
+ *      so its "Add to Home Screen" hint lives in Settings -> About
+ *      (not here) per the launch-week voice rules.
  */
 
 const HINT_DISMISSED_KEY = 'noteser-pwa-install-hint-dismissed'
@@ -55,7 +52,6 @@ function isStandalone(): boolean {
 
 export function PwaProvider() {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null)
-  const [showIosTip, setShowIosTip] = useState(false)
   // A waiting SW that the user can activate via the "Reload" prompt.
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null)
   // Latched once we trigger the reload so a second controllerchange can't loop.
@@ -186,8 +182,9 @@ export function PwaProvider() {
     }
     window.addEventListener('beforeinstallprompt', onBeforeInstall)
 
-    // No beforeinstallprompt on iOS Safari — fall back to the manual tip.
-    if (isIosSafari()) setShowIosTip(true)
+    // iOS Safari has no beforeinstallprompt API. The "Add to Home
+    // Screen" instructions live in Settings -> About instead so the
+    // workspace stays uncluttered on a small screen.
 
     return () => window.removeEventListener('beforeinstallprompt', onBeforeInstall)
   }, [])
@@ -199,7 +196,6 @@ export function PwaProvider() {
       /* ignore */
     }
     setInstallEvent(null)
-    setShowIosTip(false)
   }
 
   const handleInstall = async () => {
@@ -214,7 +210,7 @@ export function PwaProvider() {
   }
 
   const showUpdate = waitingWorker !== null
-  if (!installEvent && !showIosTip && !showUpdate) return null
+  if (!installEvent && !showUpdate) return null
 
   return (
     <div
@@ -245,25 +241,21 @@ export function PwaProvider() {
         </div>
       )}
 
-      {/* Install hint (Chrome/Android prompt + iOS tip). */}
-      {(installEvent || showIosTip) && (
-        <div className="pointer-events-auto flex max-w-md items-center gap-3 rounded-md border border-obsidianBorder bg-obsidianGray px-3 py-2 text-sm text-obsidianText shadow-obsidian">
-          {installEvent ? (
-            <>
-              <span className="min-w-0 flex-1">Install Noteser for offline use.</span>
-              <button
-                type="button"
-                onClick={handleInstall}
-                className="flex-none rounded px-2 py-1 text-xs font-medium text-obsidianAccentPurple hover:bg-obsidianHighlight focus:outline-none focus:ring-2 focus:ring-obsidianAccentPurple"
-              >
-                Install
-              </button>
-            </>
-          ) : (
-            <span className="min-w-0 flex-1">
-              Install: tap Share, then Add to Home Screen.
-            </span>
-          )}
+      {/* Install hint (Chrome / Android only — iOS is in Settings -> About). */}
+      {installEvent && (
+        <div
+          className="pointer-events-auto flex max-w-md items-center gap-3 rounded-md border border-obsidianBorder bg-obsidianGray px-3 py-2 text-sm text-obsidianText shadow-obsidian"
+          data-testid="pwa-install-banner"
+        >
+          <span className="min-w-0 flex-1">Install noteser for offline use.</span>
+          <button
+            type="button"
+            onClick={handleInstall}
+            className="flex-none rounded px-2 py-1 text-xs font-medium text-obsidianAccentPurple hover:bg-obsidianHighlight focus:outline-none focus:ring-2 focus:ring-obsidianAccentPurple"
+            data-testid="pwa-install-button"
+          >
+            Install noteser
+          </button>
           <button
             type="button"
             aria-label="Dismiss"
@@ -279,5 +271,8 @@ export function PwaProvider() {
     </div>
   )
 }
+
+// Exported for the iOS detection re-use in Settings -> About.
+export { isIosSafari, isStandalone }
 
 export default PwaProvider

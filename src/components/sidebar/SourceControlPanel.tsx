@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronDownIcon, ChevronRightIcon, ArrowTopRightOnSquareIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/outline'
-import { useNoteStore, useGitHubStore, useWorkspaceStore, useUIStore } from '@/stores'
+import { useNoteStore, useGitHubStore, useWorkspaceStore, useUIStore, useFolderStore } from '@/stores'
 import {
   classifyPendingChanges,
   totalPendingCount,
@@ -68,14 +68,32 @@ export function groupChangesByFolder(
   return root
 }
 
+// Branches GitHub treats as the repo default — we omit the `/tree/<branch>`
+// suffix for these so the link lands on the repo root.
+const DEFAULT_BRANCHES = new Set(['main', 'master'])
+
+// Build the GitHub web URL for the configured vault repo. Appends
+// `/tree/<branch>` only when the branch isn't the conventional default.
+function repoWebUrl(repo: { owner: string; name: string; branch: string }): string {
+  const base = `https://github.com/${repo.owner}/${repo.name}`
+  return DEFAULT_BRANCHES.has(repo.branch) ? base : `${base}/tree/${repo.branch}`
+}
+
 export function SourceControlPanel() {
   const notes = useNoteStore(s => s.notes)
+  const folders = useFolderStore(s => s.folders)
   const lastSyncedAt = useGitHubStore(s => s.lastSyncedAt)
+  const syncRepo = useGitHubStore(s => s.syncRepo)
   const openNote = useWorkspaceStore(s => s.openNote)
 
+  // Pass `folders` so created (never-pushed) notes carry a synthetic
+  // gitPath derived from their folder hierarchy — that's what lets
+  // groupChangesByFolder below nest them under the right directory
+  // instead of dumping them at the root (the
+  // fix/created-note-source-control-tree-bug fix).
   const changes = useMemo(
-    () => classifyPendingChanges(notes, lastSyncedAt),
-    [notes, lastSyncedAt],
+    () => classifyPendingChanges(notes, lastSyncedAt, folders),
+    [notes, lastSyncedAt, folders],
   )
   const total = totalPendingCount(changes)
 
@@ -87,11 +105,37 @@ export function SourceControlPanel() {
   return (
     <div className="space-y-1" data-testid="source-control-panel">
       <div className="flex items-center justify-between">
-        <div className="text-[11px] uppercase tracking-wide text-obsidianSecondaryText">
-          Source control
+        <div className="flex items-center gap-1 min-w-0">
+          <span className="text-[11px] uppercase tracking-wide text-obsidianSecondaryText flex-none">
+            Source control
+          </span>
+          {syncRepo && (
+            <>
+              <span className="text-[11px] text-obsidianSecondaryText/60 flex-none">·</span>
+              <span
+                className="text-[11px] font-mono text-obsidianSecondaryText truncate"
+                title={`${syncRepo.owner}/${syncRepo.name}`}
+                data-testid="source-control-repo-name"
+              >
+                {syncRepo.owner}/{syncRepo.name}
+              </span>
+              <a
+                href={repoWebUrl(syncRepo)}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={e => e.stopPropagation()}
+                className="flex-none text-obsidianSecondaryText hover:text-obsidianText transition-colors"
+                data-noteser-tip="Open in GitHub"
+                data-testid="source-control-open-github"
+                aria-label="Open in GitHub"
+              >
+                <ArrowTopRightOnSquareIcon className="w-3 h-3" />
+              </a>
+            </>
+          )}
         </div>
         <span
-          className="text-[11px] font-mono text-obsidianSecondaryText"
+          className="text-[11px] font-mono text-obsidianSecondaryText flex-none ml-2"
           data-testid="source-control-count"
         >
           {total > 0 ? `${total} pending` : 'clean'}

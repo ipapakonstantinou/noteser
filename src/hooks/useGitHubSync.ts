@@ -622,12 +622,25 @@ export function useGitHubSync(): UseGitHubSyncResult {
           actionLabel: 'Reconnect', onAction: () => { useUIStore.getState().openModal({ type: 'github-auth' }) },
         })
       } else {
-        const message = err instanceof Error ? err.message : 'Pull failed'
-        setSyncState({ kind: 'err', message })
-        addSyncToast({
-          kind: 'error', message,
-          actionLabel: 'Retry', onAction: () => { void runPullOnly() },
-        })
+        // Offline-first Step 1 (#68): if the browser is offline (or the
+        // error is the classic `TypeError: Failed to fetch` thrown when
+        // there's no network), surface a calm status line instead of a
+        // red "Pull failed" toast. The cached vault is already on
+        // screen; nothing actually broke from the user's POV. The
+        // `online` listener in useAutoSync will retry automatically.
+        const isOffline =
+          (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+          (err instanceof TypeError && /fetch/i.test(err.message))
+        if (isOffline) {
+          setSyncState({ kind: 'err', message: 'Offline — using cached vault' })
+        } else {
+          const message = err instanceof Error ? err.message : 'Pull failed'
+          setSyncState({ kind: 'err', message })
+          addSyncToast({
+            kind: 'error', message,
+            actionLabel: 'Retry', onAction: () => { void runPullOnly() },
+          })
+        }
       }
     } finally {
       useGitHubStore.getState().setIsSyncing(false)

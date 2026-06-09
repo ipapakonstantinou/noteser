@@ -15,7 +15,12 @@ import {
   ArrowUturnLeftIcon,
   ClockIcon,
   ShareIcon,
+  ArrowsRightLeftIcon,
+  EyeIcon,
+  ArrowTopRightOnSquareIcon,
 } from '@heroicons/react/24/outline'
+import { revealNote } from '@/utils/revealNote'
+import { useShallow } from 'zustand/react/shallow'
 import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore, useSettingsStore, useGitHubStore } from '@/stores'
 import type { ContextMenuState, Folder } from '@/types'
 import { AI_ACTIONS } from '@/utils/aiActions'
@@ -54,7 +59,7 @@ interface ContextMenuProps {
 
 export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   const menuRef = useRef<HTMLDivElement>(null)
-  const { openModal } = useUIStore()
+  const openModal = useUIStore(s => s.openModal)
   const requestRename = useUIStore(s => s.requestRename)
   const {
     getNoteById,
@@ -64,10 +69,48 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
     deleteNote,
     restoreNote,
     restoreNotes,
-    getDeletedNotes
-  } = useNoteStore()
-  const { getFolderById, addFolder, deleteFolder, getActiveFolders, getDeletedFolders, restoreFolders, toggleFolderExpanded, expandedFolders } = useFolderStore()
+    getDeletedNotes,
+  } = useNoteStore(
+    useShallow(s => ({
+      getNoteById: s.getNoteById,
+      addNote: s.addNote,
+      duplicateNote: s.duplicateNote,
+      togglePinNote: s.togglePinNote,
+      deleteNote: s.deleteNote,
+      restoreNote: s.restoreNote,
+      restoreNotes: s.restoreNotes,
+      getDeletedNotes: s.getDeletedNotes,
+    }))
+  )
+  const {
+    getFolderById,
+    addFolder,
+    deleteFolder,
+    getActiveFolders,
+    getDeletedFolders,
+    restoreFolders,
+    toggleFolderExpanded,
+    expandedFolders,
+  } = useFolderStore(
+    useShallow(s => ({
+      getFolderById: s.getFolderById,
+      addFolder: s.addFolder,
+      deleteFolder: s.deleteFolder,
+      getActiveFolders: s.getActiveFolders,
+      getDeletedFolders: s.getDeletedFolders,
+      restoreFolders: s.restoreFolders,
+      toggleFolderExpanded: s.toggleFolderExpanded,
+      expandedFolders: s.expandedFolders,
+    }))
+  )
   const openNote = useWorkspaceStore(s => s.openNote)
+  const openCompare = useWorkspaceStore(s => s.openCompare)
+  // VS Code-style compare flow: a previously right-clicked note may be
+  // pending as the "left" side. Reading the id here (not the action) so
+  // both Select for Compare and Compare with Selected stay in sync.
+  const compareSourceNoteId = useUIStore(s => s.compareSourceNoteId)
+  const setCompareSource = useUIStore(s => s.setCompareSource)
+  const clearCompareSource = useUIStore(s => s.clearCompareSource)
   // "Publish as gist" reuses the GitHub OAuth token. Hooked up here at
   // the top of the component so it sits BEFORE the early `if (!item)
   // return` below — react-hooks/rules-of-hooks won't accept a hook
@@ -192,6 +235,71 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   }
 
   if (!item) return null
+
+  // foreign-vault-files: a note with `kind: 'foreign'` is a read-only mirror
+  // of a remote vault file (e.g. `.canvas`, `.base`) — Rename / Delete /
+  // Duplicate / Pin all make no sense (we cannot edit the file). Render a
+  // short menu with Reveal in folder (sidebar focus) and Show on GitHub
+  // (open the raw file in a new tab) so the user can still find or inspect
+  // the file. Everything destructive is excluded by design.
+  const isForeignNote = isNote && (item as { kind?: string }).kind === 'foreign'
+  if (isForeignNote) {
+    const foreignNote = item as { gitPath?: string | null }
+    const { token, syncRepo } = useGitHubStore.getState()
+    const gitPath = foreignNote.gitPath ?? null
+    const githubUrl = syncRepo && gitPath
+      ? `https://github.com/${syncRepo.owner}/${syncRepo.name}/blob/${syncRepo.branch}/${gitPath
+          .split('/')
+          .map(encodeURIComponent)
+          .join('/')}`
+      : null
+    const handleReveal = () => {
+      revealNote(contextMenu.id)
+      onClose()
+    }
+    const handleShowOnGitHub = () => {
+      if (githubUrl) window.open(githubUrl, '_blank', 'noopener')
+      onClose()
+    }
+    // We hide Show on GitHub when we don't have a repo to link to (e.g. the
+    // user hasn't connected GitHub yet). The Reveal action stays available
+    // because it works purely against local state. `token` is read so a
+    // future enhancement can gate features that need an authenticated
+    // request, but currently the URL is public-readable so we don't depend
+    // on it here.
+    void token
+    // MenuButton is declared further down the function body so we inline the
+    // two buttons here instead of forward-referencing it. The styling matches
+    // MenuButton verbatim to keep the menu consistent with the other entries.
+    return (
+      <div
+        ref={menuRef}
+        className="fixed bg-obsidianGray border border-obsidianBorder rounded-lg shadow-obsidian py-1 min-w-[180px] z-50"
+        style={{ top: contextMenu.y, left: contextMenu.x }}
+        role="menu"
+        data-testid="context-menu"
+      >
+        <button
+          onClick={handleReveal}
+          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-obsidianText hover:bg-obsidianHighlight transition-colors"
+          data-testid="context-menu-foreign-reveal"
+        >
+          <EyeIcon className="w-4 h-4" />
+          Reveal in folder
+        </button>
+        {githubUrl && (
+          <button
+            onClick={handleShowOnGitHub}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-obsidianText hover:bg-obsidianHighlight transition-colors"
+            data-testid="context-menu-foreign-github"
+          >
+            <ArrowTopRightOnSquareIcon className="w-4 h-4" />
+            Show on GitHub
+          </button>
+        )}
+      </div>
+    )
+  }
 
   // Note-only: is the right-clicked note in the trash? Drives the
   // Restore option visibility — and we hide the rest of the note
@@ -323,6 +431,28 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
     onClose()
   }
 
+  const handleSelectForCompare = () => {
+    if (isNote) setCompareSource(contextMenu.id)
+    onClose()
+  }
+
+  const handleCompareWithSelected = () => {
+    if (isNote && compareSourceNoteId && compareSourceNoteId !== contextMenu.id) {
+      openCompare(compareSourceNoteId, contextMenu.id)
+      // Auto-clear once a compare opens — matches VS Code's behaviour
+      // and keeps the tree highlight from lingering after the diff
+      // surface is already on screen.
+      clearCompareSource()
+    }
+    onClose()
+  }
+
+  const canCompareWithSelected =
+    isNote &&
+    !!compareSourceNoteId &&
+    compareSourceNoteId !== contextMenu.id &&
+    !isTrashedNote
+
   const handleNewNoteInFolder = () => {
     if (!isNote) {
       const note = addNote({ folderId: contextMenu.id })
@@ -386,6 +516,11 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   return (
     <div
       ref={menuRef}
+      // Stop click propagation: the sidebar root has an onClick that
+      // closes the menu on ANY click inside, which kills the
+      // submenu-open state (Move to folder, AI) before it can render.
+      // Items that should close the menu call onClose() directly.
+      onClick={e => e.stopPropagation()}
       className="fixed bg-obsidianGray border border-obsidianBorder rounded-lg shadow-obsidian py-1 min-w-[180px] z-50"
       style={{
         top: contextMenu.y,
@@ -444,6 +579,20 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
             label="Duplicate"
             onClick={handleDuplicate}
           />
+          {!isTrashedNote && (
+            <MenuButton
+              icon={ArrowsRightLeftIcon}
+              label="Select for Compare"
+              onClick={handleSelectForCompare}
+            />
+          )}
+          {canCompareWithSelected && (
+            <MenuButton
+              icon={ArrowsRightLeftIcon}
+              label="Compare with Selected"
+              onClick={handleCompareWithSelected}
+            />
+          )}
           {canViewHistory && (
             <MenuButton
               icon={ClockIcon}

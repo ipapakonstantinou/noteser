@@ -10,7 +10,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { idbStorage } from '@/utils/idbStorage'
-import type { PluginManifest } from '@/plugins/manifest'
+import type { PluginManifest, PluginPermission } from '@/plugins/manifest'
 
 export interface InstalledPluginRecord {
   manifest: PluginManifest
@@ -27,6 +27,16 @@ export interface InstalledPluginRecord {
   /** When `false`, the bootstrap skips this plugin on app load.
    *  Lets a user pause a misbehaving plugin without uninstalling. */
   enabled: boolean
+  /** v1.2: per-install capability revocation list. Persisted across
+   *  reboots — a permission revoked here stays revoked until the user
+   *  re-grants it. The manifest's declared `permissions` list is the
+   *  ceiling; revocation can only subtract from it. Honoured at
+   *  dispatch time for every v1.2 capability (vault.read.all,
+   *  vault.write, vault.events, fs.open-directory, …); existing
+   *  subscribers are not torn down on revocation — they just stop
+   *  receiving events / get a rejection with
+   *  `Permission "<name>" was revoked.` on the next call. */
+  revokedPermissions?: PluginPermission[]
 }
 
 interface PluginInstallState {
@@ -36,11 +46,24 @@ interface PluginInstallState {
   install: (record: InstalledPluginRecord) => void
   uninstall: (pluginId: string) => void
   setEnabled: (pluginId: string, enabled: boolean) => void
+  /** Toggle a permission's revoked state for the given plugin.
+   *  Idempotent. Used by Settings → Plugins; the PluginHost reads the
+   *  same flag on boot to seed its in-memory revocation set, and
+   *  re-checks on every v1.2 capability dispatch so a runtime change
+   *  takes effect without restarting the plugin. The manifest's
+   *  declared `permissions` list is unchanged — revocation only
+   *  subtracts. Existing event-subscribers stay alive but stop
+   *  receiving events. */
+  setPermissionRevoked: (pluginId: string, permission: PluginPermission, revoked: boolean) => void
+  /** Read-side helper used by PluginHost's permission gate.
+   *  Returns false when the plugin id is unknown — an uninstalled
+   *  plugin cannot have revoked permissions. */
+  isPermissionRevoked: (pluginId: string, permission: string) => boolean
 }
 
 export const usePluginInstallStore = create<PluginInstallState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       records: {},
 
       install: (record) =>
@@ -64,6 +87,30 @@ export const usePluginInstallStore = create<PluginInstallState>()(
             records: { ...state.records, [pluginId]: { ...cur, enabled } },
           }
         }),
+
+      setPermissionRevoked: (pluginId, permission, revoked) =>
+        set((state) => {
+          const cur = state.records[pluginId]
+          if (!cur) return state
+          const existing = cur.revokedPermissions ?? []
+          const alreadyRevoked = existing.includes(permission)
+          if (revoked === alreadyRevoked) return state
+          const next = revoked
+            ? [...existing, permission]
+            : existing.filter((p) => p !== permission)
+          return {
+            records: {
+              ...state.records,
+              [pluginId]: { ...cur, revokedPermissions: next },
+            },
+          }
+        }),
+
+      isPermissionRevoked: (pluginId, permission) => {
+        const rec = get().records[pluginId]
+        if (!rec) return false
+        return rec.revokedPermissions?.includes(permission as PluginPermission) ?? false
+      },
     }),
     {
       name: 'noteser-plugin-installs',

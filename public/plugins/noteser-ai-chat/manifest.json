@@ -1,0 +1,13 @@
+{
+  "id": "noteser-ai-chat",
+  "name": "AI chat",
+  "version": "0.1.0",
+  "author": "Noteser",
+  "description": "Chat with an OpenAI or Anthropic model over your vault. Bring your own key. Keyword-RAG V1: top-5 notes get injected as context. Nothing leaves your repo unless you turn it on.",
+  "main": "./main.js",
+  "permissions": ["vault.read.all", "vault.write", "file-save"],
+  "surfaces": {
+    "commands": [{ "id": "open-chat", "title": "Open AI chat" }],
+    "fullscreenViews": [{ "id": "chat", "title": "Chat with your notes" }]
+  }
+}

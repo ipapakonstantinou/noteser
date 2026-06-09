@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Bars3Icon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
   MagnifyingGlassIcon,
   EllipsisVerticalIcon,
   EyeIcon,
@@ -45,6 +47,15 @@ export const MobileTopBar = () => {
   )
   const requestRename = useUIStore(s => s.requestRename)
   const togglePinNote = useNoteStore(s => s.togglePinNote)
+  const goBack = useWorkspaceStore(s => s.goBack)
+  const goForward = useWorkspaceStore(s => s.goForward)
+  // Subscribe to history depth so the buttons re-render on navigation.
+  const activeHistory = useWorkspaceStore(s => {
+    const id = s.activePaneId ?? s.panes[0]?.id
+    return id ? s.histories[id] : undefined
+  })
+  const canBack = !!activeHistory && activeHistory.index > 0
+  const canForward = !!activeHistory && activeHistory.index >= 0 && activeHistory.index < activeHistory.entries.length - 1
   // Resolve the active note (if any) so the overflow menu can offer
   // Pin / Rename for it. Mobile hides EditorHeader (Phase B aggressive
   // mode), so these gestures need a home and the overflow menu is the
@@ -102,6 +113,30 @@ export const MobileTopBar = () => {
         data-testid="mobile-top-bar-menu"
       >
         <Bars3Icon className="w-5 h-5" />
+      </button>
+
+      <button
+        type="button"
+        onClick={() => goBack()}
+        disabled={!canBack}
+        title="Back"
+        aria-label="Back"
+        className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-default transition-colors"
+        data-testid="mobile-top-bar-back"
+      >
+        <ChevronLeftIcon className="w-5 h-5" />
+      </button>
+
+      <button
+        type="button"
+        onClick={() => goForward()}
+        disabled={!canForward}
+        title="Forward"
+        aria-label="Forward"
+        className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-default transition-colors"
+        data-testid="mobile-top-bar-forward"
+      >
+        <ChevronRightIcon className="w-5 h-5" />
       </button>
 
       {/* Active note title placeholder — Obsidian leaves the top centred

@@ -15,7 +15,9 @@ type Status =
 const PAT_DOCS_URL = 'https://github.com/settings/personal-access-tokens'
 
 export const GitHubAuthModal = () => {
-  const { modal, closeModal, openModal } = useUIStore()
+  const modal = useUIStore(s => s.modal)
+  const closeModal = useUIStore(s => s.closeModal)
+  const openModal = useUIStore(s => s.openModal)
   const setSession = useGitHubStore((s) => s.setSession)
   const syncRepo = useGitHubStore((s) => s.syncRepo)
 

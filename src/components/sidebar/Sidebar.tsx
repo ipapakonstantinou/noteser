@@ -26,11 +26,9 @@ import type { ContextMenuState } from '@/types'
 
 export const Sidebar = () => {
   const hydrated = useHydration()
-  const {
-    sidebarCollapsed,
-    toggleSidebar,
-    openModal,
-  } = useUIStore()
+  const sidebarCollapsed = useUIStore(s => s.sidebarCollapsed)
+  const toggleSidebar = useUIStore(s => s.toggleSidebar)
+  const openModal = useUIStore(s => s.openModal)
 
   const githubUser = useGitHubStore((s) => s.user)
   const githubSyncRepo = useGitHubStore((s) => s.syncRepo)

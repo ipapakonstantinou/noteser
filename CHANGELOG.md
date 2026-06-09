@@ -3,6 +3,13 @@
 User-facing release notes for [Noteser](https://noteser.app). For the full
 commit log see the [GitHub history](https://github.com/ipapakonstantinou/noteser/commits/main).
 
+## 2026-06-07
+
+- **Public beta channel.** `beta.noteser.app` is now linked from the welcome
+  view and from Settings → About. The beta channel tracks the `dev` branch.
+  New features land there first; the stable channel at `noteser.app` updates
+  when a release is cut.
+
 ## 2026-06-01
 
 - **Open your existing vault — top-of-page CTA.** Visitors who already have a

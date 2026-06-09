@@ -65,7 +65,9 @@ interface VaultEncryptionModalData {
 }
 
 export const VaultEncryptionModal = () => {
-  const { modal, closeModal, openModal } = useUIStore()
+  const modal = useUIStore(s => s.modal)
+  const closeModal = useUIStore(s => s.closeModal)
+  const openModal = useUIStore(s => s.openModal)
   const data = modal.data as VaultEncryptionModalData | undefined
   const isOpen = modal.type === 'vault-encryption'
   const mode = data?.mode ?? 'unlock'

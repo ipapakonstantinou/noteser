@@ -34,7 +34,8 @@ interface RevertModalData {
 }
 
 export const RevertToCommitModal = () => {
-  const { modal, closeModal } = useUIStore()
+  const modal = useUIStore(s => s.modal)
+  const closeModal = useUIStore(s => s.closeModal)
   const data = modal.data as RevertModalData | undefined
   const isOpen = modal.type === 'revert-to-commit'
 

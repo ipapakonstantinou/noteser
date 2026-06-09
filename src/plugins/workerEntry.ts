@@ -19,12 +19,20 @@
 //   5. Host begins sending events; worker dispatches them to handlers
 
 import { validateManifest, type PluginManifest } from './manifest'
-import type {
-  HostToWorker,
-  WorkerToHost,
-  HostBootMessage,
+import {
+  MAX_VAULT_SUBSCRIPTIONS_PER_EVENT,
+  type HostToWorker,
+  type WorkerToHost,
+  type HostBootMessage,
+  type NoteWithBodyWire,
 } from './protocol'
-import type { PluginCtx, PluginDefinition } from './sdk'
+import type {
+  DirectoryEntries,
+  NoteWithBody,
+  PluginCtx,
+  PluginDefinition,
+  Unsubscribe,
+} from './sdk'
 
 interface PluginState {
   manifest: PluginManifest
@@ -52,11 +60,189 @@ interface PendingFileOpen {
   resolve: (v: { bytes: Uint8Array; filename: string } | null) => void
   reject: (err: Error) => void
 }
-const pending = new Map<number, PendingFileSave | PendingFileOpen>()
+interface PendingVaultReadAll {
+  kind: 'vault.all'
+  resolve: (notes: ReadonlyArray<NoteWithBody>) => void
+  reject: (err: Error) => void
+}
+interface PendingVaultReadOne {
+  kind: 'vault.one'
+  resolve: (note: NoteWithBody | null) => void
+  reject: (err: Error) => void
+}
+interface PendingVaultReadStream {
+  kind: 'vault.stream'
+  /** Emits one chunk per host:vaultStreamChunk arrival, or completes
+   *  with null when the host signals end-of-stream / error. */
+  push: (chunk: ReadonlyArray<NoteWithBody> | null, error: string | null) => void
+}
+interface PendingDirectoryOpen {
+  kind: 'openDirectory'
+  resolve: (v: DirectoryEntries | null) => void
+  reject: (err: Error) => void
+}
+interface PendingFullscreenOpen {
+  kind: 'fullscreen-open'
+  resolve: () => void
+  reject: (err: Error) => void
+}
+/** Pending vault.write request awaiting host reply. `create` resolves
+ *  with { id, conflictResolved }; the other ops resolve with void. */
+interface PendingVaultWriteCreate {
+  kind: 'vault.write.create'
+  resolve: (v: { id: string; conflictResolved: 'none' | 'suffix' }) => void
+  reject: (err: Error) => void
+}
+interface PendingVaultWriteVoid {
+  kind: 'vault.write.void'
+  resolve: () => void
+  reject: (err: Error) => void
+}
+const pending = new Map<
+  number,
+  | PendingFileSave
+  | PendingFileOpen
+  | PendingVaultReadAll
+  | PendingVaultReadOne
+  | PendingVaultReadStream
+  | PendingDirectoryOpen
+  | PendingFullscreenOpen
+  | PendingVaultWriteCreate
+  | PendingVaultWriteVoid
+>()
 
 let nextRequestSeq = 0
 function allocRequestSeq(): number {
   return ++nextRequestSeq
+}
+
+// ─── VNode event handlers (v1.2) ────────────────────────────────────────
+//
+// Plugins call `ctx.onVNodeEvent(handler)` to receive every event a
+// rendered surface (sidebar panel, fullscreen modal, code block) fires
+// back. The renderer attached the event names to the VNode shapes; the
+// host bundles them into a `host:vnodeEvent` envelope and posts here.
+//
+// Handler shape: `({ event, payload, source }) => void`. ONE handler
+// per registration; the plugin owns its own dispatch table. Returning
+// `Unsubscribe` removes it. On plugin teardown the worker module is
+// terminated so the handlers vanish along with everything else; we do
+// not need to drain the set manually.
+//
+// Multiple registrations stack — each handler fires for every event.
+// Plugins typically register one, but the SDK contract allows N so a
+// plugin that wraps `onVNodeEvent` for telemetry doesn't have to be
+// the only owner.
+
+type VNodeEventSource =
+  | { kind: 'panel'; panelId: string }
+  | { kind: 'codeBlock'; blockId: string }
+  | { kind: 'fullscreen'; viewId: string }
+
+type VNodeEventHandler = (args: {
+  event: string
+  payload: unknown
+  source: VNodeEventSource
+}) => void
+
+const vnodeEventHandlers = new Set<VNodeEventHandler>()
+
+function dispatchVNodeEvent(
+  event: string,
+  payload: unknown,
+  source: VNodeEventSource,
+): void {
+  // Snapshot before iterating — a handler that calls `unsubscribe()`
+  // would otherwise mutate the set mid-iteration.
+  for (const handler of Array.from(vnodeEventHandlers)) {
+    try {
+      handler({ event, payload, source })
+    } catch (err) {
+      emit({
+        type: 'worker:error',
+        seq: 0,
+        message: `onVNodeEvent handler threw: ${err instanceof Error ? err.message : String(err)}`,
+      })
+    }
+  }
+}
+
+// ─── vault.events subscriptions ─────────────────────────────────────────
+//
+// One handler table per event type. The worker mints opaque
+// subscriptionIds (`vsub-<n>`) the host pairs against incoming
+// host:vaultChanged / host:noteSaved / host:activeNoteIdChanged
+// envelopes.
+//
+// On plugin teardown (worker termination) the host drops every
+// subscription on its side, so this in-worker map never has to be
+// drained — but plugins are still encouraged to call the returned
+// unsubscribe so a long-lived plugin does not accumulate handlers
+// across panel mounts.
+
+type VaultEventName = 'vaultChanged' | 'noteSaved' | 'activeNoteIdChanged'
+type AnyVaultHandler =
+  | (() => void)
+  | ((noteId: string) => void)
+  | ((noteId: string | null) => void)
+
+interface VaultSubEntry {
+  event: VaultEventName
+  handler: AnyVaultHandler
+}
+
+const vaultSubs = new Map<string, VaultSubEntry>()
+let nextSubSeq = 0
+
+function countSubsForEvent(event: VaultEventName): number {
+  let n = 0
+  for (const v of vaultSubs.values()) if (v.event === event) n++
+  return n
+}
+
+function subscribeVault(event: VaultEventName, handler: AnyVaultHandler): Unsubscribe {
+  if (countSubsForEvent(event) >= MAX_VAULT_SUBSCRIPTIONS_PER_EVENT) {
+    throw new Error(
+      `Too many ${event} subscriptions (max ${MAX_VAULT_SUBSCRIPTIONS_PER_EVENT} per plugin).`,
+    )
+  }
+  const subscriptionId = `vsub-${++nextSubSeq}`
+  vaultSubs.set(subscriptionId, { event, handler })
+  emit({
+    type: 'worker:subscribeVault',
+    seq: allocRequestSeq(),
+    event,
+    subscriptionId,
+  })
+  return () => {
+    if (!vaultSubs.has(subscriptionId)) return
+    vaultSubs.delete(subscriptionId)
+    emit({
+      type: 'worker:unsubscribeVault',
+      seq: allocRequestSeq(),
+      subscriptionId,
+    })
+  }
+}
+
+function dispatchVault(subscriptionId: string, payload: string | null | undefined): void {
+  const entry = vaultSubs.get(subscriptionId)
+  if (!entry) return
+  try {
+    if (entry.event === 'vaultChanged') {
+      ;(entry.handler as () => void)()
+    } else if (entry.event === 'noteSaved') {
+      ;(entry.handler as (noteId: string) => void)(payload as string)
+    } else {
+      ;(entry.handler as (noteId: string | null) => void)(payload ?? null)
+    }
+  } catch (err) {
+    emit({
+      type: 'worker:error',
+      seq: 0,
+      message: `vault.events handler threw: ${err instanceof Error ? err.message : String(err)}`,
+    })
+  }
 }
 
 self.onmessage = async (event: MessageEvent<HostToWorker>) => {
@@ -110,6 +296,146 @@ self.onmessage = async (event: MessageEvent<HostToWorker>) => {
           } else {
             p.reject(new Error(msg.error ?? 'File open failed.'))
           }
+        }
+        return
+      }
+
+      case 'host:vaultReadResult': {
+        const p = pending.get(msg.requestSeq)
+        if (!p) return
+        if (p.kind === 'vault.all') {
+          pending.delete(msg.requestSeq)
+          if (!msg.ok) {
+            p.reject(new Error(msg.error ?? 'vault.read.getAllNotes failed.'))
+            return
+          }
+          p.resolve((msg.notes ?? []) as ReadonlyArray<NoteWithBody>)
+          return
+        }
+        if (p.kind === 'vault.one') {
+          pending.delete(msg.requestSeq)
+          if (!msg.ok) {
+            p.reject(new Error(msg.error ?? 'vault.read.getNote failed.'))
+            return
+          }
+          // `note` may be undefined on the wire when the host sent the
+          // null variant (host normalises null → omitted spread); the
+          // SDK contract is null-when-not-found.
+          p.resolve(msg.note === undefined ? null : (msg.note as NoteWithBody | null))
+          return
+        }
+        // Wrong response kind for the pending request shape — emit a
+        // worker:error so the dev sees the protocol mismatch instead
+        // of a silently hung Promise.
+        emit({
+          type: 'worker:error',
+          seq: 0,
+          message: `vaultReadResult arrived for a non-read pending request (kind=${p.kind}).`,
+        })
+        return
+      }
+
+      case 'host:vaultStreamChunk': {
+        const p = pending.get(msg.requestSeq)
+        if (!p || p.kind !== 'vault.stream') return
+        if (msg.error) {
+          pending.delete(msg.requestSeq)
+          p.push(null, msg.error)
+          return
+        }
+        if (msg.notes.length === 0) {
+          // End-of-stream marker.
+          pending.delete(msg.requestSeq)
+          p.push(null, null)
+          return
+        }
+        p.push(msg.notes as ReadonlyArray<NoteWithBody>, null)
+        return
+      }
+
+      case 'host:vnodeEvent':
+        dispatchVNodeEvent(msg.event, msg.payload, msg.source)
+        return
+
+      case 'host:vaultChanged':
+        dispatchVault(msg.subscriptionId, undefined)
+        return
+
+      case 'host:noteSaved':
+        dispatchVault(msg.subscriptionId, msg.noteId)
+        return
+
+      case 'host:activeNoteIdChanged':
+        dispatchVault(msg.subscriptionId, msg.noteId)
+        return
+
+      case 'host:directoryOpenResult': {
+        const p = pending.get(msg.requestSeq)
+        if (p && p.kind === 'openDirectory') {
+          pending.delete(msg.requestSeq)
+          if (msg.ok) {
+            // No entries → user cancelled the picker. Distinct from a
+            // permission rejection (ok=false) so the plugin can branch
+            // on `null` vs catching an error.
+            if (msg.entries === undefined) {
+              p.resolve(null)
+            } else {
+              p.resolve(msg.entries as DirectoryEntries)
+            }
+          } else {
+            p.reject(new Error(msg.error ?? 'Directory open failed.'))
+          }
+        }
+        return
+      }
+
+      case 'host:fullscreenOpenResult': {
+        const p = pending.get(msg.requestSeq)
+        if (p && p.kind === 'fullscreen-open') {
+          pending.delete(msg.requestSeq)
+          if (msg.ok) p.resolve()
+          else p.reject(new Error(msg.error ?? 'Could not open fullscreen view.'))
+        }
+        return
+      }
+
+      case 'host:fullscreenOpened':
+        await handleFullscreenOpened(msg.seq, msg.viewId)
+        return
+
+      case 'host:fullscreenClosed':
+        await handleFullscreenClosed(msg.seq, msg.viewId)
+        return
+
+      case 'host:vaultWriteResult': {
+        const p = pending.get(msg.requestSeq)
+        if (!p) return
+        if (p.kind !== 'vault.write.create' && p.kind !== 'vault.write.void') {
+          // Mismatched pending shape — emit a worker:error so the dev
+          // sees the protocol mismatch instead of a silently hung Promise.
+          emit({
+            type: 'worker:error',
+            seq: 0,
+            message: `vaultWriteResult arrived for a non-write pending request (kind=${p.kind}).`,
+          })
+          return
+        }
+        pending.delete(msg.requestSeq)
+        if (!msg.ok) {
+          p.reject(new Error(msg.error ?? 'Vault write failed.'))
+          return
+        }
+        if (p.kind === 'vault.write.create') {
+          if (typeof msg.id !== 'string') {
+            p.reject(new Error('Vault write succeeded but host returned no note id.'))
+            return
+          }
+          p.resolve({
+            id: msg.id,
+            conflictResolved: msg.conflictResolved ?? 'none',
+          })
+        } else {
+          p.resolve()
         }
         return
       }
@@ -279,6 +605,20 @@ async function handleRenderCodeBlock(
   }
 }
 
+async function handleFullscreenOpened(seq: number, viewId: string): Promise<void> {
+  if (state === null) return
+  if (typeof state.def.onFullscreenMount === 'function') {
+    await state.def.onFullscreenMount(viewId, buildCtx(seq))
+  }
+}
+
+async function handleFullscreenClosed(seq: number, viewId: string): Promise<void> {
+  if (state === null) return
+  if (typeof state.def.onFullscreenUnmount === 'function') {
+    await state.def.onFullscreenUnmount(viewId, buildCtx(seq))
+  }
+}
+
 function buildCtx(parentSeq: number): PluginCtx {
   if (state === null) throw new Error('buildCtx called before boot')
   const s = state
@@ -335,8 +675,233 @@ function buildCtx(parentSeq: number): PluginCtx {
       })
       return promise
     },
+    vault: {
+      read: {
+        getAllNotes() {
+          const requestSeq = allocRequestSeq()
+          const promise = new Promise<ReadonlyArray<NoteWithBody>>((resolve, reject) => {
+            pending.set(requestSeq, { kind: 'vault.all', resolve, reject })
+          })
+          emit({
+            type: 'worker:requestVaultRead',
+            seq: requestSeq,
+            mode: 'all',
+          })
+          return promise
+        },
+        getNote(id: string) {
+          const requestSeq = allocRequestSeq()
+          const promise = new Promise<NoteWithBody | null>((resolve, reject) => {
+            pending.set(requestSeq, { kind: 'vault.one', resolve, reject })
+          })
+          emit({
+            type: 'worker:requestVaultRead',
+            seq: requestSeq,
+            mode: 'one',
+            noteId: id,
+          })
+          return promise
+        },
+        stream(opts?: { chunkSize?: number }) {
+          return makeVaultStream(opts?.chunkSize)
+        },
+      },
+      write: {
+        createNote(args) {
+          const requestSeq = allocRequestSeq()
+          const promise = new Promise<{ id: string; conflictResolved: 'none' | 'suffix' }>(
+            (resolve, reject) => {
+              pending.set(requestSeq, { kind: 'vault.write.create', resolve, reject })
+            },
+          )
+          emit({
+            type: 'worker:requestVaultWrite',
+            seq: requestSeq,
+            op: {
+              kind: 'create',
+              title: args.title,
+              body: args.body,
+              ...(args.folderPath !== undefined ? { folderPath: args.folderPath } : {}),
+              ...(args.frontmatter !== undefined ? { frontmatter: args.frontmatter } : {}),
+            },
+          })
+          return promise
+        },
+        updateNote(id, patch) {
+          const requestSeq = allocRequestSeq()
+          const promise = new Promise<void>((resolve, reject) => {
+            pending.set(requestSeq, { kind: 'vault.write.void', resolve, reject })
+          })
+          emit({
+            type: 'worker:requestVaultWrite',
+            seq: requestSeq,
+            op: {
+              kind: 'update',
+              id,
+              ...(patch.title !== undefined ? { title: patch.title } : {}),
+              ...(patch.body !== undefined ? { body: patch.body } : {}),
+              ...(patch.frontmatter !== undefined ? { frontmatter: patch.frontmatter } : {}),
+            },
+          })
+          return promise
+        },
+        deleteNote(id) {
+          const requestSeq = allocRequestSeq()
+          const promise = new Promise<void>((resolve, reject) => {
+            pending.set(requestSeq, { kind: 'vault.write.void', resolve, reject })
+          })
+          emit({
+            type: 'worker:requestVaultWrite',
+            seq: requestSeq,
+            op: { kind: 'delete', id },
+          })
+          return promise
+        },
+        createFolder(path) {
+          const requestSeq = allocRequestSeq()
+          const promise = new Promise<void>((resolve, reject) => {
+            pending.set(requestSeq, { kind: 'vault.write.void', resolve, reject })
+          })
+          emit({
+            type: 'worker:requestVaultWrite',
+            seq: requestSeq,
+            op: { kind: 'createFolder', path },
+          })
+          return promise
+        },
+      },
+      events: {
+        onVaultChange(handler: () => void): Unsubscribe {
+          return subscribeVault('vaultChanged', handler)
+        },
+        onNoteSaved(handler: (noteId: string) => void): Unsubscribe {
+          return subscribeVault('noteSaved', handler)
+        },
+        onActiveNoteChange(handler: (noteId: string | null) => void): Unsubscribe {
+          return subscribeVault('activeNoteIdChanged', handler)
+        },
+      },
+    },
+    fs: {
+      openDirectory(opts) {
+        const requestSeq = allocRequestSeq()
+        const promise = new Promise<DirectoryEntries | null>((resolve, reject) => {
+          pending.set(requestSeq, { kind: 'openDirectory', resolve, reject })
+        })
+        emit({
+          type: 'worker:requestDirectoryOpen',
+          seq: requestSeq,
+          ...(opts?.extensions ? { extensions: opts.extensions } : {}),
+        })
+        return promise
+      },
+    },
+    onVNodeEvent(handler) {
+      // No envelope round-trip — registration is worker-local. The host
+      // already posts every event for the plugin (the renderer attaches
+      // event names per surface). Stacking handlers is allowed; the
+      // dispatcher fans out to every one of them in registration order.
+      vnodeEventHandlers.add(handler)
+      return () => {
+        vnodeEventHandlers.delete(handler)
+      }
+    },
+    openFullscreen(viewId: string) {
+      const requestSeq = allocRequestSeq()
+      const promise = new Promise<void>((resolve, reject) => {
+        pending.set(requestSeq, { kind: 'fullscreen-open', resolve, reject })
+      })
+      emit({ type: 'worker:openFullscreen', seq: requestSeq, viewId })
+      return promise
+    },
+    closeFullscreen(viewId: string) {
+      emit({ type: 'worker:closeFullscreen', seq: allocRequestSeq(), viewId })
+    },
+    setFullscreenContent(viewId: string, node: unknown) {
+      emit({
+        type: 'worker:setFullscreenContent',
+        seq: parentSeq,
+        viewId,
+        node,
+      })
+    },
   }
 }
+
+/**
+ * Build the AsyncIterable that backs `ctx.vault.read.stream()`.
+ *
+ * Implementation note: chunks arrive on a fan-in queue keyed by the
+ * request seq. The iterator's `next()` pulls from that queue, awaiting
+ * a host:vaultStreamChunk when empty. End-of-stream is signalled by
+ * `push(null, null)`; an error by `push(null, error)`. We DO NOT post
+ * a new envelope per chunk — the host paginates on its own cadence.
+ */
+function makeVaultStream(chunkSize: number | undefined): AsyncIterable<ReadonlyArray<NoteWithBody>> {
+  const requestSeq = allocRequestSeq()
+  const buffer: ReadonlyArray<NoteWithBody>[] = []
+  let done = false
+  let error: string | null = null
+  // Pending consumer waker. When `next()` is called with an empty
+  // buffer we park here; the chunk handler resolves us.
+  let wake: (() => void) | null = null
+
+  pending.set(requestSeq, {
+    kind: 'vault.stream',
+    push(chunk, err) {
+      if (err) {
+        error = err
+        done = true
+      } else if (chunk === null) {
+        done = true
+      } else {
+        buffer.push(chunk)
+      }
+      const w = wake
+      wake = null
+      w?.()
+    },
+  })
+
+  emit({
+    type: 'worker:requestVaultRead',
+    seq: requestSeq,
+    mode: 'stream',
+    ...(typeof chunkSize === 'number' ? { chunkSize } : {}),
+  })
+
+  return {
+    [Symbol.asyncIterator](): AsyncIterator<ReadonlyArray<NoteWithBody>> {
+      return {
+        async next(): Promise<IteratorResult<ReadonlyArray<NoteWithBody>>> {
+          while (buffer.length === 0 && !done) {
+            await new Promise<void>((resolve) => {
+              wake = resolve
+            })
+          }
+          if (buffer.length > 0) {
+            return { value: buffer.shift() as ReadonlyArray<NoteWithBody>, done: false }
+          }
+          if (error !== null) throw new Error(error)
+          return { value: undefined as unknown as ReadonlyArray<NoteWithBody>, done: true }
+        },
+        async return(): Promise<IteratorResult<ReadonlyArray<NoteWithBody>>> {
+          // Plugin abandoned the iterator (e.g. `break` out of for-await).
+          // Mark complete; the host will still finish emitting chunks
+          // but the plugin no longer cares.
+          done = true
+          pending.delete(requestSeq)
+          return { value: undefined as unknown as ReadonlyArray<NoteWithBody>, done: true }
+        },
+      }
+    },
+  }
+}
+
+// Mark `NoteWithBodyWire` referenced so the import is not stripped by
+// TS' isolatedModules pass — the worker treats wire and SDK shapes as
+// structurally identical, but we still want the type-level link.
+type _NoteWithBodyWireAlias = NoteWithBodyWire
 
 function emit(msg: WorkerToHost): void {
   ;(self as unknown as { postMessage: (msg: unknown) => void }).postMessage(msg)

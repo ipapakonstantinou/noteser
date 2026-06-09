@@ -132,9 +132,10 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
             </div>
           </div>
           <p className="text-base text-obsidianSecondaryText leading-relaxed">
-            Your second brain in the browser, synced to GitHub. Markdown notes
-            with wikilinks, tags, tasks, live preview, panes, templates, and a
-            calm dark UI you can theme.
+            Edit Markdown notes in your browser, on top of a GitHub repo you
+            own. When the same note changed in two places, you see every
+            conflict line by line and pick yours, theirs, or both. The merge
+            UX from VS Code, in the browser, on your repo.
           </p>
         </div>
 
@@ -389,6 +390,7 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
             <Link href="/help/getting-started" className="text-obsidianAccentPurple hover:underline">Docs</Link>
             <Link href="/changelog" className="text-obsidianAccentPurple hover:underline">Changelog</Link>
             <a href="https://github.com/ipapakonstantinou/noteser" target="_blank" rel="noopener noreferrer" className="text-obsidianAccentPurple hover:underline">GitHub</a>
+            <a href="https://beta.noteser.app" target="_blank" rel="noopener noreferrer" className="text-obsidianAccentPurple hover:underline">Try the beta</a>
           </div>
           <div>
             Close this tab to dismiss the welcome view. You can always reopen it from

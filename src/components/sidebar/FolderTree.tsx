@@ -6,11 +6,15 @@ import {
   ChevronRightIcon,
   FolderIcon,
   DocumentTextIcon,
+  DocumentMagnifyingGlassIcon,
   TrashIcon,
 } from '@heroicons/react/24/outline'
+import { useToastStore } from '@/stores/toastStore'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
+import { useShallow } from 'zustand/react/shallow'
 import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore, useSettingsStore } from '@/stores'
 import { useHydration, useTreeDragDrop, useViewport } from '@/hooks'
+import { SwipePinRow } from './SwipePinRow'
 import { EditableText } from '../shared/EditableText'
 import { collectAllTags } from '@/utils/tags'
 import { sortNotes } from '@/utils/sortNotes'
@@ -37,9 +41,11 @@ interface FolderTreeProps {
 
 export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   const hydrated = useHydration()
-  const { currentView } = useUIStore()
+  const currentView = useUIStore(s => s.currentView)
   const renameRequest = useUIStore(s => s.renameRequest)
   const clearRenameRequest = useUIStore(s => s.clearRenameRequest)
+  const compareSourceNoteId = useUIStore(s => s.compareSourceNoteId)
+  const clearCompareSource = useUIStore(s => s.clearCompareSource)
   const { isMobile } = useViewport()
   const sidebarCollapsed = useUIStore(s => s.sidebarCollapsed)
   const toggleSidebar = useUIStore(s => s.toggleSidebar)
@@ -51,6 +57,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   }, [isMobile, sidebarCollapsed, toggleSidebar])
   const folderSortMode = useSettingsStore(s => s.folderSortMode)
   const showHiddenFolders = useSettingsStore(s => s.showHiddenFolders)
+  const trashFolderName = useSettingsStore(s => s.trashFolderName)
   const {
     notes,
     selectedNoteId,
@@ -60,8 +67,22 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     getRecentNotes,
     restoreNote,
     permanentlyDeleteNote,
-    emptyTrash
-  } = useNoteStore()
+    emptyTrash,
+    togglePinNote,
+  } = useNoteStore(
+    useShallow(s => ({
+      notes: s.notes,
+      selectedNoteId: s.selectedNoteId,
+      updateNote: s.updateNote,
+      getActiveNotes: s.getActiveNotes,
+      getDeletedNotes: s.getDeletedNotes,
+      getRecentNotes: s.getRecentNotes,
+      restoreNote: s.restoreNote,
+      permanentlyDeleteNote: s.permanentlyDeleteNote,
+      emptyTrash: s.emptyTrash,
+      togglePinNote: s.togglePinNote,
+    }))
+  )
   const openNote = useWorkspaceStore(s => s.openNote)
   const {
     folders,
@@ -72,8 +93,20 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     updateFolder,
     getRootFolders,
     getChildFolders,
-    getDeletedFolders
-  } = useFolderStore()
+    getDeletedFolders,
+  } = useFolderStore(
+    useShallow(s => ({
+      folders: s.folders,
+      activeFolderId: s.activeFolderId,
+      expandedFolders: s.expandedFolders,
+      setActiveFolder: s.setActiveFolder,
+      toggleFolderExpanded: s.toggleFolderExpanded,
+      updateFolder: s.updateFolder,
+      getRootFolders: s.getRootFolders,
+      getChildFolders: s.getChildFolders,
+      getDeletedFolders: s.getDeletedFolders,
+    }))
+  )
 
   // Use empty arrays during SSR to avoid hydration mismatch. `folders`/
   // `notes` are the triggers; the get*() helpers pull fresh state from
@@ -158,6 +191,19 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     useNoteStore.getState().deleteNotes(ids)
     clearSelection()
   }
+
+  // Global Esc handler — clears a pending compare source so the highlight
+  // doesn't linger. Listening on window means the shortcut works from
+  // anywhere (editor, sidebar, etc.) the way VS Code's compare flow does.
+  useEffect(() => {
+    if (!compareSourceNoteId) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      clearCompareSource()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [compareSourceNoteId, clearCompareSource])
 
   // Global Delete / Backspace handler. The per-tree onKeyDown only fires
   // when the tree itself has focus — after clicking a note row, focus
@@ -570,7 +616,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     getFolderRepoPath: (id) => folderRepoPathById.get(id),
   })
 
-  const AttachmentItem = ({ m }: { m: AttachmentMeta }) => (
+  const AttachmentItem = ({ m, depth = 0 }: { m: AttachmentMeta; depth?: number }) => (
     <div
       className="obsidian-file-item"
       draggable
@@ -580,52 +626,115 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
       title={m.path}
       data-testid="attachment-row"
       data-attachment-path={m.path}
+      role="treeitem"
+      aria-level={depth + 1}
+      aria-selected={false}
     >
       <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
       <span className="flex-1 truncate">{attachmentDisplayName(m.path)}</span>
     </div>
   )
 
-  // Render note item
-  const NoteItem = ({ note, className = '' }: { note: typeof notes[0]; className?: string }) => {
+  // Foreign-vault-file row: a non-md, non-attachment file we mirror from the
+  // remote vault as a non-openable entry (e.g. `.canvas`, `.base`). It uses
+  // a distinct icon + muted italic styling to signal "not openable"; a click
+  // surfaces a toast instead of opening the editor. Right-click hands the
+  // existing `onRightClick` handler the note id — the ContextMenu special-
+  // cases foreign-kind notes to only show Reveal in folder / Show on GitHub
+  // (no Rename / Delete on files we cannot edit).
+  const ForeignFileItem = ({ note, depth = 0 }: { note: typeof notes[0]; depth?: number }) => {
     const kbFocused = isRowFocused('note', note.id)
-    const multiSelected = isSelected(note.id)
+    const handleClick = () => {
+      useToastStore.getState().addToast({
+        kind: 'info',
+        message: `noteser cannot open ${note.title} yet. The file is in your vault and visible in the tree.`,
+        source: 'foreign-file-open',
+      })
+    }
     return (
       <div
-        className={`obsidian-file-item ${
-          multiSelected ? 'bg-obsidianAccentPurple/25 border-l-2 border-obsidianAccentPurple -ml-[2px] pl-[10px]' :
-            selectedNoteId === note.id ? 'bg-obsidianHighlight' : ''
-        } ${kbFocused ? 'ring-1 ring-inset ring-obsidianAccentPurple' : ''} ${className}`}
-        draggable={currentView !== 'trash' && !multiSelected && !note.isDeleted}
-        onDragStart={e => beginNoteDrag(e, note.id)}
-        onDragEnd={endDrag}
-        onClick={(e) => handleNoteClick(note.id, e)}
-        onDoubleClick={() => handleNoteDoubleClick(note.id)}
+        className={`obsidian-file-item italic text-obsidianSecondaryText ${
+          kbFocused ? 'ring-1 ring-inset ring-obsidianAccentPurple' : ''
+        }`}
+        onClick={handleClick}
         onContextMenu={e => onRightClick(e, 'note', note.id)}
+        title="File type not supported yet"
         tabIndex={-1}
-        data-testid="note-row"
+        data-testid="foreign-file-row"
         data-note-id={note.id}
-        data-kb-focused={kbFocused ? 'true' : undefined}
+        data-foreign="true"
+        role="treeitem"
+        aria-level={depth + 1}
+        aria-selected={false}
+        aria-disabled="true"
       >
-        <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1">
-            {note.isPinned && (
-              <StarIconSolid className="w-3 h-3 text-yellow-500 flex-shrink-0" />
-            )}
-            {currentView === 'trash' ? (
-              <span className="truncate">{note.title}</span>
-            ) : (
-              <EditableText
-                value={note.title}
-                onSave={newTitle => updateNote(note.id, { title: newTitle })}
-                isEditing={renameRequest?.type === 'note' && renameRequest.id === note.id}
-                onEditingChange={(v) => { if (!v) clearRenameRequest() }}
-              />
-            )}
+        <DocumentMagnifyingGlassIcon className="w-4 h-4 mr-2 flex-shrink-0" />
+        <span className="flex-1 truncate">{note.title}</span>
+      </div>
+    )
+  }
+
+  // Render note item
+  const NoteItem = ({ note, className = '', depth = 0 }: { note: typeof notes[0]; className?: string; depth?: number }) => {
+    // Foreign files render through a separate row component — no editor open,
+    // no drag-and-drop into other folders, no multi-select bulk delete. See
+    // ForeignFileItem above.
+    if (note.kind === 'foreign') return <ForeignFileItem note={note} depth={depth} />
+    const kbFocused = isRowFocused('note', note.id)
+    const multiSelected = isSelected(note.id)
+    const isCompareSource = compareSourceNoteId === note.id
+    const isActive = selectedNoteId === note.id || multiSelected
+    // Mobile-only drag-to-pin. Trash rows are excluded because their
+    // primary affordance is restore / permanently delete.
+    const swipeEnabled = isMobile && currentView !== 'trash' && !note.isDeleted
+    return (
+      <SwipePinRow
+        enabled={swipeEnabled}
+        onPinToggle={() => togglePinNote(note.id)}
+      >
+        <div
+          className={`obsidian-file-item ${
+            multiSelected ? 'bg-obsidianAccentPurple/25 border-l-2 border-obsidianAccentPurple -ml-[2px] pl-[10px]' :
+              selectedNoteId === note.id ? 'bg-obsidianHighlight' : ''
+          } ${kbFocused ? 'ring-1 ring-inset ring-obsidianAccentPurple' : ''} ${
+            isCompareSource ? 'italic border-l-2 border-obsidianAccentPurple -ml-[2px] pl-[10px] ring-1 ring-inset ring-obsidianAccentPurple/60' : ''
+          } ${className}`}
+          data-compare-source={isCompareSource ? 'true' : undefined}
+          draggable={currentView !== 'trash' && !multiSelected && !note.isDeleted}
+          onDragStart={e => beginNoteDrag(e, note.id)}
+          onDragEnd={endDrag}
+          onClick={(e) => handleNoteClick(note.id, e)}
+          onDoubleClick={() => handleNoteDoubleClick(note.id)}
+          onContextMenu={e => onRightClick(e, 'note', note.id)}
+          tabIndex={-1}
+          data-testid="note-row"
+          data-note-id={note.id}
+          data-kb-focused={kbFocused ? 'true' : undefined}
+          role="treeitem"
+          aria-level={depth + 1}
+          aria-selected={isActive}
+          aria-current={kbFocused ? 'true' : undefined}
+        >
+          <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1">
+              {note.isPinned && (
+                <StarIconSolid className="w-3 h-3 text-yellow-500 flex-shrink-0" />
+              )}
+              {currentView === 'trash' ? (
+                <span className="truncate">{note.title}</span>
+              ) : (
+                <EditableText
+                  value={note.title}
+                  onSave={newTitle => updateNote(note.id, { title: newTitle })}
+                  isEditing={renameRequest?.type === 'note' && renameRequest.id === note.id}
+                  onEditingChange={(v) => { if (!v) clearRenameRequest() }}
+                />
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      </SwipePinRow>
     )
   }
 
@@ -648,7 +757,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     const isDropTarget = dragOverTarget === folder.id
     const kbFocused = isRowFocused('folder', folder.id)
     return (
-      <div className="mb-0.5">
+      <div className="mb-0.5" role="treeitem" aria-level={depth + 1} aria-expanded={isExpanded} aria-selected={isActive} aria-current={kbFocused ? 'true' : undefined}>
         <div
           className={`obsidian-folder-item ${
             isActive ? 'bg-obsidianHighlight' : ''
@@ -697,7 +806,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
           )}
         </div>
         {isExpanded && (
-          <div>
+          <div role="group">
             {/* Nested child folders first */}
             {childFolders.map(child => (
               <FolderItem key={child.id} folder={child} depth={depth + 1} />
@@ -705,10 +814,10 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
             {/* Then notes + attachments inside this folder */}
             <div style={{ paddingLeft: `${(depth + 1) * 12 + 8}px` }}>
               {folderNotes.map(note => (
-                <NoteItem key={note.id} note={note} />
+                <NoteItem key={note.id} note={note} depth={depth + 1} />
               ))}
               {folderAttachments.map(m => (
-                <AttachmentItem key={m.path} m={m} />
+                <AttachmentItem key={m.path} m={m} depth={depth + 1} />
               ))}
               {folderNotes.length === 0 && childFolders.length === 0 && folderAttachments.length === 0 && (
                 <div className="px-3 py-2 text-xs text-obsidianSecondaryText italic">
@@ -744,7 +853,8 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
             <p className="text-sm">Trash is empty</p>
           </div>
         ) : (
-          deletedNotes.map(note => (
+          <div role="tree" aria-label="Trash">
+          {deletedNotes.map(note => (
             <div
               key={note.id}
               className={`obsidian-file-item ${
@@ -752,6 +862,9 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
               }`}
               onClick={() => handleNoteClick(note.id)}
         onDoubleClick={() => handleNoteDoubleClick(note.id)}
+              role="treeitem"
+              aria-level={1}
+              aria-selected={selectedNoteId === note.id}
             >
               <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
               <span className="flex-1 truncate">{note.title}</span>
@@ -776,7 +889,8 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
                 </button>
               </div>
             </div>
-          ))
+          ))}
+          </div>
         )}
       </div>
     )
@@ -794,9 +908,11 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
             <p className="text-sm">No recent notes</p>
           </div>
         ) : (
-          recentNotes.map(note => (
-            <NoteItem key={note.id} note={note} />
-          ))
+          <div role="tree" aria-label="Recently modified notes">
+            {recentNotes.map(note => (
+              <NoteItem key={note.id} note={note} />
+            ))}
+          </div>
         )}
       </div>
     )
@@ -938,6 +1054,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
       {deletedNotes.length > 0 && (
         <TrashSyntheticFolder
           trashTree={trashTree}
+          name={trashFolderName}
           deletedCount={deletedNotes.length}
           expanded={!!expandedFolders[TRASH_FOLDER_ID]}
           onToggle={() => toggleFolderExpanded(TRASH_FOLDER_ID)}
@@ -983,7 +1100,15 @@ const TrashFolderRow = ({
   const expanded = !!expandedFolders[node.folder.id]
   const childCount = node.childFolders.length + node.notes.length
   return (
-    <div className="mb-0.5" data-testid="trash-folder-row" data-folder-id={node.folder.id}>
+    <div
+      className="mb-0.5"
+      data-testid="trash-folder-row"
+      data-folder-id={node.folder.id}
+      role="treeitem"
+      aria-level={depth + 1}
+      aria-expanded={expanded}
+      aria-selected={false}
+    >
       <div
         className="obsidian-folder-item"
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
@@ -1010,7 +1135,7 @@ const TrashFolderRow = ({
         )}
       </div>
       {expanded && (
-        <div>
+        <div role="group">
           {node.childFolders.map(child => (
             <TrashFolderRow
               key={child.folder.id}
@@ -1042,6 +1167,9 @@ const TrashFolderRow = ({
 // reserved id "__trash__".
 interface TrashSyntheticFolderProps {
   trashTree: ReturnType<typeof buildTrashTree>
+  // Configurable display name for the synthetic trash row (Settings →
+  // Vault). Cosmetic only — the row's identity stays TRASH_FOLDER_ID.
+  name: string
   deletedCount: number
   expanded: boolean
   onToggle: () => void
@@ -1057,23 +1185,30 @@ interface TrashSyntheticFolderProps {
 }
 
 const TrashSyntheticFolder = ({
-  trashTree, deletedCount, expanded, onToggle, onContextMenu,
+  trashTree, name, deletedCount, expanded, onToggle, onContextMenu,
   expandedFolders, toggleFolderExpanded, onFolderRightClick, renderNote,
 }: TrashSyntheticFolderProps) => {
   return (
-    <div className="mb-0.5" data-testid="trash-synthetic-folder">
+    <div
+      className="mb-0.5"
+      data-testid="trash-synthetic-folder"
+      role="treeitem"
+      aria-level={1}
+      aria-expanded={expanded}
+      aria-selected={false}
+    >
       <div
         className="obsidian-folder-item"
         onClick={onToggle}
         onContextMenu={onContextMenu}
         data-folder-id={TRASH_FOLDER_ID}
-        data-folder-name=".trash"
+        data-folder-name={name}
       >
         <button
           type="button"
           className="mr-1 focus:outline-none"
           onClick={e => { e.stopPropagation(); onToggle() }}
-          aria-label={expanded ? 'Collapse .trash' : 'Expand .trash'}
+          aria-label={expanded ? `Collapse ${name}` : `Expand ${name}`}
         >
           {expanded ? (
             <ChevronDownIcon className="w-3.5 h-3.5" />
@@ -1082,13 +1217,13 @@ const TrashSyntheticFolder = ({
           )}
         </button>
         <FolderIcon className="w-4 h-4 mr-1.5 flex-shrink-0" />
-        <span className="flex-1 truncate">.trash</span>
+        <span className="flex-1 truncate">{name}</span>
         <span className="text-[10px] text-obsidianSecondaryText ml-1">
           {deletedCount}
         </span>
       </div>
       {expanded && (
-        <div>
+        <div role="group">
           {/* Deleted folders, nested with their deleted contents. */}
           {trashTree.rootFolders.map(node => (
             <TrashFolderRow

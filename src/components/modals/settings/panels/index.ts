@@ -1,0 +1,8 @@
+export { GeneralPanel } from './GeneralPanel'
+export { AppearancePanel } from './AppearancePanel'
+export { EditorPanel } from './EditorPanel'
+export { SidebarPanel } from './SidebarPanel'
+export { LocalFolderPanel } from './LocalFolderPanel'
+export { GitHubPanel } from './GitHubPanel'
+export { BetaPanel } from './BetaPanel'
+export { AboutPanel } from './AboutPanel'

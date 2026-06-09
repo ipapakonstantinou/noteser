@@ -6,6 +6,7 @@ import {
   rightPanelDef,
   type RightSidebarTabId,
 } from './rightPanelRegistry'
+import { SIDEBAR_PANEL_DRAG_MIME } from './SidebarSection'
 
 // Mini tab strip for the RIGHT sidebar — copy of PinnedMiniStrip but
 // pinned (no pun intended) to the right-side registry + drag MIME.
@@ -97,6 +98,8 @@ export const RightMiniStrip = ({
 
   return (
     <div
+      role="tablist"
+      aria-label="Right sidebar panels"
       className={`relative flex items-center gap-0.5 px-1 py-1 border-b border-obsidianBorder ${
         dropActive ? 'outline outline-2 outline-obsidianAccentPurple/60' : ''
       }`}
@@ -117,10 +120,20 @@ export const RightMiniStrip = ({
           <button
             key={id}
             type="button"
+            role="tab"
+            id={`right-sidebar-tab-${id}`}
+            aria-selected={active}
+            aria-controls={`right-sidebar-tabpanel-${id}`}
+            tabIndex={active ? 0 : -1}
             draggable
             onDragStart={e => {
               if (e.nativeEvent && e.nativeEvent.button !== 0) return
               e.dataTransfer.setData(RIGHT_TAB_DRAG_MIME, id)
+              // Mirror onto the left-side MIME so dropping this tab in
+              // the left sidebar passes its drop-zone filter. The
+              // left-side drop handler calls moveTabAcrossSidebars
+              // which routes the move correctly.
+              e.dataTransfer.setData(SIDEBAR_PANEL_DRAG_MIME, id)
               e.dataTransfer.effectAllowed = 'move'
             }}
             onDragOver={onIconDragOver(idx)}
@@ -132,10 +145,9 @@ export const RightMiniStrip = ({
             }}
             title={`${def.title} — drag to reorder, right-click for options`}
             aria-label={def.title}
-            aria-pressed={active}
             data-testid={`right-sidebar-pinned-tab-${id}`}
             className={[
-              'relative flex items-center justify-center py-1.5 max-md:py-2.5 px-3 rounded cursor-grab active:cursor-grabbing transition-colors',
+              'relative flex items-center justify-center py-1.5 max-md:py-2.5 px-3 rounded cursor-default active:cursor-grabbing transition-colors',
               showInsertBefore ? 'border-l-2 border-obsidianAccentPurple -ml-[2px]' : '',
               showInsertAfter ? 'border-r-2 border-obsidianAccentPurple -mr-[2px]' : '',
               active

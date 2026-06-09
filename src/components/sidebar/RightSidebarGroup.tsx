@@ -104,6 +104,9 @@ export const RightSidebarGroup = ({
           className="flex-1 min-h-0 overflow-y-auto"
           data-testid="right-sidebar-group-body"
           data-active-panel={activeTab}
+          role="tabpanel"
+          id={`right-sidebar-tabpanel-${activeTab}`}
+          aria-labelledby={`right-sidebar-tab-${activeTab}`}
         >
           <RightPanelBody id={activeTab} />
         </div>

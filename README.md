@@ -1,6 +1,6 @@
 <h1 align="center">Noteser</h1>
 
-<p align="center"><strong>A notes app that runs in your browser and keeps your notes in your own GitHub repo.</strong></p>
+<p align="center"><strong>A browser-based notes app with a transparent per-hunk Git merge, on top of a GitHub repo you own.</strong></p>
 
 <p align="center"><a href="https://noteser.app"><strong>Open noteser.app →</strong></a></p>
 
@@ -8,7 +8,7 @@
   <img src="./public/screenshot.png" alt="Noteser" width="900">
 </p>
 
-Write in Markdown, organize with folders and `[[links]]`, and keep everything as plain `.md` files in a GitHub repo you control. No account to start. Nothing to install.
+Write in Markdown, organize with folders and `[[links]]`, and keep everything as plain `.md` files in a GitHub repo you control. When the same note changed on two devices, a per-line, per-hunk resolver lets you accept yours, theirs, or both, file by file. No account to start. Nothing to install.
 
 ## What you get
 

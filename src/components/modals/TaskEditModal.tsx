@@ -45,8 +45,10 @@ const EMPTY_FORM: TaskEditFormState = {
 }
 
 export const TaskEditModal = () => {
-  const { modal, closeModal } = useUIStore()
-  const { getNoteById, updateNote } = useNoteStore()
+  const modal = useUIStore(s => s.modal)
+  const closeModal = useUIStore(s => s.closeModal)
+  const getNoteById = useNoteStore(s => s.getNoteById)
+  const updateNote = useNoteStore(s => s.updateNote)
 
   const isOpen = modal.type === 'task-edit'
   const data = modal.data as { noteId: string; line: number } | undefined

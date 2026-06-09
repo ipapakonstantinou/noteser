@@ -218,6 +218,36 @@ fully succeed or get retried on next attempt.
   "potentially edited since last push" — meaning every coincident remote
   change becomes a conflict, not an auto-merge. Annoying but safe.
 
+## Offline (read-only, Step 1 of #68)
+
+Noteser caches the active vault in IndexedDB so a reload with no network
+still boots a fully readable workspace. Concretely:
+
+- Note bodies + folder tree persist via Zustand's `idbStorage` adapter
+  under the per-repo keys `noteser-notes:<owner>/<name>` and
+  `noteser-folders:<owner>/<name>`. These hydrate on boot before the
+  sync layer runs, so the sidebar is interactive immediately.
+- After every successful pull, `pullFromGitHub` writes a small
+  *snapshot* under `noteser-vault-cache:<owner>/<name>` recording the
+  remote commit SHA, the recursive tree (path → blob sha), and the
+  wall-clock time. The snapshot is what the UI uses to surface
+  "Offline — using cached vault" with a real anchor commit.
+- `useAutoSync` short-circuits the startup pull when
+  `navigator.onLine === false` and registers an `online` listener that
+  catches up the moment connectivity returns.
+- `useGitHubSync.runPullOnly` swaps the red "Pull failed" toast for a
+  quiet "Offline — using cached vault" status when the failure is a
+  network error AND the browser is offline. A failure for any other
+  reason (auth, 5xx, conflict) still surfaces its real message.
+
+The push path stays fully online. Edits made offline are kept in the
+local stores as usual but are NOT queued for replay yet — that's the
+deferred Step 2 (see `docs/offline-pwa-plan.md` for the design).
+
+See `docs/offline-pwa-plan.md` for the full inventory of what is and
+isn't cached, the invalidation strategy, and the Step 2 edit-queue
+shape.
+
 ## Where the tests live
 
 - `src/__tests__/lineDiff.test.ts` — covers the line-diff core. Most
