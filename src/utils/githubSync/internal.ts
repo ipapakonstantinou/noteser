@@ -151,6 +151,12 @@ export function isForeignVaultFile(path: string): boolean {
   if (!path) return false
   if (path.endsWith('.md')) return false
   if (isAttachmentPath(path)) return false
+  // Dotfiles + files inside any dot-folder (.gitignore, .obsidian/*,
+  // .noteser/*, etc.) are repo/app infrastructure, not user-facing vault
+  // content. The .trash folder is a noteser-internal soft-delete area that
+  // the existing tree renders specially, so it stays out of the foreign
+  // pipeline too.
+  if (path.split('/').some(seg => seg.startsWith('.'))) return false
   return true
 }
 
