@@ -17,6 +17,7 @@ import { tasksLivePreview } from './tasksLivePreview'
 import { basesLivePreview } from './basesLivePreview'
 import { imagesLivePreview } from './imagesLivePreview'
 import { linksLivePreview } from './linksLivePreview'
+import { hangingIndentExtension } from './hangingIndentPlugin'
 import { getActiveWikilinkQuery } from '@/utils/wikilinks'
 import { getActiveTagQuery } from '@/utils/tagAutocomplete'
 import { collectAllTags } from '@/utils/tags'
@@ -695,6 +696,10 @@ export function CodeMirrorEditor({
     ])),
     obsidianTheme,
     EditorView.lineWrapping,
+    // Hanging indent for soft-wrapped list lines: wrapped continuation rows
+    // align with the START of the BODY (after the marker) instead of column 0,
+    // matching Obsidian Live Preview. Visual only — never modifies markdown.
+    hangingIndentExtension,
     // Explicit drawSelection() so the .cm-selectionBackground layer is
     // guaranteed to render regardless of basicSetup defaults. We already paint
     // that layer with var(--obsidian-highlight) (see obsidianTheme above), and
