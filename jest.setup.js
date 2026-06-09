@@ -15,3 +15,17 @@ if (typeof global.Response === 'undefined' && typeof globalThis.Response !== 'un
   global.Headers = globalThis.Headers
   global.Request = globalThis.Request
 }
+
+// Zustand's persist middleware logs a `console.warn` every time a
+// hydrated store writes back to a missing storage. jsdom doesn't expose
+// localStorage to Zustand's createJSONStorage (it returns undefined when
+// the storage probe runs before the test environment is ready), so each
+// store fires the warning on every `set()` — ~70 lines per test run.
+// Filter only that exact category; every other warning passes through.
+const PERSIST_WARNING_RE = /\[zustand persist middleware\] Unable to update item .*storage is currently unavailable/
+const originalConsoleWarn = console.warn
+console.warn = (...args) => {
+  const first = args[0]
+  if (typeof first === 'string' && PERSIST_WARNING_RE.test(first)) return
+  originalConsoleWarn(...args)
+}
