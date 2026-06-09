@@ -30,6 +30,11 @@ interface HelpShellProps {
 // just the active topic open. Keeps the nav free of stale state when a
 // user jumps between unrelated topics.
 //
+// Above the TOPICS label sits a single "Expand all / Collapse all"
+// toggle button. The label flips based on whether every topic that has
+// sub-sections is currently expanded. Click → either expand every
+// topic at once or close them all.
+//
 // Keyboard navigation:
 //   - Tab cycles through chevrons + topic links + sub-section links
 //     in source order. Native focus.
@@ -78,6 +83,25 @@ export function HelpShell({ activeSlug, children }: HelpShellProps) {
       return next
     })
   }, [])
+
+  // Expand-all / Collapse-all toggle. Only topics that actually have
+  // sub-sections count for the "are they all open?" check — topics
+  // without sub-sections have nothing to expand and would otherwise
+  // make the button label stick on "Expand all" forever.
+  const expandableSlugs = useMemo(
+    () =>
+      HELP_PAGES.filter(p => (sectionsByPage.get(p.slug)?.length ?? 0) > 0).map(p => p.slug),
+    [sectionsByPage],
+  )
+  const allExpanded =
+    expandableSlugs.length > 0 && expandableSlugs.every(slug => expanded.has(slug))
+  const toggleAll = useCallback(() => {
+    setExpanded(prev => {
+      const everyOpen =
+        expandableSlugs.length > 0 && expandableSlugs.every(slug => prev.has(slug))
+      return everyOpen ? new Set<string>() : new Set<string>(expandableSlugs)
+    })
+  }, [expandableSlugs])
 
   // Hash-scroll nudge. Native anchor-scroll can fire before the page
   // body is painted; this re-runs the scroll after the next animation
@@ -158,6 +182,13 @@ export function HelpShell({ activeSlug, children }: HelpShellProps) {
             className="sticky top-[57px] px-4 py-6 space-y-1"
             onKeyDown={handleNavKeyDown}
           >
+            <button
+              type="button"
+              onClick={toggleAll}
+              className="block px-3 py-1 text-[12px] text-[#9ca3af] hover:text-[#e5e7eb] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3a86ff] rounded"
+            >
+              {allExpanded ? 'Collapse all' : 'Expand all'}
+            </button>
             <h2 className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6b7280]">
               Topics
             </h2>
@@ -168,7 +199,7 @@ export function HelpShell({ activeSlug, children }: HelpShellProps) {
                 const sections = sectionsByPage.get(p.slug) ?? []
                 const hasSections = sections.length > 0
                 const rowBaseCls = active
-                  ? 'bg-[#1e2530] text-[#f3f4f6] border-l-2 border-[#3a86ff] font-medium'
+                  ? 'bg-[#1e2530] text-[#f3f4f6] border-l-2 border-[#f3f4f6] font-medium'
                   : 'text-[#9ca3af] hover:bg-[#1e2126] hover:text-[#e5e7eb] border-l-2 border-transparent'
                 return (
                   <li key={p.slug}>

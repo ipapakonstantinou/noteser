@@ -116,4 +116,42 @@ describe('HelpShell', () => {
     fireEvent.click(chevron)
     expect(screen.queryByRole('link', { name: firstSection.heading })).not.toBeInTheDocument()
   })
+
+  test('Expand all toggle opens every topic with sub-sections; clicking again collapses them', () => {
+    render(
+      <HelpShell activeSlug={firstPage.slug}>
+        <div />
+      </HelpShell>
+    )
+
+    // Default label is "Expand all" because only the active topic is open.
+    const button = screen.getByRole('button', { name: /^expand all$/i })
+    expect(button).toBeInTheDocument()
+
+    fireEvent.click(button)
+
+    // After clicking, every topic with sub-sections should now show its
+    // first section link in the nav.
+    const expandable = HELP_PAGES.filter(
+      p => parseHelpBody(p.body).sections.length > 0,
+    )
+    for (const p of expandable) {
+      const firstSection = parseHelpBody(p.body).sections[0]
+      const link = screen.getByRole('link', { name: firstSection.heading })
+      expect(link).toHaveAttribute('href', `/help/${p.slug}#${firstSection.slug}`)
+    }
+
+    // Label flipped to "Collapse all".
+    const collapseButton = screen.getByRole('button', { name: /^collapse all$/i })
+    fireEvent.click(collapseButton)
+
+    // Now every sub-section link is gone.
+    for (const p of expandable) {
+      const firstSection = parseHelpBody(p.body).sections[0]
+      expect(screen.queryByRole('link', { name: firstSection.heading })).not.toBeInTheDocument()
+    }
+
+    // And the button is back to "Expand all".
+    expect(screen.getByRole('button', { name: /^expand all$/i })).toBeInTheDocument()
+  })
 })
