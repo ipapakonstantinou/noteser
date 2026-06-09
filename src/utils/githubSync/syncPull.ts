@@ -148,6 +148,17 @@ export async function pullFromGitHub(input: {
   // paint.)
   const prefetchedBlobs = new Map<string, string>()
 
+  // Index notes by gitPath ONCE so the per-remote-file lookups below are O(1)
+  // instead of O(notes). Three loops in this function used to each run
+  // notes.find(n => n.gitPath === path) per remote file — O(remote × notes).
+  // First-wins insertion preserves find()'s first-match semantics: the same
+  // gitPath can appear on both an active and a soft-deleted note, and the
+  // callers rely on getting the first array occurrence.
+  const notesByGitPath = new Map<string, Note>()
+  for (const n of notes) {
+    if (n.gitPath && !notesByGitPath.has(n.gitPath)) notesByGitPath.set(n.gitPath, n)
+  }
+
   // 1. Walk every remote .md file.
   for (const [path, remoteSha] of remoteTree) {
     if (!path.endsWith('.md')) continue
@@ -157,7 +168,7 @@ export async function pullFromGitHub(input: {
     // wants this gone — we MUST NOT treat the remote file as a new
     // creation and resurrect it. Push step 4 will emit the
     // `sha: null` tree entry to actually delete it.
-    let localMatch = notes.find(n => n.gitPath === path)
+    let localMatch = notesByGitPath.get(path)
 
     if (localMatch && localMatch.isDeleted) {
       // Pending deletion — skip the fetch + classification entirely.
@@ -446,7 +457,7 @@ export async function pullFromGitHub(input: {
   const pendingRemovedPaths = new Set<string>()
   for (const [path] of remoteTree) {
     if (!path.endsWith('.md')) continue
-    const localMatch = notes.find(n => n.gitPath === path)
+    const localMatch = notesByGitPath.get(path)
     if (!localMatch) continue
     if (localMatch.isDeleted) {
       pendingRemovedPaths.add(path)
@@ -585,7 +596,7 @@ export async function pullFromGitHub(input: {
   for (const [path, remoteSha] of remoteTree) {
     if (!isForeignVaultFile(path)) continue
     if (gitignoreMatcher.isIgnored(path)) continue
-    const existing = notes.find(n => n.gitPath === path)
+    const existing = notesByGitPath.get(path)
     if (existing) continue
     out.push({ kind: 'foreignFile', path, remoteSha })
   }
