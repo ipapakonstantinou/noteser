@@ -29,7 +29,13 @@ class MockWebSocket {
   }
   close() {
     this.readyState = 3
-    queueMicrotask(() => { this.onclose?.() })
+    // Real browsers fire `onclose` asynchronously after close(). In
+    // tests that branch only matters when we're explicitly asserting on
+    // disconnect/reconnect behavior — those tests drive it via
+    // fireClose(). Auto-firing here would dispatch onclose during the
+    // hook's useEffect cleanup at test teardown, which calls setStatus
+    // outside any act() boundary and trips a React warning. Tests that
+    // care call fireClose() directly inside act().
   }
   fireOpen() { this.readyState = 1; this.onopen?.() }
   fireClose() { this.readyState = 3; this.onclose?.() }
