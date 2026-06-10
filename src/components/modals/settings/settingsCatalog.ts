@@ -67,6 +67,14 @@ export const SETTINGS_CATALOG: readonly SettingsCatalogEntry[] = [
     keywords: ['delete', 'trash', 'remove'],
   },
   {
+    id: 'general.trashFolderName',
+    categoryId: 'general',
+    categoryLabel: 'General',
+    label: 'Trash folder',
+    description: 'Display name for the trash row in the sidebar. Renaming is cosmetic and syncs across devices; the trash never appears in your sync repo.',
+    keywords: ['trash', 'folder', 'name', 'rename', 'recycle', 'bin'],
+  },
+  {
     id: 'general.confirmBeforeTrash',
     categoryId: 'general',
     categoryLabel: 'General',

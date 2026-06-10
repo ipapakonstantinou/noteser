@@ -354,6 +354,19 @@ export interface SettingsState {
   // cosmetic — trashed notes reference the trash by its fixed synthetic id
   // (TRASH_FOLDER_ID), so renaming never loses anything. Defaults to
   // `.trash`.
+  //
+  // SYNC SEMANTICS (#178): the trash folder does NOT participate in the
+  // vault tree. Trashed notes are removed from the remote on push
+  // (syncPush emits a `sha: null` tree delete for their old gitPath), so
+  // no trash-folder path is ever derived from this value — push/pull path
+  // derivation never reads it, which is exactly why renaming is safe for
+  // existing vaults. The SETTING itself round-trips across devices via
+  // the vault settings file (it is in VAULT_SETTING_KEYS). A remote repo
+  // that already contains a real `.trash/` folder (e.g. an imported
+  // Obsidian vault) is pulled as an ordinary dot-folder, unaffected by
+  // this setting. If trashed notes ever start being PUSHED under a trash
+  // path instead of deleted, that code must read this field — do not
+  // hardcode `.trash`.
   trashFolderName: string
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────
