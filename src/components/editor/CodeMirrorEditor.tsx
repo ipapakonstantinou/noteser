@@ -269,6 +269,48 @@ const exitEmptyCheckboxOnEnter: Command = (view) => {
   return true
 }
 
+// Shift+Enter inside a list/task line — insert a newline + a continuation
+// indent that matches the current item's MARKER WIDTH, so the next line is
+// parsed as a paragraph continuation of the same list item (CommonMark "list
+// paragraph" rule). The new line has NO list marker — Enter still starts a
+// fresh sibling item via the markdown extension's continuation handler.
+//
+// Marker widths produced (no extra leading indent):
+//   "- text"        -> 2  ("- ")
+//   "1. text"       -> 3  ("1. "); "12. text" -> 4
+//   "- [ ] text"    -> 6  ("- " + "[ ] ")
+//   "1. [ ] text"   -> 7
+//   "   - nested"   -> 3 + 2 = 5 (indent preserved)
+//
+// On a plain line: returns false so the default Shift+Enter (= newline) runs.
+// On a multi-selection: not handled (returns false) — the markdown extension's
+// fallbacks then take over.
+export const continueListItemParagraph: Command = (view) => {
+  const { state } = view
+  const range = state.selection.main
+  if (!range.empty) return false
+  const line = state.doc.lineAt(range.from)
+  const parts = splitListLine(line.text)
+  if (parts.kind === 'plain') return false
+
+  // Continuation prefix: preserve the literal indent (tabs stay tabs), then
+  // pad with SPACES to cover the marker (carrier + checkbox if any). Using
+  // literal indent keeps tab/space conventions consistent with the surrounding
+  // doc; space-padding the marker portion is what CommonMark requires for the
+  // paragraph to attach to the list item.
+  const markerWidth = parts.carrier.length + (parts.kind === 'task' ? 4 : 0)
+  const pad = parts.indent + ' '.repeat(markerWidth)
+
+  const insert = '\n' + pad
+  view.dispatch({
+    changes: { from: range.from, to: range.to, insert },
+    selection: { anchor: range.from + insert.length },
+    scrollIntoView: true,
+    userEvent: 'input',
+  })
+  return true
+}
+
 // Wrap a built-in move-line command so an ordered list renumbers after the
 // move. Obsidian renumbers when you Alt+Up/Down a list item; this matches.
 function moveLineThenRenumber(base: Command): Command {
@@ -726,6 +768,11 @@ export function CodeMirrorEditor({
     // returns false (any other line) the event falls through to the markdown
     // keymap's normal Enter continuation.
     { key: 'Enter', run: exitEmptyCheckboxOnEnter },
+    // Shift+Enter inside a list/task line: insert a continuation indent so the
+    // next line parses as a paragraph inside the same list item (instead of a
+    // top-level paragraph at column 0). Returns false on plain lines so the
+    // browser's default Shift+Enter (= plain newline) still runs there.
+    { key: 'Shift-Enter', run: continueListItemParagraph },
     // ── Obsidian-style list / todo commands ────────────────────────────────
     // (1) Mod+L — Toggle checkbox status (Obsidian default). Flip a task
     // done/undone; turn a plain/bullet/numbered line into a checkbox.
