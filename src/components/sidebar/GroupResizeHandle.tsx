@@ -76,12 +76,19 @@ export const GroupResizeHandle = ({
 
   useEffect(() => {
     if (!dragging) return
-    const onMove = (e: MouseEvent) => {
+    // Shared move path for mouse AND touch — both reduce to "the pointer
+    // is now at clientY", and the pair arithmetic is identical.
+    const moveTo = (clientY: number) => {
       if (!startRef.current) return
-      const dy = e.clientY - startRef.current.y
+      const dy = clientY - startRef.current.y
       const total = startRef.current.above + startRef.current.below
       const { above, below } = resolvePair(startRef.current.above + dy, total)
       onResize(above, below)
+    }
+    const onMove = (e: MouseEvent) => moveTo(e.clientY)
+    const onTouchMove = (e: TouchEvent) => {
+      const t = e.touches[0]
+      if (t) moveTo(t.clientY)
     }
     const onUp = () => {
       setDragging(false)
@@ -89,6 +96,14 @@ export const GroupResizeHandle = ({
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
+    // Touch parity (#177): the sidebar stack also renders inside the
+    // mobile drawer, so the same drag has to work with a finger. The
+    // handle carries `touch-none` (touch-action: none) so the browser
+    // never claims the gesture for scrolling — no preventDefault needed,
+    // which keeps the listeners passive-friendly.
+    window.addEventListener('touchmove', onTouchMove, { passive: true })
+    window.addEventListener('touchend', onUp)
+    window.addEventListener('touchcancel', onUp)
     // Same "kill text selection + force cursor" trick as the column
     // resize handle so a quick pointer overshoot doesn't flicker the
     // I-beam across the editor.
@@ -99,6 +114,9 @@ export const GroupResizeHandle = ({
     return () => {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('touchmove', onTouchMove)
+      window.removeEventListener('touchend', onUp)
+      window.removeEventListener('touchcancel', onUp)
       document.body.style.userSelect = prevUserSelect
       document.body.style.cursor = prevCursor
     }
@@ -109,6 +127,17 @@ export const GroupResizeHandle = ({
     e.preventDefault()
     e.stopPropagation()
     startRef.current = { y: e.clientY, above: aboveHeight, below: belowHeight }
+    setDragging(true)
+  }
+
+  // Touch counterpart of onMouseDown. No preventDefault — React registers
+  // touchstart passively, and the `touch-none` class already stops the
+  // browser from scrolling the stack while the finger is on the handle.
+  const onTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0]
+    if (!t) return
+    e.stopPropagation()
+    startRef.current = { y: t.clientY, above: aboveHeight, below: belowHeight }
     setDragging(true)
   }
 
@@ -153,10 +182,11 @@ export const GroupResizeHandle = ({
       aria-valuemax={Math.round(aboveHeight + belowHeight - MIN_GROUP_HEIGHT)}
       tabIndex={0}
       onMouseDown={onMouseDown}
+      onTouchStart={onTouchStart}
       onDoubleClick={onReset}
       onKeyDown={onKeyDown}
       data-testid="sidebar-group-resize-handle"
-      className={`group relative h-2 cursor-row-resize flex-shrink-0 flex items-center justify-center outline-none ${
+      className={`group relative h-2 touch-none cursor-row-resize flex-shrink-0 flex items-center justify-center outline-none ${
         dragging
           ? 'bg-obsidianAccentPurple'
           : 'hover:bg-obsidianAccentPurple/30 focus-visible:bg-obsidianAccentPurple/30'
