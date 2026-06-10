@@ -23,6 +23,7 @@ import { bodyWithInlineTags } from './syncApply'
 import { decryptNoteContent, isEncryptedContent } from './vaultCrypto'
 import { getVaultKey, VaultLockedError } from './vaultKey'
 import { mapWithConcurrency, DEFAULT_CONCURRENCY } from './concurrency'
+import { withTokenRefresh } from './tokenRefresh'
 
 // Local-canonical blob SHA for the bytes we're about to store. Mirrors
 // syncApply.canonicalLocalSha — kept private there, duplicated here to avoid
@@ -55,10 +56,12 @@ export function isShell(note: Pick<Note, 'contentLoaded'>): boolean {
 // Returns true when it loaded (or was already loaded), false on a recoverable
 // failure (e.g. network blip) so the caller can decide whether to retry.
 //
-// `repo`/`token` are passed in so callers that already hold them (the fill
-// loop) don't re-read the store per-note; ensureNoteBodyLoaded reads them once.
+// The blob read runs inside withTokenRefresh (same orchestration as the sync
+// pull/push), so an expired OAuth token proactively refreshes — and a 401
+// refreshes-once-and-retries — instead of silently stranding the shell until
+// the next sync. `repo` is passed in so callers that already hold it (the
+// fill loop) don't re-read the store per-note.
 async function loadOneShell(
-  token: string,
   repo: SyncRepo,
   noteId: string,
 ): Promise<boolean> {
@@ -83,8 +86,11 @@ async function loadOneShell(
 
   let raw: string
   try {
-    raw = await getBlobContent(token, repo.owner, repo.name, remoteSha)
+    raw = await withTokenRefresh(tok => getBlobContent(tok, repo.owner, repo.name, remoteSha))
   } catch {
+    // Network blip OR ReconnectRequiredError (renewal exhausted). Either way
+    // the shell stays unloaded and gets retried on the next fill / on-open —
+    // a background fill is not the place to surface the reconnect modal.
     return false
   }
 
@@ -126,7 +132,7 @@ export async function ensureNoteBodyLoaded(noteId: string): Promise<void> {
   if (!note || note.contentLoaded !== false) return
   const { token, syncRepo } = useGitHubStore.getState()
   if (!token || !syncRepo) return
-  await loadOneShell(token, syncRepo, noteId)
+  await loadOneShell(syncRepo, noteId)
 }
 
 // Guards against two concurrent fill loops (e.g. a startup resume racing a
@@ -157,7 +163,7 @@ export async function fillShellsInBackground(
   try {
     await mapWithConcurrency(shellIds, DEFAULT_CONCURRENCY, async (id) => {
       try {
-        await loadOneShell(token, syncRepo, id)
+        await loadOneShell(syncRepo, id)
       } catch (err) {
         // VaultLockedError (or any throw) shouldn't reject the whole batch —
         // we catch per-item so one locked/bad note doesn't strand the rest.

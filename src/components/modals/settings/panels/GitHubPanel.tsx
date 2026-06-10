@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useUIStore, useSettingsStore, useGitHubStore } from '@/stores'
 import { useGitHubSync } from '@/hooks/useGitHubSync'
+import { withTokenRefresh } from '@/utils/tokenRefresh'
 import { Button } from '@/components/ui'
 import {
   Field,
@@ -320,7 +321,9 @@ function VaultGitignoreField() {
     setFetching(true); setFetchError(null)
     try {
       const { fetchRemoteGitignore } = await import('@/utils/gitignoreSync')
-      const { content } = await fetchRemoteGitignore(token, syncRepo)
+      // withTokenRefresh: the read-ref → tree → blob chain inside
+      // fetchRemoteGitignore auto-renews an expired token instead of 401-ing.
+      const { content } = await withTokenRefresh(tok => fetchRemoteGitignore(tok, syncRepo))
       setSnapshot(content)
       setDraft(content)
     } catch (err) {
