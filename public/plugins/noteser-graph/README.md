@@ -2,7 +2,10 @@
 
 Reference plugin that delivers the graph view + backlinks panel called for
 in issue #71. Built on the Plugin API v1.2 (PRs A, B, C, F + the post-v1.2
-VNode event delivery / wikilink intercept follow-up). Self-contained ES
+VNode event delivery / wikilink intercept follow-up) and the v1.3
+interaction surface (L1-L4: pointer / wheel / hover events, host-owned
+pan/zoom with the `surface.transform` settle event, and the
+`worker:patchSvgPositions` position-patch fast path). Self-contained ES
 module - the worker dynamic-imports `main.js` via a Blob URL.
 
 ## What it provides
@@ -26,12 +29,40 @@ Shown for the active note. Two sections plus an action button:
 Force-directed SVG of the vault.
 
 - Nodes are notes; edges are wikilinks.
-- Click a node to "select" it. The header shows a `link` VNode pointing
-  at that note (`{ kind: 'note', noteId }`); clicking the link goes
-  through the host's `wikilink://` intercept and opens the note. Tag
-  nodes (see below) are not notes, so selecting one shows a plain label.
-- Header buttons: Recompute, Reset view, Zoom in / out, Pan in four
-  directions.
+- Header buttons: Recompute, Reset view, and (when any node is pinned)
+  Release pinned.
+
+#### Interactive (v0.3.0, "G2-G5")
+
+The graph uses the v1.3 interaction surface to feel like Obsidian:
+
+- **Wheel zoom + drag pan (G2).** The svg declares `panZoom: 'host'`, so
+  the host owns the viewBox: wheel-zoom and dragging the background pan
+  instantly with no worker round-trip. On gesture settle the host emits
+  one `surface.transform` event `{ x, y, scale }`; the plugin
+  reconstructs the viewport box from it and persists it under
+  `g2.viewport`, so the viewport survives a reload. The old nine
+  zoom/pan buttons are gone.
+- **Node drag, pin/unpin (G3).** Pressing a node circle pins it (the
+  host auto-captures the pointer because the circle declares both
+  `onPointerDown` and `onPointerMove`); moving the pointer drags the
+  pinned node to `payload.{x,y}` (already svg user-space). The
+  simulation reheats around pinned nodes (`simulationStep` skips
+  integration for `fixed` nodes) and streams ONLY the moved coordinates
+  through `ctx.patchSvgPositions({ viewId, patches })` each frame, so a
+  500-node drag never re-emits the whole SVG tree. A pinned node keeps a
+  distinct ring; click a pinned node to unpin it, or use "Release
+  pinned".
+- **Hover highlight (G4).** Hovering a node (`onPointerEnter`) dims every
+  non-neighbour circle to a muted fill and brightens/thickens the hovered
+  node's edges; `onPointerLeave` clears it. The highlight is recolor-only
+  (no re-layout, no patch channel).
+- **Click vs drag to open (G5).** A press that releases within ~4px and
+  ~250ms counts as a click, not a drag: a click on a free note node
+  selects it and surfaces the open link; a click on a pinned node unpins
+  it. A real drag never opens the note. Opening still flows through the
+  host's `wikilink://` intercept on the selected-row `link` (see the API
+  note below).
 
 #### Graph richness controls (v0.2.0, "G1")
 
@@ -62,7 +93,8 @@ simulation; changing the view mode, depth, force values, or a node
 toggle re-derives the graph and re-runs the layout.
 
 Setting keys: `g1.mode`, `g1.depth`, `g1.colorBy`, `g1.colorQuery`,
-`g1.search`, `g1.hideOrphans`, `g1.tagsAsNodes`, `g1.forces`.
+`g1.search`, `g1.hideOrphans`, `g1.tagsAsNodes`, `g1.forces`, and the
+G2 viewport box `g2.viewport`.
 
 ## Install + dev workflow
 
@@ -139,37 +171,30 @@ The plugin's panel id (`graph`) intentionally does not collide with the
 core's `backlinks` id, so a user can have both panels installed without
 the registry rejecting either.
 
-## v1.2 API gaps surfaced while building
+## What v1.3 closed, and the one gap that remains
 
-The brief asked for:
+The v1.2 surface could not express wheel-zoom, drag-pan, node drag, or
+hover, so v0.1.0 / v0.2.0 shipped zoom/pan as header buttons and a
+two-click "select then open" flow. The v1.3 interaction surface closes
+the interaction gaps:
 
-- **Wheel = zoom** on the graph view, and
-- **Drag = pan** on the graph view, and
-- **Click a circle = open the note in one click**.
+- `onWheel` + `panZoom: 'host'` -> wheel zoom + drag pan (the buttons
+  are gone).
+- `onPointerDown / Move / Up` on circles + automatic pointer capture ->
+  node drag.
+- `worker:patchSvgPositions` (`ctx.patchSvgPositions`) -> 60fps drag
+  without re-emitting the SVG tree.
+- `onPointerEnter / Leave` -> hover highlight.
 
-The v1.2 VNode event set is restricted to `onClick`, `onChange`,
-`onSubmit`, and `onKeyDown` (the last only for Esc / Enter). There is
-no `onWheel`, no `onPointerDown / move / up`. SVG children
-(`circle` / `rect`) accept `onClick` only, so dragging the canvas to
-pan and wheel-to-zoom are not expressible at the VNode layer.
-
-Likewise, the host's `wikilink://` intercept fires on real `<a>`
-elements rendered from a `link` VNode. SVG children cannot be wrapped
-in a `link` VNode (the SvgChild union does not allow it), and the
-`PluginCtx` exposes no `ctx.openNote(id)` method. Clicking a circle
-therefore lands as a regular VNode event, and the plugin has to
-re-render with a `link` VNode the user clicks to actually navigate.
-
-To preserve the brief's spirit, this plugin ships:
-
-- **Zoom in / out + Pan four-direction buttons** in the header instead
-  of wheel + drag.
-- **Two-click open** for circle clicks (click circle -> persistent
-  "Selected" `link` row appears in the header -> click link to open).
-
-A v1.3 API increment that lands `onWheel` / pointer events on the SVG
-shape and an `ctx.openNote(id)` method would close both gaps without
-breaking this plugin's UI.
+One gap remains: `PluginCtx` still exposes **no `ctx.openNote(id)`**
+method, and SVG children cannot be wrapped in a `link` VNode. The only
+way to open a note from a plugin is a real `<a>` click on a `link`
+VNode with `href: { kind: 'note', noteId }`, which the host's
+`wikilink://` intercept turns into `useWorkspaceStore.openNote`. So G5
+here is the click-vs-drag DISAMBIGUATION plus surfacing that open link
+on a genuine click; a true single-click programmatic open would need a
+future `ctx.openNote(id)` host method. This plugin does not (and may
+not) reach into `src/plugins` to add one.
 
 ## Tests
 
@@ -195,10 +220,24 @@ The G1 increment adds more pure helpers, all exported and unit-tested:
 - `computeNodeColors(nodes, notesById, opts)` / `colorForKey(key)`
 - `clampForces(forces)` / `DEFAULT_FORCES`
 
-Jest tests at `src/__tests__/noteserGraphPlugin.test.ts` and
-`src/__tests__/noteserGraphPluginG1.test.ts` import the plugin module
-directly. The first covers the unlinked-mention detector (code-block
-exclusion, wikilink exclusion, whole-word matching) plus graph
-derivation on a 5-note fixture; the second covers tag extraction, the
-tags-as-nodes synthesis, the local-graph BFS, orphan filtering, color
-assignment, and force clamping/tuning.
+The G2-G5 interactive increment adds more pure helpers, all exported and
+unit-tested:
+
+- `isTapGesture(start, end, opts?)` / `TAP_MOVE_THRESHOLD` /
+  `TAP_TIME_THRESHOLD` - click-vs-drag classification.
+- `simulationStep(sim, edges, opts?)` / `simIsSettled(sim, threshold?)` -
+  one live integration step honouring the per-node `fixed` flag.
+- `hoverNeighbours(edges, hoveredId)` / `edgeKey(source, target)` - the
+  hover highlight node + incident-edge sets.
+- `viewportFromTransform(base, transform)` / `clampViewport(vp)` /
+  `DEFAULT_VIEWPORT` - the `surface.transform` viewport round-trip.
+
+Jest tests at `src/__tests__/noteserGraphPlugin.test.ts`,
+`src/__tests__/noteserGraphPluginG1.test.ts`, and
+`src/__tests__/noteserGraphPluginG2G5.test.ts` import the plugin module
+directly. The first covers the unlinked-mention detector plus graph
+derivation; the second covers tag extraction, the tags-as-nodes
+synthesis, the local-graph BFS, orphan filtering, color assignment, and
+force clamping/tuning; the third covers the click-vs-drag threshold,
+pinned-node handling in the simulation step, the hover neighbour set,
+and the viewport persistence round-trip.
