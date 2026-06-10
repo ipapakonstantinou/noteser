@@ -237,6 +237,7 @@ Open the shortcuts cheatsheet with \`Ctrl+/\`. Some highlights:
 | Open settings | \`Ctrl+,\` |
 | Toggle task at cursor | \`Alt+L\` |
 | Remove task prefix | \`Alt+Shift+L\` |
+| Continue list item paragraph | \`Shift+Enter\` |
 | Find in note | \`Ctrl+F\` |
 | Find & replace | \`Ctrl+H\` |
 | Insert markdown table | \`Ctrl+Alt+T\` |
@@ -370,6 +371,19 @@ Drops a 2-row × 2-col GFM table at the cursor:
 \`Header 1\` is pre-selected so you can immediately type to overwrite the
 first column heading. On a non-empty line, the table is inserted on its
 own block (preceded by a blank line).
+
+## Multi-paragraph list items (Shift+Enter)
+
+Inside a bullet, ordered, or task line, \`Shift+Enter\` inserts a newline
+plus a continuation indent that matches the current item's marker width.
+The new line carries no marker, so the body keeps attaching to the same
+list item instead of bailing out to a top-level paragraph at column 0.
+Useful for multi-paragraph task notes.
+
+- \`Enter\` is unchanged: starts a fresh sibling list item, or exits the
+  list when the current line is empty.
+- \`Shift+Enter\` on a plain (non-list) line falls back to the default — a
+  plain newline.
 
 ## AI actions on the active note
 
