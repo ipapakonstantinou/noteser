@@ -69,7 +69,9 @@ export const PluginsPanel = () => {
       (e: PluginVNodeEvent) => {
         const host = getPluginHost()
         if (!host) return
-        host.sendVNodeEvent(pluginId, { kind: 'panel', panelId }, e.event, e.payload)
+        host.sendVNodeEvent(pluginId, { kind: 'panel', panelId }, e.event, e.payload, {
+          highFrequency: e.highFrequency === true,
+        })
       },
     [],
   )

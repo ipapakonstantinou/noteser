@@ -177,6 +177,7 @@ export const PluginFullscreenView = () => {
       { kind: 'fullscreen', viewId: active.viewId },
       e.event,
       e.payload,
+      { highFrequency: e.highFrequency === true },
     )
   }
 

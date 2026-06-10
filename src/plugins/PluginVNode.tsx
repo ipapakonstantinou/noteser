@@ -31,7 +31,12 @@
 //
 // All shapes carry `tag` as discriminator.
 
-import type { CSSProperties, MouseEvent, ReactNode } from 'react'
+import type {
+  CSSProperties,
+  MouseEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+} from 'react'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 
 // ─── v1 shapes (unchanged) ────────────────────────────────────────────────
@@ -69,6 +74,45 @@ export interface VNodeEvent {
   payload?: unknown
 }
 
+// ─── v1.3 (L1) pointer-event handler props ────────────────────────────────
+//
+// Same `VNodeEvent` record shape as the v1.2 handlers (`onClick` etc).
+// A listener is attached ONLY when the prop is present, so absence is
+// exactly v1.2 behaviour with zero added cost. L1 ships the three
+// discrete/continuous pointer handlers below; `onWheel` (L2) and
+// `onPointerEnter` / `onPointerLeave` (L3) are deliberately NOT part of
+// this PR.
+
+/** Pointer handler subset shipped in v1.3 L1. `onPointerMove` is
+ *  high-frequency — the host rAF-coalesces it and draws it from a
+ *  separate budget; `onPointerDown` / `onPointerUp` are discrete. */
+export interface PointerHandlers {
+  onPointerDown?: VNodeEvent
+  onPointerMove?: VNodeEvent
+  onPointerUp?: VNodeEvent
+}
+
+/**
+ * Payload the host augments onto every pointer event before it crosses
+ * the wire. Host keys win the shallow merge over any plugin-supplied
+ * payload, so a plugin cannot spoof coordinates or the target id. Only
+ * numbers, a boolean-free set here, and the echoed `target` string
+ * cross — never a DOM ref or the raw event object.
+ *
+ * `x` / `y` are surface coordinates (see the coordinate-system contract
+ * below): SVG user-space for svg surfaces, element-local pixels for box
+ * surfaces. `button` is 0 primary / 1 middle / 2 secondary on
+ * down / up and -1 on move. `target` is the opt-in `id` declared on the
+ * owning shape / svg / box, or null when none was declared.
+ */
+export interface PointerEventPayload {
+  x: number
+  y: number
+  button: number
+  pointerId: number
+  target: string | null
+}
+
 /**
  * Wire-level event message emitted by the renderer when a plugin's
  * control (button / input / radio / clickable svg shape) fires. This
@@ -84,9 +128,18 @@ export interface PluginVNodeEvent {
    * Payload posted back to the worker. For inputs and radios the
    * renderer augments the plugin-supplied `payload` with `{ value }`;
    * for buttons and clickable svg shapes it is the plugin payload
-   * verbatim (or `undefined`).
+   * verbatim (or `undefined`); for pointer events it is the
+   * `PointerEventPayload` shallow-merged over the plugin payload.
    */
   payload: unknown
+  /**
+   * v1.3 (L1) — set true for high-frequency events (`onPointerMove`)
+   * so the surface adapter can ask the host to rAF-coalesce them and
+   * charge them to the separate high-frequency budget. Discrete events
+   * (clicks, pointerdown / pointerup, input changes) leave it unset.
+   * The host treats an unset flag as a normal discrete event.
+   */
+  highFrequency?: boolean
 }
 
 // ─── v1.2 new shapes ──────────────────────────────────────────────────────
@@ -151,24 +204,51 @@ export interface VNodeRadio {
  */
 export type SvgChild =
   | { tag: 'line'; x1: number; y1: number; x2: number; y2: number; stroke?: string; strokeWidth?: number }
-  | { tag: 'circle'; cx: number; cy: number; r: number; fill?: string; stroke?: string; onClick?: VNodeEvent }
-  | { tag: 'rect'; x: number; y: number; width: number; height: number; fill?: string; stroke?: string; onClick?: VNodeEvent }
+  | ({
+      tag: 'circle'
+      cx: number
+      cy: number
+      r: number
+      fill?: string
+      stroke?: string
+      /** v1.3 (L1) — echoed back as `payload.target` on pointer events. */
+      id?: string
+      onClick?: VNodeEvent
+    } & PointerHandlers)
+  | ({
+      tag: 'rect'
+      x: number
+      y: number
+      width: number
+      height: number
+      fill?: string
+      stroke?: string
+      /** v1.3 (L1) — echoed back as `payload.target` on pointer events. */
+      id?: string
+      onClick?: VNodeEvent
+    } & PointerHandlers)
   | { tag: 'text'; x: number; y: number; value: string; fontSize?: number; fill?: string }
   | { tag: 'path'; d: string; stroke?: string; fill?: string; strokeWidth?: number }
 
-export interface VNodeSvg {
+export interface VNodeSvg extends PointerHandlers {
   tag: 'svg'
   width: number
   height: number
   viewBox?: readonly [number, number, number, number]
+  /** v1.3 (L1) — surface-level id, echoed as `payload.target` on
+   *  pointer events that fire on the svg element itself. */
+  id?: string
   children: ReadonlyArray<SvgChild>
 }
 
-export interface VNodeBox {
+export interface VNodeBox extends PointerHandlers {
   tag: 'box'
   children: ReadonlyArray<VNode>
   /** Gap between children, mapped to tailwind spacing. */
   gap?: 0 | 1 | 2 | 3 | 4
+  /** v1.3 (L1) — surface-level id, echoed as `payload.target` on
+   *  pointer events that fire on the box element. */
+  id?: string
 }
 
 export type VNode =
@@ -329,6 +409,181 @@ function dispatchOrDrop(ctx: RenderContext, evt: VNodeEvent | undefined, valueOv
         : valueOverride)
     : evt.payload
   ctx.onEvent({ event: evt.event, payload })
+}
+
+// ─── v1.3 (L1) pointer dispatch + coordinate mapping ──────────────────────
+//
+// One chokepoint, mirroring `dispatchOrDrop`. Pointer events ride the
+// exact same emit channel; the only new work is (a) mapping client
+// coordinates into the surface's coordinate space and (b) shallow-
+// merging the host-controlled `PointerEventPayload` over the plugin's
+// payload (host keys win, so coords / target cannot be spoofed).
+
+/** Minimal shape of an SVG screen CTM — the affine matrix
+ *  `getScreenCTM()` returns. Kept structural so the inverse math is
+ *  unit-testable without a real DOMMatrix (jsdom returns null). */
+interface AffineMatrix {
+  a: number
+  b: number
+  c: number
+  d: number
+  e: number
+  f: number
+}
+
+/**
+ * Map a screen-space point back into SVG user space by inverting the
+ * screen CTM. `getScreenCTM()` gives `screen = M · user`:
+ *   screenX = a·userX + c·userY + e
+ *   screenY = b·userX + d·userY + f
+ * so the inverse is computed directly from the matrix entries. Done by
+ * hand rather than via `DOMPoint.matrixTransform` so it survives jsdom
+ * and stays a pure, testable function. Returns the raw screen point
+ * unchanged when the matrix is degenerate (det ≈ 0).
+ */
+export function inverseCTMPoint(
+  m: AffineMatrix,
+  screenX: number,
+  screenY: number,
+): { x: number; y: number } {
+  const det = m.a * m.d - m.b * m.c
+  if (det === 0 || !Number.isFinite(det)) return { x: screenX, y: screenY }
+  const dx = screenX - m.e
+  const dy = screenY - m.f
+  return {
+    x: (m.d * dx - m.c * dy) / det,
+    y: (m.a * dy - m.b * dx) / det,
+  }
+}
+
+/** Map a client point to element-local pixels for a box surface. */
+export function mapBoxPoint(
+  rect: { left: number; top: number },
+  clientX: number,
+  clientY: number,
+): { x: number; y: number } {
+  return { x: clientX - rect.left, y: clientY - rect.top }
+}
+
+/** Coordinate space a surface maps pointer coordinates into. */
+type PointerCoordKind = 'svg' | 'box'
+
+function pointerSurfacePoint(
+  el: Element,
+  coordKind: PointerCoordKind,
+  clientX: number,
+  clientY: number,
+): { x: number; y: number } {
+  if (coordKind === 'svg') {
+    const getCTM = (el as unknown as { getScreenCTM?: () => AffineMatrix | null }).getScreenCTM
+    const ctm = typeof getCTM === 'function' ? getCTM.call(el) : null
+    if (ctm) return inverseCTMPoint(ctm, clientX, clientY)
+    // jsdom / detached node: no CTM. Fall back to raw client coords so
+    // the contract (numbers, never NaN) holds.
+    return { x: clientX, y: clientY }
+  }
+  const rect = el.getBoundingClientRect()
+  return mapBoxPoint(rect, clientX, clientY)
+}
+
+/**
+ * Dispatch a pointer event through the emit channel, augmenting the
+ * payload with the host-controlled `PointerEventPayload`. `isMove`
+ * marks the high-frequency path (forces `button: -1`, flags the event
+ * as `highFrequency` so the host coalesces it). `id` is the opt-in
+ * shape / surface id echoed as `payload.target`.
+ */
+function dispatchPointer(
+  ctx: RenderContext,
+  el: Element,
+  evt: VNodeEvent | undefined,
+  e: ReactPointerEvent,
+  opts: { id: string | undefined; coordKind: PointerCoordKind; isMove: boolean },
+): void {
+  if (!ctx.onEvent) return
+  if (!evt || evt.kind !== 'emit' || typeof evt.event !== 'string' || evt.event.length === 0) return
+  const { x, y } = pointerSurfacePoint(el, opts.coordKind, e.clientX, e.clientY)
+  const hostKeys: PointerEventPayload = {
+    x,
+    y,
+    button: opts.isMove ? -1 : e.button,
+    pointerId: e.pointerId,
+    target: typeof opts.id === 'string' ? opts.id : null,
+  }
+  // Host keys win the shallow merge — a plugin payload cannot override
+  // coords / target / pointerId.
+  const payload =
+    typeof evt.payload === 'object' && evt.payload !== null
+      ? { ...(evt.payload as Record<string, unknown>), ...hostKeys }
+      : hostKeys
+  ctx.onEvent({ event: evt.event, payload, ...(opts.isMove ? { highFrequency: true } : {}) })
+}
+
+/**
+ * Build the React pointer-listener props for a shape / surface. A
+ * listener is attached ONLY for a handler the plugin actually declared,
+ * so a node with no pointer handlers attaches nothing (v1.2 behaviour,
+ * zero cost). When BOTH down and move are declared the down listener
+ * also calls `setPointerCapture` so a drag keeps firing move / up even
+ * when the pointer leaves the shape — a host-side detail the plugin
+ * never sees.
+ */
+function pointerListenerProps(
+  ctx: RenderContext,
+  h: PointerHandlers,
+  id: string | undefined,
+  coordKind: PointerCoordKind,
+): {
+  onPointerDown?: (e: ReactPointerEvent) => void
+  onPointerMove?: (e: ReactPointerEvent) => void
+  onPointerUp?: (e: ReactPointerEvent) => void
+} {
+  const captureOnDown = h.onPointerDown !== undefined && h.onPointerMove !== undefined
+  return {
+    ...(h.onPointerDown !== undefined
+      ? {
+          onPointerDown: (e: ReactPointerEvent) => {
+            if (captureOnDown) {
+              try {
+                ;(e.currentTarget as Element & {
+                  setPointerCapture?: (id: number) => void
+                }).setPointerCapture?.(e.pointerId)
+              } catch {
+                // setPointerCapture is best-effort; jsdom + some browsers
+                // throw on an inactive pointer. The drag still works
+                // without capture, just without the leave-the-shape
+                // guarantee.
+              }
+            }
+            dispatchPointer(ctx, e.currentTarget, h.onPointerDown, e, {
+              id,
+              coordKind,
+              isMove: false,
+            })
+          },
+        }
+      : {}),
+    ...(h.onPointerMove !== undefined
+      ? {
+          onPointerMove: (e: ReactPointerEvent) =>
+            dispatchPointer(ctx, e.currentTarget, h.onPointerMove, e, {
+              id,
+              coordKind,
+              isMove: true,
+            }),
+        }
+      : {}),
+    ...(h.onPointerUp !== undefined
+      ? {
+          onPointerUp: (e: ReactPointerEvent) =>
+            dispatchPointer(ctx, e.currentTarget, h.onPointerUp, e, {
+              id,
+              coordKind,
+              isMove: false,
+            }),
+        }
+      : {}),
+  }
 }
 
 // ─── Renderer ─────────────────────────────────────────────────────────────
@@ -582,6 +837,8 @@ function renderSvg(v: VNodeSvg, ctx: RenderContext): ReactNode | null {
       viewBox = parts.join(' ')
     }
   }
+  const id = typeof v.id === 'string' ? v.id : undefined
+  const pointerProps = pointerListenerProps(ctx, v, id, 'svg')
   return (
     <svg
       width={width}
@@ -589,6 +846,7 @@ function renderSvg(v: VNodeSvg, ctx: RenderContext): ReactNode | null {
       viewBox={viewBox}
       role="img"
       xmlns="http://www.w3.org/2000/svg"
+      {...pointerProps}
     >
       {v.children.map((child, idx) => renderSvgChild(child, idx, ctx))}
     </svg>
@@ -619,6 +877,13 @@ function renderSvgChild(child: SvgChild | unknown, key: number, ctx: RenderConte
     if (cx === null || cy === null || r === null) return null
     const fill = safeColor(c.fill) ?? 'currentColor'
     const stroke = safeColor(c.stroke) ?? 'none'
+    const id = typeof c.id === 'string' ? c.id : undefined
+    const pointerProps = pointerListenerProps(ctx, c, id, 'svg')
+    const interactive =
+      c.onClick !== undefined ||
+      c.onPointerDown !== undefined ||
+      c.onPointerMove !== undefined ||
+      c.onPointerUp !== undefined
     return (
       <circle
         key={key}
@@ -628,7 +893,8 @@ function renderSvgChild(child: SvgChild | unknown, key: number, ctx: RenderConte
         fill={fill}
         stroke={stroke}
         onClick={c.onClick ? () => dispatchOrDrop(ctx, c.onClick) : undefined}
-        style={c.onClick ? ({ cursor: 'pointer' } satisfies CSSProperties) : undefined}
+        {...pointerProps}
+        style={interactive ? ({ cursor: 'pointer' } satisfies CSSProperties) : undefined}
       />
     )
   }
@@ -642,6 +908,13 @@ function renderSvgChild(child: SvgChild | unknown, key: number, ctx: RenderConte
     if (x === null || y === null || width === null || height === null) return null
     const fill = safeColor(c.fill) ?? 'currentColor'
     const stroke = safeColor(c.stroke) ?? 'none'
+    const id = typeof c.id === 'string' ? c.id : undefined
+    const pointerProps = pointerListenerProps(ctx, c, id, 'svg')
+    const interactive =
+      c.onClick !== undefined ||
+      c.onPointerDown !== undefined ||
+      c.onPointerMove !== undefined ||
+      c.onPointerUp !== undefined
     return (
       <rect
         key={key}
@@ -652,7 +925,8 @@ function renderSvgChild(child: SvgChild | unknown, key: number, ctx: RenderConte
         fill={fill}
         stroke={stroke}
         onClick={c.onClick ? () => dispatchOrDrop(ctx, c.onClick) : undefined}
-        style={c.onClick ? ({ cursor: 'pointer' } satisfies CSSProperties) : undefined}
+        {...pointerProps}
+        style={interactive ? ({ cursor: 'pointer' } satisfies CSSProperties) : undefined}
       />
     )
   }
@@ -690,8 +964,10 @@ function renderBox(v: VNodeBox, ctx: RenderContext): ReactNode | null {
   if (ctx.depth + 1 > MAX_LIST_DEPTH) return null
   const childCtx: RenderContext = { onEvent: ctx.onEvent, depth: ctx.depth + 1 }
   const gap = v.gap !== undefined && v.gap in GAP_CLASSES ? GAP_CLASSES[v.gap] : 'gap-2'
+  const id = typeof v.id === 'string' ? v.id : undefined
+  const pointerProps = pointerListenerProps(ctx, v, id, 'box')
   return (
-    <div className={`flex flex-col ${gap}`}>
+    <div className={`flex flex-col ${gap}`} {...pointerProps}>
       {v.children.map((child, idx) => {
         const rendered = renderWithContext(child, childCtx)
         if (rendered === null) return null
