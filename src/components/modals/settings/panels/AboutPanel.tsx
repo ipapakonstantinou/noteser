@@ -93,6 +93,18 @@ export function AboutPanel() {
         </p>
         <p>
           <a
+            href="https://github.com/thetechjon/awesome-noteser"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-obsidianAccentPurple hover:underline"
+            data-testid="settings-awesome-noteser-link"
+          >
+            awesome-noteser
+          </a>
+          <span className="text-obsidianSecondaryText"> (curated list of plugins, themes, and resources)</span>
+        </p>
+        <p>
+          <a
             href="https://github.com/ipapakonstantinou/noteser/issues/new"
             target="_blank"
             rel="noreferrer"
