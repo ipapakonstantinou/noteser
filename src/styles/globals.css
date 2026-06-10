@@ -86,10 +86,21 @@
     background-color: theme('colors.obsidianHighlight');
   }
 
-  /* Selection — needs enough opacity that light text stays readable on top
-     of the highlight (at 30% the selected text washed out / disappeared). */
+  /* Selection — paint with the dedicated --obsidian-selection token (the
+     same one drawSelection() uses for .cm-selectionBackground) and force a
+     readable FOREGROUND. Two bugs hid here (2026-06-10):
+     1. The old `theme('colors.obsidianAccentPurple / 55%')` could not apply
+        alpha to a var()-based color, so it silently compiled to the SOLID
+        accent blue — not the intended 55% tint.
+     2. With a solid accent background and no `color`, accent-coloured text
+        (links, .preview-tag, wikilinks) disappeared when selected —
+        accent-on-accent is 1:1 contrast.
+     Forcing the foreground to --obsidian-text keeps every glyph readable on
+     the selection: each preset guarantees text-vs-selection ≥ 4.5:1
+     (see themeSelectionContrast.test.ts). */
   ::selection {
-    background-color: theme('colors.obsidianAccentPurple / 55%');
+    background-color: var(--obsidian-selection, #2b5a9b);
+    color: var(--obsidian-text, #dadada);
   }
 }
 

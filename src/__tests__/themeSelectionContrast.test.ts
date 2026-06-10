@@ -108,3 +108,57 @@ describe('CodeMirrorEditor wires the selection token (not the hover token)', () 
     expect(CODE).not.toMatch(/cm-selectionBackground[\s\S]{0,200}--obsidian-highlight/)
   })
 })
+
+// ── Selection FOREGROUND (bug #38, 2026-06-10) ────────────────────────────
+//
+// drawSelection() hides only the native selection's *background* — the
+// `::selection` text color still applies. Accent-coloured glyphs in the
+// live preview (task `[x]` brackets, list markers, #tags, links — all
+// hsl(217,88%,50%)) sat at ~1.4:1 against the blue selection layer and
+// went invisible when selected. The fix forces the selected-text colour to
+// --obsidian-text (≥ 4.5:1 vs selection in every preset, asserted above):
+//   1. obsidianTheme carries a `.cm-line::selection` rule for the editor;
+//   2. globals.css `::selection` paints the same token pair for every
+//      native-selection surface (reading mode, sidebar, inputs). The old
+//      rule used `theme('colors.obsidianAccentPurple / 55%')`, which cannot
+//      apply alpha to a var()-based colour and silently compiled to SOLID
+//      accent blue — accent-on-accent selected text was 1:1 invisible.
+describe('selection foreground keeps accent-coloured text readable (bug #38)', () => {
+  const fs = require('fs')
+  const path = require('path')
+  const EDITOR_SRC = fs.readFileSync(
+    path.join(__dirname, '..', 'components', 'editor', 'CodeMirrorEditor.tsx'),
+    'utf8',
+  ) as string
+  const EDITOR_CODE = EDITOR_SRC
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line: string) => !line.trim().startsWith('//'))
+    .join('\n')
+  const GLOBALS_CSS = fs.readFileSync(
+    path.join(__dirname, '..', 'styles', 'globals.css'),
+    'utf8',
+  ) as string
+  // Strip CSS comments so assertions match rules, not prose.
+  const CSS_CODE = GLOBALS_CSS.replace(/\/\*[\s\S]*?\*\//g, '')
+
+  test('obsidianTheme recolours selected editor text to --obsidian-text', () => {
+    expect(EDITOR_CODE).toMatch(
+      /['"]\.cm-line::selection,\s*\.cm-line\s+::selection['"]\s*:\s*\{\s*color:\s*['"]var\(--obsidian-text/,
+    )
+  })
+
+  test('globals.css ::selection paints --obsidian-selection bg + --obsidian-text fg', () => {
+    const m = CSS_CODE.match(/::selection\s*\{([^}]*)\}/)
+    expect(m).toBeTruthy()
+    const body = m![1]
+    expect(body).toMatch(/background-color:\s*var\(--obsidian-selection/)
+    expect(body).toMatch(/color:\s*var\(--obsidian-text/)
+  })
+
+  test('globals.css ::selection no longer uses the silent-alpha theme() pattern', () => {
+    // `theme('colors.X / NN%')` cannot apply alpha to a var()-based colour —
+    // it compiles to the SOLID colour. Keep it out of the ::selection rule.
+    expect(CSS_CODE).not.toMatch(/::selection\s*\{[^}]*theme\([^)]*\/[^)]*\)/)
+  })
+})
