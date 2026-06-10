@@ -19,6 +19,21 @@
 // affected by `text-indent` and therefore appear indented by `N`. Net result:
 // hanging indent, identical source.
 //
+// CONTINUATION LINES (PR #166 / Shift+Enter)
+// `continueListItemParagraph` inserts a soft newline + N raw spaces so the
+// next line attaches to the same list item as a CommonMark "list paragraph".
+// That continuation line has NO marker — it's just whitespace + body — so the
+// list-marker pass above ignores it. Without help, the raw N spaces in the
+// source render at N monospace ch, but the parent's body (which lives behind
+// `padding-left:Nch; text-indent:-Nch;`) is positioned at exactly Nch from
+// the left padding edge. With proportional/bold rendering of the marker (e.g.
+// the "[ ]" checkbox glyph) those two anchors can drift by a fraction of a
+// character, leaving the continuation visually 1 char to the right of the
+// parent's body start. To fix that we apply the SAME hanging-indent CSS to
+// every continuation line, with width = the parent list item's marker width.
+// The `text-indent:-Nch` swallows the N leading spaces in the source and the
+// `padding-left:Nch` plants the body exactly where the parent's body sits.
+//
 // Performance: a StateField over the WHOLE document would re-scan every doc.
 // Instead we run as a ViewPlugin that only iterates the VISIBLE viewport
 // lines on each update, mirroring the strategy CM6 recommends for syntax-
@@ -31,9 +46,9 @@ import {
   ViewPlugin,
   type DecorationSet,
   type PluginValue,
-  type ViewUpdate,
+  type ViewUpdate
 } from '@codemirror/view'
-import { RangeSetBuilder, type Extension } from '@codemirror/state'
+import { RangeSetBuilder, type Extension, type Text } from '@codemirror/state'
 import { splitListLine } from '@/utils/listTransforms'
 
 // Compute the marker prefix length (in characters) for a given line of text.
@@ -54,31 +69,91 @@ export function listLinePrefixWidth(line: string): number {
   return p.kind === 'task' ? base + 4 : base
 }
 
+// If `lineNumber` (1-based) is a continuation line of an earlier list item,
+// return the parent list item's marker width. Otherwise return 0.
+//
+// A line is a continuation when:
+//   1. It parses as `kind: 'plain'` (no list marker of its own).
+//   2. It starts with at least one whitespace character (CommonMark requires
+//      the paragraph continuation to be indented to attach to the item).
+//   3. Walking up via consecutive non-blank lines reaches a list-marker line
+//      AND the current line's leading-whitespace char count is >= that
+//      parent's marker width. Intermediate continuation lines (also plain,
+//      also whitespace-led) are transparently walked through, so two
+//      consecutive Shift+Enters share the same parent.
+//   4. The chain is BROKEN by any blank line (CommonMark: blank line can end
+//      a list item) or by a plain line with no leading whitespace.
+//
+// Exported for unit tests so callers can assert the chain logic without
+// instantiating an EditorView.
+export function continuationIndentWidth(doc: Text, lineNumber: number): number {
+  const line = doc.line(lineNumber)
+  const parts = splitListLine(line.text)
+  // (1) must itself be plain — list-marker lines are handled by the marker
+  // pass via `listLinePrefixWidth`.
+  if (parts.kind !== 'plain') return 0
+  // (2) the leading indent is the only place a continuation can attach. If
+  // the rest of the line is empty (line.text === indent), treat it the same
+  // as a blank line — it terminates the chain rather than extending it.
+  const leadCount = parts.indent.length
+  if (leadCount === 0) return 0
+  if (parts.body.length === 0) return 0
+
+  // (3) + (4) walk upward.
+  for (let n = lineNumber - 1; n >= 1; n--) {
+    const prev = doc.line(n)
+    if (prev.text.length === 0) return 0
+    const prevParts = splitListLine(prev.text)
+    if (prevParts.kind !== 'plain') {
+      // Hit a real list-marker line. This is the parent.
+      const parentWidth = listLinePrefixWidth(prev.text)
+      return leadCount >= parentWidth ? parentWidth : 0
+    }
+    // prev is plain. Is it itself a continuation candidate (whitespace +
+    // body)? If yes, walk further up. Otherwise it's an unrelated paragraph
+    // and the chain is broken.
+    if (prevParts.indent.length === 0) return 0
+    if (prevParts.body.length === 0) return 0
+  }
+  return 0
+}
+
 // Build a DecorationSet covering only the visible viewport. CodeMirror feeds
 // the visible ranges via `view.visibleRanges`; we walk lines inside each one
-// and emit at most one line decoration per list line.
+// and emit at most one line decoration per list / continuation line.
 function buildDecorations(view: EditorView): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>()
   const { doc } = view.state
+
+  // The visible viewport can start partway through a list-item's continuation
+  // chain (the user scrolled past the parent marker). `continuationIndentWidth`
+  // walks upward in the document, not just within the viewport, so this still
+  // produces the correct parent width for off-screen parents.
+  const emit = (lineFrom: number, width: number): void => {
+    builder.add(
+      lineFrom,
+      lineFrom,
+      Decoration.line({
+        attributes: {
+          style: `padding-left:${width}ch;text-indent:-${width}ch;`
+        }
+      })
+    )
+  }
 
   for (const { from, to } of view.visibleRanges) {
     let pos = from
     while (pos <= to) {
       const line = doc.lineAt(pos)
-      const width = listLinePrefixWidth(line.text)
-      if (width > 0) {
+      const markerWidth = listLinePrefixWidth(line.text)
+      if (markerWidth > 0) {
         // `text-indent` only affects the FIRST visual line — that's exactly
         // the behaviour we want: cancel the padding for row 1 (so the marker
         // stays at the left margin), let rows 2+ keep the padding.
-        builder.add(
-          line.from,
-          line.from,
-          Decoration.line({
-            attributes: {
-              style: `padding-left:${width}ch;text-indent:-${width}ch;`,
-            },
-          }),
-        )
+        emit(line.from, markerWidth)
+      } else {
+        const contWidth = continuationIndentWidth(doc, line.number)
+        if (contWidth > 0) emit(line.from, contWidth)
       }
       if (line.to + 1 > to) break
       pos = line.to + 1
@@ -108,6 +183,6 @@ class HangingIndentPlugin implements PluginValue {
 export const hangingIndentExtension: Extension = ViewPlugin.fromClass(
   HangingIndentPlugin,
   {
-    decorations: v => v.decorations,
-  },
+    decorations: v => v.decorations
+  }
 )
