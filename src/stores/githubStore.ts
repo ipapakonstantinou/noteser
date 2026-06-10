@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { GitHubUser, SyncRepo } from '@/types'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
+import { localStorageJSON } from '@/utils/persistStorage'
 import { trackEventOncePerSession } from '@/utils/analytics'
 
 // Stores the user's GitHub OAuth token + identity + chosen sync repo.
@@ -168,6 +169,10 @@ export const useGitHubStore = create<GitHubState>()(
     }),
     {
       name: STORAGE_KEYS.github,
+      // Explicit default-equivalent storage with a non-browser fallback —
+      // keeps SSR / node-env Jest suites free of "storage is currently
+      // unavailable" persist warnings (issue #131).
+      storage: localStorageJSON,
       partialize: (state) => ({
         token: state.token,
         user: state.user,

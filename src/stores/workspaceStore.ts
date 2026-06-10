@@ -5,6 +5,7 @@ import type { PullClassification } from '@/utils/githubSync'
 import { SYNC_REQUEST_EVENT } from '@/utils/events'
 import { useNoteStore } from './noteStore'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
+import { localStorageJSON } from '@/utils/persistStorage'
 import {
   type NavHistory,
   createHistory,
@@ -1022,6 +1023,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     },
     {
       name: STORAGE_KEYS.workspace,
+      // Explicit default-equivalent storage with a non-browser fallback —
+      // keeps SSR / node-env Jest suites free of "storage is currently
+      // unavailable" persist warnings (issue #131).
+      storage: localStorageJSON,
       version: 3, // bumped: layout tree added alongside flat panes[]
       migrate: migrateWorkspace,
       partialize: (state) => ({

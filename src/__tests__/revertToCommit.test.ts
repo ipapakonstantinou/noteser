@@ -6,12 +6,7 @@
  * revert-to-commit feature — the modal is a thin wrapper around it.
  */
 
-jest.mock('idb-keyval', () => ({
-  get: jest.fn().mockResolvedValue(undefined),
-  set: jest.fn().mockResolvedValue(undefined),
-  del: jest.fn().mockResolvedValue(undefined),
-  keys: jest.fn().mockResolvedValue([]),
-}))
+jest.mock('idb-keyval', () => require('../testUtils/idbKeyvalMock').idbKeyvalMock)
 
 // Stub the github helpers so the util's network calls are deterministic.
 // refreshAccessToken is mocked too so the token-refresh wrapper around the
@@ -31,6 +26,7 @@ jest.mock('../utils/github', () => {
   }
 })
 
+import { resetIdbKeyvalMock } from '../testUtils/idbKeyvalMock'
 import { revertToCommit } from '../utils/revertToCommit'
 import { useNoteStore } from '../stores/noteStore'
 import { useGitHubStore, type GitHubTokenSet } from '../stores/githubStore'
@@ -59,6 +55,7 @@ function makeNote(overrides: Partial<Note> = {}): Note {
 }
 
 beforeEach(() => {
+  resetIdbKeyvalMock()
   useNoteStore.setState({ notes: [], selectedNoteId: null })
   mockGetCommitTreeSha.mockReset()
   mockGetTreeMap.mockReset()

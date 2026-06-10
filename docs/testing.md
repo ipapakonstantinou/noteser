@@ -73,16 +73,20 @@ jest.mock('idb-keyval', () => ({
 ```
 
 ```ts
-// in-memory variant — when you need round-trip save/get (e.g. attachments.test.ts)
-const idb = new Map<string, unknown>()
-jest.mock('idb-keyval', () => ({
-  get: jest.fn((k: string) => Promise.resolve(idb.get(k))),
-  set: jest.fn((k: string, v: unknown) => { idb.set(k, v); return Promise.resolve() }),
-  del: jest.fn((k: string) => { idb.delete(k); return Promise.resolve() }),
-  keys: jest.fn(() => Promise.resolve([...idb.keys()])),
-}))
-beforeEach(() => idb.clear())
+// in-memory variant — when you need round-trip save/get. Shared helper in
+// src/testUtils/idbKeyvalMock.ts (e.g. syncApply.test.ts). Keep the require
+// specifier RELATIVE — the SWC jest transformer rewrites `@/` aliases in
+// import statements but NOT in bare require('@/…') literals.
+jest.mock('idb-keyval', () => require('../testUtils/idbKeyvalMock').idbKeyvalMock)
+import { resetIdbKeyvalMock } from '../testUtils/idbKeyvalMock'
+beforeEach(() => resetIdbKeyvalMock())
 ```
+
+The localStorage-persisted stores (github / settings / ui / tag / workspace)
+need no storage mock at all: they persist through `localStorageJSON`
+(`src/utils/persistStorage.ts`), which falls back to an in-memory Map when
+`window` is absent (SSR, `@jest-environment node`) instead of hitting
+zustand's "storage is currently unavailable" warning path.
 
 ### Store isolation (Zustand)
 

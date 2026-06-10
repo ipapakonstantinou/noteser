@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid'
 import type { Tag } from '@/types'
 import { TAG_COLORS } from '@/types'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
+import { localStorageJSON } from '@/utils/persistStorage'
 
 interface TagState {
   tags: Tag[]
@@ -74,7 +75,11 @@ export const useTagStore = create<TagState>()(
       }
     }),
     {
-      name: STORAGE_KEYS.tags
+      name: STORAGE_KEYS.tags,
+      // Explicit default-equivalent storage with a non-browser fallback —
+      // keeps SSR / node-env Jest suites free of "storage is currently
+      // unavailable" persist warnings (issue #131).
+      storage: localStorageJSON,
     }
   )
 )

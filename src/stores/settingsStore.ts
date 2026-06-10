@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
+import { localStorageJSON } from '@/utils/persistStorage'
 
 export type FolderSortMode = 'alphabetical' | 'modified' | 'created' | 'manual'
 export type TaskListDensity = 'compact' | 'comfortable'
@@ -959,6 +960,10 @@ export const useSettingsStore = create<SettingsState>()(
     },
     {
       name: STORAGE_KEYS.settings,
+      // Explicit default-equivalent storage with a non-browser fallback —
+      // keeps SSR / node-env Jest suites free of "storage is currently
+      // unavailable" persist warnings (issue #131).
+      storage: localStorageJSON,
       version: 3,
       // Migration ladder:
       //   v0→v1 (2026-05-20): pinnedPanels used to default to
