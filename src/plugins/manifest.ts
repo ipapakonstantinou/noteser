@@ -111,12 +111,34 @@ export interface PluginCommand {
   shortcut?: string
 }
 
+/** v1.3 (L1) — opt-in interaction event surface for a sidebar panel or
+ *  fullscreen view. NOT a user-granted permission (no data is read);
+ *  it gates the host-side high-frequency budget + rAF coalescing for
+ *  pointer/wheel/hover events, and adds one line to the install
+ *  preview. A surface that omits this object keeps strict v1.2
+ *  behaviour: pointer handlers attach no listeners on the
+ *  high-frequency path.
+ *
+ *  L1 implements `pointer` (pointerdown/move/up). `wheel` and `hover`
+ *  are reserved for L2/L3 — the validator already accepts them so a
+ *  v1.3 manifest that declares them validates today, but the platform
+ *  does not yet act on them. Unknown sub-keys are rejected (matches the
+ *  v1.2 "no silent capability gap" rule). */
+export interface PluginSurfaceInteraction {
+  pointer?: boolean
+  wheel?: boolean
+  hover?: boolean
+}
+
 export interface PluginSidebarPanel {
   id: string
   title: string
   /** Heroicon name from the curated set the host knows how to render.
    *  Unknown names fall back to a generic puzzle-piece icon. */
   icon?: string
+  /** v1.3 (L1) — opt-in interaction events for this panel. See
+   *  `PluginSurfaceInteraction`. */
+  interaction?: PluginSurfaceInteraction
 }
 
 export interface PluginCodeBlockRenderer {
@@ -139,7 +161,14 @@ export interface PluginFullscreenView {
   /** Heroicon name from the curated set, same contract as
    *  `PluginSidebarPanel.icon`. */
   icon?: string
+  /** v1.3 (L1) — opt-in interaction events for this view. See
+   *  `PluginSurfaceInteraction`. */
+  interaction?: PluginSurfaceInteraction
 }
+
+/** Allowed sub-keys on a `PluginSurfaceInteraction`. Anything else is
+ *  rejected by the validator. */
+export const INTERACTION_KEYS = ['pointer', 'wheel', 'hover'] as const
 
 /** Stable identifier shape: lowercase letters, digits, dashes; 2-60
  *  chars, starts and ends with alphanumeric. */
@@ -302,10 +331,16 @@ function validateSidebarPanels(input: unknown, errors: string[]): PluginSidebarP
     if (p.icon !== undefined && typeof p.icon !== 'string') {
       errors.push(`surfaces.sidebarPanels[${idx}].icon must be a string when present.`)
     }
+    const interaction = validateInteraction(
+      p.interaction,
+      errors,
+      `surfaces.sidebarPanels[${idx}]`,
+    )
     return {
       id: p.id as string,
       title: p.title as string,
       ...(typeof p.icon === 'string' ? { icon: p.icon } : {}),
+      ...(interaction ? { interaction } : {}),
     }
   }).filter((x): x is PluginSidebarPanel => x !== null)
 }
@@ -370,12 +405,55 @@ function validateFullscreenViews(
       return null
     }
     seen.add(v.id)
+    const interaction = validateInteraction(
+      v.interaction,
+      errors,
+      `surfaces.fullscreenViews[${idx}]`,
+    )
     return {
       id: v.id,
       title: v.title,
       ...(typeof v.icon === 'string' ? { icon: v.icon } : {}),
+      ...(interaction ? { interaction } : {}),
     }
   }).filter((x): x is PluginFullscreenView => x !== null)
+}
+
+/** v1.3 (L1) — validate + normalise a surface `interaction` opt-in.
+ *  Returns undefined when absent or when no recognised flag was set
+ *  true; pushes a clear error (and rejects the manifest) on a non-object
+ *  value, a non-boolean flag, or any unknown sub-key. The "unknown key"
+ *  rejection mirrors the v1.2 contract: a v1.3 manifest with a typo
+ *  fails cleanly instead of silently dropping the capability. */
+function validateInteraction(
+  input: unknown,
+  errors: string[],
+  label: string,
+): PluginSurfaceInteraction | undefined {
+  if (input === undefined) return undefined
+  if (!isPlainObject(input)) {
+    errors.push(`${label}.interaction must be an object when present.`)
+    return undefined
+  }
+  const obj = input as Record<string, unknown>
+  for (const key of Object.keys(obj)) {
+    if (!(INTERACTION_KEYS as readonly string[]).includes(key)) {
+      errors.push(
+        `${label}.interaction has unknown key "${key}". Allowed: ${INTERACTION_KEYS.join(', ')}.`,
+      )
+    }
+  }
+  const out: PluginSurfaceInteraction = {}
+  for (const key of INTERACTION_KEYS) {
+    const value = obj[key]
+    if (value === undefined) continue
+    if (typeof value !== 'boolean') {
+      errors.push(`${label}.interaction.${key} must be a boolean when present.`)
+      continue
+    }
+    out[key] = value
+  }
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 function validatePermissions(

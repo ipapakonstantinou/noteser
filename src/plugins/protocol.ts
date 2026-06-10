@@ -36,6 +36,20 @@ export const MAX_MESSAGES_PER_SECOND = 60
  *  controls; too few for a runaway loop. */
 export const MAX_VNODE_EVENTS_PER_SECOND = 16
 
+/** v1.3 (L1) — separate per-plugin cap on HIGH-FREQUENCY VNode events
+ *  the host forwards in a 1-second sliding window. High-frequency event
+ *  names (`onPointerMove` in L1; `onWheel` / `onPointerEnter` arrive in
+ *  L2/L3) are rAF-coalesced host-side — at most one per (pluginId,
+ *  event-name, target) per frame — and draw from THIS budget, NOT the
+ *  discrete `MAX_VNODE_EVENTS_PER_SECOND` ceiling. The budget is gated
+ *  on the surface's manifest `interaction` opt-in: a surface that did
+ *  not declare interaction never gets the high-frequency path at all.
+ *
+ *  90/sec leaves headroom above a 60Hz one-flush-per-frame cadence for
+ *  a couple of distinct drag targets while still capping a runaway
+ *  loop. See docs/plugins-v1.3-plan.md section 2.7 (Cost 1). */
+export const MAX_HF_EVENTS_PER_SECOND = 90
+
 /** Debounce window (ms) the host applies to every `vault.events`
  *  dispatch (vaultChanged / noteSaved / activeNoteIdChanged). Plugins
  *  cannot lower this — the cap is host-side so a runaway plugin cannot

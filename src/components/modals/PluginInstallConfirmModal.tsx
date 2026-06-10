@@ -31,6 +31,7 @@ import {
   SURFACE_DESCRIPTIONS,
   isDestructivePermission,
   type PluginPermission,
+  type PluginSurfaceInteraction,
   type PluginSurfaceKind,
 } from '@/plugins/manifest'
 import type { InstalledPluginRecord } from '@/stores/pluginInstallStore'
@@ -44,7 +45,14 @@ interface CapabilityRow {
   key: string
   label: string
   description: string
+  /** v1.3 (L1) — extra line shown when the surface declares an
+   *  `interaction` opt-in. */
+  note?: string
 }
+
+/** v1.3 (L1) — single-sourced copy shown under any surface that opted
+ *  into interaction events. NOT a permission; no data is read. */
+const INTERACTION_NOTE = 'This view responds to mouse drag, wheel, and hover.'
 
 export const PluginInstallConfirmModal = () => {
   const modal = useUIStore(s => s.modal)
@@ -257,6 +265,14 @@ const PreviewBody = ({ record, busy, installError, onCancel, onInstall }: Previe
                 <div>
                   <span className="font-medium text-obsidianText">{row.label}</span>
                   <div className="text-xs text-obsidianSecondaryText mt-0.5">{row.description}</div>
+                  {row.note && (
+                    <div
+                      className="text-xs text-obsidianSecondaryText/80 mt-0.5"
+                      data-testid={`plugin-preview-interaction-${row.key}`}
+                    >
+                      {row.note}
+                    </div>
+                  )}
                 </div>
               </li>
             ))}
@@ -353,6 +369,7 @@ function buildSurfaceRows(surfaces: InstalledPluginRecord['manifest']['surfaces'
       key: 'sidebarPanels' satisfies PluginSurfaceKind,
       label: `${surfaces.sidebarPanels.length} sidebar panel${surfaces.sidebarPanels.length === 1 ? '' : 's'}`,
       description: SURFACE_DESCRIPTIONS.sidebarPanels,
+      ...(surfaces.sidebarPanels.some(declaresInteraction) ? { note: INTERACTION_NOTE } : {}),
     })
   }
   if (surfaces.codeBlockRenderers && surfaces.codeBlockRenderers.length > 0) {
@@ -368,7 +385,13 @@ function buildSurfaceRows(surfaces: InstalledPluginRecord['manifest']['surfaces'
       key: 'fullscreenViews' satisfies PluginSurfaceKind,
       label: `Provides full-screen view${surfaces.fullscreenViews.length === 1 ? '' : 's'}`,
       description: SURFACE_DESCRIPTIONS.fullscreenViews,
+      ...(surfaces.fullscreenViews.some(declaresInteraction) ? { note: INTERACTION_NOTE } : {}),
     })
   }
   return rows
+}
+
+/** True when a surface declared at least one interaction flag. */
+function declaresInteraction(surface: { interaction?: PluginSurfaceInteraction }): boolean {
+  return surface.interaction !== undefined && Object.values(surface.interaction).some(Boolean)
 }
