@@ -250,6 +250,33 @@ describe('markdownLivePreview StateField', () => {
     }
   })
 
+  // Depth + list-flavour coverage (bug #39 verification, 2026-06-10): the
+  // strike must not care how DEEP the nesting goes or what kind of list the
+  // parent is — TaskMarker drives the line decoration at any depth.
+  test('depth-2 nesting: all three done levels are struck', () => {
+    const doc = '- [x] a\n  - [x] b\n    - [x] c'
+    const decos = collectDecos(makeState(doc, 0))
+    for (let n = 1; n <= 3; n++) {
+      const ls = lineStart(doc, n)
+      expect(decos.find(d => d.from === ls && d.to === ls && d.class === 'cm-lp-task-done')).toBeDefined()
+    }
+  })
+
+  test('done task nested under an ORDERED done task is struck', () => {
+    const doc = '1. [x] ordered parent\n   - [x] nested child'
+    const decos = collectDecos(makeState(doc, 0))
+    const childStart = lineStart(doc, 2)
+    expect(decos.find(d => d.from === 0 && d.to === 0 && d.class === 'cm-lp-task-done')).toBeDefined()
+    expect(decos.find(d => d.from === childStart && d.to === childStart && d.class === 'cm-lp-task-done')).toBeDefined()
+  })
+
+  test('loose-list nested done task (blank line between parent and child) is struck', () => {
+    const doc = '- [x] parent\n\n  - [x] child'
+    const decos = collectDecos(makeState(doc, 0))
+    const childStart = lineStart(doc, 3)
+    expect(decos.find(d => d.from === childStart && d.to === childStart && d.class === 'cm-lp-task-done')).toBeDefined()
+  })
+
   test('done parent + UNDONE child with ✅ stamp: child is NOT struck', () => {
     const doc = '- [x] done parent ✅ 2026-05-25\n\t- [ ] still open child'
     const decos = collectDecos(makeState(doc, 0))
