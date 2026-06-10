@@ -3,6 +3,7 @@
   "name": "PDF export",
   "version": "0.1.0",
   "author": "Noteser",
+  "description": "Adds an Export note as PDF command to the palette.",
   "main": "./main.js",
   "permissions": ["file-save"],
   "surfaces": {

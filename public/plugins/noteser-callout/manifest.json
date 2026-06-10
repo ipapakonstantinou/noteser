@@ -3,6 +3,7 @@
   "name": "Callouts",
   "version": "0.1.0",
   "author": "Noteser",
+  "description": "Colored callout boxes inside notes, rendered from fenced code blocks (note / info / tip / warn / danger).",
   "main": "./main.js",
   "surfaces": {
     "codeBlockRenderers": [

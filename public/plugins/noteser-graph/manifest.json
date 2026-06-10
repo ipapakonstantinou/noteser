@@ -3,7 +3,7 @@
   "name": "Graph",
   "version": "0.1.0",
   "author": "Noteser",
-  "description": "Backlinks and unlinked mentions for the active note in the sidebar, plus a force-directed graph of the entire vault in a fullscreen view. Closes issue #71.",
+  "description": "Backlinks and unlinked mentions for the active note in the sidebar, plus a force-directed graph of the entire vault in a fullscreen view.",
   "main": "./main.js",
   "surfaces": {
     "sidebarPanels": [
