@@ -3,6 +3,7 @@
   "name": "Word count",
   "version": "0.1.0",
   "author": "Noteser",
+  "description": "Live word and character count for the active note, with reading-time estimate.",
   "main": "./main.js",
   "surfaces": {
     "sidebarPanels": [{ "id": "panel", "title": "Word count" }]
