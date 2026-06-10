@@ -18,10 +18,11 @@
 // in the real VNode → React mapper (see docs/plugins-plan.md
 // "VNode" section).
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePluginStore, selectAllPluginPanels, type PluginPanelEntry } from '@/stores/pluginStore'
 import { getPluginHost } from '@/plugins/pluginHostSingleton'
 import { PluginNode, type PluginVNodeEvent } from '@/plugins/PluginVNode'
+import { applySvgPositionPatches } from '@/plugins/svgPositionPatch'
 import type { PluginHostEvent } from '@/plugins/PluginHost'
 
 export const PluginsPanel = () => {
@@ -32,14 +33,31 @@ export const PluginsPanel = () => {
   // emits panelContent for a panel that lives in this tab.
   const [contents, setContents] = useState<Record<string, unknown>>({})
 
+  // v1.3 (L4) — per-panel container element, used by the position-patch
+  // fast path to mutate the mounted svg directly (no React re-render).
+  const sectionRefs = useRef<Map<string, HTMLElement | null>>(new Map())
+
   useEffect(() => {
     const host = getPluginHost()
     if (!host) return
 
     const handler = (event: PluginHostEvent) => {
-      if (event.type !== 'panelContent') return
-      const key = `${event.pluginId}:${event.panelId}`
-      setContents((prev) => ({ ...prev, [key]: event.node }))
+      if (event.type === 'panelContent') {
+        const key = `${event.pluginId}:${event.panelId}`
+        setContents((prev) => ({ ...prev, [key]: event.node }))
+        return
+      }
+      if (event.type === 'svgPositionsPatch') {
+        // Apply to the matching panel section(s). A patch with an
+        // explicit panelId targets that one; without it, every panel of
+        // the emitting plugin.
+        for (const p of panels) {
+          if (p.pluginId !== event.pluginId) continue
+          if (event.panelId !== undefined && p.panelId !== event.panelId) continue
+          applySvgPositionPatches(sectionRefs.current.get(`${p.pluginId}:${p.panelId}`), event.patches)
+        }
+        return
+      }
     }
     const unsubscribe = host.on(handler)
 
@@ -71,6 +89,7 @@ export const PluginsPanel = () => {
         if (!host) return
         host.sendVNodeEvent(pluginId, { kind: 'panel', panelId }, e.event, e.payload, {
           highFrequency: e.highFrequency === true,
+          ...(e.interaction ? { interaction: e.interaction } : {}),
         })
       },
     [],
@@ -101,7 +120,12 @@ export const PluginsPanel = () => {
                 {p.pluginName}
               </span>
             </header>
-            <div className="px-3 py-2 text-sm text-obsidianText whitespace-pre-wrap break-words">
+            <div
+              ref={(el) => {
+                sectionRefs.current.set(key, el)
+              }}
+              className="px-3 py-2 text-sm text-obsidianText whitespace-pre-wrap break-words"
+            >
               {node === undefined ? (
                 <span className="text-obsidianSecondaryText">(awaiting first render…)</span>
               ) : (

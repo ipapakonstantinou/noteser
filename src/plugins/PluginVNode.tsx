@@ -37,7 +37,10 @@ import type {
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from 'react'
+import { useEffect, useRef } from 'react'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { SURFACE_TRANSFORM_EVENT, type InteractionKind } from './protocol'
+import { NODE_ID_ATTR, EDGE_SOURCE_ATTR, EDGE_TARGET_ATTR } from './svgPositionPatch'
 
 // ─── v1 shapes (unchanged) ────────────────────────────────────────────────
 
@@ -83,13 +86,27 @@ export interface VNodeEvent {
 // `onPointerEnter` / `onPointerLeave` (L3) are deliberately NOT part of
 // this PR.
 
-/** Pointer handler subset shipped in v1.3 L1. `onPointerMove` is
- *  high-frequency — the host rAF-coalesces it and draws it from a
- *  separate budget; `onPointerDown` / `onPointerUp` are discrete. */
+/** Pointer + hover handler set. `onPointerMove` (L1) and
+ *  `onPointerEnter` / `onPointerLeave` (L3) are high-frequency — the
+ *  host rAF-coalesces them and draws them from a separate budget gated
+ *  on the matching manifest `interaction` sub-flag (`pointer` for move,
+ *  `hover` for enter/leave); `onPointerDown` / `onPointerUp` are
+ *  discrete. A listener is attached only when its prop is present. */
 export interface PointerHandlers {
   onPointerDown?: VNodeEvent
   onPointerMove?: VNodeEvent
   onPointerUp?: VNodeEvent
+  /** v1.3 (L3) — high-frequency, coalesced, gated on `interaction.hover`. */
+  onPointerEnter?: VNodeEvent
+  /** v1.3 (L3) — high-frequency, coalesced, gated on `interaction.hover`. */
+  onPointerLeave?: VNodeEvent
+}
+
+/** v1.3 (L2) — wheel handler. `onWheel` is high-frequency: the host
+ *  rAF-coalesces it and draws it from the separate budget, gated on
+ *  `interaction.wheel`. Lives on `VNodeSvg` + `VNodeBox` only. */
+export interface WheelHandlers {
+  onWheel?: VNodeEvent
 }
 
 /**
@@ -112,6 +129,35 @@ export interface PointerEventPayload {
   pointerId: number
   target: string | null
 }
+
+/**
+ * v1.3 (L2) — payload the host augments onto a wheel event. `x` / `y`
+ * are the focal point in the same coordinate space as pointer events
+ * (SVG user-space for svg surfaces via the inverse screen CTM,
+ * element-local pixels for box surfaces). `ctrlKey` is true for a
+ * trackpad pinch (the browser reports pinch as ctrl+wheel). Host keys
+ * win the shallow merge, so a plugin payload cannot spoof the deltas /
+ * coords. */
+export interface WheelEventPayload {
+  deltaX: number
+  deltaY: number
+  x: number
+  y: number
+  ctrlKey: boolean
+}
+
+/**
+ * v1.3 (L3) — payload the host augments onto a hover enter/leave event.
+ * `target` is the opt-in `id` on the owning shape/svg/box (or null);
+ * `x` / `y` are the pointer position in the surface coordinate space.
+ * No DOM ref crosses the wire. */
+export interface HoverEventPayload {
+  target: string | null
+  x: number
+  y: number
+}
+
+export type { InteractionKind }
 
 /**
  * Wire-level event message emitted by the renderer when a plugin's
@@ -140,6 +186,14 @@ export interface PluginVNodeEvent {
    * The host treats an unset flag as a normal discrete event.
    */
   highFrequency?: boolean
+  /**
+   * v1.3 (L2/L3) — which `interaction` sub-flag this high-frequency
+   * event belongs to, so the host gates it on the right manifest opt-in
+   * (`pointer` for move, `wheel` for wheel, `hover` for enter/leave).
+   * Unset on discrete events; the host defaults a high-frequency event
+   * with no kind to `'pointer'` (L1 behaviour).
+   */
+  interaction?: InteractionKind
 }
 
 // ─── v1.2 new shapes ──────────────────────────────────────────────────────
@@ -203,7 +257,22 @@ export interface VNodeRadio {
  * any other tag and emits nothing.
  */
 export type SvgChild =
-  | { tag: 'line'; x1: number; y1: number; x2: number; y2: number; stroke?: string; strokeWidth?: number }
+  | {
+      tag: 'line'
+      x1: number
+      y1: number
+      x2: number
+      y2: number
+      stroke?: string
+      strokeWidth?: number
+      /** v1.3 (L4) — node id this edge's first endpoint (`x1`/`y1`)
+       *  follows. The position-patch fast path moves the endpoint when a
+       *  patch for this id arrives, without a full re-render. */
+      sourceId?: string
+      /** v1.3 (L4) — node id this edge's second endpoint (`x2`/`y2`)
+       *  follows. */
+      targetId?: string
+    }
   | ({
       tag: 'circle'
       cx: number
@@ -230,7 +299,7 @@ export type SvgChild =
   | { tag: 'text'; x: number; y: number; value: string; fontSize?: number; fill?: string }
   | { tag: 'path'; d: string; stroke?: string; fill?: string; strokeWidth?: number }
 
-export interface VNodeSvg extends PointerHandlers {
+export interface VNodeSvg extends PointerHandlers, WheelHandlers {
   tag: 'svg'
   width: number
   height: number
@@ -238,10 +307,22 @@ export interface VNodeSvg extends PointerHandlers {
   /** v1.3 (L1) — surface-level id, echoed as `payload.target` on
    *  pointer events that fire on the svg element itself. */
   id?: string
+  /**
+   * v1.3 (L2) — when set to `'host'`, the host OWNS the viewBox
+   * transform locally. It interprets surface-level drag (pan) and wheel
+   * (zoom) into a viewBox applied directly to the rendered `<svg>` with
+   * NO worker round-trip (instant 60fps), and emits exactly one
+   * `surface.transform` event (`{ x, y, scale }`) on gesture settle so
+   * the plugin can persist + sync its viewport. While host pan/zoom is
+   * active the svg's own surface-level pointer/wheel handlers are NOT
+   * forwarded to the plugin (the host consumes them); child-shape
+   * handlers (e.g. a draggable circle) still fire normally.
+   */
+  panZoom?: 'host'
   children: ReadonlyArray<SvgChild>
 }
 
-export interface VNodeBox extends PointerHandlers {
+export interface VNodeBox extends PointerHandlers, WheelHandlers {
   tag: 'box'
   children: ReadonlyArray<VNode>
   /** Gap between children, mapped to tailwind spacing. */
@@ -516,7 +597,71 @@ function dispatchPointer(
     typeof evt.payload === 'object' && evt.payload !== null
       ? { ...(evt.payload as Record<string, unknown>), ...hostKeys }
       : hostKeys
-  ctx.onEvent({ event: evt.event, payload, ...(opts.isMove ? { highFrequency: true } : {}) })
+  ctx.onEvent({
+    event: evt.event,
+    payload,
+    ...(opts.isMove ? { highFrequency: true, interaction: 'pointer' as const } : {}),
+  })
+}
+
+/**
+ * v1.3 (L3) — dispatch a hover enter/leave event. High-frequency: the
+ * host coalesces it and gates it on `interaction.hover`. Payload is the
+ * host-controlled `HoverEventPayload` shallow-merged over the plugin
+ * payload (host keys win). Coordinates use the same surface mapping as
+ * pointer events.
+ */
+function dispatchHover(
+  ctx: RenderContext,
+  el: Element,
+  evt: VNodeEvent | undefined,
+  e: ReactPointerEvent,
+  opts: { id: string | undefined; coordKind: PointerCoordKind },
+): void {
+  if (!ctx.onEvent) return
+  if (!evt || evt.kind !== 'emit' || typeof evt.event !== 'string' || evt.event.length === 0) return
+  const { x, y } = pointerSurfacePoint(el, opts.coordKind, e.clientX, e.clientY)
+  const hostKeys: HoverEventPayload = {
+    target: typeof opts.id === 'string' ? opts.id : null,
+    x,
+    y,
+  }
+  const payload =
+    typeof evt.payload === 'object' && evt.payload !== null
+      ? { ...(evt.payload as Record<string, unknown>), ...hostKeys }
+      : hostKeys
+  ctx.onEvent({ event: evt.event, payload, highFrequency: true, interaction: 'hover' })
+}
+
+/**
+ * v1.3 (L2) — dispatch a wheel event. High-frequency: the host
+ * coalesces it and gates it on `interaction.wheel`. Payload is the
+ * host-controlled `WheelEventPayload` (deltas + focal coords + ctrlKey)
+ * shallow-merged over the plugin payload (host keys win). `x` / `y` use
+ * the same surface coordinate mapping as pointer events.
+ */
+function dispatchWheel(
+  ctx: RenderContext,
+  el: Element,
+  evt: VNodeEvent | undefined,
+  e: WheelEvent,
+  opts: { coordKind: PointerCoordKind },
+): void {
+  if (!ctx.onEvent) return
+  if (!evt || evt.kind !== 'emit' || typeof evt.event !== 'string' || evt.event.length === 0) return
+  const { x, y } = pointerSurfacePoint(el, opts.coordKind, e.clientX, e.clientY)
+  const hostKeys: WheelEventPayload = {
+    deltaX: e.deltaX,
+    deltaY: e.deltaY,
+    x,
+    y,
+    ctrlKey: e.ctrlKey === true,
+  }
+  const payload =
+    typeof evt.payload === 'object' && evt.payload !== null
+      ? { ...(evt.payload as Record<string, unknown>), ...hostKeys }
+      : hostKeys
+  ctx.onEvent({ event: evt.event, payload, highFrequency: true, interaction: 'wheel' })
 }
 
 /**
@@ -537,6 +682,8 @@ function pointerListenerProps(
   onPointerDown?: (e: ReactPointerEvent) => void
   onPointerMove?: (e: ReactPointerEvent) => void
   onPointerUp?: (e: ReactPointerEvent) => void
+  onPointerEnter?: (e: ReactPointerEvent) => void
+  onPointerLeave?: (e: ReactPointerEvent) => void
 } {
   const captureOnDown = h.onPointerDown !== undefined && h.onPointerMove !== undefined
   return {
@@ -583,8 +730,65 @@ function pointerListenerProps(
             }),
         }
       : {}),
+    ...(h.onPointerEnter !== undefined
+      ? {
+          onPointerEnter: (e: ReactPointerEvent) =>
+            dispatchHover(ctx, e.currentTarget, h.onPointerEnter, e, { id, coordKind }),
+        }
+      : {}),
+    ...(h.onPointerLeave !== undefined
+      ? {
+          onPointerLeave: (e: ReactPointerEvent) =>
+            dispatchHover(ctx, e.currentTarget, h.onPointerLeave, e, { id, coordKind }),
+        }
+      : {}),
   }
 }
+
+// ─── v1.3 (L2) non-passive wheel binding + host-owned pan/zoom ─────────────
+
+/**
+ * Attach a non-passive `wheel` listener to `ref.current` so the handler
+ * can `preventDefault()` (stop page scroll). React's synthetic `onWheel`
+ * is registered passive and cannot cancel the default, so any surface
+ * that interprets the wheel (a plugin `onWheel` handler, or host-owned
+ * pan/zoom) must bind manually. The handler is read through a ref so the
+ * listener is bound once and never needs re-attaching. No listener is
+ * attached at all when `enabled` is false — a surface that did not opt
+ * into wheel keeps the browser's default passive scroll.
+ */
+function useNonPassiveWheel(
+  ref: { current: Element | null },
+  handler: (e: WheelEvent) => void,
+  enabled: boolean,
+): void {
+  const handlerRef = useRef(handler)
+  handlerRef.current = handler
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !enabled) return
+    const listener = ((e: Event) => handlerRef.current(e as WheelEvent)) as EventListener
+    el.addEventListener('wheel', listener, { passive: false })
+    return () => el.removeEventListener('wheel', listener)
+    // `enabled` toggling re-binds; `ref` is stable across renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled])
+}
+
+/** Current host-owned viewBox transform. `[minX, minY, w, h]` is the
+ *  live viewBox; `baseW` is the initial width used to derive `scale`
+ *  (`scale = baseW / w`) for the settle event. */
+interface PanZoomState {
+  minX: number
+  minY: number
+  w: number
+  h: number
+  baseW: number
+}
+
+const WHEEL_ZOOM_STEP = 1.0015
+const MIN_ZOOM_SCALE = 0.05
+const MAX_ZOOM_SCALE = 40
 
 // ─── Renderer ─────────────────────────────────────────────────────────────
 
@@ -825,27 +1029,216 @@ function renderRadio(v: VNodeRadio, ctx: RenderContext): ReactNode | null {
   )
 }
 
+/** Parse the numeric viewBox, defaulting to `[0, 0, width, height]`
+ *  when the plugin omitted it or supplied a malformed one. */
+function resolveViewBox(
+  v: VNodeSvg,
+  width: number,
+  height: number,
+): [number, number, number, number] {
+  if (Array.isArray(v.viewBox) && v.viewBox.length === 4) {
+    const parts = v.viewBox.map((n) => coerceFinite(n))
+    if (parts.every((n): n is number => n !== null)) {
+      return parts as [number, number, number, number]
+    }
+  }
+  return [0, 0, width, height]
+}
+
 function renderSvg(v: VNodeSvg, ctx: RenderContext): ReactNode | null {
   const width = coerceFinite(v.width)
   const height = coerceFinite(v.height)
   if (width === null || height === null) return null
   if (!Array.isArray(v.children)) return null
-  let viewBox: string | undefined
-  if (Array.isArray(v.viewBox) && v.viewBox.length === 4) {
-    const parts = v.viewBox.map((n) => coerceFinite(n))
-    if (parts.every((n): n is number => n !== null)) {
-      viewBox = parts.join(' ')
+  // The svg surface owns hooks (non-passive wheel + host pan/zoom state),
+  // so it must be a real component, not inline JSX. Keyed by id so a
+  // changed surface id remounts (and the pan/zoom state resets).
+  return <PluginSvg v={v} width={width} height={height} ctx={ctx} key={v.id ?? undefined} />
+}
+
+/**
+ * v1.3 — svg surface component. Renders the curated `<svg>` plus its
+ * children, and (when opted in) wires the L2 wheel + host-owned pan/zoom
+ * paths. Plain (no wheel / no panZoom) svg surfaces behave exactly as
+ * v1.2/L1: pointer + hover listeners via React props, no wheel listener,
+ * no extra DOM work.
+ */
+function PluginSvg({
+  v,
+  width,
+  height,
+  ctx,
+}: {
+  v: VNodeSvg
+  width: number
+  height: number
+  ctx: RenderContext
+}): ReactNode {
+  const svgRef = useRef<SVGSVGElement | null>(null)
+  const hostPanZoom = v.panZoom === 'host'
+  const hasPluginWheel = v.onWheel !== undefined
+  // A wheel listener is needed for either the plugin's own onWheel or
+  // host pan/zoom. Both need non-passive binding (preventDefault).
+  const wheelEnabled = hostPanZoom || hasPluginWheel
+
+  const [vbMinX, vbMinY, vbW, vbH] = resolveViewBox(v, width, height)
+  const initialViewBox = `${vbMinX} ${vbMinY} ${vbW} ${vbH}`
+
+  // Live host-owned transform. Initialised from the rendered viewBox the
+  // first time the svg mounts; mutated DIRECTLY on the DOM during a
+  // gesture so pan/zoom never round-trips through the worker or a React
+  // re-render.
+  const pzRef = useRef<PanZoomState>({ minX: vbMinX, minY: vbMinY, w: vbW, h: vbH, baseW: vbW })
+  const dragRef = useRef<{
+    pointerId: number
+    startClientX: number
+    startClientY: number
+    startMinX: number
+    startMinY: number
+  } | null>(null)
+  const wheelIdleRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const applyViewBox = (): void => {
+    const el = svgRef.current
+    const pz = pzRef.current
+    if (el) el.setAttribute('viewBox', `${pz.minX} ${pz.minY} ${pz.w} ${pz.h}`)
+  }
+
+  const emitTransform = (): void => {
+    if (!ctx.onEvent) return
+    const pz = pzRef.current
+    const scale = pz.w !== 0 ? pz.baseW / pz.w : 1
+    // ONE discrete settle event carrying the final viewport. Reserved
+    // host event name; rides the existing host:vnodeEvent envelope.
+    ctx.onEvent({
+      event: SURFACE_TRANSFORM_EVENT,
+      payload: { x: pz.minX, y: pz.minY, scale },
+    })
+  }
+
+  const onWheel = (e: WheelEvent): void => {
+    if (hostPanZoom) {
+      // Host owns the zoom — never let it scroll the page, and never
+      // forward it to the plugin (the settle event covers persistence).
+      e.preventDefault()
+      const pz = pzRef.current
+      const focal = pointerSurfacePoint(
+        svgRef.current as unknown as Element,
+        'svg',
+        e.clientX,
+        e.clientY,
+      )
+      const zoomFactor = Math.pow(WHEEL_ZOOM_STEP, -e.deltaY)
+      let newW = pz.w / zoomFactor
+      // Clamp on absolute scale so a fling cannot invert or explode.
+      const minW = pz.baseW / MAX_ZOOM_SCALE
+      const maxW = pz.baseW / MIN_ZOOM_SCALE
+      newW = Math.min(Math.max(newW, minW), maxW)
+      const ratio = newW / pz.w
+      const newH = pz.h * ratio
+      pz.minX = focal.x - (focal.x - pz.minX) * ratio
+      pz.minY = focal.y - (focal.y - pz.minY) * ratio
+      pz.w = newW
+      pz.h = newH
+      applyViewBox()
+      // Debounce the settle event — emit ONE transform after the wheel
+      // goes idle, not one per notch.
+      if (wheelIdleRef.current !== null) clearTimeout(wheelIdleRef.current)
+      wheelIdleRef.current = setTimeout(() => {
+        wheelIdleRef.current = null
+        emitTransform()
+      }, 150)
+      return
+    }
+    // Plugin-owned wheel handler: stop page scroll, dispatch the event
+    // (coalesced + gated on interaction.wheel host-side).
+    if (hasPluginWheel) {
+      e.preventDefault()
+      dispatchWheel(ctx, svgRef.current as unknown as Element, v.onWheel, e, { coordKind: 'svg' })
     }
   }
+
+  useNonPassiveWheel(svgRef as { current: Element | null }, onWheel, wheelEnabled)
+
+  // Clean up a pending wheel-idle timer on unmount so a settle event
+  // does not fire into a torn-down surface.
+  useEffect(() => {
+    return () => {
+      if (wheelIdleRef.current !== null) clearTimeout(wheelIdleRef.current)
+    }
+  }, [])
+
   const id = typeof v.id === 'string' ? v.id : undefined
-  const pointerProps = pointerListenerProps(ctx, v, id, 'svg')
+
+  // Surface-level pointer/hover props. When the host owns pan/zoom it
+  // consumes the surface-level pointer for panning, so the plugin's own
+  // surface-level pointer handlers are NOT wired (child shapes still
+  // fire their own handlers normally).
+  const pointerProps = hostPanZoom
+    ? buildPanHandlers()
+    : pointerListenerProps(ctx, v, id, 'svg')
+
+  function buildPanHandlers() {
+    return {
+      onPointerDown: (e: ReactPointerEvent) => {
+        // Only pan when the gesture starts on the svg background, not on
+        // a child shape that owns its own drag.
+        if (e.target !== e.currentTarget) return
+        const pz = pzRef.current
+        dragRef.current = {
+          pointerId: e.pointerId,
+          startClientX: e.clientX,
+          startClientY: e.clientY,
+          startMinX: pz.minX,
+          startMinY: pz.minY,
+        }
+        try {
+          ;(e.currentTarget as Element & {
+            setPointerCapture?: (id: number) => void
+          }).setPointerCapture?.(e.pointerId)
+        } catch {
+          // best-effort capture
+        }
+      },
+      onPointerMove: (e: ReactPointerEvent) => {
+        const drag = dragRef.current
+        if (!drag || drag.pointerId !== e.pointerId) return
+        const el = svgRef.current
+        const pz = pzRef.current
+        const clientW = el?.clientWidth || width
+        const clientH = el?.clientHeight || height
+        const userPerPxX = clientW !== 0 ? pz.w / clientW : 1
+        const userPerPxY = clientH !== 0 ? pz.h / clientH : 1
+        pz.minX = drag.startMinX - (e.clientX - drag.startClientX) * userPerPxX
+        pz.minY = drag.startMinY - (e.clientY - drag.startClientY) * userPerPxY
+        applyViewBox()
+      },
+      onPointerUp: (e: ReactPointerEvent) => {
+        const drag = dragRef.current
+        if (!drag || drag.pointerId !== e.pointerId) return
+        dragRef.current = null
+        try {
+          ;(e.currentTarget as Element & {
+            releasePointerCapture?: (id: number) => void
+          }).releasePointerCapture?.(e.pointerId)
+        } catch {
+          // best-effort
+        }
+        // ONE settle event at the end of the pan gesture.
+        emitTransform()
+      },
+    }
+  }
+
   return (
     <svg
+      ref={svgRef}
       width={width}
       height={height}
-      viewBox={viewBox}
+      viewBox={initialViewBox}
       role="img"
       xmlns="http://www.w3.org/2000/svg"
+      style={hostPanZoom ? ({ touchAction: 'none' } satisfies CSSProperties) : undefined}
       {...pointerProps}
     >
       {v.children.map((child, idx) => renderSvgChild(child, idx, ctx))}
@@ -866,7 +1259,23 @@ function renderSvgChild(child: SvgChild | unknown, key: number, ctx: RenderConte
     if (x1 === null || y1 === null || x2 === null || y2 === null) return null
     const stroke = safeColor(c.stroke) ?? 'currentColor'
     const strokeWidth = coerceFinite(c.strokeWidth) ?? 1
-    return <line key={key} x1={x1} y1={y1} x2={x2} y2={y2} stroke={stroke} strokeWidth={strokeWidth} />
+    // v1.3 (L4) — tag edge endpoints with the node ids they follow so
+    // the position-patch fast path can move them without a re-render.
+    const sourceId = typeof c.sourceId === 'string' ? c.sourceId : undefined
+    const targetId = typeof c.targetId === 'string' ? c.targetId : undefined
+    return (
+      <line
+        key={key}
+        x1={x1}
+        y1={y1}
+        x2={x2}
+        y2={y2}
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+        {...(sourceId !== undefined ? { [EDGE_SOURCE_ATTR]: sourceId } : {})}
+        {...(targetId !== undefined ? { [EDGE_TARGET_ATTR]: targetId } : {})}
+      />
+    )
   }
 
   if (tag === 'circle') {
@@ -892,6 +1301,8 @@ function renderSvgChild(child: SvgChild | unknown, key: number, ctx: RenderConte
         r={r}
         fill={fill}
         stroke={stroke}
+        // v1.3 (L4) — addressable by node id for the position-patch path.
+        {...(id !== undefined ? { [NODE_ID_ATTR]: id } : {})}
         onClick={c.onClick ? () => dispatchOrDrop(ctx, c.onClick) : undefined}
         {...pointerProps}
         style={interactive ? ({ cursor: 'pointer' } satisfies CSSProperties) : undefined}
@@ -962,12 +1373,45 @@ function renderSvgChild(child: SvgChild | unknown, key: number, ctx: RenderConte
 function renderBox(v: VNodeBox, ctx: RenderContext): ReactNode | null {
   if (!Array.isArray(v.children)) return null
   if (ctx.depth + 1 > MAX_LIST_DEPTH) return null
+  // A box with an onWheel handler needs a non-passive wheel listener
+  // (preventDefault), which requires a ref + effect — so it renders as a
+  // component. A box with no wheel handler keeps the plain v1.2/L1 path.
+  if (v.onWheel !== undefined) {
+    return <PluginBox v={v} ctx={ctx} key={v.id ?? undefined} />
+  }
   const childCtx: RenderContext = { onEvent: ctx.onEvent, depth: ctx.depth + 1 }
   const gap = v.gap !== undefined && v.gap in GAP_CLASSES ? GAP_CLASSES[v.gap] : 'gap-2'
   const id = typeof v.id === 'string' ? v.id : undefined
   const pointerProps = pointerListenerProps(ctx, v, id, 'box')
   return (
     <div className={`flex flex-col ${gap}`} {...pointerProps}>
+      {v.children.map((child, idx) => {
+        const rendered = renderWithContext(child, childCtx)
+        if (rendered === null) return null
+        return <div key={idx}>{rendered}</div>
+      })}
+    </div>
+  )
+}
+
+/** v1.3 (L2) — box surface with a wheel handler. Same render as the
+ *  plain box, plus a non-passive wheel listener that stops page scroll
+ *  and dispatches the coalesced, `interaction.wheel`-gated event. */
+function PluginBox({ v, ctx }: { v: VNodeBox; ctx: RenderContext }): ReactNode {
+  const boxRef = useRef<HTMLDivElement | null>(null)
+  const childCtx: RenderContext = { onEvent: ctx.onEvent, depth: ctx.depth + 1 }
+  const gap = v.gap !== undefined && v.gap in GAP_CLASSES ? GAP_CLASSES[v.gap] : 'gap-2'
+  const id = typeof v.id === 'string' ? v.id : undefined
+  const pointerProps = pointerListenerProps(ctx, v, id, 'box')
+
+  const onWheel = (e: WheelEvent): void => {
+    e.preventDefault()
+    dispatchWheel(ctx, boxRef.current as unknown as Element, v.onWheel, e, { coordKind: 'box' })
+  }
+  useNonPassiveWheel(boxRef as { current: Element | null }, onWheel, true)
+
+  return (
+    <div ref={boxRef} className={`flex flex-col ${gap}`} {...pointerProps}>
       {v.children.map((child, idx) => {
         const rendered = renderWithContext(child, childCtx)
         if (rendered === null) return null
