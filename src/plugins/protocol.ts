@@ -50,6 +50,28 @@ export const MAX_VNODE_EVENTS_PER_SECOND = 16
  *  loop. See docs/plugins-v1.3-plan.md section 2.7 (Cost 1). */
 export const MAX_HF_EVENTS_PER_SECOND = 90
 
+/** v1.3 (L2) — reserved host-to-worker event name carried on the
+ *  existing `host:vnodeEvent` envelope (NOT a new envelope type). The
+ *  host emits ONE of these per host-owned pan/zoom gesture settle
+ *  (pointerup, or a wheel-idle debounce) so a `VNodeSvg.panZoom: 'host'`
+ *  plugin can persist + sync its own viewport. Payload is the final
+ *  transform `{ x, y, scale }` in the svg's user-space. See
+ *  docs/plugins-v1.3-plan.md sections 2.7 (Cost 2) + 2.8. */
+export const SURFACE_TRANSFORM_EVENT = 'surface.transform'
+
+/** v1.3 — which manifest `interaction` sub-flag a high-frequency VNode
+ *  event is gated on. The renderer tags each HF dispatch with its kind
+ *  (the event NAME on the wire is plugin-defined, so the host cannot
+ *  classify from the name alone); the host charges the matching budget
+ *  and checks the matching opt-in. */
+export type InteractionKind = 'pointer' | 'wheel' | 'hover'
+
+/** v1.3 (L4) — wheel-idle debounce (ms) the host-owned pan/zoom surface
+ *  waits after the last wheel event before emitting the single coalesced
+ *  `surface.transform` settle event. Pan gestures settle on pointerup
+ *  instead, so this only governs the wheel-zoom path. */
+export const SURFACE_TRANSFORM_WHEEL_IDLE_MS = 150
+
 /** Debounce window (ms) the host applies to every `vault.events`
  *  dispatch (vaultChanged / noteSaved / activeNoteIdChanged). Plugins
  *  cannot lower this — the cap is host-side so a runaway plugin cannot
@@ -350,6 +372,7 @@ export type WorkerToHost =
   | WorkerOpenFullscreen
   | WorkerCloseFullscreen
   | WorkerSetFullscreenContent
+  | WorkerPatchSvgPositions
 
 /** Sent in reply to host:boot once the plugin module loaded and
  *  `definePlugin` ran. Includes the validated manifest, which the host
@@ -617,6 +640,31 @@ export interface WorkerRequestVaultWrite {
     | { kind: 'createFolder'; path: string }
 }
 
+/** v1.3 (L4) — position-patch fast path. The worker streams ONLY the
+ *  moved node coordinates (e.g. a 500-node force-graph tick) and the
+ *  host mutates the `cx`/`cy` of the already-mounted SVG circles plus
+ *  the endpoints of any edge `line` keyed to that node id, WITHOUT a
+ *  full React re-render of the VNode tree. This is the 60fps enabler
+ *  for node drag + force simulation — see docs/plugins-v1.3-plan.md
+ *  sections 2.7 (Cost 2) + 2.8.
+ *
+ *  `viewId` / `panelId` name the interactive surface whose mounted svg
+ *  should be patched (a fullscreen view or a sidebar panel); omit both
+ *  to target the single active interactive surface. Subject to
+ *  `MAX_ENVELOPE_BYTES` like every other envelope — the host rejects an
+ *  oversized batch before it reaches the renderer. Each patch carries
+ *  ONLY `{ id, x, y }` (numbers + an echoed id string) — no DOM ref, no
+ *  style, no arbitrary attribute. */
+export interface WorkerPatchSvgPositions {
+  type: 'worker:patchSvgPositions'
+  seq: number
+  /** Target a fullscreen view's mounted svg. */
+  viewId?: string
+  /** Target a sidebar panel's mounted svg. */
+  panelId?: string
+  patches: ReadonlyArray<{ id: string; x: number; y: number }>
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
 export function isHostToWorker(msg: unknown): msg is HostToWorker {
@@ -663,6 +711,7 @@ export function isWorkerToHost(msg: unknown): msg is WorkerToHost {
     'worker:openFullscreen',
     'worker:closeFullscreen',
     'worker:setFullscreenContent',
+    'worker:patchSvgPositions',
   ])
 }
 

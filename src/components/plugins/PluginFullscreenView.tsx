@@ -36,6 +36,7 @@ import {
   getPluginHost,
 } from '@/plugins/pluginHostSingleton'
 import { PluginNode, type PluginVNodeEvent } from '@/plugins/PluginVNode'
+import { applySvgPositionPatches } from '@/plugins/svgPositionPatch'
 
 // Same selector approach as Modal.tsx — keep the trap inline rather
 // than pulling focus-trap-react for one more mount point.
@@ -61,11 +62,31 @@ const getFocusable = (root: HTMLElement): HTMLElement[] =>
 export const PluginFullscreenView = () => {
   const active = usePluginStore((s) => s.activeFullscreen)
   const dialogRef = useRef<HTMLDivElement | null>(null)
+  const bodyRef = useRef<HTMLDivElement | null>(null)
   const previouslyFocusedRef = useRef<HTMLElement | null>(null)
   // Track the active descriptor's identity (pluginId + viewId) so we
   // only re-run focus snapshot logic when the mounted view actually
   // changes, not on every content update.
   const activeKey = active ? `${active.pluginId}:${active.viewId}` : null
+
+  // v1.3 (L4) — position-patch fast path. Subscribe to the host's
+  // `svgPositionsPatch` events for the open view and apply them straight
+  // to the mounted svg via direct DOM mutation, never re-rendering the
+  // VNode tree. Scoped by pluginId + (optional) viewId so a patch for a
+  // different surface is ignored.
+  const activePluginId = active?.pluginId ?? null
+  const activeViewId = active?.viewId ?? null
+  useEffect(() => {
+    if (!activePluginId) return
+    const host = getPluginHost()
+    if (!host) return
+    return host.on((event) => {
+      if (event.type !== 'svgPositionsPatch') return
+      if (event.pluginId !== activePluginId) return
+      if (event.viewId !== undefined && event.viewId !== activeViewId) return
+      applySvgPositionPatches(bodyRef.current, event.patches)
+    })
+  }, [activePluginId, activeViewId])
 
   // Esc handler. Capture phase per plan section 3.1 so a plugin's
   // own listeners on a rendered control cannot swallow Esc.
@@ -177,7 +198,7 @@ export const PluginFullscreenView = () => {
       { kind: 'fullscreen', viewId: active.viewId },
       e.event,
       e.payload,
-      { highFrequency: e.highFrequency === true },
+      { highFrequency: e.highFrequency === true, ...(e.interaction ? { interaction: e.interaction } : {}) },
     )
   }
 
@@ -219,6 +240,7 @@ export const PluginFullscreenView = () => {
         </div>
 
         <div
+          ref={bodyRef}
           className="flex-1 min-h-0 overflow-auto p-4 text-sm text-obsidianText"
           data-testid="plugin-fullscreen-body"
         >

@@ -309,6 +309,30 @@ export interface PluginCtx {
    * named view is not currently open.
    */
   setFullscreenContent(viewId: string, node: unknown): void
+
+  /**
+   * v1.3 (L4) — position-patch fast path. Stream ONLY the moved node
+   * coordinates (e.g. each force-simulation tick of a graph) and the
+   * host mutates the `cx`/`cy` of the matching mounted SVG circles plus
+   * the endpoints of any edge `line` keyed to that node id, WITHOUT a
+   * full re-render of the VNode tree. This is the 60fps enabler for node
+   * drag + live layout.
+   *
+   * To wire it: render circles with an `id` and edge `line`s with
+   * `sourceId` / `targetId` naming the node ids each endpoint follows.
+   * Then call this with `{ id, x, y }` patches each frame. Pass `viewId`
+   * (fullscreen) or `panelId` (sidebar) to target a specific surface;
+   * omit both for the single active interactive surface.
+   *
+   * Fire-and-forget — there is no reply. Patches are subject to the same
+   * envelope-size cap as every other message; keep each batch to the
+   * nodes that actually moved.
+   */
+  patchSvgPositions(args: {
+    viewId?: string
+    panelId?: string
+    patches: ReadonlyArray<{ id: string; x: number; y: number }>
+  }): void
 }
 
 /** Cleanup thunk returned by every `vault.events` subscription. The

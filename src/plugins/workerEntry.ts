@@ -825,6 +825,22 @@ function buildCtx(parentSeq: number): PluginCtx {
         node,
       })
     },
+    patchSvgPositions(args) {
+      // v1.3 (L4) — fire-and-forget position-patch fast path. No reply;
+      // the host mutates the mounted svg directly. Coords are coerced to
+      // numbers here so a stray string cannot ride the wire (the host
+      // re-sanitises defensively too).
+      const patches = Array.isArray(args?.patches)
+        ? args.patches.map((p) => ({ id: String(p.id), x: Number(p.x), y: Number(p.y) }))
+        : []
+      emit({
+        type: 'worker:patchSvgPositions',
+        seq: allocRequestSeq(),
+        ...(typeof args?.viewId === 'string' ? { viewId: args.viewId } : {}),
+        ...(typeof args?.panelId === 'string' ? { panelId: args.panelId } : {}),
+        patches,
+      })
+    },
   }
 }
 

@@ -105,3 +105,99 @@ for required reasons (the `noteser-graph` plugin track was NOT touched):
 - L2: `onWheel`, host-owned pan/zoom, `surface.transform`.
 - L3: `onPointerEnter` / `onPointerLeave` hover events.
 - L4: `worker:patchSvgPositions` position-patch fast path.
+
+## L2 + L3 + L4 — wheel, host pan/zoom, hover, position-patch channel
+
+PR branch: `feat/plugins-v1.3-wheel-hover-patch`. Shipped together
+because all three layers edit the same platform files (`PluginVNode.tsx`,
+`PluginHost.ts`, `protocol.ts`, the surface adapters) and splitting them
+would have meant three conflicting PRs over the same code. The
+`noteser-graph` plugin (G2/G3/G4) is a separate PR and was NOT touched.
+
+### What shipped
+
+- **L2 wheel** (`PluginVNode.tsx`). `WheelHandlers { onWheel }` on
+  `VNodeSvg` + `VNodeBox`. `WheelEventPayload { deltaX, deltaY, x, y,
+  ctrlKey }`; x/y use the same surface mapping as pointer (svg user-space
+  via inverse CTM, box element-local). Wheel is high-frequency → rides
+  L1's coalescing, gated on `interaction.wheel`.
+- **L2 host-owned pan/zoom** (`PluginVNode.tsx`). `VNodeSvg.panZoom:
+  'host'`. The host owns the viewBox: drag-pan (surface-level pointer)
+  and wheel-zoom mutate the rendered `<svg>` viewBox attribute DIRECTLY
+  via a ref (no worker round-trip, no React re-render), and on settle
+  (pointerup, or a 150ms wheel-idle debounce) emit exactly ONE
+  `surface.transform` event `{ x, y, scale }`.
+- **L3 hover** (`PluginVNode.tsx`). `onPointerEnter` / `onPointerLeave`
+  added to `PointerHandlers` (so they land on circle, rect, svg, box).
+  `HoverEventPayload { target, x, y }`. High-frequency → coalesced,
+  gated on `interaction.hover`.
+- **L4 position-patch** (`protocol.ts`, `PluginHost.ts`,
+  `svgPositionPatch.ts`, surface adapters, `workerEntry.ts`, `sdk.ts`).
+  New worker→host envelope `worker:patchSvgPositions { viewId?, panelId?,
+  patches: {id,x,y}[] }` in the `WorkerToHost` union + `isWorkerToHost`.
+  Host sanitises + emits a `svgPositionsPatch` PluginHostEvent; the
+  surface adapters apply patches to the mounted svg by mutating
+  `cx`/`cy` on circles + the matching endpoint of connected edge lines,
+  with no React re-render. New SDK method `ctx.patchSvgPositions(...)`.
+
+### Deviations / decisions
+
+1. **Per-kind HF gating, not a single pointer flag.** L1's
+   `surfaceHasPointerInteraction` only checked `interaction.pointer`, and
+   the wire event name is plugin-opaque so the host cannot tell pointer
+   from wheel from hover by name. Resolved by adding `interaction?:
+   'pointer'|'wheel'|'hover'` (`InteractionKind`, defined in
+   `protocol.ts`) to `PluginVNodeEvent` and to the `sendVNodeEvent`
+   options. The renderer tags each HF dispatch with its kind; the host's
+   renamed `surfaceHasInteraction(manifest, source, kind)` checks the
+   matching sub-flag. An HF event with no kind defaults to `'pointer'`,
+   so L1's existing dispatches + tests are unchanged. The three surface
+   adapters forward the new `interaction` field alongside
+   `highFrequency`.
+2. **`surface.transform` is a reserved event NAME on the existing
+   `host:vnodeEvent` envelope, not a new envelope** (per plan 2.8).
+   Constant `SURFACE_TRANSFORM_EVENT` lives in `protocol.ts`. The
+   RENDERER emits it (host-owned pan/zoom is host logic), not the plugin;
+   it is discrete (one per settle), so it bypasses coalescing and never
+   carries `highFrequency`.
+3. **Wheel listeners are bound manually as non-passive** rather than via
+   React's `onWheel`. React registers wheel passive and cannot
+   `preventDefault`, so any surface that interprets the wheel (a plugin
+   `onWheel` or host pan/zoom) needs a manual `addEventListener('wheel',
+   …, { passive: false })`. This forced `renderSvg` and the wheel-bearing
+   `renderBox` to render as real components (`PluginSvg` / `PluginBox`)
+   so they can hold a ref + effect. A plain svg/box (no wheel, no
+   panZoom) keeps the exact v1.2/L1 path and attaches no wheel listener
+   — non-interactive surfaces still scroll the page normally.
+4. **Host pan only starts on the svg background** (`e.target ===
+   e.currentTarget`), so grabbing a draggable child circle pans nothing
+   — node-drag and pan coexist. While `panZoom: 'host'` is active the
+   svg's own surface-level pointer handlers are NOT forwarded to the
+   plugin (the host consumes them for panning); child-shape handlers
+   still fire. `touchAction: none` is set so touch-drag pans instead of
+   scrolling.
+5. **Edge lines opt into the patch path via `sourceId` / `targetId`** on
+   the `line` SvgChild — the renderer stamps `data-edge-source` /
+   `data-edge-target` (and `data-node-id` on circles). The patch helper
+   (`svgPositionPatch.ts`) builds the id→element map by WALKING those
+   `data-*` attributes, never by feeding a plugin-controlled id into a
+   selector, so a hostile node id cannot inject a querySelector. The map
+   is rebuilt per patch batch, which is inherently "refreshed when the
+   tree re-renders."
+6. **Oversized patch rejection reuses the existing envelope-size guard.**
+   `worker:patchSvgPositions` is subject to `MAX_ENVELOPE_BYTES` like
+   every other message (the size check in `handleWorkerMessage` runs
+   before the type switch), so an oversized batch is rejected with the
+   generic "Envelope too large" workerError. The host additionally
+   sanitises the patch shape (drops non-string ids / non-finite coords)
+   before emitting the event.
+
+### Files touched outside `src/plugins/` + `src/components/plugins/`
+
+- `src/components/sidebar/PluginsPanel.tsx` and
+  `src/components/editor/PluginCodeBlock.tsx` — forward the new
+  `interaction` field into `sendVNodeEvent` (mirror of L1's
+  `highFrequency` forward). `PluginsPanel` also applies L4 position
+  patches to the matching panel section via `applySvgPositionPatches`.
+  (`PluginFullscreenView`, the primary interactive surface, IS in
+  `src/components/plugins/` and gained the same patch wiring.)

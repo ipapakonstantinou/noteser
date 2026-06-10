@@ -58,6 +58,7 @@ export const PluginCodeBlock = ({ pluginId, language, source }: Props) => {
       if (!host) return
       host.sendVNodeEvent(pluginId, { kind: 'codeBlock', blockId }, e.event, e.payload, {
         highFrequency: e.highFrequency === true,
+        ...(e.interaction ? { interaction: e.interaction } : {}),
       })
     },
     [pluginId, blockId],
