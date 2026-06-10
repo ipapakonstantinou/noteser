@@ -15,14 +15,15 @@
 jest.mock('idb-keyval', () => ({
   get: jest.fn().mockResolvedValue(undefined),
   set: jest.fn().mockResolvedValue(undefined),
-  del: jest.fn().mockResolvedValue(undefined),
+  del: jest.fn().mockResolvedValue(undefined)
 }))
 
-import { EditorState } from '@codemirror/state'
+import { EditorState, Text } from '@codemirror/state'
 import { EditorView, ViewPlugin } from '@codemirror/view'
 import {
+  continuationIndentWidth,
   hangingIndentExtension,
-  listLinePrefixWidth,
+  listLinePrefixWidth
 } from '../components/editor/hangingIndentPlugin'
 
 describe('listLinePrefixWidth', () => {
@@ -61,6 +62,78 @@ describe('listLinePrefixWidth', () => {
   })
 })
 
+// Helper: build a Text doc from an array of lines (one per element) so the
+// continuation-walk tests read like the actual buffer they describe.
+function textOf(lines: string[]): Text {
+  return Text.of(lines)
+}
+
+describe('continuationIndentWidth (Shift+Enter list-paragraph chain)', () => {
+  test('bullet + 2-space continuation returns the bullet marker width (2)', () => {
+    const doc = textOf(['- bullet', '  cont line'])
+    expect(continuationIndentWidth(doc, 2)).toBe(2)
+  })
+
+  test('task + 6-space continuation returns the task marker width (6)', () => {
+    const doc = textOf(['- [ ] Check IIA references', '      this is a note'])
+    expect(continuationIndentWidth(doc, 2)).toBe(6)
+  })
+
+  test('two consecutive continuation lines share the same parent width', () => {
+    const doc = textOf([
+      '- [ ] task body',
+      '      first continuation',
+      '      second continuation'
+    ])
+    expect(continuationIndentWidth(doc, 2)).toBe(6)
+    expect(continuationIndentWidth(doc, 3)).toBe(6)
+  })
+
+  test('blank line between parent and would-be continuation breaks the chain', () => {
+    const doc = textOf(['- bullet', '', '  not a continuation'])
+    expect(continuationIndentWidth(doc, 3)).toBe(0)
+  })
+
+  test('plain top-level paragraph with no leading whitespace is not a continuation', () => {
+    const doc = textOf(['- bullet', 'plain paragraph below'])
+    expect(continuationIndentWidth(doc, 2)).toBe(0)
+  })
+
+  test('intermediate non-indented plain line breaks the chain (no chain to follow)', () => {
+    const doc = textOf([
+      '- bullet',
+      'unrelated paragraph',
+      '  looks like cont but parent is unreachable'
+    ])
+    expect(continuationIndentWidth(doc, 3)).toBe(0)
+  })
+
+  test('nested list: continuation matches the IMMEDIATE parent (deepest list line above)', () => {
+    // Outer bullet "- outer" (width 2), nested bullet "  - inner" (width 4),
+    // continuation under the inner item needs >=4 leading spaces.
+    const doc = textOf(['- outer', '  - inner', '    inner continuation'])
+    expect(continuationIndentWidth(doc, 3)).toBe(4)
+  })
+
+  test('leading whitespace shorter than parent marker width does not count', () => {
+    // "- [ ] body" needs >=6 spaces on the continuation; "    " is only 4.
+    const doc = textOf(['- [ ] body', '    too-shallow'])
+    expect(continuationIndentWidth(doc, 2)).toBe(0)
+  })
+
+  test('list-marker line itself returns 0 (handled by the marker pass, not the chain)', () => {
+    const doc = textOf(['- bullet', '- another bullet'])
+    expect(continuationIndentWidth(doc, 1)).toBe(0)
+    expect(continuationIndentWidth(doc, 2)).toBe(0)
+  })
+
+  test('plain line with only whitespace (no body) does not extend the chain', () => {
+    // A line of just spaces should behave like a blank line — terminator.
+    const doc = textOf(['- bullet', '   ', '  would-be cont'])
+    expect(continuationIndentWidth(doc, 3)).toBe(0)
+  })
+})
+
 // Read every line decoration the plugin produced for a given doc and return
 // a map of 1-based line number -> inline style string. Walking the
 // DecorationSet directly is the cleanest way to assert what the ViewPlugin
@@ -69,19 +142,31 @@ describe('listLinePrefixWidth', () => {
 function collectLineDecorations(doc: string): Map<number, string> {
   const state = EditorState.create({
     doc,
-    extensions: [EditorView.lineWrapping, hangingIndentExtension],
+    extensions: [EditorView.lineWrapping, hangingIndentExtension]
   })
   const view = new EditorView({ state })
   try {
     const out = new Map<number, string>()
     // Locate our plugin via the public field accessor.
-    const plugins = (view as unknown as {
-      plugins: { value: { decorations?: unknown } }[]
-    }).plugins
+    const plugins = (
+      view as unknown as {
+        plugins: { value: { decorations?: unknown } }[]
+      }
+    ).plugins
     const found = plugins
       .map(p => p.value)
-      .find((v): v is { decorations: { iter(): { value: { spec: { attributes?: { style?: string } } } | null; from: number; next(): void } } } =>
-        !!v && typeof v === 'object' && 'decorations' in v
+      .find(
+        (
+          v
+        ): v is {
+          decorations: {
+            iter(): {
+              value: { spec: { attributes?: { style?: string } } } | null
+              from: number
+              next(): void
+            }
+          }
+        } => !!v && typeof v === 'object' && 'decorations' in v
       )
     if (!found) return out
     const iter = found.decorations.iter()
@@ -110,7 +195,7 @@ describe('hangingIndentExtension decorations', () => {
       '- [ ] task line',
       '- [x] done task',
       '  - [ ] nested task',
-      'another plain line',
+      'another plain line'
     ].join('\n')
 
     const decos = collectLineDecorations(doc)
@@ -133,6 +218,46 @@ describe('hangingIndentExtension decorations', () => {
   test('document with no list lines emits no decorations', () => {
     const decos = collectLineDecorations('just\nsome\nprose\n')
     expect(decos.size).toBe(0)
+  })
+
+  test('bullet + 2-space continuation: continuation matches the bullet width', () => {
+    const decos = collectLineDecorations(['- bullet', '  cont'].join('\n'))
+    expect(decos.get(1)).toBe('padding-left:2ch;text-indent:-2ch;')
+    expect(decos.get(2)).toBe('padding-left:2ch;text-indent:-2ch;')
+  })
+
+  test('task + 6-space continuation: continuation matches the task width (6)', () => {
+    const decos = collectLineDecorations(
+      ['- [ ] Check IIA references', '      this is a note'].join('\n')
+    )
+    expect(decos.get(1)).toBe('padding-left:6ch;text-indent:-6ch;')
+    expect(decos.get(2)).toBe('padding-left:6ch;text-indent:-6ch;')
+  })
+
+  test('two consecutive continuation lines both get the parent decoration', () => {
+    const decos = collectLineDecorations(
+      ['- [ ] body', '      cont 1', '      cont 2'].join('\n')
+    )
+    expect(decos.get(2)).toBe('padding-left:6ch;text-indent:-6ch;')
+    expect(decos.get(3)).toBe('padding-left:6ch;text-indent:-6ch;')
+  })
+
+  test('blank line between parent and would-be continuation: continuation gets NO decoration', () => {
+    const decos = collectLineDecorations(
+      ['- bullet', '', '  not a continuation'].join('\n')
+    )
+    expect(decos.get(1)).toBe('padding-left:2ch;text-indent:-2ch;')
+    expect(decos.has(2)).toBe(false)
+    expect(decos.has(3)).toBe(false)
+  })
+
+  test('nested list continuation aligns to the immediate parent (inner bullet, width 4)', () => {
+    const decos = collectLineDecorations(
+      ['- outer', '  - inner', '    inner cont'].join('\n')
+    )
+    expect(decos.get(1)).toBe('padding-left:2ch;text-indent:-2ch;')
+    expect(decos.get(2)).toBe('padding-left:4ch;text-indent:-4ch;')
+    expect(decos.get(3)).toBe('padding-left:4ch;text-indent:-4ch;')
   })
 })
 
