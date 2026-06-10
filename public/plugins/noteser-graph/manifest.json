@@ -1,9 +1,9 @@
 {
   "id": "noteser-graph",
   "name": "Graph",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "Noteser",
-  "description": "Backlinks and unlinked mentions for the active note in the sidebar, plus a force-directed graph of the entire vault in a fullscreen view.",
+  "description": "Backlinks and unlinked mentions for the active note in the sidebar, plus a force-directed graph of the vault with local-graph, color groups, filters, force tuning, and tags-as-nodes.",
   "main": "./main.js",
   "surfaces": {
     "sidebarPanels": [
