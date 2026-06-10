@@ -23,14 +23,46 @@ Shown for the active note. Two sections plus an action button:
 
 ### Fullscreen view "Graph"
 
-Force-directed SVG of the whole vault.
+Force-directed SVG of the vault.
 
 - Nodes are notes; edges are wikilinks.
 - Click a node to "select" it. The header shows a `link` VNode pointing
   at that note (`{ kind: 'note', noteId }`); clicking the link goes
-  through the host's `wikilink://` intercept and opens the note.
+  through the host's `wikilink://` intercept and opens the note. Tag
+  nodes (see below) are not notes, so selecting one shows a plain label.
 - Header buttons: Recompute, Reset view, Zoom in / out, Pan in four
   directions.
+
+#### Graph richness controls (v0.2.0, "G1")
+
+A control panel above the canvas. Every choice persists via
+`setSetting` under the `g1.` namespace, so it survives a reload.
+
+- **View** - Global graph, or a Local graph: the neighbourhood of the
+  active note reached by BFS over the wikilink edges, at a depth of 1,
+  2, or 3 hops. The local graph re-derives when the active note
+  changes while the view is open.
+- **Color groups** - color every node by folder, by first tag, or by a
+  highlight query (notes whose title or body match the query turn
+  green). Folder and tag colors come from a fixed palette keyed by a
+  hash, so the same folder keeps the same color across reloads.
+- **Filters**
+  - A search box dims every node whose title or body does not match.
+  - "Hide orphans" drops degree-0 nodes before layout.
+  - "Show tags as nodes" adds one synthetic node per distinct tag with
+    an edge from each note to its tags. Off by default.
+- **Forces** - number inputs for center force, repel strength, link
+  force, link distance, and a node size multiplier, with a
+  "Reset forces" button. The four physics values feed the simulation;
+  the size multiplier scales the by-degree node radius. All values are
+  clamped to safe ranges so a stray entry cannot break the layout.
+
+Changing a color or filter setting repaints without re-running the
+simulation; changing the view mode, depth, force values, or a node
+toggle re-derives the graph and re-runs the layout.
+
+Setting keys: `g1.mode`, `g1.depth`, `g1.colorBy`, `g1.colorQuery`,
+`g1.search`, `g1.hideOrphans`, `g1.tagsAsNodes`, `g1.forces`.
 
 ## Install + dev workflow
 
@@ -152,7 +184,21 @@ Pure derivation logic lives in `main.js` as named exports:
 - `snapshotSha(notes)`
 - `runForceSimulation(nodes, edges, opts?)`
 
-Jest tests at `src/__tests__/noteserGraphPlugin.test.ts` import the
-plugin module directly and cover the unlinked-mention detector
-(code-block exclusion, wikilink exclusion, whole-word matching) plus
-graph derivation on a 5-note fixture.
+The G1 increment adds more pure helpers, all exported and unit-tested:
+
+- `extractTagsInline(body)`
+- `deriveTagGraph(base, notes)` / `tagNodeId(name)`
+- `bfsNeighbourhood(edges, rootId, depth)`
+- `subgraphForIds(graph, idSet)` / `localGraph(graph, rootId, depth)`
+- `dropOrphans(graph)` / `recomputeDegree(nodes, edges)`
+- `noteMatchesQuery(note, query)`
+- `computeNodeColors(nodes, notesById, opts)` / `colorForKey(key)`
+- `clampForces(forces)` / `DEFAULT_FORCES`
+
+Jest tests at `src/__tests__/noteserGraphPlugin.test.ts` and
+`src/__tests__/noteserGraphPluginG1.test.ts` import the plugin module
+directly. The first covers the unlinked-mention detector (code-block
+exclusion, wikilink exclusion, whole-word matching) plus graph
+derivation on a 5-note fixture; the second covers tag extraction, the
+tags-as-nodes synthesis, the local-graph BFS, orphan filtering, color
+assignment, and force clamping/tuning.
