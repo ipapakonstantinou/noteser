@@ -70,7 +70,7 @@ export function GitHubPanel() {
       </Field>
       <Field
         label="Default commit message"
-        description='Pre-fills the Source Control commit textarea. Supports {{date}} which is substituted with today&apos;s YYYY-MM-DD at commit time. Vault-synced — any device sharing this repo gets the same template.'
+        description='Pre-fills the Source Control commit textarea. Supports {{date}} which is substituted with today&apos;s YYYY-MM-DD (matching daily-note titles) before display. Vault-synced — any device sharing this repo gets the same template.'
       >
         <SettingsTextInput
           value={defaultCommitMessage}
