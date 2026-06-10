@@ -9,6 +9,7 @@ import {
   emptyTrash as emptyTrashItems,
 } from '@/utils/softDelete'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
+import { isSeededFeatureTourNote } from '@/utils/featureTourMarkers'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useFolderStore } from '@/stores/folderStore'
 import { trackEventOncePerSession } from '@/utils/analytics'
@@ -348,38 +349,47 @@ export const useNoteStore = create<NoteState>()(
       // migration is idempotent — re-running it on a v3 store leaves it
       // unchanged and adding `kind` to a brand-new note via addNote uses the
       // same default.
-      version: 3,
+      //
+      // v4 — do-not-sync (#179): retro-flag previously-seeded "Feature tour"
+      // notes with `doNotSync: true` so onboarding demo content stops being
+      // pushed into the user's real vault repo. Detection is conservative
+      // (exact seeded title AND a bundled-screenshot reference in the body —
+      // see isSeededFeatureTourNote) so a user's own note that merely shares
+      // the title keeps syncing. The flag only stops FUTURE pushes: a remote
+      // copy a legacy user already has is never auto-deleted.
+      version: 4,
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as NoteState
+        let notes: Note[] = state.notes || []
         if (version === 0 || version === 1) {
           // Migrate from old format
-          return {
-            ...state,
-            notes: (state.notes || []).map((note: Note & { id?: string | number }) => ({
-              ...note,
-              id: String(note.id),
-              createdAt: note.createdAt || Date.now(),
-              updatedAt: note.updatedAt || Date.now(),
-              isDeleted: note.isDeleted || false,
-              deletedAt: note.deletedAt || null,
-              isPinned: note.isPinned || false,
-              templateId: note.templateId || null,
-              folderId: note.folderId ? String(note.folderId) : null,
-              // Every pre-v3 note is markdown.
-              kind: (note as Note).kind ?? 'markdown',
-            }))
-          }
+          notes = notes.map((note: Note & { id?: string | number }) => ({
+            ...note,
+            id: String(note.id),
+            createdAt: note.createdAt || Date.now(),
+            updatedAt: note.updatedAt || Date.now(),
+            isDeleted: note.isDeleted || false,
+            deletedAt: note.deletedAt || null,
+            isPinned: note.isPinned || false,
+            templateId: note.templateId || null,
+            folderId: note.folderId ? String(note.folderId) : null,
+            // Every pre-v3 note is markdown.
+            kind: note.kind ?? 'markdown',
+          }))
+        } else if (version === 2) {
+          notes = notes.map((note: Note) => ({
+            ...note,
+            kind: note.kind ?? 'markdown',
+          }))
         }
-        if (version === 2) {
-          return {
-            ...state,
-            notes: (state.notes || []).map((note: Note) => ({
-              ...note,
-              kind: note.kind ?? 'markdown',
-            })),
-          }
+        if (version <= 3) {
+          notes = notes.map((note: Note) =>
+            note.doNotSync !== true && isSeededFeatureTourNote(note.title, note.content)
+              ? { ...note, doNotSync: true }
+              : note,
+          )
         }
-        return state
+        return { ...state, notes }
       }
     }
   )

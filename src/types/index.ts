@@ -65,6 +65,16 @@ export interface Note {
   // persisted before this field existed, and for all normally-created notes.
   // Only an explicit `false` marks a shell.
   contentLoaded?: boolean
+  // do-not-sync (#179): an app-local note that must NEVER participate in
+  // GitHub sync. The push path emits no tree entry for it (no blob upload,
+  // no rename/delete propagation) and the pull classifier treats it as
+  // `unchanged` (no remote adoption, no resurrect, no conflict tab). Set on
+  // the seeded "Feature tour" note so onboarding demo content never lands in
+  // the user's real vault repo. NOTE: the flag only stops FUTURE pushes —
+  // a legacy user whose remote already holds the file keeps it until they
+  // delete it manually (we never auto-delete remote files).
+  // `undefined` means "syncs normally" — back-compat for all existing notes.
+  doNotSync?: boolean
   // Classification of what this entry actually is. Default 'markdown' for every
   // existing note. 'foreign' marks a non-markdown vault file (e.g. `.canvas`,
   // `.base`) that we mirror in the sidebar tree so the user can see it, but
