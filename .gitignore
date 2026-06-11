@@ -2,6 +2,9 @@
 
 # dependencies
 /node_modules
+collab-server/node_modules
+collab-server/dist
+collab-server/.wrangler
 /.pnp
 .pnp.*
 .yarn/*

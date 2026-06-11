@@ -1,0 +1,22 @@
+{
+  "name": "noteser-collab-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "y-websocket-compatible live-collaboration server for noteser, running on Cloudflare Workers + Durable Objects.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "build": "wrangler deploy --dry-run --outdir=dist"
+  },
+  "dependencies": {
+    "lib0": "^0.2.99",
+    "y-protocols": "^1.0.6",
+    "yjs": "^13.6.30"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250601.0",
+    "typescript": "^5.6.0",
+    "wrangler": "^4.0.0"
+  }
+}

@@ -1,0 +1,19 @@
+# noteser live-collaboration server — Cloudflare Worker + Durable Objects.
+# One Durable Object instance per collab room (= per note), so document
+# state and connected peers for a note always live in the same place.
+#
+# Deploy: npx wrangler deploy   (see README.md for the full setup)
+
+name = "noteser-collab"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+
+[[durable_objects.bindings]]
+name = "Y_ROOM"
+class_name = "YRoom"
+
+# SQLite-backed Durable Objects — required on the Workers FREE plan
+# (key-value-backed DOs need the paid plan; SQLite-backed ones do not).
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["YRoom"]
