@@ -73,6 +73,9 @@ const eslintConfig = [
       'build/**',
       'public/**',
       'next-env.d.ts',
+      // Cloudflare Worker with its own toolchain (wrangler + workers
+      // types) — linted/typechecked from collab-server/, not here.
+      'collab-server/**',
     ],
   },
   ...compat.extends('next/core-web-vitals'),
