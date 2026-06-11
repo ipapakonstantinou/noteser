@@ -34,6 +34,7 @@ export function installErrorReporter(): void {
   installed = true
 
   window.addEventListener('error', (ev: ErrorEvent) => {
+    maybeOfferReload(ev.error ?? ev.message)
     send({
       kind: 'error',
       message: ev.message || (ev.error?.message ?? 'Unknown error'),
@@ -43,6 +44,7 @@ export function installErrorReporter(): void {
 
   window.addEventListener('unhandledrejection', (ev: PromiseRejectionEvent) => {
     const reason = ev.reason
+    maybeOfferReload(reason)
     const message =
       reason instanceof Error
         ? reason.message
@@ -64,6 +66,19 @@ export function reportError(
 ): void {
   const e = err instanceof Error ? err : new Error(safeStringify(err))
   send({ kind: 'error', message: e.message, stack: e.stack, pluginId: context.pluginId })
+}
+
+// Stale-deploy chunk failures get a user-facing "Reload" toast on top of
+// the log entry: retrying the import can never work (the hashed file is
+// gone from the CDN), so without this the user is stuck on a dead button.
+// Dynamic import so the reporter itself stays dependency-free at boot.
+function maybeOfferReload(reason: unknown): void {
+  void import('./chunkLoadError').then(({ isChunkLoadError, showChunkReloadToast }) => {
+    if (isChunkLoadError(reason)) showChunkReloadToast()
+  }).catch(() => {
+    // If even this chunk fails to load we cannot toast; the log entry
+    // from send() is still emitted.
+  })
 }
 
 function send(payload: Pick<ErrorPayload, 'kind' | 'message' | 'stack' | 'pluginId'>): void {

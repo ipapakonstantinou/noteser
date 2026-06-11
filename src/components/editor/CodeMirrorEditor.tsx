@@ -48,6 +48,7 @@ import {
 } from '@/utils/blockRef'
 import { useNoteStore } from '@/stores/noteStore'
 import { saveAttachment } from '@/utils/attachments'
+import { isBareUrl, anchorFromHtml, markdownLink, FETCHING_TITLE_PLACEHOLDER } from '@/utils/pasteLink'
 import { WikilinkAutocomplete } from './WikilinkAutocomplete'
 import { TagAutocomplete } from './TagAutocomplete'
 import { getConfiguredUrl } from '@/hooks/useCollaboration'
@@ -101,6 +102,42 @@ async function insertImagesAt(view: EditorView, files: File[], pos: number): Pro
   view.dispatch({
     changes: { from: pos, to: pos, insert },
     selection: { anchor: pos + insert.length },
+  })
+}
+
+// Insert `[Fetching title…](url)` at `pos`, then swap the placeholder for
+// the real page title once /api/link-title answers. The swap re-locates the
+// exact placeholder string instead of trusting saved offsets, so concurrent
+// typing elsewhere in the note can't corrupt the splice — if the user edited
+// the placeholder itself, the swap silently aborts. On a failed or empty
+// lookup the whole link collapses back to the bare URL (Obsidian Auto Link
+// Title behavior).
+async function insertLinkWithFetchedTitle(view: EditorView, url: string, pos: number): Promise<void> {
+  const placeholder = markdownLink(FETCHING_TITLE_PLACEHOLDER, url)
+  view.dispatch({
+    changes: { from: pos, to: pos, insert: placeholder },
+    selection: { anchor: pos + placeholder.length },
+  })
+
+  let title: string | null = null
+  try {
+    const res = await fetch(`/api/link-title?url=${encodeURIComponent(url)}`)
+    if (res.ok) {
+      const data = (await res.json()) as { title?: string | null }
+      title = typeof data.title === 'string' && data.title.trim() !== '' ? data.title : null
+    }
+  } catch {
+    // Network failure — fall through to the bare-URL fallback.
+  }
+
+  const doc = view.state.doc.toString()
+  const found = doc.indexOf(placeholder, Math.max(0, pos - placeholder.length))
+  const at = found !== -1 ? found : doc.indexOf(placeholder)
+  if (at === -1) return // user edited the placeholder away; leave their text alone
+
+  const replacement = title ? markdownLink(title, url) : url
+  view.dispatch({
+    changes: { from: at, to: at + placeholder.length, insert: replacement },
   })
 }
 
@@ -957,14 +994,55 @@ export function CodeMirrorEditor({
       paste(event, view) {
         const files = Array.from(event.clipboardData?.files ?? [])
         const images = files.filter(f => f.type.startsWith('image/'))
+        const text = event.clipboardData?.getData('text/plain') ?? ''
+
+        // ── Image paste ──────────────────────────────────────────────────
         // Skip if no images, or if there's text alongside (rich paste — let
         // CodeMirror handle that path so user keeps the text).
-        if (images.length === 0) return false
-        const hasText = (event.clipboardData?.getData('text/plain') ?? '') !== ''
-        if (hasText) return false
+        if (images.length > 0) {
+          if (text !== '') return false
+          event.preventDefault()
+          const head = view.state.selection.main.head
+          insertImagesAt(view, images, head)
+          return true
+        }
+
+        // ── URL paste → titled markdown link ─────────────────────────────
+        if (!isBareUrl(text)) return false
+        const url = text.trim()
+        const sel = view.state.selection.main
+
+        // URL over a selection: the selected text IS the title.
+        if (!sel.empty) {
+          const selected = view.state.sliceDoc(sel.from, sel.to)
+          // Selecting an existing URL and pasting another over it is a
+          // replace, not a link-wrap — fall through to default paste.
+          if (isBareUrl(selected)) return false
+          event.preventDefault()
+          const link = markdownLink(selected, url)
+          view.dispatch({
+            changes: { from: sel.from, to: sel.to, insert: link },
+            selection: { anchor: sel.from + link.length },
+          })
+          return true
+        }
+
+        // Clipboard carried an HTML anchor (copying a link element does
+        // this): use its text as the title, no network round-trip.
+        const anchor = anchorFromHtml(event.clipboardData?.getData('text/html') ?? '')
+        if (anchor && anchor.text !== url) {
+          event.preventDefault()
+          const link = markdownLink(anchor.text, url)
+          view.dispatch({
+            changes: { from: sel.head, to: sel.head, insert: link },
+            selection: { anchor: sel.head + link.length },
+          })
+          return true
+        }
+
+        // Bare URL: insert a placeholder and fetch the page title async.
         event.preventDefault()
-        const head = view.state.selection.main.head
-        insertImagesAt(view, images, head)
+        void insertLinkWithFetchedTitle(view, url, sel.head)
         return true
       },
       mousedown(event, view) {
