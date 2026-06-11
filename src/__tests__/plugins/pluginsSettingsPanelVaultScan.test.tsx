@@ -21,6 +21,14 @@ jest.mock('../../plugins/pluginHostSingleton', () => ({
   uninstallPlugin: jest.fn(),
 }))
 
+// The panel's Built-in plugins section fetches the bundled manifests on
+// mount. Keep that fetch pending forever so its post-await setState
+// never fires outside act() — these tests exercise the vault-scan flow,
+// not the builtin catalog.
+beforeAll(() => {
+  global.fetch = jest.fn(() => new Promise<Response>(() => { /* never settles */ }))
+})
+
 import React from 'react'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'

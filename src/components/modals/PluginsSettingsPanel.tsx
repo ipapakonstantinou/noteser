@@ -2,13 +2,13 @@
 
 // Settings → Plugins.
 //
-// Lists every installed plugin (toggle / uninstall), and accepts a
-// new plugin via URL paste or by scanning the vault for in-vault
-// manifest.json notes. Both paths hand the assembled
-// InstalledPluginRecord to the existing plugin-install-confirm modal
-// so the user sees the same preview + permissions screen.
+// Lists the bundled first-party plugins (one-click install), every
+// installed plugin (toggle / uninstall), and accepts a new plugin via
+// URL paste or by scanning the vault for in-vault manifest.json notes.
+// All install paths hand off to the existing plugin-install-confirm
+// modal so the user sees the same preview + permissions screen.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ArrowPathIcon, ShieldExclamationIcon, TrashIcon } from '@heroicons/react/24/outline'
 import { usePluginInstallStore } from '@/stores/pluginInstallStore'
 import { usePluginStore } from '@/stores/pluginStore'
@@ -28,6 +28,37 @@ import {
 } from '@/plugins/manifest'
 import { readPluginAudit, type PluginAuditEntry } from '@/utils/pluginAudit'
 
+// First-party plugins shipped with the app under public/plugins/.
+// They were always installable — but only if you knew the manifest URL
+// by heart, so in practice nobody found them (the Graph plugin sat
+// invisible). Listed here with one-click install instead. Name /
+// version / description come from the real manifest at render time so
+// this list can't drift; the *-demo plugins are deliberately absent.
+const BUILTIN_PLUGIN_IDS: readonly string[] = [
+  'noteser-graph',
+  'noteser-kanban',
+  'noteser-callout',
+  'noteser-word-count',
+  'noteser-properties',
+  'noteser-pdf-export',
+  'noteser-importer',
+  'noteser-ai-chat',
+]
+
+interface BuiltinEntry {
+  id: string
+  name: string
+  version: string
+  description?: string
+  manifestUrl: string
+}
+
+// The installer requires an ABSOLUTE https/localhost URL (it resolves
+// the manifest's relative `main` against it), so the same-origin path
+// is expanded here rather than passed through as "/plugins/…".
+const builtinManifestUrl = (id: string): string =>
+  new URL(`/plugins/${id}/manifest.json`, window.location.origin).toString()
+
 export const PluginsSettingsPanel = () => {
   const records = usePluginInstallStore((s) => s.records)
   const setEnabled = usePluginInstallStore((s) => s.setEnabled)
@@ -36,6 +67,39 @@ export const PluginsSettingsPanel = () => {
 
   const [url, setUrl] = useState('')
   const [error, setError] = useState<string | null>(null)
+
+  // Bundled-plugin catalog — fetched from the real manifests on mount.
+  // Same-origin static JSON, so this is cheap and cache-friendly. A
+  // manifest that fails to load is silently skipped (the section keeps
+  // whatever resolved).
+  const [builtins, setBuiltins] = useState<BuiltinEntry[] | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const settled = await Promise.allSettled(
+        BUILTIN_PLUGIN_IDS.map(async (id): Promise<BuiltinEntry> => {
+          const manifestUrl = builtinManifestUrl(id)
+          const res = await fetch(manifestUrl)
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          const m = (await res.json()) as { name?: string; version?: string; description?: string }
+          return {
+            id,
+            name: typeof m.name === 'string' ? m.name : id,
+            version: typeof m.version === 'string' ? m.version : '?',
+            ...(typeof m.description === 'string' ? { description: m.description } : {}),
+            manifestUrl,
+          }
+        }),
+      )
+      if (cancelled) return
+      setBuiltins(settled.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : [])))
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  const handleInstallBuiltin = (entry: BuiltinEntry) => {
+    openModal({ type: 'plugin-install-confirm', data: { manifestUrl: entry.manifestUrl } })
+  }
 
   const [scanState, setScanState] = useState<
     | { kind: 'idle' }
@@ -112,6 +176,64 @@ export const PluginsSettingsPanel = () => {
           v1: load a plugin from any HTTPS URL that serves a manifest.json. The plugin code runs in a Web Worker sandbox.
         </p>
       </header>
+
+      <section>
+        <div className="text-sm text-obsidianText mb-1">Built-in plugins</div>
+        <p className="text-xs text-obsidianSecondaryText mb-2">
+          First-party plugins that ship with noteser — Graph view, Kanban boards, and more.
+          Install opens the same preview + permissions screen as any other plugin.
+        </p>
+        {builtins === null ? (
+          <p className="text-xs text-obsidianSecondaryText" data-testid="settings-plugins-builtin-loading">
+            Loading bundled plugin list…
+          </p>
+        ) : builtins.length === 0 ? (
+          <p className="text-xs text-obsidianSecondaryText" data-testid="settings-plugins-builtin-empty">
+            Could not load the bundled plugin list.
+          </p>
+        ) : (
+          <ul
+            className="divide-y divide-obsidianBorder rounded-lg border border-obsidianBorder"
+            data-testid="settings-plugins-builtin-list"
+          >
+            {builtins.map((b) => {
+              const installed = b.id in records
+              return (
+                <li key={b.id} className="p-3 flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-sm font-medium text-obsidianText">{b.name}</span>
+                      <span className="text-[10px] uppercase tracking-wide text-obsidianSecondaryText">
+                        v{b.version}
+                      </span>
+                    </div>
+                    {b.description && (
+                      <p className="text-xs text-obsidianSecondaryText mt-0.5">{b.description}</p>
+                    )}
+                  </div>
+                  {installed ? (
+                    <span
+                      className="px-3 py-1.5 text-xs text-obsidianSecondaryText"
+                      data-testid={`settings-plugins-builtin-installed-${b.id}`}
+                    >
+                      Installed
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleInstallBuiltin(b)}
+                      className="px-3 py-1.5 rounded-md bg-obsidianAccentPurple/80 hover:bg-obsidianAccentPurple text-white text-xs font-medium shrink-0"
+                      data-testid={`settings-plugins-builtin-install-${b.id}`}
+                    >
+                      Install
+                    </button>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
 
       <section>
         <div className="text-sm text-obsidianText mb-1">Add a plugin</div>

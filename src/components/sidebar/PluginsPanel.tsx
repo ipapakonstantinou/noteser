@@ -80,7 +80,8 @@ export const PluginsPanel = () => {
         No plugins installed yet.
         <br />
         <span className="text-xs">
-          Use Settings → Plugins to add one. (Coming in week 3 of v1.)
+          Use Settings → Plugins to add one — the built-in Graph plugin
+          is a good first pick.
         </span>
       </div>
     )
