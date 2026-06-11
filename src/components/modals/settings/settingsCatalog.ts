@@ -451,6 +451,14 @@ export const SETTINGS_CATALOG: readonly SettingsCatalogEntry[] = [
 
   // ── Plugins ─────────────────────────────────────────────────────────
   {
+    id: 'plugins.builtin',
+    categoryId: 'plugins',
+    categoryLabel: 'Plugins',
+    label: 'Built-in plugins',
+    description: 'One-click install for the first-party plugins that ship with noteser: Graph view, Kanban boards, callouts, word count, and more.',
+    keywords: ['plugin', 'builtin', 'bundled', 'graph', 'kanban', 'callout', 'install'],
+  },
+  {
     id: 'plugins.add',
     categoryId: 'plugins',
     categoryLabel: 'Plugins',

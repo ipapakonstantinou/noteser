@@ -52,15 +52,19 @@ export interface PaneState {
 
 // Layout tree describing how panes are arranged on screen. Leaves point
 // back to a PaneState by id; splits arrange their two children either
-// side-by-side (horizontal) or stacked top-over-bottom (vertical). A
-// 3-pane workspace is two nested splits — e.g. a 'right' split whose
-// right child is a 'down' split forms an L-shape. We carry a per-split
-// ratio so the divider drag can persist.
+// side-by-side (horizontal) or stacked top-over-bottom (vertical).
+// Splits nest arbitrarily, so any Obsidian / VS Code-style arrangement
+// (rows of columns, L-shapes, grids) is expressible. We carry a
+// per-split ratio so the divider drag can persist.
 export type LayoutNode =
   | { kind: 'leaf'; paneId: string }
   | { kind: 'split'; direction: 'horizontal' | 'vertical'; ratio: number; children: [LayoutNode, LayoutNode] }
 
-export const MAX_PANES = 3
+// Obsidian and VS Code don't cap split count; this is a safety valve so
+// a runaway persisted layout can't render dozens of unusable slivers.
+// Anything a human would actually arrange on one screen fits well below
+// it. At the cap, splits degrade to "move into an existing pane".
+export const MAX_PANES = 8
 
 // Where a dragged tab lands on a pane: the center moves it INTO the
 // pane; an edge splits the pane and puts the tab on that side.
@@ -300,10 +304,9 @@ function splitPaneWithTab(
 
 // Shared core for Split right / Split down. Direction picks how the new
 // pane sits relative to the original (horizontal = right, vertical =
-// below). The 4th-split rejection lives here so both entry points stay
-// in sync. Once the workspace already holds MAX_PANES panes we fall
-// back to moving the tab into the most-recently-created pane, which is
-// the pre-3-pane behaviour for splitTabRight.
+// below). The at-cap rejection lives here so both entry points stay in
+// sync. Once the workspace already holds MAX_PANES panes we fall back
+// to moving the tab into the most-recently-created pane.
 function splitTabInternal(
   set: (partial: Partial<WorkspaceState>) => void,
   get: () => WorkspaceState,
@@ -317,10 +320,10 @@ function splitTabInternal(
   if (state.panes.length >= MAX_PANES) {
     // No room for a new pane — drop the tab into the last pane the user
     // created (panes are appended on split, so panes[last] is "the
-    // newest one"). Preserves the "splitting a third time = move into
-    // an existing split" affordance. We move INLINE rather than via
+    // newest one"). Preserves the "splitting at the cap = move into an
+    // existing split" affordance. We move INLINE rather than via
     // moveTab so a now-empty source pane isn't compacted away — the
-    // 3-pane layout must stay 3 panes (Obsidian leaves an empty leaf
+    // at-cap layout keeps its pane count (Obsidian leaves an empty leaf
     // sitting where the user is, mirroring splitTabRight's own "leave
     // the original pane in place but empty" rule below).
     const targetPane = state.panes[state.panes.length - 1]

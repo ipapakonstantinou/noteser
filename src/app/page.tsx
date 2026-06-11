@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { Sidebar, Ribbon, RightRibbon, RightSidebarStack, RightSidebarResizeHandle, MobileTopBar, DrawerHandle, SidebarResizeHandle } from '@/components/sidebar'
-import { Editor } from '@/components/editor'
+import { Editor, EditorFooter } from '@/components/editor'
 import { Toaster } from '@/components/ui'
 
 // Modals are code-split out of the route's first-load bundle. Each one
@@ -580,6 +580,10 @@ export default function Home() {
           <Editor />
         </div>
 
+        {/* App-wide status bar — single instance at the very bottom
+            (VS Code style); the panes themselves no longer carry one. */}
+        <EditorFooter />
+
         {/* Modals are portaled to body so the column layout doesn't
             affect their positioning. Same set as desktop. */}
         {renderModals()}
@@ -588,7 +592,11 @@ export default function Home() {
   }
 
   return (
-    <div className="flex h-dvh w-screen bg-obsidianBlack text-obsidianText overflow-hidden">
+    <div className="flex flex-col h-dvh w-screen bg-obsidianBlack text-obsidianText overflow-hidden">
+      {/* Main row: ribbons + sidebars + editor. The app-wide status bar
+          sits BELOW this row so it spans the full window width (VS Code
+          placement) instead of rendering once per editor pane. */}
+      <div className="flex flex-1 min-h-0 w-full overflow-hidden">
       {/* Ribbon (Activity Bar). Always visible on desktop — when the
           sidebar is collapsed only the panel CONTENT hides, the bar
           stays so you can re-open or switch panels with one click.
@@ -648,6 +656,9 @@ export default function Home() {
       <div className="flex-none">
         <RightRibbon />
       </div>
+      </div>
+
+      <EditorFooter />
 
       {renderModals()}
     </div>

@@ -7,9 +7,8 @@ import { Pane } from './Pane'
 import type { LayoutNode, PaneState } from '@/stores/workspaceStore'
 
 // Renders the workspace's panes laid out according to the layout tree.
-// Up to MAX_PANES (3) panes total; arrangements include horizontal,
-// vertical, and L-shapes (a horizontal split whose right or left child
-// is itself a vertical split).
+// Splits nest arbitrarily (horizontal and vertical, Obsidian / VS Code
+// style) up to the MAX_PANES safety cap defined in the workspace store.
 
 const MIN_PANE_RATIO = 0.05
 
