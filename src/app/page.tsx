@@ -263,16 +263,29 @@ export default function Home() {
   // a real note id, open that note as the active tab on first hydration.
   // Fires once per page load; subsequent state changes do not re-open
   // (a user closing the tab should NOT have it bounce back).
+  //
+  // noteStore persists to IndexedDB, so its rehydration is ASYNC and
+  // usually lands after `hydrated` flips true. Looking notes up at that
+  // point finds an empty array and the startup note silently never
+  // opened (#183). Wait for the persist middleware to finish hydrating
+  // before resolving the id.
   const startupNoteOpenedRef = useRef(false)
   useEffect(() => {
     if (!hydrated) return
-    if (startupNoteOpenedRef.current) return
-    const startupNoteId = useSettingsStore.getState().startupNoteId
-    if (!startupNoteId) return
-    const note = useNoteStore.getState().notes.find(n => n.id === startupNoteId && !n.isDeleted)
-    if (!note) return
-    startupNoteOpenedRef.current = true
-    useWorkspaceStore.getState().openNote(note.id, { preview: false })
+    const tryOpen = () => {
+      if (startupNoteOpenedRef.current) return
+      const startupNoteId = useSettingsStore.getState().startupNoteId
+      if (!startupNoteId) return
+      const note = useNoteStore.getState().notes.find(n => n.id === startupNoteId && !n.isDeleted)
+      if (!note) return
+      startupNoteOpenedRef.current = true
+      useWorkspaceStore.getState().openNote(note.id, { preview: false })
+    }
+    if (useNoteStore.persist.hasHydrated()) {
+      tryOpen()
+      return
+    }
+    return useNoteStore.persist.onFinishHydration(tryOpen)
   }, [hydrated])
 
   // Import-from-share: when the URL has `?import=<fragment>`, decode it
