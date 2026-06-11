@@ -93,10 +93,17 @@ describe('useCollaboration', () => {
     expect(result.current.attempts).toBe(1)
   })
 
-  test('disconnect() halts the reconnect loop', () => {
+  test('disconnect() halts the reconnect loop', async () => {
     process.env.NEXT_PUBLIC_YJS_WS_URL = 'wss://collab.example.com/room'
     const { result } = renderHook(() => useCollaboration())
-    act(() => { result.current.disconnect() })
+    // MockWebSocket.close() delivers onclose on a microtask (mirroring a
+    // real socket's async close). Flush that microtask INSIDE act() so the
+    // hook's setStatus('disconnected') (useCollaboration.ts onclose
+    // handler) is act-covered instead of warning (issue #130).
+    await act(async () => {
+      result.current.disconnect()
+      await Promise.resolve()
+    })
     expect(result.current.status).toBe('disconnected')
     // No further attempt should be scheduled.
     const before = MockWebSocket.instances.length

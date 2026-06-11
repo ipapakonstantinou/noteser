@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useUIStore, useSettingsStore, useGitHubStore } from '@/stores'
 import { useGitHubSync } from '@/hooks/useGitHubSync'
+import { withTokenRefresh } from '@/utils/tokenRefresh'
 import { Button } from '@/components/ui'
 import {
   Field,
@@ -69,7 +70,7 @@ export function GitHubPanel() {
       </Field>
       <Field
         label="Default commit message"
-        description='Pre-fills the Source Control commit textarea. Supports {{date}} which is substituted with today&apos;s YYYY-MM-DD at commit time. Vault-synced — any device sharing this repo gets the same template.'
+        description='Pre-fills the Source Control commit textarea. Supports {{date}} which is substituted with today&apos;s YYYY-MM-DD (matching daily-note titles) before display. Vault-synced — any device sharing this repo gets the same template.'
       >
         <SettingsTextInput
           value={defaultCommitMessage}
@@ -320,7 +321,9 @@ function VaultGitignoreField() {
     setFetching(true); setFetchError(null)
     try {
       const { fetchRemoteGitignore } = await import('@/utils/gitignoreSync')
-      const { content } = await fetchRemoteGitignore(token, syncRepo)
+      // withTokenRefresh: the read-ref → tree → blob chain inside
+      // fetchRemoteGitignore auto-renews an expired token instead of 401-ing.
+      const { content } = await withTokenRefresh(tok => fetchRemoteGitignore(tok, syncRepo))
       setSnapshot(content)
       setDraft(content)
     } catch (err) {

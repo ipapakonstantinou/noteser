@@ -19,6 +19,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { useGitHubStore, useUIStore, useWorkspaceStore, useSettingsStore } from '@/stores'
 import { useGitHubSync, useHydration } from '@/hooks'
+import { expandCommitMessage } from '@/utils/commitMessage'
 import { SourceControlPanel } from './SourceControlPanel'
 
 // Obsidian-git styled Source Control panel (vscg).
@@ -48,14 +49,6 @@ function useTick(ms = 60_000) {
     const id = setInterval(() => force(n => n + 1), ms)
     return () => clearInterval(id)
   }, [ms])
-}
-
-// Substitute {{date}} → today (YYYY-MM-DD) so users can save a stable
-// commit-message template and have it interpolated at commit time.
-// Other tokens left as-is; future-extensible if we want {{count}} etc.
-function expandCommitMessage(raw: string): string {
-  const today = new Date().toISOString().slice(0, 10)
-  return raw.replace(/\{\{date\}\}/g, today)
 }
 
 export const GitHubView = () => {
@@ -92,7 +85,7 @@ export const GitHubView = () => {
   const storeSyncing = useGitHubStore(s => s.isSyncing)
   // Default commit-message template — vault-synced via settingsStore.
   // Users edit it in Settings → GitHub sync. Supports {{date}} →
-  // today's YYYY-MM-DD via `expandCommitMessage` below.
+  // today's YYYY-MM-DD via `expandCommitMessage` (utils/commitMessage).
   const defaultCommitMessage = useSettingsStore(s => s.defaultCommitMessage)
 
   const [commitMsg, setCommitMsg] = useState('')
@@ -101,9 +94,11 @@ export const GitHubView = () => {
   // Seed the input with the configured template on mount + whenever
   // the template changes (e.g. user edited it in Settings while this
   // view was mounted but unused). Only seeds when the input is empty
-  // so we don't clobber an in-progress draft.
+  // so we don't clobber an in-progress draft. The template is expanded
+  // BEFORE display so the box shows the real date, never a literal
+  // `{{date}}` (#176).
   useEffect(() => {
-    if (!commitMsg) setCommitMsg(defaultCommitMessage)
+    if (!commitMsg) setCommitMsg(expandCommitMessage(defaultCommitMessage))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultCommitMessage])
 
@@ -126,6 +121,8 @@ export const GitHubView = () => {
   const isSyncing = syncState.kind === 'running' || storeSyncing
 
   const onSyncClick = () => {
+    // Expanded again at commit time so a {{date}} the user typed by hand
+    // (or a seeded box left open across midnight) still resolves.
     const msg = expandCommitMessage(commitMsg.trim())
     runSync(msg || undefined)
     setCommitMsg('')

@@ -175,6 +175,12 @@ export interface StoredAttachment {
   mime: string
   originalName: string
   createdAt: number
+  // do-not-sync (#179): an app-local attachment that must NEVER be pushed to
+  // the user's vault repo (e.g. the seeded feature-tour demo screenshots).
+  // The push path skips flagged records entirely — no blob upload, no tree
+  // entry. `undefined` means "syncs normally" (back-compat for all records
+  // stored before this field existed).
+  doNotSync?: boolean
 }
 
 function pad(n: number): string {
@@ -447,6 +453,34 @@ export async function listAttachmentMeta(): Promise<AttachmentMeta[]> {
   return out
 }
 
+// do-not-sync (#179): read a stored attachment's doNotSync flag. The push
+// path calls this per local attachment to skip flagged records before any
+// hashing/upload work. Bounded like the other sync-time readers — a stalled
+// IDB degrades to `false`, which is safe because the subsequent
+// getAttachmentGitSha read for the same path degrades to null and the push
+// loop skips the file anyway.
+export function getAttachmentDoNotSync(path: string): Promise<boolean> {
+  return withTimeout(
+    get<StoredAttachment>(PREFIX + path).then(record => record?.doNotSync === true),
+    IDB_TIMEOUT_MS,
+    false,
+  )
+}
+
+// do-not-sync (#179): set/clear the doNotSync flag on an EXISTING stored
+// attachment. No-op when the path is unknown or the flag already matches.
+// Used by the feature-tour seeder's healing pass and the one-time boot
+// migration that retro-flags legacy tour screenshots.
+export async function setAttachmentDoNotSync(path: string, value: boolean): Promise<void> {
+  const record = await get<StoredAttachment>(PREFIX + path)
+  if (!record) return
+  if ((record.doNotSync === true) === value) return
+  const next: StoredAttachment = { ...record }
+  if (value) next.doNotSync = true
+  else delete next.doNotSync
+  await set(PREFIX + path, next)
+}
+
 // Compute the git blob SHA for a stored attachment, so the sync layer can
 // decide whether to upload it. Returns null if the path is unknown.
 export function getAttachmentGitSha(path: string): Promise<string | null> {
@@ -465,17 +499,26 @@ async function getAttachmentGitShaUnbounded(path: string): Promise<string | null
 
 // Save a blob at a specific path (vs. saveAttachment which mints a fresh
 // timestamped path). Used by sync apply when pulling remote attachments —
-// the path is dictated by the remote tree, not the wall clock.
+// the path is dictated by the remote tree, not the wall clock — and by the
+// feature-tour seeder (which passes `doNotSync: true` so demo screenshots
+// never push to the user's real vault repo, #179).
 export async function putAttachmentAtPath(
   path: string,
   blob: Blob,
   originalName: string = path.split('/').pop() ?? path,
+  options?: { doNotSync?: boolean },
 ): Promise<void> {
+  // Preserve an existing record's doNotSync flag on overwrite (sync apply
+  // re-writes a drifted attachment through this path and must not silently
+  // strip the flag) unless the caller states it explicitly.
+  const existing = await get<StoredAttachment>(PREFIX + path)
+  const doNotSync = options?.doNotSync ?? existing?.doNotSync
   const record: StoredAttachment = {
     blob,
     mime: blob.type || 'application/octet-stream',
     originalName,
     createdAt: Date.now(),
+    ...(doNotSync ? { doNotSync: true } : {}),
   }
   await set(PREFIX + path, record)
   indexPath(path)

@@ -9,6 +9,7 @@ import {
   DEFAULT_TARGET_REPO,
   type BugReportForm,
 } from '@/utils/bugReport'
+import { withTokenRefresh } from '@/utils/tokenRefresh'
 
 type Status =
   | { kind: 'idle' }
@@ -48,7 +49,9 @@ export const BugReportModal = () => {
     }
     setStatus({ kind: 'submitting' })
     try {
-      const { url } = await createGitHubIssue(form, token)
+      // withTokenRefresh: an expired OAuth token auto-renews instead of the
+      // submit dying on a 401 (same orchestration as the sync pull/push).
+      const { url } = await withTokenRefresh(tok => createGitHubIssue(form, tok))
       setStatus({ kind: 'ok', url })
     } catch (err) {
       setStatus({

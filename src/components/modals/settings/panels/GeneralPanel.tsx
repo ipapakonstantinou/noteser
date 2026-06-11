@@ -105,49 +105,62 @@ export function GeneralPanel() {
           onChange={setShowHiddenFolders}
         />
       </Field>
-      <Field
-        label="Delete behaviour"
-        description="What happens when you delete a note. Trash keeps it recoverable via the Trash view. No trash deletes immediately."
-      >
-        <SettingsSelect<TrashMode>
-          value={trashMode}
-          onChange={setTrashMode}
-          options={[
-            { value: 'trash', label: 'Move to trash (recoverable)' },
-            { value: 'hardDelete', label: 'Delete immediately (no trash)' },
-          ]}
-        />
-      </Field>
-      <Field
-        label="Trash folder"
-        description="Display name for the trash row in the sidebar. Renaming is cosmetic — trashed notes stay trashed and recoverable across the rename. Defaults to `.trash`."
-      >
-        <SettingsTextInput
-          value={trashFolderName}
-          onCommit={setTrashFolderName}
-          normalize={(raw) => sanitizeFilename(raw) || '.trash'}
-          placeholder=".trash"
-          mono
-        />
-      </Field>
-      <Field
-        label="Confirm before moving notes to trash"
-        description="When off, deleting a note skips the confirmation and moves it straight to trash. Only applies in `Move to trash` mode — immediate-delete still confirms because it can't be undone."
-      >
-        <SettingsCheckbox
-          checked={confirmBeforeTrash}
-          onChange={setConfirmBeforeTrash}
-        />
-      </Field>
-      <Field
-        label="Confirm before bulk delete"
-        description="Show a confirm dialog when deleting multiple notes via the sidebar's multi-select (Ctrl/Cmd+Click). Turn off if you trust your aim."
-      >
-        <SettingsCheckbox
-          checked={confirmBulkDelete}
-          onChange={setConfirmBulkDelete}
-        />
-      </Field>
+      {/* Trash (#178). Groups the delete-behaviour toggle with the trash
+          folder name + the two confirm toggles so "what happens when I
+          delete?" is answered in one place. Both `trashMode` and
+          `trashFolderName` are vault-synced (VAULT_SETTING_KEYS), so the
+          SETTINGS round-trip across devices via the vault settings file.
+          The trash folder itself is local-only — see the note on
+          `trashFolderName` in settingsStore.ts. */}
+      <div className="pt-3 mt-3 border-t border-obsidianBorder space-y-3" data-testid="settings-trash-section">
+        <div className="text-xs uppercase tracking-wide text-obsidianSecondaryText">
+          Trash
+        </div>
+        <Field
+          label="Delete behaviour"
+          description="What happens when you delete a note. Trash keeps it recoverable via the Trash view. No trash deletes immediately."
+        >
+          <SettingsSelect<TrashMode>
+            value={trashMode}
+            onChange={setTrashMode}
+            options={[
+              { value: 'trash', label: 'Move to trash (recoverable)' },
+              { value: 'hardDelete', label: 'Delete immediately (no trash)' },
+            ]}
+            data-testid="settings-trash-mode"
+          />
+        </Field>
+        <Field
+          label="Trash folder"
+          description="Display name for the trash row in the sidebar. Renaming is cosmetic — trashed notes stay trashed and recoverable across the rename, and the name syncs to your other devices. The trash never appears in your sync repo (trashed notes are removed from the remote on push). Defaults to `.trash`."
+        >
+          <SettingsTextInput
+            value={trashFolderName}
+            onCommit={setTrashFolderName}
+            normalize={(raw) => sanitizeFilename(raw) || '.trash'}
+            placeholder=".trash"
+            mono
+          />
+        </Field>
+        <Field
+          label="Confirm before moving notes to trash"
+          description="When off, deleting a note skips the confirmation and moves it straight to trash. Only applies in `Move to trash` mode — immediate-delete still confirms because it can't be undone."
+        >
+          <SettingsCheckbox
+            checked={confirmBeforeTrash}
+            onChange={setConfirmBeforeTrash}
+          />
+        </Field>
+        <Field
+          label="Confirm before bulk delete"
+          description="Show a confirm dialog when deleting multiple notes via the sidebar's multi-select (Ctrl/Cmd+Click). Turn off if you trust your aim."
+        >
+          <SettingsCheckbox
+            checked={confirmBulkDelete}
+            onChange={setConfirmBulkDelete}
+          />
+        </Field>
+      </div>
 
       {/* Share defaults (shr2). Both fields piggy-back on the General
           panel because they're tiny — a dedicated "Sharing" category

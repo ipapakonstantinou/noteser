@@ -14,6 +14,11 @@
  * The component is presentational — it emits (above, below) pairs via
  * onResize and never touches a store — so these tests assert on the
  * callback arguments directly.
+ *
+ * #177 adds touch parity: the same drag must work with a finger because
+ * the sidebar stack also renders inside the mobile drawer. The touch
+ * suite mirrors the mouse one (touchstart on the handle, window-level
+ * touchmove/touchend) so the two input paths can't drift apart.
  */
 
 import React from 'react'
@@ -100,6 +105,58 @@ describe('GroupResizeHandle — mouse drag', () => {
     const callsAfterRelease = onResize.mock.calls.length
     fireEvent.mouseMove(window, { clientY: 400 })
     expect(onResize.mock.calls.length).toBe(callsAfterRelease)
+  })
+})
+
+describe('GroupResizeHandle — touch drag (#177)', () => {
+  test('touch-dragging down grows the group above and shrinks the one below', () => {
+    const { onResize } = renderHandle()
+    const handle = getHandle()
+
+    fireEvent.touchStart(handle, { touches: [{ clientY: 100 }] })
+    fireEvent.touchMove(window, { touches: [{ clientY: 160 }] }) // +60px down
+    expect(onResize).toHaveBeenLastCalledWith(ABOVE + 60, BELOW - 60)
+
+    fireEvent.touchEnd(window)
+  })
+
+  test('touch-dragging far up clamps the upper group at the minimum', () => {
+    const { onResize } = renderHandle()
+    const handle = getHandle()
+
+    fireEvent.touchStart(handle, { touches: [{ clientY: 100 }] })
+    fireEvent.touchMove(window, { touches: [{ clientY: -9999 }] })
+    expect(onResize).toHaveBeenLastCalledWith(MIN_GROUP_HEIGHT, TOTAL - MIN_GROUP_HEIGHT)
+    fireEvent.touchEnd(window)
+  })
+
+  test('touch move after touchend does not keep resizing', () => {
+    const { onResize } = renderHandle()
+    const handle = getHandle()
+
+    fireEvent.touchStart(handle, { touches: [{ clientY: 100 }] })
+    fireEvent.touchMove(window, { touches: [{ clientY: 130 }] })
+    fireEvent.touchEnd(window)
+    const callsAfterRelease = onResize.mock.calls.length
+    fireEvent.touchMove(window, { touches: [{ clientY: 300 }] })
+    expect(onResize.mock.calls.length).toBe(callsAfterRelease)
+  })
+
+  test('touchcancel ends the drag like touchend', () => {
+    const { onResize } = renderHandle()
+    const handle = getHandle()
+
+    fireEvent.touchStart(handle, { touches: [{ clientY: 100 }] })
+    fireEvent.touchCancel(window)
+    fireEvent.touchMove(window, { touches: [{ clientY: 300 }] })
+    expect(onResize).not.toHaveBeenCalled()
+  })
+
+  test('the handle opts out of browser touch scrolling (touch-action none)', () => {
+    renderHandle()
+    // Tailwind `touch-none` → touch-action: none. Without it the browser
+    // would claim the vertical gesture for scrolling the stack.
+    expect(getHandle().className).toContain('touch-none')
   })
 })
 

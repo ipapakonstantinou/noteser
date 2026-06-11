@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-require-imports */
 // Runner for the live GitHub-sync E2E harness (src/__tests__/e2eSyncLive.test.ts).
 //
 // Loads the test token from ~/.config/noteser/test-token.env into the

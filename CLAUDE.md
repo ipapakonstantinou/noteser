@@ -7,7 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 npm run dev          # Start dev server on http://localhost:3001
 npm run build        # Production build
-npm run lint         # ESLint via Next.js
+npm run lint         # ESLint CLI (eslint .) — `next lint` is deprecated/removed in Next 16
+npm run lint:fix     # ESLint with --fix
 npm run typecheck    # TypeScript type checking (tsc --noEmit)
 npm run prettier     # Format all files
 npm test             # Run Jest tests

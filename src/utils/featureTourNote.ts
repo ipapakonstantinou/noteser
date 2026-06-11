@@ -26,31 +26,26 @@
 
 import { useNoteStore } from '@/stores/noteStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { putAttachmentAtPath, getAttachmentBlob } from '@/utils/attachments'
+import {
+  putAttachmentAtPath,
+  getAttachmentBlob,
+  setAttachmentDoNotSync,
+  listAttachmentPaths,
+} from '@/utils/attachments'
 import { attachmentsFolder } from '@/utils/systemFolder'
+import {
+  FEATURE_TOUR_TITLE,
+  TUTORIAL_ASSETS_SUBDIR,
+  TUTORIAL_IMAGES,
+  isTourAssetPath,
+} from '@/utils/featureTourMarkers'
+import { STORAGE_KEYS } from '@/utils/storageKeys'
 import type { Note } from '@/types'
 
-export const FEATURE_TOUR_TITLE = 'Feature tour'
-
-// Subdirectory under the user's current attachments folder where tour
-// screenshots live. Keeps tutorial assets cordoned off from the user's
-// own attachments so they don't clutter the Files browser.
-export const TUTORIAL_ASSETS_SUBDIR = 'feature-tour'
-
-// Bundled screenshot filenames — matched 1:1 with PNGs in
-// `public/feature-tour/`. Re-captures can drop in here without
-// renaming since the body builder references them by these names.
-export const TUTORIAL_IMAGES = [
-  '00-welcome.png',
-  '01-editor-hero.png',
-  '02-live-preview.png',
-  '03-sidebar-pane-model.png',
-  '04-quick-switcher.png',
-  '05-templates-modal.png',
-  '06-export-modal-pdf.png',
-  '07-theme-editor.png',
-  '08-sync-settings.png',
-] as const
+// Constants live in featureTourMarkers.ts (dependency-free, so the noteStore
+// v4 migration can use them without an import cycle). Re-exported here to
+// preserve the long-standing public surface of this module.
+export { FEATURE_TOUR_TITLE, TUTORIAL_ASSETS_SUBDIR, TUTORIAL_IMAGES }
 
 // Compute the attachment path for a given filename, using the user's
 // CURRENT attachments folder setting (default `Files`). Exposed so
@@ -245,12 +240,19 @@ the top of your file list.
 async function seedTutorialImage(filename: string): Promise<void> {
   const path = tourAssetPath(filename)
   const existing = await getAttachmentBlob(path)
-  if (existing) return
+  if (existing) {
+    // Healing for legacy seeds (#179): records stored before the doNotSync
+    // flag existed must pick it up so they stop pushing to the vault repo.
+    await setAttachmentDoNotSync(path, true)
+    return
+  }
   try {
     const res = await fetch(`/feature-tour/${filename}`)
     if (!res.ok) return
     const blob = await res.blob()
-    await putAttachmentAtPath(path, blob, filename)
+    // doNotSync (#179): demo screenshots are app-local — they must never be
+    // pushed into the user's real vault repo.
+    await putAttachmentAtPath(path, blob, filename, { doNotSync: true })
   } catch {
     // Best-effort — if the fetch fails, the note still opens. Missing
     // images render as "Missing attachment" via AttachmentImage.
@@ -300,10 +302,13 @@ export async function seedFeatureTourNote(): Promise<string> {
     const updateNote = useNoteStore.getState().updateNote
     const deleteNote = useNoteStore.getState().deleteNote
 
-    // Heal canonical: ensure at root + canonical content.
+    // Heal canonical: ensure at root + canonical content + sync opt-out.
     const patch: Partial<Note> = {}
     if (canonical.folderId !== null) patch.folderId = null
     if (canonical.content !== body) patch.content = body
+    // doNotSync (#179): legacy seeds predate the flag — heal it on so the
+    // tour note stops being pushed into the user's real vault repo.
+    if (canonical.doNotSync !== true) patch.doNotSync = true
     if (Object.keys(patch).length > 0) updateNote(canonical.id, patch)
 
     // Soft-delete duplicates.
@@ -315,12 +320,51 @@ export async function seedFeatureTourNote(): Promise<string> {
     return canonical.id
   }
 
-  // 3. Fresh user — create at root.
+  // 3. Fresh user — create at root. doNotSync (#179): the tour note is
+  // app-local demo content and must never sync to the user's vault repo.
   const created = noteState.addNote({
     title: FEATURE_TOUR_TITLE,
     folderId: null,
     content: body,
+    doNotSync: true,
   })
   openNote(created.id, { preview: false })
   return created.id
+}
+
+/**
+ * One-time boot migration (#179): retro-flag tour screenshots that a LEGACY
+ * seed stored before the doNotSync flag existed, so they stop being pushed
+ * into the user's real vault repo on the next sync.
+ *
+ * Detection is deliberately narrow — exact bundled filenames whose immediate
+ * parent directory is `feature-tour/` (see isTourAssetPath). This path match
+ * is ONLY a migration heuristic over local IDB records; the push path itself
+ * never excludes by path, it honours the per-record flag.
+ *
+ * Does NOT touch the remote: a legacy user whose vault repo already holds
+ * the images keeps them until they delete them manually — we never
+ * auto-delete remote files.
+ *
+ * Guarded by a localStorage key written only on success, so a failed/stalled
+ * IDB pass retries on the next boot. Best-effort by design: a failure here
+ * must never block app startup.
+ */
+export async function flagLegacyTourAttachments(): Promise<void> {
+  try {
+    if (typeof window === 'undefined') return
+    if (localStorage.getItem(STORAGE_KEYS.tourAttachmentsFlagged) === '1') return
+  } catch {
+    return
+  }
+  try {
+    const paths = await listAttachmentPaths()
+    for (const path of paths) {
+      if (isTourAssetPath(path)) await setAttachmentDoNotSync(path, true)
+    }
+    localStorage.setItem(STORAGE_KEYS.tourAttachmentsFlagged, '1')
+  } catch {
+    // Best-effort — the guard key is only written on success, so the next
+    // boot retries.
+  }
 }

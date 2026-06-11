@@ -65,6 +65,7 @@ const mockCreateTree = jest.fn()
 const mockCreateCommit = jest.fn()
 const mockUpdateBranchRef = jest.fn()
 const mockCreateBlob = jest.fn()
+const mockRefreshAccessToken = jest.fn()
 
 jest.mock('../utils/github', () => {
   const actual = jest.requireActual('../utils/github')
@@ -78,6 +79,7 @@ jest.mock('../utils/github', () => {
     createCommit:     (...a: unknown[]) => mockCreateCommit(...a),
     updateBranchRef:  (...a: unknown[]) => mockUpdateBranchRef(...a),
     createBlob:       (...a: unknown[]) => mockCreateBlob(...a),
+    refreshAccessToken: (...a: unknown[]) => mockRefreshAccessToken(...a),
     // gitBlobSha + gitBlobShaBytes + getBlobBytes come through REAL via spread.
   }
 })
@@ -86,6 +88,8 @@ import { pullFromGitHub, syncToGitHub, serializeNote } from '../utils/githubSync
 import { gitBlobSha as realGitBlobSha } from '../utils/github'
 import { applyNonConflicts } from '../utils/syncApply'
 import { fillShellsInBackground, ensureNoteBodyLoaded, _resetFillInFlight } from '../utils/backgroundFill'
+import { GitHubAPIError } from '../utils/github'
+import { _resetInFlightRefresh } from '../utils/tokenRefresh'
 import { initializeSearch, searchNotes } from '../utils/search'
 import { collectAllTags } from '../utils/tags'
 import { useNoteStore } from '../stores/noteStore'
@@ -117,11 +121,17 @@ function note(input: Partial<Note> & { id: string; title: string }): Note {
 beforeEach(async () => {
   jest.clearAllMocks()
   _resetFillInFlight()
+  _resetInFlightRefresh()
   mockGetBranchRefSha.mockResolvedValue('headsha')
   mockGetCommitTreeSha.mockResolvedValue('treesha')
-  // Reset stores to empty between tests.
+  // Reset stores to empty between tests. Refresh fields are explicitly
+  // nulled so the default session reads as non-expiring (PAT-style) and the
+  // token-refresh layer passes 'tok' through verbatim.
   useNoteStore.setState({ notes: [], selectedNoteId: null })
-  useGitHubStore.setState({ token: 'tok', syncRepo: REPO } as Partial<ReturnType<typeof useGitHubStore.getState>>)
+  useGitHubStore.setState({
+    token: 'tok', syncRepo: REPO,
+    accessTokenExpiresAt: null, refreshToken: null, refreshTokenExpiresAt: null,
+  } as Partial<ReturnType<typeof useGitHubStore.getState>>)
   const { useSettingsStore } = await import('../stores/settingsStore')
   useSettingsStore.setState({ localGitignoreOverlay: '' })
 })
@@ -273,6 +283,70 @@ describe('background fill patches content + canonical SHA + contentLoaded', () =
     })
     await fillShellsInBackground()
     expect(mockGetBlobContent).not.toHaveBeenCalled()
+  })
+
+  test('a 401 on the blob read refreshes the token once and retries (fill no longer strands shells)', async () => {
+    // Expiring-token session with comfortable headroom, so the FIRST attempt
+    // uses the stored token and only the reactive 401 path triggers a refresh.
+    useGitHubStore.setState({
+      token: 'gho_stale', syncRepo: REPO,
+      accessTokenExpiresAt: Date.now() + 60 * 60 * 1000,
+      refreshToken: 'ghr_refresh',
+      refreshTokenExpiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    } as Partial<ReturnType<typeof useGitHubStore.getState>>)
+    mockRefreshAccessToken.mockResolvedValue({
+      accessToken: 'gho_rotated',
+      accessTokenExpiresAt: Date.now() + 8 * 60 * 60 * 1000,
+      refreshToken: 'ghr_rotated',
+      refreshTokenExpiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    })
+    mockGetBlobContent
+      .mockImplementationOnce(async () => {
+        throw new GitHubAPIError(401, 'Read blob', 'Bad credentials', null, null)
+      })
+      .mockResolvedValue('Recovered body\n')
+
+    const REMOTE_SHA = '1'.repeat(40)
+    useNoteStore.setState({
+      notes: [note({
+        id: 's401', title: 'Stale', gitPath: 'Stale.md',
+        content: '', contentLoaded: false,
+        gitLastPushedSha: REMOTE_SHA, gitRemoteBaseSha: REMOTE_SHA,
+      })],
+      selectedNoteId: null,
+    })
+
+    await fillShellsInBackground()
+
+    const n = useNoteStore.getState().notes[0]
+    expect(n.contentLoaded).toBe(true)
+    expect(n.content).toBe('Recovered body\n')
+    // Exactly one refresh; the retry used the rotated token.
+    expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1)
+    expect(mockGetBlobContent).toHaveBeenLastCalledWith('gho_rotated', REPO.owner, REPO.name, REMOTE_SHA)
+  })
+
+  test('renewal exhaustion leaves the shell unloaded (silent retry-later, no throw)', async () => {
+    // Non-refreshable (PAT-style) session whose blob reads 401 — the fill
+    // must swallow the ReconnectRequiredError and leave the shell intact.
+    mockGetBlobContent.mockImplementation(async () => {
+      throw new GitHubAPIError(401, 'Read blob', 'Bad credentials', null, null)
+    })
+    const REMOTE_SHA = '2'.repeat(40)
+    useNoteStore.setState({
+      notes: [note({
+        id: 'spat', title: 'Pat', gitPath: 'Pat.md',
+        content: '', contentLoaded: false,
+        gitLastPushedSha: REMOTE_SHA, gitRemoteBaseSha: REMOTE_SHA,
+      })],
+      selectedNoteId: null,
+    })
+
+    await expect(fillShellsInBackground()).resolves.toBeUndefined()
+
+    const n = useNoteStore.getState().notes[0]
+    expect(n.contentLoaded).toBe(false) // still a shell — retried later
+    expect(mockRefreshAccessToken).not.toHaveBeenCalled()
   })
 })
 

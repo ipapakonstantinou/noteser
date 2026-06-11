@@ -152,6 +152,14 @@ describe('isAuthError', () => {
     expect(isAuthError(new Error('boom'))).toBe(false)
     expect(isAuthError(new GitHubAPIError(404, 'op', 'Not found', null, null))).toBe(false)
   })
+
+  test('recognises plain-Error 401 shapes from non-typed surfaces (bug reporter)', () => {
+    // bugReport.createGitHubIssue throws a bare Error('GitHub API 401: …') —
+    // the message-based detection is what lets withTokenRefresh wrap that
+    // surface without converting it to GitHubAPIError.
+    expect(isAuthError(new Error('GitHub API 401: Bad credentials'))).toBe(true)
+    expect(isAuthError(new Error('GitHub API 422: Validation failed'))).toBe(false)
+  })
 })
 
 describe('withTokenRefresh — reactive', () => {
@@ -225,5 +233,28 @@ describe('withTokenRefresh — reactive', () => {
       withTokenRefresh(async () => { throw new GitHubAPIError(422, 'Update ref', 'not a fast forward', null, null) }),
     ).rejects.toMatchObject({ status: 422 })
     expect(refreshAccessTokenMock).not.toHaveBeenCalled()
+  })
+
+  test('a plain-Error 401 (bug-report surface shape) also refreshes and retries', async () => {
+    setExpiringSession({ accessExpiresInMs: REFRESH_SKEW_MS + 60_000 })
+    refreshAccessTokenMock.mockResolvedValue({
+      accessToken: 'gho_rotated',
+      accessTokenExpiresAt: Date.now() + 8 * 60 * 60 * 1000,
+      refreshToken: 'ghr_rotated',
+      refreshTokenExpiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    })
+
+    let calls = 0
+    const out = await withTokenRefresh(async (tok) => {
+      calls += 1
+      // First attempt fails the way bugReport.createGitHubIssue fails: a bare
+      // Error whose message carries the status, not a GitHubAPIError.
+      if (calls === 1) throw new Error('GitHub API 401: Bad credentials')
+      return `issue-filed-with:${tok}`
+    })
+
+    expect(calls).toBe(2)
+    expect(refreshAccessTokenMock).toHaveBeenCalledTimes(1)
+    expect(out).toBe('issue-filed-with:gho_rotated')
   })
 })

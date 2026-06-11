@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { ContextMenuState, ModalState } from '@/types'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
+import { localStorageJSON } from '@/utils/persistStorage'
 
 // Sidebar layout (leaf model, 2026-06-04):
 //
@@ -350,6 +351,10 @@ export const useUIStore = create<UIState>()(
     }),
     {
       name: STORAGE_KEYS.ui,
+      // Explicit default-equivalent storage with a non-browser fallback —
+      // keeps SSR / node-env Jest suites free of "storage is currently
+      // unavailable" persist warnings (issue #131).
+      storage: localStorageJSON,
       version: 1,
       partialize: (state) => ({
         sidebarCollapsed: state.sidebarCollapsed,

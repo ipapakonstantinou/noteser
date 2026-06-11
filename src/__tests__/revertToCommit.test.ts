@@ -6,12 +6,7 @@
  * revert-to-commit feature — the modal is a thin wrapper around it.
  */
 
-jest.mock('idb-keyval', () => ({
-  get: jest.fn().mockResolvedValue(undefined),
-  set: jest.fn().mockResolvedValue(undefined),
-  del: jest.fn().mockResolvedValue(undefined),
-  keys: jest.fn().mockResolvedValue([]),
-}))
+jest.mock('idb-keyval', () => require('../testUtils/idbKeyvalMock').idbKeyvalMock)
 
 // Stub the github helpers so the util's network calls are deterministic.
 // refreshAccessToken is mocked too so the token-refresh wrapper around the
@@ -31,6 +26,7 @@ jest.mock('../utils/github', () => {
   }
 })
 
+import { resetIdbKeyvalMock } from '../testUtils/idbKeyvalMock'
 import { revertToCommit } from '../utils/revertToCommit'
 import { useNoteStore } from '../stores/noteStore'
 import { useGitHubStore, type GitHubTokenSet } from '../stores/githubStore'
@@ -59,6 +55,7 @@ function makeNote(overrides: Partial<Note> = {}): Note {
 }
 
 beforeEach(() => {
+  resetIdbKeyvalMock()
   useNoteStore.setState({ notes: [], selectedNoteId: null })
   mockGetCommitTreeSha.mockReset()
   mockGetTreeMap.mockReset()
@@ -257,6 +254,49 @@ describe('revertToCommit — parallel blob fetch', () => {
     expect(progress.every(([, total]) => total === 3)).toBe(true)
     expect(progress[0]).toEqual([0, 3])
     expect(progress[progress.length - 1]).toEqual([3, 3])
+  })
+
+  it('keeps the path→content mapping and monotonic progress when blobs finish OUT OF ORDER', async () => {
+    // 12 files whose fetches complete in a scrambled order (jittered delays).
+    // Locks in two contracts the modal relies on:
+    //   - mapWithConcurrency preserves INPUT order, so every note still gets
+    //     the content of ITS blob, not whichever finished at that slot;
+    //   - onBlobProgress(fetched, total) only ever counts upward, exactly one
+    //     callback per blob plus the initial (0, total).
+    const N = 12
+    const tree = new Map<string, string>()
+    for (let i = 0; i < N; i++) tree.set(`notes/n${i}.md`, `blob-${i}`)
+    mockGetCommitTreeSha.mockResolvedValue('tree-abc')
+    mockGetTreeMap.mockResolvedValue(tree)
+    mockGetBlobContent.mockImplementation(async (_t, _o, _r, sha: string) => {
+      // Earlier blobs wait longer → completion order is roughly reversed.
+      const i = parseInt(sha.slice('blob-'.length), 10)
+      await new Promise((r) => setTimeout(r, (N - i) * 2))
+      return `body-for-${sha}`
+    })
+
+    const progress: Array<[number, number]> = []
+    const result = await revertToCommit({
+      token: 't', owner: 'o', repo: 'r', commitSha: 'commit-x',
+      onBlobProgress: (fetched, total) => progress.push([fetched, total]),
+    })
+
+    expect(result.created).toBe(N)
+    const notes = useNoteStore.getState().notes
+    for (let i = 0; i < N; i++) {
+      const n = notes.find((x) => x.gitPath === `notes/n${i}.md`)!
+      expect(n.content).toBe(`body-for-blob-${i}`)
+    }
+
+    // Exactly one initial (0, N) + one callback per fetched blob.
+    expect(progress).toHaveLength(N + 1)
+    expect(progress[0]).toEqual([0, N])
+    expect(progress[progress.length - 1]).toEqual([N, N])
+    // Monotonic: fetched never decreases, total never changes.
+    for (let i = 1; i < progress.length; i++) {
+      expect(progress[i][0]).toBeGreaterThanOrEqual(progress[i - 1][0])
+      expect(progress[i][1]).toBe(N)
+    }
   })
 
   it('surfaces a mid-batch blob failure cleanly (rejects, does not partially apply)', async () => {

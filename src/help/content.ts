@@ -108,7 +108,7 @@ to the GitHub Git Data API directly from the browser.
 - Type a commit message (or leave blank to use the default \`Sync from Noteser ({{date}})\` template).
 - Click **Commit & Sync**. \`Ctrl+Enter\` in the message box does the same thing.
 
-The default commit message is configurable in **Settings → GitHub sync → Default commit message**. The \`{{date}}\` token substitutes to today's YYYY-MM-DD at commit time.
+The default commit message is configurable in **Settings → GitHub sync → Default commit message**. The \`{{date}}\` token substitutes to today's YYYY-MM-DD (same format as daily-note titles) — the commit box shows the resolved date, never the literal placeholder.
 
 ## Conflicts
 

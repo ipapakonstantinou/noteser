@@ -25,6 +25,7 @@ import {
   listAttachmentPaths,
   getAttachmentBlob,
   getAttachmentGitSha,
+  getAttachmentDoNotSync,
   getAttachmentTombstones,
   clearAttachmentTombstones,
 } from '../attachments'
@@ -159,7 +160,16 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   // overwrite the real remote file with empty bytes. Same dropping pattern
   // as shells: out of `activeNotes` keeps them out of BOTH `desired` and the
   // deletion loop in step 4.
-  const activeNotes = notes.filter(n => !n.isDeleted && n.contentLoaded !== false && n.kind !== 'foreign')
+  //
+  // do-not-sync (#179): ALSO exclude `doNotSync: true` notes (the seeded
+  // Feature tour). They are app-local content that must never be serialized
+  // into the push tree — no blob, no rename/delete propagation. Same dropping
+  // pattern as shells/foreign. We keep them in a separate list because their
+  // remote paths (legacy users may have pushed the note before the flag
+  // existed) still need delete-safety-net protection below.
+  const syncEligibleNotes = notes.filter(n => !n.isDeleted && n.contentLoaded !== false && n.kind !== 'foreign')
+  const doNotSyncNotes = syncEligibleNotes.filter(n => n.doNotSync === true)
+  const activeNotes = syncEligibleNotes.filter(n => n.doNotSync !== true)
   const desired = new Map<string, { content: string; note: Note }>()
   for (const note of activeNotes) {
     // preserve-gitpath-on-push: a synced note pushes to its EXISTING gitPath
@@ -388,6 +398,12 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   const attachmentPlan: AttachmentPlan[] = []
   for (const path of localAttachmentPaths) {
     if (pushMatcher.isIgnored(path)) continue
+    // do-not-sync (#179): app-local attachments (the seeded feature-tour
+    // screenshots) are flagged on their stored record and never enter the
+    // push plan — no hash, no upload, no tree entry. This is a per-record
+    // flag, NOT a path exclusion: a user's own folder that happens to be
+    // named `feature-tour/` syncs normally.
+    if (await getAttachmentDoNotSync(path)) continue
     const localSha = await getAttachmentGitSha(path)
     if (!localSha) continue
     const remoteSha = remoteTree.get(path)
@@ -487,10 +503,22 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   // tree, so we never pay for paths we wouldn't delete anyway).
   const protectedRemotePaths = new Set<string>(desiredPaths)
   {
+    // do-not-sync (#179): a flagged note never pushes, but a LEGACY user's
+    // remote may still hold its file (pushed before the flag existed). That
+    // path must be protected from deletion — e.g. the tour seeder soft-deletes
+    // duplicate tour notes, and a soft-deleted duplicate sharing the flagged
+    // live note's gitPath must not sha:null the file the live note maps to.
+    // Protect by stored path, by current computed path, and (below) by
+    // content/baseline SHA, exactly like live active notes.
+    for (const note of doNotSyncNotes) {
+      if (note.gitPath) protectedRemotePaths.add(note.gitPath)
+      protectedRemotePaths.add(pushPath(note, folders))
+    }
+    const liveProtectedNotes = [...activeNotes, ...doNotSyncNotes]
     // Map remote path → its blob SHA, but only for paths some live note could
     // be defending. We need a SHA→paths index to test content equality.
     const livePlainShaByNote = new Map<string, string>()
-    for (const note of activeNotes) {
+    for (const note of liveProtectedNotes) {
       const sha = await gitBlobSha(serializeNote(note))
       livePlainShaByNote.set(note.id, sha)
     }
@@ -498,7 +526,7 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     // Also count any baseline SHA a live note last pushed — a note whose body
     // hasn't been re-serialized identically (e.g. non-canonical remote) is
     // still defended by the SHA it was pushed as.
-    for (const note of activeNotes) {
+    for (const note of liveProtectedNotes) {
       if (note.gitLastPushedSha) liveShaSet.add(note.gitLastPushedSha)
     }
     for (const [path, remoteSha] of remoteTree) {
@@ -522,6 +550,11 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     // it must never push a delete to the remote even if the user (somehow)
     // soft-deletes the mirror locally. Just skip it; the real file stays put.
     if (note.kind === 'foreign') continue
+    // do-not-sync (#179): a flagged note never touches the remote, deletes
+    // included. Soft-deleting the seeded tour note locally must not emit a
+    // sha:null for a legacy user's remote copy — remote cleanup is manual.
+    // Skipping also leaves its git fields intact in case it is restored.
+    if (note.doNotSync) continue
     if (note.isDeleted && note.gitPath && remoteTree.has(note.gitPath)) {
       // Only delete if no active note has already moved into that path AND no
       // live note's content maps to it. The protectedRemotePaths check is the

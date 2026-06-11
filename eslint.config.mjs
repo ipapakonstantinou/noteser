@@ -5,8 +5,12 @@ import { FlatCompat } from '@eslint/eslintrc'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
+// eslint-config-next 15.x ships eslintrc-format presets only (the flat
+// subpath exports like `eslint-config-next/core-web-vitals` arrive in
+// Next 16), so the migration off the deprecated `next lint` keeps
+// FlatCompat and just runs the ESLint CLI directly (`eslint .`).
 const compat = new FlatCompat({
-  baseDirectory: __dirname
+  baseDirectory: __dirname,
 })
 
 // Raw-HTML / XSS sink bans. These mirror the static-source security
@@ -57,6 +61,20 @@ const xssSinkBans = {
 }
 
 const eslintConfig = [
+  // Global ignores. `next lint` only covered the source dirs; the ESLint
+  // CLI lints everything under `.`, so exclude build output and the
+  // static assets dir (public/plugins holds built/vendored plugin
+  // bundles, including minified third-party code).
+  {
+    ignores: [
+      'node_modules/**',
+      '.next/**',
+      'out/**',
+      'build/**',
+      'public/**',
+      'next-env.d.ts',
+    ],
+  },
   ...compat.extends('next/core-web-vitals'),
   xssSinkBans,
 ]

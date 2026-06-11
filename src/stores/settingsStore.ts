@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
+import { localStorageJSON } from '@/utils/persistStorage'
 
 export type FolderSortMode = 'alphabetical' | 'modified' | 'created' | 'manual'
 export type TaskListDensity = 'compact' | 'comfortable'
@@ -354,6 +355,19 @@ export interface SettingsState {
   // cosmetic — trashed notes reference the trash by its fixed synthetic id
   // (TRASH_FOLDER_ID), so renaming never loses anything. Defaults to
   // `.trash`.
+  //
+  // SYNC SEMANTICS (#178): the trash folder does NOT participate in the
+  // vault tree. Trashed notes are removed from the remote on push
+  // (syncPush emits a `sha: null` tree delete for their old gitPath), so
+  // no trash-folder path is ever derived from this value — push/pull path
+  // derivation never reads it, which is exactly why renaming is safe for
+  // existing vaults. The SETTING itself round-trips across devices via
+  // the vault settings file (it is in VAULT_SETTING_KEYS). A remote repo
+  // that already contains a real `.trash/` folder (e.g. an imported
+  // Obsidian vault) is pulled as an ordinary dot-folder, unaffected by
+  // this setting. If trashed notes ever start being PUSHED under a trash
+  // path instead of deleted, that code must read this field — do not
+  // hardcode `.trash`.
   trashFolderName: string
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────
@@ -946,6 +960,10 @@ export const useSettingsStore = create<SettingsState>()(
     },
     {
       name: STORAGE_KEYS.settings,
+      // Explicit default-equivalent storage with a non-browser fallback —
+      // keeps SSR / node-env Jest suites free of "storage is currently
+      // unavailable" persist warnings (issue #131).
+      storage: localStorageJSON,
       version: 3,
       // Migration ladder:
       //   v0→v1 (2026-05-20): pinnedPanels used to default to

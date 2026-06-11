@@ -28,12 +28,7 @@
  */
 
 // ── idb-keyval mock (Zustand persist + attachments) ─────────────────────────
-jest.mock('idb-keyval', () => ({
-  get: jest.fn().mockResolvedValue(undefined),
-  set: jest.fn().mockResolvedValue(undefined),
-  del: jest.fn().mockResolvedValue(undefined),
-  keys: jest.fn().mockResolvedValue([]),
-}))
+jest.mock('idb-keyval', () => require('../testUtils/idbKeyvalMock').idbKeyvalMock)
 
 // ── attachments util mock — putAttachmentAtPath observable ──────────────────
 const mockPutAttachmentAtPath = jest.fn().mockResolvedValue(undefined)
@@ -67,6 +62,7 @@ jest.mock('../utils/github', () => {
   }
 })
 
+import { resetIdbKeyvalMock } from '../testUtils/idbKeyvalMock'
 import {
   applyNonConflicts,
   applyMergedConflict,
@@ -113,14 +109,14 @@ function seedNote(input: Partial<Note> & { id: string; title: string }): Note {
 
 beforeEach(async () => {
   jest.clearAllMocks()
+  resetIdbKeyvalMock()
   mockGetBranchRefSha.mockResolvedValue('headsha')
   mockGetCommitTreeSha.mockResolvedValue('treesha')
   // Fresh stores each test.
   useNoteStore.setState({ notes: [], selectedNoteId: null })
   useFolderStore.setState({ folders: [], activeFolderId: null, expandedFolders: {}, deletedFolderPaths: [] })
-  // Reset just the settings the apply layer reads — use setState (not the
-  // store's reset()) to avoid a noisy "storage unavailable" persist warning
-  // in the node test env.
+  // Reset just the settings the apply layer reads — setState per the
+  // store-isolation house style (docs/testing.md).
   useSettingsStore.setState({
     localGitignoreOverlay: '',
     folderSortMode: 'alphabetical',

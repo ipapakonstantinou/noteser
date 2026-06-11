@@ -412,6 +412,18 @@ const obsidianTheme = EditorView.theme({
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
     backgroundColor: 'var(--obsidian-selection, #2b5a9b)',
   },
+  // Selection FOREGROUND (2026-06-10). drawSelection() hides only the native
+  // selection's background-color (`.cm-line ::selection { background-color:
+  // transparent !important }` in @codemirror/view) — the ::selection `color`
+  // still applies. Without it, accent-coloured glyphs (task `[x]` brackets,
+  // list markers, #tags, links — all hsl(217,88%,50%)) sat at ~1.4:1 against
+  // the blue selection layer and read as invisible ("selected text goes
+  // invisible", bug #38). Recolour selected glyphs to the standard editor
+  // text colour, which every preset guarantees ≥ 4.5:1 against the selection
+  // (themeSelectionContrast.test.ts).
+  '.cm-line::selection, .cm-line ::selection': {
+    color: 'var(--obsidian-text, #dadada)',
+  },
   '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,0.025)' },
   // No display:none on .cm-gutters — basicSetup disables line-numbers
   // and fold-gutter (see <CodeMirror basicSetup={...} />), so the only
@@ -744,7 +756,7 @@ export function CodeMirrorEditor({
     hangingIndentExtension,
     // Explicit drawSelection() so the .cm-selectionBackground layer is
     // guaranteed to render regardless of basicSetup defaults. We already paint
-    // that layer with var(--obsidian-highlight) (see obsidianTheme above), and
+    // that layer with var(--obsidian-selection) (see obsidianTheme above), and
     // globals.css carries a `::selection` fallback for the native path —
     // belt-and-suspenders so a future @uiw basicSetup change that drops
     // drawSelection() from defaults can't leave the selection invisible again.

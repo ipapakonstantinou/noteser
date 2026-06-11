@@ -315,6 +315,12 @@ export default function Home() {
     void migrateOldData().then(() => {
       bootMark('migrate:end')
       bootMeasure('migrate', 'migrate:start', 'migrate:end')
+      // One-time #179 migration: retro-flag legacy feature-tour screenshots
+      // as doNotSync so they stop pushing to the user's vault repo. Dynamic
+      // import + fire-and-forget — best-effort, off the first-paint path.
+      void import('@/utils/featureTourNote').then(({ flagLegacyTourAttachments }) =>
+        flagLegacyTourAttachments(),
+      )
     })
   }, [])
 
