@@ -183,6 +183,11 @@ describe('PublishGistModal — submit', () => {
     expect(call.isPublic).toBe(false)
     // filename must end with .md
     expect(call.filename).toMatch(/\.md$/)
+
+    // Let the submit handler finish (result pane rendered) before the test
+    // ends — otherwise its setResult/setPublishing land outside act() during
+    // cleanup and can bleed into the next test under CI load (flake source).
+    await screen.findByTestId('publish-gist-url')
   })
 
   test('passes isPublic=true when Public was selected', async () => {
@@ -197,6 +202,8 @@ describe('PublishGistModal — submit', () => {
     await user.click(screen.getByTestId('publish-gist-submit'))
     await waitFor(() => expect(mockPublishGist).toHaveBeenCalledTimes(1))
     expect(mockPublishGist.mock.calls[0][0].isPublic).toBe(true)
+    // Same act-bleed guard as above.
+    await screen.findByTestId('publish-gist-url')
   })
 
   test('passes the edited description to publishGist', async () => {
@@ -210,9 +217,11 @@ describe('PublishGistModal — submit', () => {
     const descInput = screen.getByTestId('publish-gist-description')
     await user.clear(descInput)
     await user.type(descInput, 'Custom desc')
-    await user.click(screen.getByTestId('publish-gist-submit'))
+    await user.click(await screen.findByTestId('publish-gist-submit'))
     await waitFor(() => expect(mockPublishGist).toHaveBeenCalledTimes(1))
     expect(mockPublishGist.mock.calls[0][0].description).toBe('Custom desc')
+    // Same act-bleed guard as above.
+    await screen.findByTestId('publish-gist-url')
   })
 })
 
