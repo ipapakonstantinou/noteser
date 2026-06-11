@@ -14,7 +14,7 @@ import { MergeBatchView } from './MergeBatchView'
 import { CompareView } from './CompareView'
 import { WelcomePane } from './WelcomePane'
 import { EmptyState } from '@/components/ui'
-import type { PaneState } from '@/stores/workspaceStore'
+import type { PaneState, PaneDropRegion } from '@/stores/workspaceStore'
 
 // A single editor pane. Renders its own TabBar + whatever the active tab
 // shows. A drop zone on the right edge allows the user to drag a tab from
@@ -29,13 +29,12 @@ export const Pane = ({ pane }: Props) => {
   const isPreviewMode = useUIStore(s => s.isPreviewMode)
   const focusPane = useWorkspaceStore(s => s.focusPane)
   const promoteTab = useWorkspaceStore(s => s.promoteTab)
-  const splitTabRight = useWorkspaceStore(s => s.splitTabRight)
-  const splitTabDown = useWorkspaceStore(s => s.splitTabDown)
+  const dropTabOnPane = useWorkspaceStore(s => s.dropTabOnPane)
   const activePaneId = useWorkspaceStore(s => s.activePaneId)
   const paneCount = useWorkspaceStore(s => s.panes.length)
   const canSplitMore = paneCount < 3
 
-  const [splitDropActive, setSplitDropActive] = useState<null | 'right' | 'bottom'>(null)
+  const [dropRegion, setDropRegion] = useState<PaneDropRegion | null>(null)
   const tabDragActive = useTabDragActive()
   const activeTab = pane.tabs.find(t => t.id === pane.activeTabId) ?? null
   const isActive = pane.id === activePaneId
@@ -45,21 +44,47 @@ export const Pane = ({ pane }: Props) => {
   // even mount in that case (see render below).
   const { isMobile } = useViewport()
 
-  const makeEdgeDragOver = (zone: 'right' | 'bottom') => (e: React.DragEvent) => {
+  // VS Code-style drop regions: the outer fifths of the pane body split
+  // toward that edge; everything else is "move into this pane". When the
+  // workspace is at its pane cap the whole body degrades to center (the
+  // store would degrade an edge drop anyway — don't promise a split the
+  // app can't deliver).
+  const regionFromPointer = (e: React.DragEvent<HTMLDivElement>): PaneDropRegion => {
+    if (!canSplitMore) return 'center'
+    const rect = e.currentTarget.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return 'center'
+    const x = (e.clientX - rect.left) / rect.width
+    const y = (e.clientY - rect.top) / rect.height
+    if (x < 0.2) return 'left'
+    if (x > 0.8) return 'right'
+    if (y < 0.2) return 'top'
+    if (y > 0.8) return 'bottom'
+    return 'center'
+  }
+  const handleOverlayDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-    setSplitDropActive(zone)
+    setDropRegion(regionFromPointer(e))
   }
-  const handleEdgeDrop = (zone: 'right' | 'bottom') => (e: React.DragEvent) => {
+  const handleOverlayDrop = (e: React.DragEvent<HTMLDivElement>) => {
     if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
     e.preventDefault()
     const tabId = e.dataTransfer.getData(TAB_DRAG_MIME)
-    if (tabId) {
-      if (zone === 'right') splitTabRight(tabId)
-      else splitTabDown(tabId)
+    if (tabId) dropTabOnPane(tabId, pane.id, regionFromPointer(e))
+    setDropRegion(null)
+  }
+  // Highlight covers the HALF of the pane the dropped tab would occupy
+  // (mirrors VS Code's split preview), or the whole body for a move.
+  const highlightClassFor = (region: PaneDropRegion): string => {
+    const base = 'absolute bg-obsidianAccentPurple/20 border-2 border-obsidianAccentPurple/70 rounded-sm pointer-events-none transition-all'
+    switch (region) {
+      case 'left': return `${base} inset-y-0 left-0 w-1/2`
+      case 'right': return `${base} inset-y-0 right-0 w-1/2`
+      case 'top': return `${base} inset-x-0 top-0 h-1/2`
+      case 'bottom': return `${base} inset-x-0 bottom-0 h-1/2`
+      case 'center': return `${base} inset-0`
     }
-    setSplitDropActive(null)
   }
 
   let body: React.ReactNode
@@ -158,53 +183,35 @@ export const Pane = ({ pane }: Props) => {
     >
       <TabBar pane={pane} />
       <div
-        className="flex-1 flex flex-col min-h-0"
+        className="relative flex-1 flex flex-col min-h-0"
         role="tabpanel"
         id={`editor-tabpanel-${pane.id}`}
         aria-labelledby={activeTab ? `editor-tab-${activeTab.id}` : undefined}
-      >{body}</div>
+      >
+        {body}
 
-      {/* Right- and bottom-edge split drop targets — only rendered (and
-          only intercepting events) while a tab is actively being
-          dragged. Otherwise clicks in those regions would get eaten. */}
-      {canSplitMore && tabDragActive && !isMobile && (
-        <>
+        {/* Tab-drop overlay — only mounted while a tab is actively being
+            dragged, so clicks are never intercepted. Covers the whole
+            body (no dead no-drop zones): outer fifths split toward that
+            edge, the middle moves the tab into this pane. The TabBar
+            stays uncovered so its own reorder drop targets keep working. */}
+        {tabDragActive && !isMobile && (
           <div
-            onDragOver={makeEdgeDragOver('right')}
-            onDragLeave={() => setSplitDropActive(null)}
-            onDrop={handleEdgeDrop('right')}
-            data-testid="pane-drop-right"
-            className={`absolute top-0 right-0 h-2/3 w-1/3 z-10 transition-colors ${
-              splitDropActive === 'right'
-                ? 'bg-obsidianAccentPurple/20 border-l-2 border-obsidianAccentPurple'
-                : 'bg-obsidianAccentPurple/5 border-l border-obsidianAccentPurple/40 border-dashed'
-            }`}
+            onDragOver={handleOverlayDragOver}
+            onDragLeave={() => setDropRegion(null)}
+            onDrop={handleOverlayDrop}
+            data-testid="pane-drop-overlay"
+            className="absolute inset-0 z-10"
           >
-            {splitDropActive !== 'right' && (
-              <div className="absolute top-1/2 -translate-y-1/2 right-3 text-xs text-obsidianAccentPurple/80 font-medium pointer-events-none">
-                Drop to split right →
-              </div>
+            {dropRegion && (
+              <div
+                className={highlightClassFor(dropRegion)}
+                data-testid={`pane-drop-${dropRegion}`}
+              />
             )}
           </div>
-          <div
-            onDragOver={makeEdgeDragOver('bottom')}
-            onDragLeave={() => setSplitDropActive(null)}
-            onDrop={handleEdgeDrop('bottom')}
-            data-testid="pane-drop-bottom"
-            className={`absolute bottom-0 left-0 right-0 h-1/3 z-10 transition-colors ${
-              splitDropActive === 'bottom'
-                ? 'bg-obsidianAccentPurple/20 border-t-2 border-obsidianAccentPurple'
-                : 'bg-obsidianAccentPurple/5 border-t border-obsidianAccentPurple/40 border-dashed'
-            }`}
-          >
-            {splitDropActive !== 'bottom' && (
-              <div className="absolute left-1/2 -translate-x-1/2 bottom-3 text-xs text-obsidianAccentPurple/80 font-medium pointer-events-none">
-                Drop to split down ↓
-              </div>
-            )}
-          </div>
-        </>
-      )}
+        )}
+      </div>
     </div>
   )
 }
