@@ -4,8 +4,8 @@
  * Coverage for the multi-pane split workspace:
  *   - splitTabRight / splitTabDown create a fresh pane on the requested side
  *     and update the LayoutNode tree.
- *   - The 3-pane cap is enforced — a fourth split is rejected (the tab
- *     moves into the newest existing pane instead).
+ *   - The MAX_PANES safety cap is enforced — a split beyond it is rejected
+ *     (the tab moves into the newest existing pane instead).
  *   - Closing the last tab in a pane re-collapses the layout so the
  *     surviving panes' arrangement is preserved.
  *   - The persisted v2 → v3 workspace migration wraps the flat panes[]
@@ -16,6 +16,7 @@
 import {
   useWorkspaceStore,
   migrateWorkspace,
+  MAX_PANES,
   type LayoutNode,
   type PaneState,
 } from '../stores/workspaceStore'
@@ -194,46 +195,58 @@ describe('dropTabOnPane', () => {
 
   test('edge drop at MAX_PANES degrades to a move into the target pane', () => {
     const ws = () => useWorkspaceStore.getState()
-    ws().openNote('A', { preview: false })
-    ws().openNote('B', { preview: false })
-    ws().openNote('C', { preview: false })
-    ws().openNote('D', { preview: false })
-    ws().splitTabRight(tabIdOfNote('p1', 'B'))
-    const p2Id = ws().panes.find(p => p.id !== 'p1')!.id
-    ws().dropTabOnPane(tabIdOfNote('p1', 'C'), p2Id, 'bottom')
-    expect(ws().panes).toHaveLength(3)
-    const p3Id = ws().panes.find(p => p.id !== 'p1' && p.id !== p2Id)!.id
+    // One note per pane slot, plus one extra to drop once at the cap.
+    const ids = Array.from({ length: MAX_PANES + 1 }, (_, i) => `N${i}`)
+    useNoteStore.setState({
+      notes: ids.map(id => makeNote(id, `Note ${id}`)),
+      selectedNoteId: null,
+    })
+    for (const id of ids) ws().openNote(id, { preview: false })
 
-    // 4th pane impossible → 'right' on p2 must MOVE D into p2 instead.
-    ws().dropTabOnPane(tabIdOfNote('p1', 'D'), p2Id, 'right')
+    // Split tabs out of p1 until the workspace holds MAX_PANES panes.
+    for (let i = 1; i < MAX_PANES; i++) {
+      ws().splitTabRight(tabIdOfNote('p1', ids[i]))
+    }
+    expect(ws().panes).toHaveLength(MAX_PANES)
+    const targetId = ws().panes.find(p => p.id !== 'p1')!.id
+    const paneIdsAtCap = ws().panes.map(p => p.id)
+
+    // Another pane is impossible → an edge drop must MOVE the tab into
+    // the target pane instead, leaving the pane set untouched.
+    ws().dropTabOnPane(tabIdOfNote('p1', ids[MAX_PANES]), targetId, 'right')
     const state = ws()
-    expect(state.panes).toHaveLength(3)
-    const p2 = state.panes.find(p => p.id === p2Id)!
-    expect(p2.tabs.some(t => t.kind === 'note' && t.noteId === 'D')).toBe(true)
-    expect(state.panes.find(p => p.id === p3Id)).toBeTruthy()
+    expect(state.panes.map(p => p.id)).toEqual(paneIdsAtCap)
+    const target = state.panes.find(p => p.id === targetId)!
+    expect(target.tabs.some(t => t.kind === 'note' && t.noteId === ids[MAX_PANES])).toBe(true)
   })
 })
 
-test('a 4th split is rejected — workspace stays at 3 panes (tab moves into newest pane)', () => {
+test('a split beyond MAX_PANES is rejected — the tab moves into the newest pane instead', () => {
   const ws = () => useWorkspaceStore.getState()
-  ws().openNote('A', { preview: false })
-  ws().openNote('B', { preview: false })
-  ws().openNote('C', { preview: false })
-  ws().openNote('D', { preview: false })
+  // One note per pane slot, plus two extras to attempt splits at the cap.
+  const ids = Array.from({ length: MAX_PANES + 2 }, (_, i) => `N${i}`)
+  useNoteStore.setState({
+    notes: ids.map(id => makeNote(id, `Note ${id}`)),
+    selectedNoteId: null,
+  })
+  for (const id of ids) ws().openNote(id, { preview: false })
 
-  ws().splitTabRight(tabIdOfNote('p1', 'A'))
-  ws().splitTabDown(tabIdOfNote('p1', 'B'))
-  expect(ws().panes).toHaveLength(3)
+  // Alternate right/down splits until the cap is reached.
+  for (let i = 1; i < MAX_PANES; i++) {
+    if (i % 2 === 1) ws().splitTabRight(tabIdOfNote('p1', ids[i]))
+    else ws().splitTabDown(tabIdOfNote('p1', ids[i]))
+  }
+  expect(ws().panes).toHaveLength(MAX_PANES)
 
-  ws().splitTabRight(tabIdOfNote('p1', 'C'))
-  expect(ws().panes).toHaveLength(3)
+  ws().splitTabRight(tabIdOfNote('p1', ids[MAX_PANES]))
+  expect(ws().panes).toHaveLength(MAX_PANES)
 
   const newest = ws().panes[ws().panes.length - 1]
-  const hasC = newest.tabs.some(t => t.kind === 'note' && t.noteId === 'C')
-  expect(hasC).toBe(true)
+  const moved = newest.tabs.some(t => t.kind === 'note' && t.noteId === ids[MAX_PANES])
+  expect(moved).toBe(true)
 
-  ws().splitTabDown(tabIdOfNote('p1', 'D'))
-  expect(ws().panes).toHaveLength(3)
+  ws().splitTabDown(tabIdOfNote('p1', ids[MAX_PANES + 1]))
+  expect(ws().panes).toHaveLength(MAX_PANES)
 })
 
 test('closing the last tab in a split pane re-collapses the layout', () => {

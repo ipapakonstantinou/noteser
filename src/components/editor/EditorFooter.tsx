@@ -3,19 +3,22 @@
 import { useMemo } from 'react'
 import { ArrowPathIcon, FireIcon, SignalIcon, SignalSlashIcon } from '@heroicons/react/24/outline'
 import { extractTags } from '@/utils/tags'
-import { useGitHubStore, useNoteStore, useUIStore, useSettingsStore, useFolderStore } from '@/stores'
+import { useGitHubStore, useNoteStore, useUIStore, useSettingsStore, useFolderStore, useWorkspaceStore } from '@/stores'
 import { classifyPendingChanges, totalPendingCount } from '@/utils/syncChanges'
 import { computeStreakFromDateStrings, dailyDateSet } from '@/utils/dailyStreak'
 import { useCollaboration } from '@/hooks/useCollaboration'
-import type { Note } from '@/types'
+import { useHydration } from '@/hooks'
 
-interface EditorFooterProps {
-  note: Note
-}
-
-// Slim status bar at the bottom of a pane. Matches Obsidian's status-bar
-// placement: sync/branch context on the left, counts on the right.
-export const EditorFooter = ({ note }: EditorFooterProps) => {
+// App-wide status bar — ONE slim strip across the bottom of the window
+// (VS Code / Obsidian placement), not one per pane. Vertical splits used
+// to leave a per-pane copy of this bar stranded mid-screen between two
+// stacked editors. Sync/branch context on the left; the right side shows
+// counts for the ACTIVE pane's active note (merge views, the Welcome tab,
+// and an empty workspace keep the bar but drop the note segments).
+export const EditorFooter = () => {
+  // Persisted stores hydrate client-side only; render the bare shell
+  // until then so SSR and the first client paint stay identical.
+  const hydrated = useHydration()
   const syncRepo = useGitHubStore(s => s.syncRepo)
   const lastSyncedAt = useGitHubStore(s => s.lastSyncedAt)
   const isSyncing = useGitHubStore(s => s.isSyncing)
@@ -23,9 +26,17 @@ export const EditorFooter = ({ note }: EditorFooterProps) => {
   const folders = useFolderStore(s => s.folders)
   const setCurrentView = useUIStore(s => s.setCurrentView)
 
-  const tagCount = extractTags(note.content).length
-  const wordCount = note.content.trim().split(/\s+/).filter(Boolean).length
-  const charCount = note.content.length
+  // Active pane → active tab → note (only when that tab is a note tab).
+  const activeNoteId = useWorkspaceStore(s => {
+    const pane = s.panes.find(p => p.id === s.activePaneId) ?? s.panes[0]
+    const tab = pane?.tabs.find(t => t.id === pane.activeTabId)
+    return tab?.kind === 'note' ? tab.noteId : null
+  })
+  const note = notes.find(n => n.id === activeNoteId) ?? null
+
+  const tagCount = note ? extractTags(note.content).length : 0
+  const wordCount = note ? note.content.trim().split(/\s+/).filter(Boolean).length : 0
+  const charCount = note ? note.content.length : 0
 
   // Daily-note streak — derived from active note titles + the user's
   // dailyNoteDateFormat. Memoised so we don't recompute on every
@@ -75,7 +86,7 @@ export const EditorFooter = ({ note }: EditorFooterProps) => {
       data-testid="status-bar-footer"
     >
       <div className="flex items-center gap-3 truncate">
-        {syncRepo && (
+        {hydrated && syncRepo && (
           <>
             <span className="truncate" title={`${syncRepo.owner}/${syncRepo.name}`}>
               {syncRepo.owner}/{syncRepo.name}
@@ -112,23 +123,31 @@ export const EditorFooter = ({ note }: EditorFooterProps) => {
         )}
       </div>
       <div className="flex items-center gap-4 shrink-0">
-        <CollabPill />
-        {streak.length >= 2 && (
-          <span
-            className="flex items-center gap-1 text-orange-400"
-            title={streak.includesToday
-              ? `${streak.length}-day daily-note streak — keep it going!`
-              : `${streak.length}-day streak — write today's note to keep it alive.`}
-            data-testid="status-bar-streak"
-          >
-            <FireIcon className="w-3 h-3" />
-            <span>{streak.length}d</span>
-          </span>
+        {hydrated && (
+          <>
+            <CollabPill />
+            {streak.length >= 2 && (
+              <span
+                className="flex items-center gap-1 text-orange-400"
+                title={streak.includesToday
+                  ? `${streak.length}-day daily-note streak — keep it going!`
+                  : `${streak.length}-day streak — write today's note to keep it alive.`}
+                data-testid="status-bar-streak"
+              >
+                <FireIcon className="w-3 h-3" />
+                <span>{streak.length}d</span>
+              </span>
+            )}
+            {note && (
+              <>
+                {tagCount > 0 && <span>{tagCount} tag{tagCount === 1 ? '' : 's'}</span>}
+                <span>{wordCount} word{wordCount === 1 ? '' : 's'}</span>
+                <span>{charCount} char{charCount === 1 ? '' : 's'}</span>
+                <span>Modified {formatDate(note.updatedAt)}</span>
+              </>
+            )}
+          </>
         )}
-        {tagCount > 0 && <span>{tagCount} tag{tagCount === 1 ? '' : 's'}</span>}
-        <span>{wordCount} word{wordCount === 1 ? '' : 's'}</span>
-        <span>{charCount} char{charCount === 1 ? '' : 's'}</span>
-        <span>Modified {formatDate(note.updatedAt)}</span>
       </div>
     </div>
   )

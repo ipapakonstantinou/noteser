@@ -6,7 +6,6 @@ import { useNoteStore, useUIStore, useWorkspaceStore } from '@/stores'
 import { Button } from '@/components/ui'
 import { useTabDragActive, TAB_DRAG_MIME, useViewport } from '@/hooks'
 import { EditorHeader } from './EditorHeader'
-import { EditorFooter } from './EditorFooter'
 import { EditorContent } from './EditorContent'
 import { TabBar } from './TabBar'
 import { MergeEditorView } from './MergeEditorView'
@@ -14,7 +13,7 @@ import { MergeBatchView } from './MergeBatchView'
 import { CompareView } from './CompareView'
 import { WelcomePane } from './WelcomePane'
 import { EmptyState } from '@/components/ui'
-import type { PaneState, PaneDropRegion } from '@/stores/workspaceStore'
+import { MAX_PANES, type PaneState, type PaneDropRegion } from '@/stores/workspaceStore'
 
 // A single editor pane. Renders its own TabBar + whatever the active tab
 // shows. A drop zone on the right edge allows the user to drag a tab from
@@ -32,7 +31,7 @@ export const Pane = ({ pane }: Props) => {
   const dropTabOnPane = useWorkspaceStore(s => s.dropTabOnPane)
   const activePaneId = useWorkspaceStore(s => s.activePaneId)
   const paneCount = useWorkspaceStore(s => s.panes.length)
-  const canSplitMore = paneCount < 3
+  const canSplitMore = paneCount < MAX_PANES
 
   const [dropRegion, setDropRegion] = useState<PaneDropRegion | null>(null)
   const tabDragActive = useTabDragActive()
@@ -76,8 +75,13 @@ export const Pane = ({ pane }: Props) => {
   }
   // Highlight covers the HALF of the pane the dropped tab would occupy
   // (mirrors VS Code's split preview), or the whole body for a move.
+  // Fill/border live in `.pane-drop-highlight` (globals.css) — Tailwind
+  // can't alpha-modify the var()-based accent, so the old
+  // bg-obsidianAccentPurple/20 classes compiled to nothing and the
+  // highlight was invisible. The transition morphs the region as the
+  // pointer crosses zones.
   const highlightClassFor = (region: PaneDropRegion): string => {
-    const base = 'absolute bg-obsidianAccentPurple/20 border-2 border-obsidianAccentPurple/70 rounded-sm pointer-events-none transition-all'
+    const base = 'absolute pane-drop-highlight rounded-sm pointer-events-none transition-all duration-150 ease-out'
     switch (region) {
       case 'left': return `${base} inset-y-0 left-0 w-1/2`
       case 'right': return `${base} inset-y-0 right-0 w-1/2`
@@ -168,7 +172,6 @@ export const Pane = ({ pane }: Props) => {
             isPreviewMode={isPreviewMode}
             onContentChange={handleContentChange}
           />
-          <EditorFooter note={note} />
         </>
       )
     }

@@ -575,6 +575,18 @@
   background-color: #1a1c20;
 }
 
+/* Tab-drop split preview — the VS Code-style translucent accent
+   overlay that covers the half of the pane a dragged tab would occupy.
+   Tailwind v3 cannot alpha-modify a var()-based color (the old
+   `bg-obsidianAccentPurple/20` compiled to nothing, leaving only the
+   global #2e2e2e border — invisible on the near-black editor), so the
+   fill/border are built here with color-mix against the accent token.
+   Follows a custom accent from Settings → Appearance automatically. */
+.pane-drop-highlight {
+  background-color: color-mix(in srgb, var(--obsidian-accent-purple, hsl(217, 88%, 50%)) 22%, transparent);
+  border: 2px solid color-mix(in srgb, var(--obsidian-accent-purple, hsl(217, 88%, 50%)) 70%, transparent);
+}
+
 /* Reveal-in-tree flash — used by src/utils/revealNote.ts when the
    user clicks a note from a non-tree view (Recent/Tags). The row gets
    a brief yellow glow that fades out so it's easy to spot. */
