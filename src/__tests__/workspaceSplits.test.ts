@@ -63,9 +63,9 @@ const tabIdOfNote = (paneId: string, noteId: string): string => {
 test('splitTabDown creates a vertical split with a new pane below', () => {
   const ws = () => useWorkspaceStore.getState()
   ws().openNote('A', { preview: false })
-  const aTab = tabIdOfNote('p1', 'A')
+  ws().openNote('B', { preview: false })
 
-  ws().splitTabDown(aTab)
+  ws().splitTabDown(tabIdOfNote('p1', 'A'))
 
   const state = ws()
   expect(state.panes).toHaveLength(2)
@@ -76,16 +76,20 @@ test('splitTabDown creates a vertical split with a new pane below', () => {
   expect(ids).toHaveLength(2)
   expect(ids).toContain('p1')
 
-  const newPaneId = state.panes.find(p => p.id !== 'p1')!.id
-  const newPane = state.panes.find(p => p.id === newPaneId)!
+  // Source pane keeps B; the new pane gets A; nothing is left empty.
+  const p1 = state.panes.find(p => p.id === 'p1')!
+  expect(p1.tabs.some(t => t.kind === 'note' && t.noteId === 'B')).toBe(true)
+  const newPane = state.panes.find(p => p.id !== 'p1')!
   expect(newPane.tabs).toHaveLength(1)
   expect(newPane.tabs[0].kind === 'note' && newPane.tabs[0].noteId === 'A').toBe(true)
-  expect(state.activePaneId).toBe(newPaneId)
+  expect(state.panes.every(p => p.tabs.length > 0)).toBe(true)
+  expect(state.activePaneId).toBe(newPane.id)
 })
 
 test('splitTabRight creates a horizontal split with a new pane to the right', () => {
   const ws = () => useWorkspaceStore.getState()
   ws().openNote('A', { preview: false })
+  ws().openNote('B', { preview: false })
   ws().splitTabRight(tabIdOfNote('p1', 'A'))
 
   const state = ws()
@@ -93,6 +97,121 @@ test('splitTabRight creates a horizontal split with a new pane to the right', ()
   expect(state.layout.kind).toBe('split')
   if (state.layout.kind !== 'split') throw new Error('unreachable')
   expect(state.layout.direction).toBe('horizontal')
+  expect(state.panes.every(p => p.tabs.length > 0)).toBe(true)
+})
+
+test("splitting a pane's only tab is a no-op — no empty husk pane (#184)", () => {
+  const ws = () => useWorkspaceStore.getState()
+  ws().openNote('A', { preview: false })
+  const before = ws().panes
+
+  ws().splitTabRight(tabIdOfNote('p1', 'A'))
+
+  expect(ws().panes).toBe(before) // untouched, not even a new array
+  expect(ws().panes).toHaveLength(1)
+  expect(ws().layout.kind).toBe('leaf')
+})
+
+describe('dropTabOnPane', () => {
+  // Build the canonical 2-pane workspace: p1=[A], p2=[B] side by side.
+  const twoPane = () => {
+    const ws = () => useWorkspaceStore.getState()
+    ws().openNote('A', { preview: false })
+    ws().openNote('B', { preview: false })
+    ws().splitTabRight(tabIdOfNote('p1', 'B'))
+    const p2 = ws().panes.find(p => p.id !== 'p1')!
+    return { ws, p2Id: p2.id }
+  }
+
+  test('edge drop splits the TARGET pane, not the source pane', () => {
+    const { ws, p2Id } = twoPane()
+    ws().openNote('C', { preview: false }) // lands in active pane (p2)... force into p1:
+    // openNote opens in the ACTIVE pane; make p1 active first.
+    // Simpler: move C's tab explicitly if it landed elsewhere.
+    const cLoc = ws().panes.find(p => p.tabs.some(t => t.kind === 'note' && t.noteId === 'C'))!
+    const cTab = cLoc.tabs.find(t => t.kind === 'note' && t.noteId === 'C')!
+    if (cLoc.id !== 'p1') ws().moveTab(cTab.id, 'p1', Number.MAX_SAFE_INTEGER)
+
+    // Drop C (from p1) on p2's BOTTOM edge → vertical split of p2's leaf.
+    ws().dropTabOnPane(cTab.id, p2Id, 'bottom')
+
+    const state = ws()
+    expect(state.panes).toHaveLength(3)
+    // p1 must be untouched at the layout root level; the vertical split
+    // wraps p2's leaf only.
+    expect(state.layout.kind).toBe('split')
+    if (state.layout.kind !== 'split') throw new Error('unreachable')
+    const right = state.layout.children[1]
+    expect(right.kind).toBe('split')
+    if (right.kind !== 'split') throw new Error('unreachable')
+    expect(right.direction).toBe('vertical')
+    // New pane (with C) sits BELOW p2.
+    expect(right.children[0]).toEqual({ kind: 'leaf', paneId: p2Id })
+    const newLeaf = right.children[1]
+    expect(newLeaf.kind).toBe('leaf')
+    const newPane = state.panes.find(p => p.tabs.some(t => t.kind === 'note' && t.noteId === 'C'))!
+    if (newLeaf.kind === 'leaf') expect(newLeaf.paneId).toBe(newPane.id)
+  })
+
+  test("edge drop with place-before ('top'/'left') puts the new pane first", () => {
+    const { ws, p2Id } = twoPane()
+    // Drop A (p1's only tab) on p2's TOP edge: p1 empties and collapses,
+    // p2's leaf becomes a vertical split with the new pane on top.
+    ws().dropTabOnPane(tabIdOfNote('p1', 'A'), p2Id, 'top')
+
+    const state = ws()
+    expect(state.panes).toHaveLength(2) // p1 compacted away
+    expect(state.panes.some(p => p.id === 'p1')).toBe(false)
+    expect(state.panes.every(p => p.tabs.length > 0)).toBe(true)
+    expect(state.layout.kind).toBe('split')
+    if (state.layout.kind !== 'split') throw new Error('unreachable')
+    expect(state.layout.direction).toBe('vertical')
+    const newPane = state.panes.find(p => p.id !== p2Id)!
+    expect(state.layout.children[0]).toEqual({ kind: 'leaf', paneId: newPane.id })
+    expect(state.layout.children[1]).toEqual({ kind: 'leaf', paneId: p2Id })
+  })
+
+  test('center drop moves the tab INTO the target pane (appended last, active)', () => {
+    const { ws, p2Id } = twoPane()
+    ws().dropTabOnPane(tabIdOfNote('p1', 'A'), p2Id, 'center')
+
+    const state = ws()
+    expect(state.panes).toHaveLength(1) // p1 emptied and compacted
+    const p2 = state.panes[0]
+    expect(p2.id).toBe(p2Id)
+    expect(p2.tabs).toHaveLength(2)
+    expect(p2.tabs[1].kind === 'note' && p2.tabs[1].noteId === 'A').toBe(true)
+    expect(p2.activeTabId).toBe(p2.tabs[1].id)
+    expect(state.layout).toEqual({ kind: 'leaf', paneId: p2Id })
+  })
+
+  test('center drop on the tab’s own pane is a no-op', () => {
+    const { ws } = twoPane()
+    const before = ws().panes
+    ws().dropTabOnPane(tabIdOfNote('p1', 'A'), 'p1', 'center')
+    expect(ws().panes).toBe(before)
+  })
+
+  test('edge drop at MAX_PANES degrades to a move into the target pane', () => {
+    const ws = () => useWorkspaceStore.getState()
+    ws().openNote('A', { preview: false })
+    ws().openNote('B', { preview: false })
+    ws().openNote('C', { preview: false })
+    ws().openNote('D', { preview: false })
+    ws().splitTabRight(tabIdOfNote('p1', 'B'))
+    const p2Id = ws().panes.find(p => p.id !== 'p1')!.id
+    ws().dropTabOnPane(tabIdOfNote('p1', 'C'), p2Id, 'bottom')
+    expect(ws().panes).toHaveLength(3)
+    const p3Id = ws().panes.find(p => p.id !== 'p1' && p.id !== p2Id)!.id
+
+    // 4th pane impossible → 'right' on p2 must MOVE D into p2 instead.
+    ws().dropTabOnPane(tabIdOfNote('p1', 'D'), p2Id, 'right')
+    const state = ws()
+    expect(state.panes).toHaveLength(3)
+    const p2 = state.panes.find(p => p.id === p2Id)!
+    expect(p2.tabs.some(t => t.kind === 'note' && t.noteId === 'D')).toBe(true)
+    expect(state.panes.find(p => p.id === p3Id)).toBeTruthy()
+  })
 })
 
 test('a 4th split is rejected — workspace stays at 3 panes (tab moves into newest pane)', () => {
@@ -250,6 +369,7 @@ describe('workspace migration', () => {
 test('setLayoutRatio updates the divider position for the split between two panes', () => {
   const ws = () => useWorkspaceStore.getState()
   ws().openNote('A', { preview: false })
+  ws().openNote('B', { preview: false })
   ws().splitTabRight(tabIdOfNote('p1', 'A'))
 
   const newPaneId = ws().panes.find(p => p.id !== 'p1')!.id
