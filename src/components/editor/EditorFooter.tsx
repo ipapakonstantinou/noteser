@@ -1,12 +1,14 @@
 'use client'
 
 import { useMemo } from 'react'
-import { ArrowPathIcon, FireIcon, SignalIcon, SignalSlashIcon } from '@heroicons/react/24/outline'
+import { ArrowPathIcon, FireIcon, SignalIcon, SignalSlashIcon, ShareIcon } from '@heroicons/react/24/outline'
 import { extractTags } from '@/utils/tags'
 import { useGitHubStore, useNoteStore, useUIStore, useSettingsStore, useFolderStore, useWorkspaceStore } from '@/stores'
+import { useToastStore } from '@/stores/toastStore'
 import { classifyPendingChanges, totalPendingCount } from '@/utils/syncChanges'
 import { computeStreakFromDateStrings, dailyDateSet } from '@/utils/dailyStreak'
-import { useCollaboration } from '@/hooks/useCollaboration'
+import { useCollaboration, getConfiguredUrl } from '@/hooks/useCollaboration'
+import { buildCollabShareLink } from '@/utils/collabShare'
 import { useHydration } from '@/hooks'
 
 // App-wide status bar — ONE slim strip across the bottom of the window
@@ -125,6 +127,7 @@ export const EditorFooter = () => {
       <div className="flex items-center gap-4 shrink-0">
         {hydrated && (
           <>
+            <ShareCollabButton noteId={activeNoteId} />
             <CollabPill />
             {streak.length >= 2 && (
               <span
@@ -150,6 +153,49 @@ export const EditorFooter = () => {
         )}
       </div>
     </div>
+  )
+}
+
+// Feature A — "Share" affordance. Visible ONLY when live collaboration is
+// configured (getConfiguredUrl() non-null) AND a note is open. Clicking it
+// mints (or reuses) the note's stable collabId, copies a share link to the
+// clipboard, and confirms with a toast. Anyone who opens that link joins the
+// same room and can edit the note live — the UUID room id is the only
+// credential, so nothing else is leaked.
+function ShareCollabButton({ noteId }: { noteId: string | null }) {
+  const url = getConfiguredUrl()
+  if (!url || !noteId) return null
+
+  const onShare = async () => {
+    const collabId = useNoteStore.getState().ensureCollabId(noteId)
+    if (!collabId) return
+    const note = useNoteStore.getState().notes.find(n => n.id === noteId)
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    const link = buildCollabShareLink(origin, collabId, note?.title)
+    try {
+      await navigator.clipboard.writeText(link)
+    } catch {
+      // Clipboard API unavailable (insecure context / older browser) — fall
+      // back to a prompt so the user can still copy the link by hand.
+      window.prompt('Copy this collaboration link:', link)
+    }
+    useToastStore.getState().addToast({
+      kind: 'success',
+      message: 'Collaboration link copied. Anyone with the link can edit this note live.',
+    })
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onShare}
+      className="flex items-center gap-1 hover:text-obsidianText transition-colors"
+      title="Copy a live-collaboration link for this note. Anyone with the link can edit it live."
+      data-testid="status-bar-collab-share"
+    >
+      <ShareIcon className="w-3 h-3" />
+      <span>Share</span>
+    </button>
   )
 }
 

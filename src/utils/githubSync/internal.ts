@@ -183,9 +183,14 @@ export function guessMimeFromPath(path: string): string {
 }
 
 // ── Note serialization ──────────────────────────────────────────────────────
-// We write the body verbatim — no YAML frontmatter. Tags now live as `#word`
-// patterns inline in the body, so there's nothing to round-trip in a header.
-// Round-trip identity uses the file path (Phase 4 pull matches by gitPath).
+// We write the body verbatim. Tags live as `#word` patterns inline in the body,
+// so there is nothing to round-trip in a header FOR TAGS. The ONLY frontmatter
+// key noteser ever emits is `collabId` — the stable live-collaboration room id —
+// and ONLY for notes that actually carry one (a note that has entered a collab
+// session via ensureCollabId / a Share link). A note without a collabId
+// serializes byte-for-byte as before (body only, no frontmatter), so adding this
+// feature causes ZERO churn for the overwhelming majority of notes; only a note
+// that gained a collabId re-serializes — a one-time clean metadata update.
 //
 // IMPORTANT: we normalise to LF line endings + a single trailing newline so
 // our blob SHA matches what Obsidian (and most editors that follow the POSIX
@@ -193,8 +198,17 @@ export function guessMimeFromPath(path: string): string {
 // this, every Obsidian-side save would re-touch the file and noteser would see
 // the trailing-newline difference as drift, re-uploading every blob on each
 // sync (the storm bug). See `normalizeForPush` for the canonical form.
+//
+// We deliberately emit NO blank line between the closing `---` and the body so
+// the round-trip is lossless: parseNote returns exactly the body bytes back, and
+// re-serializing them (after normalizeForPush) reproduces identical bytes — no
+// phantom leading-blank-line drift that would re-churn the blob.
 export function serializeNote(note: Note): string {
-  return normalizeForPush(note.content ?? '')
+  const body = normalizeForPush(note.content ?? '')
+  const cid = note.collabId
+  if (!cid) return body
+  const fm = `---\ncollabId: ${cid}\n---\n`
+  return body === '' ? fm : `${fm}${body}`
 }
 
 // Canonical wire form: CRLF → LF, ensure exactly one trailing \n, drop a
@@ -238,6 +252,11 @@ export interface ParsedNote {
   tags: string[]
   aliases: string[]
   body: string
+  // Stable live-collaboration room id, parsed from a `collabId: <uuid>` line in
+  // the frontmatter when present. Undefined for the common case (no collab
+  // frontmatter). Threaded back onto the local note so two clients syncing the
+  // same vault repo converge on the same room (Feature B).
+  collabId?: string
 }
 
 // Parse a single-line YAML inline-array field (e.g. `tags: [a, "b", c]`) out
@@ -269,6 +288,24 @@ function parseInlineArrayField(fmBlock: string, fieldName: string): string[] {
   return out
 }
 
+// Parse a single-line scalar YAML field (e.g. `collabId: 1234-…`) out of the
+// given frontmatter block. Returns undefined when the field is absent or empty.
+// Strips a single layer of matching surrounding quotes so `collabId: "x"` and
+// `collabId: x` both round-trip.
+function parseScalarField(fmBlock: string, fieldName: string): string | undefined {
+  const re = new RegExp(`^${fieldName}:\\s*(.+?)\\s*$`, 'm')
+  const m = fmBlock.match(re)
+  if (!m) return undefined
+  let v = m[1].trim()
+  if (
+    v.length >= 2 &&
+    ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'")))
+  ) {
+    v = v.slice(1, -1)
+  }
+  return v === '' ? undefined : v
+}
+
 export function parseNote(raw: string): ParsedNote {
   // No frontmatter — everything is body.
   if (!raw.startsWith('---\n') && !raw.startsWith('---\r\n')) {
@@ -284,7 +321,8 @@ export function parseNote(raw: string): ParsedNote {
 
   const tags = parseInlineArrayField(fmBlock, 'tags')
   const aliases = parseInlineArrayField(fmBlock, 'aliases')
-  return { tags, aliases, body }
+  const collabId = parseScalarField(fmBlock, 'collabId')
+  return { tags, aliases, body, collabId }
 }
 
 // ── Common sync return shapes ───────────────────────────────────────────────

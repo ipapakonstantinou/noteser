@@ -156,6 +156,31 @@ describe('createCollabBinding', () => {
     binding.destroy()
   })
 
+  test('JOINER: empty initialContent is never seeded, even after sync', () => {
+    // A share-link joiner opens an EMPTY local note (content ''). It must
+    // receive the room's content over the wire and NEVER push its own empty
+    // body into the shared doc — otherwise two joiners could blank the room.
+    const binding = createCollabBinding({
+      url: 'wss://x',
+      room: 'shared-room',
+      initialContent: '',
+      user: null,
+      providerFactory: fakeFactory,
+    })
+    // Another client's content arrives, then we reach sync.
+    binding.ytext.insert(0, 'real shared content')
+    FakeProvider.last!.fireSync(true)
+    expect(binding.ytext.toString()).toBe('real shared content')
+    // Even a sync against a still-empty room leaves it empty (nothing to seed).
+    const empty = createCollabBinding({
+      url: 'wss://x', room: 'fresh', initialContent: '', user: null, providerFactory: fakeFactory,
+    })
+    FakeProvider.last!.fireSync(true)
+    expect(empty.ytext.toString()).toBe('')
+    binding.destroy()
+    empty.destroy()
+  })
+
   test('SEED-ON-EMPTY: does nothing on a not-yet-synced event', () => {
     const binding = createCollabBinding({
       url: 'wss://x',

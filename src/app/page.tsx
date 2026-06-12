@@ -320,6 +320,38 @@ export default function Home() {
     })()
   }, [hydrated])
 
+  // Join-collab-session (Feature A): when the URL has `?collab=<id>` open (or
+  // create) the local note bound to that room. If a note with this collabId
+  // already exists we just open it; otherwise we materialise an EMPTY local
+  // note seeded with the collabId (+ the title from the link, if any) and let
+  // the live-collab binding pull the room's current content over the wire — we
+  // deliberately do NOT seed any local body for a joiner, so the seed-on-empty
+  // logic in collabExtension never fires on their side. The params are stripped
+  // afterwards so a refresh does not re-trigger the join.
+  useEffect(() => {
+    if (!hydrated) return
+    if (typeof window === 'undefined') return
+    const open = async () => {
+      const { parseCollabParam } = await import('@/utils/collabShare')
+      const parsed = parseCollabParam(window.location.search)
+      if (!parsed) return
+      const existing = useNoteStore.getState().notes.find(
+        n => n.collabId === parsed.collabId && !n.isDeleted,
+      )
+      const noteId = existing
+        ? existing.id
+        : useNoteStore.getState().addNote({
+            title: parsed.title || 'Shared note',
+            folderId: null,
+            content: '',
+            collabId: parsed.collabId,
+          }).id
+      useWorkspaceStore.getState().openNote(noteId, { preview: false })
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+    void open()
+  }, [hydrated])
+
   // Migrate old data on first load. Async-yielding migration so a
   // legacy vault with hundreds of notes does not block first paint on
   // iOS (the watchdog kills any task held longer than its window).

@@ -29,10 +29,12 @@ export type PullClassification =
   // then creates a SHELL note (content '', contentLoaded false) so the sidebar
   // populates instantly; the body streams in afterwards. `shell` is absent/false
   // for an incremental pull's remoteCreated, which carries the real body as today.
-  | { kind: 'remoteCreated'; path: string; remoteSha: string; remoteContent: string; tags: string[]; body: string; shell?: boolean }
+  | { kind: 'remoteCreated'; path: string; remoteSha: string; remoteContent: string; tags: string[]; body: string; shell?: boolean; collabId?: string }
   // Local exists, remote changed since our last push, local has NOT changed
-  // since last sync — accept the remote version.
-  | { kind: 'remoteUpdated'; noteId: string; remoteSha: string; remoteContent: string; tags: string[]; body: string; adoptPath?: string }
+  // since last sync — accept the remote version. `collabId` carries the room id
+  // parsed from the remote frontmatter (Feature B): apply adopts it so two
+  // clients syncing the same vault converge on the same live-collab room.
+  | { kind: 'remoteUpdated'; noteId: string; remoteSha: string; remoteContent: string; tags: string[]; body: string; adoptPath?: string; collabId?: string }
   // We previously pushed this note, but the file is gone from the repo and
   // we haven't edited it locally since — soft-delete it locally.
   | { kind: 'remoteDeleted'; noteId: string }
@@ -47,6 +49,10 @@ export type PullClassification =
       remoteTags: string[]
       remoteBody: string
       adoptPath?: string
+      // Room id parsed from the remote frontmatter (Feature B). When the user
+      // resolves the conflict in favour of remote we adopt this so collaborators
+      // converge on the same live-collab room.
+      remoteCollabId?: string
     }
   // Both sides changed but the line-level edits don't overlap, so we 3-way
   // merged automatically. Apply writes the merged content + pins
