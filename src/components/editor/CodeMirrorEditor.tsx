@@ -153,8 +153,13 @@ async function insertLinkWithFetchedTitle(view: EditorView, url: string, pos: nu
 // after a move-line.
 function renumberDocument(view: EditorView): void {
   const { doc } = view.state
-  const currentLines = doc.toString().split('\n')
-  const fixedLines = renumberOrderedRuns(currentLines.join('\n')).split('\n')
+  // Serialize the doc ONCE: split for the per-line diff below, and feed the
+  // same string straight into renumberOrderedRuns. The old code did
+  // doc.toString().split('\n') then currentLines.join('\n') — rebuilding the
+  // exact string it had just split, an extra O(N) allocation per keystroke.
+  const text = doc.toString()
+  const currentLines = text.split('\n')
+  const fixedLines = renumberOrderedRuns(text).split('\n')
 
   const changes: { from: number; to: number; insert: string }[] = []
   for (let i = 0; i < currentLines.length; i++) {
@@ -401,7 +406,11 @@ const renumberOnEdit = EditorView.updateListener.of((update) => {
     touchedNewline = true
   }
   if (!touchedNewline && !touchedOrderedLineStart) return
-  if (!ORDERED_LINE_PROBE.test(update.state.doc.toString())) return
+  // If the edit already touched an ordered-list line we KNOW the doc has one,
+  // so skip the full-document ORDERED_LINE_PROBE serialize (the common case:
+  // typing inside a list). Only when a newline change might have shifted
+  // ordered lines ELSEWHERE do we pay the O(N) toString to confirm one exists.
+  if (!touchedOrderedLineStart && !ORDERED_LINE_PROBE.test(update.state.doc.toString())) return
 
   renumberInFlight = true
   // Defer to escape the current update cycle (dispatching inside an
