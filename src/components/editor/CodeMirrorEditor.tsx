@@ -6,8 +6,10 @@ import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { EditorView, keymap, drawSelection, type Command } from '@codemirror/view'
 import { Prec, Compartment } from '@codemirror/state'
 import { moveLineUp, moveLineDown, deleteLine } from '@codemirror/commands'
+import { toggleFold, foldAll, unfoldAll } from '@codemirror/language'
 import { search, searchKeymap, openSearchPanel } from '@codemirror/search'
 import { diffGutterExtension, setDiffBaseline } from './diffGutter'
+import { foldableHeadings } from './foldableHeadings'
 import { getLastPushedContent } from '@/utils/lastPushedContent'
 import { useDebouncedCallback } from '@/hooks/useDebounce'
 import { useUIStore, useGitHubStore } from '@/stores'
@@ -784,6 +786,13 @@ export function CodeMirrorEditor({
       onWikilinkNavigate: (note) => navigateRef.current(note),
     }),
     diffGutterExtension,
+    // Collapsible heading sections (Obsidian parity). Adds a fold gutter with
+    // a chevron next to every ATX heading; clicking collapses everything under
+    // it until the next heading of the same-or-higher level. View-only — the
+    // markdown text is untouched, so collab + live-preview decorations + save
+    // all keep working. See foldableHeadings.ts for the range logic. Keyboard
+    // toggles (Mod-., Mod-Alt-[ / Mod-Alt-]) are wired in the keymap below.
+    foldableHeadings,
     // Built-in find / replace panel. `top: true` opens it above the
     // editor — matches VS Code / Obsidian placement. Keymap includes
     // Ctrl+F (find), Ctrl+H (replace), F3/Shift+F3 (next/prev), Esc
@@ -828,6 +837,16 @@ export function CodeMirrorEditor({
     // "bookmark this page" dialog (Ctrl+D), which is interceptable (unlike
     // Ctrl+W). Replaces the old selectNextOccurrence binding we removed.
     { key: 'Mod-d', preventDefault: true, run: deleteLine },
+    // ── Heading folding (Obsidian parity) ──────────────────────────────────
+    // Mod+. toggles the fold on the heading section at the cursor. Mod+Alt+[
+    // / Mod+Alt+] fold / unfold every section (CodeMirror's default fold-all
+    // chords; the app's own foldKeymap is disabled in basicSetup so these
+    // don't double-fire). None of these collide with the editor's existing
+    // bindings or the app-level shortcuts (Ctrl+. and the Alt-bracket chords
+    // are unused — see src/utils/shortcuts.ts).
+    { key: 'Mod-.', preventDefault: true, run: toggleFold },
+    { key: 'Mod-Alt-[', preventDefault: true, run: foldAll },
+    { key: 'Mod-Alt-]', preventDefault: true, run: unfoldAll },
     // Enter on an EMPTY checkbox exits the list. No preventDefault: when it
     // returns false (any other line) the event falls through to the markdown
     // keymap's normal Enter continuation.
