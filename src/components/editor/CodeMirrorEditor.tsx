@@ -536,6 +536,21 @@ export function CodeMirrorEditor({
   const [wikilinkState, setWikilinkState] = useState<WikilinkState | null>(null)
   const [tagState, setTagState] = useState<TagState | null>(null)
 
+  // When collaboration is enabled the shared Y.Text is the SINGLE source of
+  // truth for the document content. The collab binding (yCollab) seeds the
+  // Y.Text with the note body after the first sync and replays it into the
+  // editor via its observer. If the editor ALSO started life holding the same
+  // body (value={initialContent}), that replayed insert lands on top of the
+  // existing text and the body is DOUBLED on screen — and the doubled text is
+  // what gets saved back to the note (= corruption that would sync to GitHub).
+  // So when collab is on we build the editor EMPTY and let the Y.Text populate
+  // it: the seeder sees its body exactly once, a joiner receives the shared
+  // body over the wire exactly once. When collab is off this is a no-op and
+  // the editor is byte-for-byte identical to before. getConfiguredUrl() is the
+  // exact gate the collab effect below uses, so this branches together with it.
+  const collabEnabled = getConfiguredUrl() != null
+  const editorInitialValue = collabEnabled ? '' : initialContent
+
   // Live-collaboration (Phase B). A Compartment lets us swap the yCollab
   // binding in/out per note without rebuilding the whole (memoized)
   // extension list. The compartment is created ONCE and stays empty unless
@@ -1247,7 +1262,7 @@ export function CodeMirrorEditor({
       <CodeMirror
         key={noteId}
         ref={cmRef}
-        value={initialContent}
+        value={editorInitialValue}
         extensions={extensions}
         onChange={handleChange}
         onCreateEditor={(view) => {
