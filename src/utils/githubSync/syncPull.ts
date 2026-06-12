@@ -39,8 +39,19 @@ import {
   parseNote,
   guessMimeFromPath,
   isForeignVaultFile,
+  isUnchangedModuloNormalization,
 } from './internal'
 import type { PullClassification, PullOutcome } from './syncClassify'
+
+// Order-insensitive equality for two tag lists. Used by the collabId-only
+// convergence guard so a note whose bodies match but whose tag sets differ is
+// NOT silently overwritten (it falls through to the merge/conflict path).
+function sameTagSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false
+  const sa = [...a].sort()
+  const sb = [...b].sort()
+  return sa.every((v, i) => v === sb[i])
+}
 
 export async function pullFromGitHub(input: {
   token: string
@@ -307,7 +318,7 @@ export async function pullFromGitHub(input: {
       }
       const content = await loadRemote()
       const parsed = parseNote(content)
-      out.push({ kind: 'remoteCreated', path, remoteSha, remoteContent: content, tags: parsed.tags, body: parsed.body })
+      out.push({ kind: 'remoteCreated', path, remoteSha, remoteContent: content, tags: parsed.tags, body: parsed.body, collabId: parsed.collabId })
       continue
     }
 
@@ -350,10 +361,27 @@ export async function pullFromGitHub(input: {
     } else if (remoteChanged && !localChanged) {
       const content = await loadRemote()
       const parsed = parseNote(content)
-      out.push({ kind: 'remoteUpdated', noteId: localMatch.id, remoteSha, remoteContent: content, tags: parsed.tags, body: parsed.body, ...(adoptPath ? { adoptPath } : {}) })
+      out.push({ kind: 'remoteUpdated', noteId: localMatch.id, remoteSha, remoteContent: content, tags: parsed.tags, body: parsed.body, collabId: parsed.collabId, ...(adoptPath ? { adoptPath } : {}) })
     } else if (remoteChanged && localChanged) {
       const content = await loadRemote()
       const parsed = parseNote(content)
+
+      // collabId-only convergence (Feature B sync-safety): if the local and
+      // remote BODIES (modulo line-ending/trailing-newline normalization) AND
+      // tag sets are identical, the ONLY thing that differs is the collabId
+      // frontmatter metadata — NOT user content. That is not a real conflict:
+      // take the remote version so the repo's collabId wins and collaborators
+      // converge on one room, WITHOUT prompting a content-conflict tab. The
+      // body-equality guard means this can never fire when the user actually
+      // edited text (bodies would differ → fall through to merge/conflict).
+      const localParsed = parseNote(localContent)
+      if (
+        isUnchangedModuloNormalization(localParsed.body, parsed.body) &&
+        sameTagSet(localParsed.tags, parsed.tags)
+      ) {
+        out.push({ kind: 'remoteUpdated', noteId: localMatch.id, remoteSha, remoteContent: content, tags: parsed.tags, body: parsed.body, collabId: parsed.collabId, ...(adoptPath ? { adoptPath } : {}) })
+        continue
+      }
 
       // Try a line-level 3-way merge before bothering the user. If the local
       // and remote edits don't overlap line-wise we can auto-merge and the
@@ -393,6 +421,7 @@ export async function pullFromGitHub(input: {
           remoteContent: content,
           remoteTags: parsed.tags,
           remoteBody: parsed.body,
+          remoteCollabId: parsed.collabId,
           ...(adoptPath ? { adoptPath } : {}),
         })
       }
@@ -739,6 +768,7 @@ export async function pullFromZipball(input: {
         remoteContent: content,
         tags: parsed.tags,
         body: parsed.body,
+        collabId: parsed.collabId,
       })
       continue
     }

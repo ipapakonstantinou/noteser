@@ -30,8 +30,8 @@ import { withTokenRefresh } from './tokenRefresh'
 // widening that module's surface. serializeNote/normalizeForPush is the exact
 // canonicaliser the push path uses, so the SHA matches a clean re-push and the
 // next pull reads the note as `unchanged`.
-function canonicalLocalSha(content: string): Promise<string> {
-  return gitBlobSha(serializeNote({ content } as Note))
+function canonicalLocalSha(content: string, collabId?: string): Promise<string> {
+  return gitBlobSha(serializeNote({ content, collabId } as Note))
 }
 
 // Decrypt a raw remote blob on read. Pass-through when unencrypted. Throws
@@ -99,6 +99,10 @@ async function loadOneShell(
   const content = await maybeDecrypt(raw)
   const parsed = parseNote(content)
   const body = bodyWithInlineTags(parsed.body, parsed.tags)
+  // Feature B: a shell whose remote file carries a collabId adopts it as its
+  // room id when the body streams in, so a cloned-vault note joins the same
+  // live-collab room. Undefined for the common (non-collab) note.
+  const collabId = parsed.collabId
 
   // Re-read inside the patch: the user may have started editing the shell
   // between the fetch starting and landing (the on-open path lets them type
@@ -112,11 +116,17 @@ async function loadOneShell(
   // every freshly-cloned note look "modified" in the pending-changes count
   // (the "530 pending" right after a clone). The note is in sync with remote
   // (gitLastPushedSha = canonical of the loaded body), so updatedAt stays as-is.
-  const loadedSha = await canonicalLocalSha(body)
+  const loadedSha = await canonicalLocalSha(body, collabId)
   useNoteStore.setState(state => ({
     notes: state.notes.map(n =>
       n.id === noteId
-        ? { ...n, content: body, gitLastPushedSha: loadedSha, contentLoaded: true }
+        ? {
+            ...n,
+            content: body,
+            ...(collabId ? { collabId } : {}),
+            gitLastPushedSha: loadedSha,
+            contentLoaded: true,
+          }
         : n,
     ),
   }))

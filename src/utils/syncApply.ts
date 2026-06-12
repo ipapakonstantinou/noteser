@@ -63,8 +63,14 @@ export interface ApplyCounts {
 // the push path uses, so the SHA matches what a clean re-push would produce and
 // the next pull classifies the untouched note as `unchanged`. See the
 // two-SHA-split fix in src/types/index.ts (Note.gitRemoteBaseSha).
-function canonicalLocalSha(content: string): Promise<string> {
-  return gitBlobSha(serializeNote({ content } as Note))
+// `collabId` MUST be threaded in when the stored note will carry one: a note
+// with a collabId serializes WITH a `collabId:` frontmatter block, so its
+// canonical SHA differs from the body-only form. Omitting it here would pin a
+// baseline that never matches serializeNote(note) → the next pull would read a
+// phantom local edit and re-push every sync (churn). Undefined collabId keeps
+// the exact body-only behaviour for the overwhelming majority of notes.
+function canonicalLocalSha(content: string, collabId?: string): Promise<string> {
+  return gitBlobSha(serializeNote({ content, collabId } as Note))
 }
 
 export async function applyNonConflicts(classifications: PullClassification[]): Promise<ApplyCounts> {
@@ -236,10 +242,14 @@ export async function applyNonConflicts(classifications: PullClassification[]): 
         content,
         folderId,
         gitPath: c.path,
+        // Feature B: adopt the room id parsed from the remote frontmatter (if
+        // any) so a client cloning the same vault joins the same live-collab
+        // room. Undefined for the common (non-collab) note.
+        ...(c.collabId ? { collabId: c.collabId } : {}),
         // localChanged baseline: SHA of the canonical LOCAL bytes we just
-        // stored (transformed body), so an untouched note round-trips to
-        // `unchanged` on the next pull.
-        gitLastPushedSha: await canonicalLocalSha(content),
+        // stored (transformed body + collabId frontmatter, if present), so an
+        // untouched note round-trips to `unchanged` on the next pull.
+        gitLastPushedSha: await canonicalLocalSha(content, c.collabId),
         // Merge ancestor: the actual remote blob SHA, fetchable via
         // getBlobContent. Distinct from gitLastPushedSha for frontmatter notes.
         gitRemoteBaseSha: c.remoteSha,
@@ -263,10 +273,15 @@ export async function applyNonConflicts(classifications: PullClassification[]): 
       const existing = byId.get(c.noteId)
       if (!existing) continue
       const content = bodyWithInlineTags(c.body, c.tags)
+      // Feature B: the repo's collabId wins so collaborators converge. When the
+      // remote carries NO collabId we KEEP the local one (a stable id we may
+      // have already shared) rather than clobbering it with undefined.
+      const collabId = c.collabId ?? existing.collabId
       byId.set(c.noteId, {
         ...existing,
         content,
-        gitLastPushedSha: await canonicalLocalSha(content),
+        ...(collabId ? { collabId } : {}),
+        gitLastPushedSha: await canonicalLocalSha(content, collabId),
         gitRemoteBaseSha: c.remoteSha,
         // pull-dedupe-by-path: link gitPath for a reconciled unlinked note.
         ...(c.adoptPath ? { gitPath: c.adoptPath } : {}),
@@ -279,14 +294,23 @@ export async function applyNonConflicts(classifications: PullClassification[]): 
     if (c.kind === 'autoMerged') {
       const existing = byId.get(c.noteId)
       if (!existing) continue
+      // The merged bytes are in the RAW FILE form (the 3-way merge ran on
+      // serialized content), so they may carry a collabId frontmatter block —
+      // re-parse to strip it back out of the body and adopt the room id, exactly
+      // like the manual-merge path (applyMergedConflict). For a body-only note
+      // (the norm) parseNote is a no-op pass-through, so behaviour is unchanged.
+      const parsed = parseNote(c.mergedContent)
+      const content = bodyWithInlineTags(parsed.body, parsed.tags)
+      const collabId = parsed.collabId ?? existing.collabId
       byId.set(c.noteId, {
         ...existing,
-        content: c.mergedContent,
+        content,
+        ...(collabId ? { collabId } : {}),
         // The merged bytes are the new local content; pin the baseline to
         // their canonical SHA. The remote base stays the remote SHA we merged
         // against — the next push will upload the union edit and re-coincide
         // the two SHAs.
-        gitLastPushedSha: await canonicalLocalSha(c.mergedContent),
+        gitLastPushedSha: await canonicalLocalSha(content, collabId),
         gitRemoteBaseSha: c.remoteSha,
         // pull-dedupe-by-path: link gitPath for a reconciled unlinked note.
         ...(c.adoptPath ? { gitPath: c.adoptPath } : {}),
@@ -340,12 +364,16 @@ export function applyMergedConflict(
   c: Extract<PullClassification, { kind: 'conflict' }>,
   mergedRawFile: string,
 ): void {
-  const { updateNote } = useNoteStore.getState()
+  const { updateNote, getNoteById } = useNoteStore.getState()
   // The diff was on the raw file content (possibly with legacy frontmatter).
-  // Re-parse to strip any tags block; merge those tags into the body.
+  // Re-parse to strip any tags block; merge those tags into the body. A
+  // `collabId:` block is parsed back out here too (Feature B), so a resolved
+  // merge keeps the note's body clean and adopts the room id from the file.
   const parsed = parseNote(mergedRawFile)
+  const collabId = parsed.collabId ?? getNoteById(c.noteId)?.collabId
   updateNote(c.noteId, {
     content: bodyWithInlineTags(parsed.body, parsed.tags),
+    ...(collabId ? { collabId } : {}),
     gitLastPushedSha: c.remoteSha,
     gitRemoteBaseSha: c.remoteSha,
     // pull-dedupe-by-path: link gitPath for a reconciled unlinked note that
@@ -377,8 +405,12 @@ export function applyConflictResolution(
     // its gitPath on resolution regardless of which side the user picks.
     const adopt = c.adoptPath ? { gitPath: c.adoptPath } : {}
     if (choice === 'remote') {
+      // Feature B: adopt the remote room id (repo wins); fall back to the
+      // existing local one when the remote frontmatter carried none.
+      const collabId = c.remoteCollabId ?? useNoteStore.getState().getNoteById(c.noteId)?.collabId
       updateNote(c.noteId, {
         content: bodyWithInlineTags(c.remoteBody, c.remoteTags),
+        ...(collabId ? { collabId } : {}),
         gitLastPushedSha: c.remoteSha,
         gitRemoteBaseSha: c.remoteSha,
         ...adopt,
