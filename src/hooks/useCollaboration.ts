@@ -36,6 +36,23 @@ export interface CollabState {
 
 const MAX_ATTEMPTS = 5
 
+// Dedicated room the connectivity probe dials. The collab worker requires a
+// `/<AUTH_TOKEN>/<room>` path (token = second-to-last segment, room = last);
+// NEXT_PUBLIC_YJS_WS_URL is configured as the BARE `<base>/<token>` with NO
+// room. Opening a socket straight to that bare URL gives the worker a single
+// path segment, which it reads as the ROOM with no token → 403 → the probe
+// false-reports "unreachable" even though the real document binding (which
+// connects to `<url>/<room>`) authenticates fine. Appending a probe room
+// makes the probe hit the same `/<token>/<room>` shape the worker accepts.
+const PROBE_ROOM = '__probe__'
+
+// Build the URL the connectivity probe actually dials: the configured base
+// URL plus a dedicated probe room, mirroring how WebsocketProvider(url, room)
+// connects to `<url>/<room>`. Exported for unit testing.
+export function buildProbeUrl(url: string): string {
+  return `${url.replace(/\/+$/, '')}/${PROBE_ROOM}`
+}
+
 // Exported so the Phase-B collaboration binding (collabExtension) shares the
 // exact same gate as the Phase-A connectivity probe: a single source of
 // truth for "is collab enabled, and at what URL". Returns null unless
@@ -89,7 +106,9 @@ export function useCollaboration(): CollabState {
     setStatus('connecting')
     let ws: WebSocket
     try {
-      ws = new WebSocket(url)
+      // Dial the probe room (not the bare configured URL) so the worker sees
+      // the `/<token>/<room>` path it requires and accepts the socket.
+      ws = new WebSocket(buildProbeUrl(url))
     } catch {
       setStatus('error')
       return

@@ -10,7 +10,7 @@
  */
 
 import { renderHook, act } from '@testing-library/react'
-import { useCollaboration } from '../hooks/useCollaboration'
+import { useCollaboration, buildProbeUrl } from '../hooks/useCollaboration'
 
 // Test double for window.WebSocket. Captures whichever instance the
 // hook constructs so tests can fire open/close events synchronously.
@@ -56,6 +56,23 @@ afterEach(() => {
   else process.env.NEXT_PUBLIC_YJS_WS_URL = ORIGINAL_URL
 })
 
+describe('buildProbeUrl', () => {
+  test('appends a /<room> segment so the worker sees /<token>/<room>', () => {
+    // Configured URL is the bare base + token, with NO room. The worker reads
+    // the LAST segment as the room and the one before it as the token, so the
+    // probe must dial `<base>/<token>/<room>` — never the bare URL (which the
+    // worker would read as a single-segment room with no token → 403).
+    expect(buildProbeUrl('wss://collab.noteser.app/deadbeefToken')).toBe(
+      'wss://collab.noteser.app/deadbeefToken/__probe__',
+    )
+  })
+  test('does not double the slash when the URL has a trailing slash', () => {
+    expect(buildProbeUrl('wss://collab.noteser.app/tok/')).toBe(
+      'wss://collab.noteser.app/tok/__probe__',
+    )
+  })
+})
+
 describe('useCollaboration', () => {
   test('without NEXT_PUBLIC_YJS_WS_URL: status is "off" and no WS is opened', () => {
     delete process.env.NEXT_PUBLIC_YJS_WS_URL
@@ -82,6 +99,20 @@ describe('useCollaboration', () => {
     act(() => { MockWebSocket.instances[0].fireOpen() })
     expect(result.current.status).toBe('connected')
     expect(result.current.attempts).toBe(0)
+  })
+
+  test('dials the probe room (/__probe__), not the bare configured URL', () => {
+    // Regression for the false "Live: unreachable" pill: the configured URL is
+    // the bare `<base>/<token>` with no room. The probe must append a room so
+    // the worker's `/<token>/<room>` auth check passes — the bare URL is read
+    // as a single-segment room with no token and rejected (403).
+    process.env.NEXT_PUBLIC_YJS_WS_URL = 'wss://collab.example.com/sometoken'
+    const { result } = renderHook(() => useCollaboration())
+    expect(MockWebSocket.lastConstructorArg).toBe(
+      'wss://collab.example.com/sometoken/__probe__',
+    )
+    // The exposed url stays the bare configured value (used by the pill tooltip).
+    expect(result.current.url).toBe('wss://collab.example.com/sometoken')
   })
 
   test('close before open: status flips to disconnected and attempt counter ticks', () => {
