@@ -68,3 +68,50 @@ test('editor view is reused across notes (no remount) + undo stays per-note', as
 
   console.log(`[verify] note-switch render latency: ${switchMs.toFixed(1)}ms`)
 })
+
+test('switching right after typing shows the new note (no stale-content race)', async ({ page }) => {
+  // Regression for the "16 and 17 look the same, fixes on reload" bug
+  // (2026-06-15): react-codemirror DEFERS its value-sync for 200ms after a
+  // keystroke (typing latch), so switching notes immediately after typing left
+  // the previous note's text on screen. The per-note layout effect now drives
+  // the swap deterministically, independent of that latch.
+  await page.goto('/')
+  await expect(page.getByTestId('folder-tree')).toBeVisible()
+  await page.waitForFunction(() => !!window.__noteser_test?.stores?.noteStore)
+
+  const { a, b } = await page.evaluate(() => {
+    const ns = window.__noteser_test!.stores.noteStore.getState()
+    const ws = window.__noteser_test!.stores.workspaceStore.getState()
+    const a = ns.addNote({ title: 'June16', content: 'CONTENT-SIXTEEN', folderId: null }).id
+    const b = ns.addNote({ title: 'June17', content: 'CONTENT-SEVENTEEN', folderId: null }).id
+    ws.openNote(a, { preview: false })
+    ws.openNote(b, { preview: false })
+    return { a, b }
+  })
+
+  // Focus A, type (arming the 200ms typing latch), then switch to B WITHOUT
+  // waiting for the latch to settle.
+  await page.evaluate((id) => window.__noteser_test!.stores.workspaceStore.getState().focusTab(
+    window.__noteser_test!.stores.workspaceStore.getState().panes[0].tabs.find(t => t.kind === 'note' && (t as { noteId: string }).noteId === id)!.id,
+  ), a)
+  await expect(page.locator('.cm-content')).toContainText('CONTENT-SIXTEEN')
+  await page.locator('.cm-content').click()
+  await page.keyboard.press('End') // cursor to end of the single content line
+  await page.keyboard.type(' EDIT-A')
+  // Immediately switch to B (within the 200ms latch window).
+  await page.evaluate((id) => window.__noteser_test!.stores.workspaceStore.getState().focusTab(
+    window.__noteser_test!.stores.workspaceStore.getState().panes[0].tabs.find(t => t.kind === 'note' && (t as { noteId: string }).noteId === id)!.id,
+  ), b)
+
+  // B's body must be showing — NOT A's content/edit. (Pre-fix this stayed
+  // stale, sometimes until reload.)
+  await expect(page.locator('.cm-content')).toContainText('CONTENT-SEVENTEEN')
+  await expect(page.locator('.cm-content')).not.toContainText('CONTENT-SIXTEEN')
+  await expect(page.locator('.cm-content')).not.toContainText('EDIT-A')
+
+  // And A kept the edit (switching saved it, didn't lose or cross it).
+  await page.evaluate((id) => window.__noteser_test!.stores.workspaceStore.getState().focusTab(
+    window.__noteser_test!.stores.workspaceStore.getState().panes[0].tabs.find(t => t.kind === 'note' && (t as { noteId: string }).noteId === id)!.id,
+  ), a)
+  await expect(page.locator('.cm-content')).toContainText('CONTENT-SIXTEEN EDIT-A')
+})

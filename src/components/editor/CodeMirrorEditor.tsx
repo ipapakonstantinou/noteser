@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { EditorView, keymap, drawSelection, type Command } from '@codemirror/view'
@@ -592,17 +592,33 @@ export function CodeMirrorEditor({
   }, [noteId])
 
   // Per-note reset for the reused editor view (no more keyed remount).
-  // react-codemirror swaps the doc in place when `value` changes, but two
-  // bits of view state would otherwise bleed across notes: the undo history
-  // and the scroll / cursor position. Clear both on note change. This runs
-  // AFTER react-codemirror's own value-sync effect — child effects (the inner
-  // <CodeMirror>) flush before this parent component's — so reconfiguring the
-  // history field here also drops the doc-swap transaction from the undo
-  // stack. The reconfigure + selection change touch no doc text, so they fire
-  // no onChange (its updateListener is docChanged-gated) and trigger no save.
-  useEffect(() => {
+  // This DRIVES the document swap itself rather than trusting
+  // react-codemirror's `value`-sync: that sync DEFERS the swap for 200ms
+  // after any keystroke (its "typing latch"), so switching notes right after
+  // typing left the previous note's text showing — sometimes until reload
+  // (the "16 and 17 look the same" bug, 2026-06-15). A layout effect runs
+  // before paint AND before the inner <CodeMirror>'s passive value-sync, so
+  // the new note's body is on screen instantly and the deferred sync becomes
+  // a no-op (doc already equals value). Three things reset per note:
+  //   1. the document (to the new note's content),
+  //   2. the undo stack (so Ctrl+Z can't cross notes),
+  //   3. scroll + cursor (a reused view keeps the previous note's offsets).
+  // Under collaboration the shared Y.Text owns the document, so we skip the
+  // manual doc swap there and let the collab binding populate it.
+  const programmaticSwapRef = useRef(false)
+  useLayoutEffect(() => {
     const view = cmRef.current?.view
     if (!view) return
+    if (!collabEnabled) {
+      const next = editorInitialValue
+      if (view.state.doc.toString() !== next) {
+        // Mark the swap so handleChange skips the debounced save — this is the
+        // note's own content, and updateNote() is not idempotent (it bumps
+        // updatedAt, which would spuriously dirty the note on every switch).
+        programmaticSwapRef.current = true
+        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: next } })
+      }
+    }
     // Clear the undo stack by toggling the history extension OFF then ON.
     // history() shares a module-level StateField, so reconfiguring straight
     // to a fresh history() PRESERVES the existing field (undo would still
@@ -617,6 +633,11 @@ export function CodeMirrorEditor({
     // A reused view keeps the previous note's scroll offset — jump to the top.
     // scrollDOM is absent in the jsdom test view, so guard the assignment.
     if (view.scrollDOM) view.scrollDOM.scrollTop = 0
+    // ONLY [noteId]: re-running on editorInitialValue would clear the undo
+    // stack and scroll-to-top on every keystroke-driven save. Post-switch
+    // content changes (e.g. a shell note's body streaming in) are handled by
+    // react-codemirror's own value-sync, which is reliable when not mid-typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [noteId])
 
   // Diff-gutter baseline (109): when the note changes — or after a
@@ -1270,6 +1291,14 @@ export function CodeMirrorEditor({
   }, [wikilinkState])
 
   const handleChange = useCallback((value: string) => {
+    // The per-note layout effect swaps the document on note change; that swap
+    // fires this onChange. Skip the save for it — it is the note's own content
+    // and updateNote() bumps updatedAt, which would dirty the note (and churn
+    // sync) on every switch. Real edits fall through normally.
+    if (programmaticSwapRef.current) {
+      programmaticSwapRef.current = false
+      return
+    }
     debouncedSave(value)
     updateWikilinkState(value)
     updateTagState(value)
