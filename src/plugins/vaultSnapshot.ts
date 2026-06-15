@@ -24,6 +24,7 @@
 import { useNoteStore } from '@/stores/noteStore'
 import { useFolderStore } from '@/stores/folderStore'
 import { parseFrontmatter } from '@/utils/frontmatter'
+import { yieldToMain } from '@/utils/bootTrace'
 import type { Note, Folder } from '@/types'
 import type { NoteWithBodyWire } from './protocol'
 
@@ -155,10 +156,12 @@ export async function streamVaultSnapshot(
     chunkIndex++
     const slice = all.slice(i, i + chunkSize)
     await opts.onChunk(slice, chunkIndex)
-    // Cooperative yield. queueMicrotask is enough — the worker
-    // postMessage queued before the next iteration also yields the
-    // main thread macrotask boundary.
-    await new Promise<void>((resolve) => queueMicrotask(resolve))
+    // Cooperative yield to a MACROTASK boundary so the host main thread
+    // can repaint between chunks. queueMicrotask is NOT enough — the
+    // microtask queue drains before any rendering, so the whole loop
+    // would run as one blocking task. yieldToMain uses scheduler.postTask
+    // (or a 0ms timeout) — a real macrotask yield.
+    await yieldToMain()
   }
   await opts.onEnd?.()
 }
