@@ -157,6 +157,14 @@ function makePane(): PaneState {
   return { id: uuidv4(), tabs: [], activeTabId: null }
 }
 
+// Deterministic id for the very first pane the store hands out before persist
+// rehydration. A random uuid here would differ between the SSR render and the
+// client's first render, tripping a React hydration mismatch on the editor
+// tabpanel `id` (editor-tabpanel-${pane.id}). After rehydration the persisted
+// panes (with their own uuids) replace this one, client-side only — no SSR
+// comparison — so a fixed bootstrap id is safe and unique among panes.
+const BOOTSTRAP_PANE_ID = '__bootstrap-pane__'
+
 const DEFAULT_SPLIT_RATIO = 0.5
 
 function leaf(paneId: string): LayoutNode {
@@ -575,7 +583,7 @@ export function migrateWorkspace(persisted: unknown, version: number): {
 export const useWorkspaceStore = create<WorkspaceState>()(
   persist(
     (set, get) => {
-      const initialPane = makePane()
+      const initialPane: PaneState = { id: BOOTSTRAP_PANE_ID, tabs: [], activeTabId: null }
       return {
       panes: [initialPane],
       layout: leaf(initialPane.id),
