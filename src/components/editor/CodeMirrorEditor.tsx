@@ -9,7 +9,8 @@ import { moveLineUp, moveLineDown, deleteLine, history } from '@codemirror/comma
 import { toggleFold, foldAll, unfoldAll } from '@codemirror/language'
 import { search, searchKeymap, openSearchPanel } from '@codemirror/search'
 import { diffGutterExtension, setDiffBaseline } from './diffGutter'
-import { foldableHeadings } from './foldableHeadings'
+// DIAGNOSTIC 2026-06-15: disabled with its use below to test note-switch perf.
+// import { foldableHeadings } from './foldableHeadings'
 import { getLastPushedContent } from '@/utils/lastPushedContent'
 import { useDebouncedCallback } from '@/hooks/useDebounce'
 import { useUIStore, useGitHubStore } from '@/stores'
@@ -857,7 +858,11 @@ export function CodeMirrorEditor({
     // markdown text is untouched, so collab + live-preview decorations + save
     // all keep working. See foldableHeadings.ts for the range logic. Keyboard
     // toggles (Mod-., Mod-Alt-[ / Mod-Alt-]) are wired in the keymap below.
-    foldableHeadings,
+    // DIAGNOSTIC 2026-06-15: temporarily disabled to test whether the
+    // collapsible-headings extension (foldGutter + codeFolding + foldService)
+    // is the cause of Jon's slow note-switch on beta. Re-enable or fix once
+    // confirmed. See [[project_noteser_note_switch_perf]].
+    // foldableHeadings,
     // Built-in find / replace panel. `top: true` opens it above the
     // editor — matches VS Code / Obsidian placement. Keymap includes
     // Ctrl+F (find), Ctrl+H (replace), F3/Shift+F3 (next/prev), Esc
