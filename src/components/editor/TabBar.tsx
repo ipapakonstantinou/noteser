@@ -94,6 +94,29 @@ export const TabBar = ({ pane }: Props) => {
     setDragOverIdx(null)
   }
 
+  // The gaps between tabs are only a few px wide — far too narrow to land a
+  // drop on reliably, which is why reordering "didn't work". So make each TAB
+  // a drop target too: insert before it when the pointer is on its left half,
+  // after it on the right half. moveTab handles the same-pane index shift.
+  const tabInsertIdx = (e: React.DragEvent, i: number) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    return e.clientX < rect.left + rect.width / 2 ? i : i + 1
+  }
+  const handleTabDragOver = (e: React.DragEvent, i: number) => {
+    if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const idx = tabInsertIdx(e, i)
+    if (dragOverIdx !== idx) setDragOverIdx(idx)
+  }
+  const handleTabDrop = (e: React.DragEvent, i: number) => {
+    if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
+    e.preventDefault()
+    const tabId = e.dataTransfer.getData(TAB_DRAG_MIME)
+    if (tabId) moveTab(tabId, pane.id, tabInsertIdx(e, i))
+    setDragOverIdx(null)
+  }
+
   return (
     <>
     <div
@@ -123,6 +146,8 @@ export const TabBar = ({ pane }: Props) => {
               draggable
               onDragStart={(e) => onDragStart(e, tab.id)}
               onDragEnd={onDragEnd}
+              onDragOver={(e) => handleTabDragOver(e, i)}
+              onDrop={(e) => handleTabDrop(e, i)}
               onClick={() => handleTabClick(tab.id)}
               onDoubleClick={() => promoteTab(tab.id)}
               onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); closeTab(tab.id) } }}

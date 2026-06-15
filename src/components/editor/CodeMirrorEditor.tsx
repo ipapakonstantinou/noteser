@@ -5,7 +5,7 @@ import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { EditorView, keymap, drawSelection, type Command } from '@codemirror/view'
 import { Prec, Compartment } from '@codemirror/state'
-import { moveLineUp, moveLineDown, deleteLine } from '@codemirror/commands'
+import { moveLineUp, moveLineDown, deleteLine, history } from '@codemirror/commands'
 import { toggleFold, foldAll, unfoldAll } from '@codemirror/language'
 import { search, searchKeymap, openSearchPanel } from '@codemirror/search'
 import { diffGutterExtension, setDiffBaseline } from './diffGutter'
@@ -568,6 +568,15 @@ export function CodeMirrorEditor({
   const autocorrectCompartmentRef = useRef(new Compartment())
   const editorAutocorrect = useSettingsStore(s => s.editorAutocorrect)
 
+  // History lives in its own compartment so the undo stack can be CLEARED on
+  // note change. The editor view is no longer torn down per note (we dropped
+  // the `key={noteId}` remount for speed), so a shared history would let
+  // Ctrl+Z undo across note boundaries — and worse, undo the doc-swap and
+  // replay the previous note's text into the current note. Reconfiguring the
+  // compartment re-creates the history field, which empties it. basicSetup's
+  // built-in history is disabled below so this is the only history extension.
+  const historyCompartmentRef = useRef(new Compartment())
+
   // Stable refs so extension callbacks always see the latest values
   const activeNotesRef = useRef(activeNotes)
   const navigateRef = useRef(onWikilinkNavigate)
@@ -580,6 +589,34 @@ export function CodeMirrorEditor({
   useEffect(() => {
     setTagState(null)
     setWikilinkState(null)
+  }, [noteId])
+
+  // Per-note reset for the reused editor view (no more keyed remount).
+  // react-codemirror swaps the doc in place when `value` changes, but two
+  // bits of view state would otherwise bleed across notes: the undo history
+  // and the scroll / cursor position. Clear both on note change. This runs
+  // AFTER react-codemirror's own value-sync effect — child effects (the inner
+  // <CodeMirror>) flush before this parent component's — so reconfiguring the
+  // history field here also drops the doc-swap transaction from the undo
+  // stack. The reconfigure + selection change touch no doc text, so they fire
+  // no onChange (its updateListener is docChanged-gated) and trigger no save.
+  useEffect(() => {
+    const view = cmRef.current?.view
+    if (!view) return
+    // Clear the undo stack by toggling the history extension OFF then ON.
+    // history() shares a module-level StateField, so reconfiguring straight
+    // to a fresh history() PRESERVES the existing field (undo would still
+    // cross notes — caught by e2e/editor-reuse). Removing the extension drops
+    // the field entirely; re-adding it recreates an empty one.
+    const hist = historyCompartmentRef.current
+    view.dispatch({ effects: hist.reconfigure([]) })
+    view.dispatch({
+      selection: { anchor: 0 },
+      effects: hist.reconfigure(history()),
+    })
+    // A reused view keeps the previous note's scroll offset — jump to the top.
+    // scrollDOM is absent in the jsdom test view, so guard the assignment.
+    if (view.scrollDOM) view.scrollDOM.scrollTop = 0
   }, [noteId])
 
   // Diff-gutter baseline (109): when the note changes — or after a
@@ -772,6 +809,10 @@ export function CodeMirrorEditor({
     autocorrectCompartmentRef.current.of(
       autocorrectAttrs(useSettingsStore.getState().editorAutocorrect),
     ),
+    // Undo history in a compartment so the per-note reset effect can clear it.
+    // basicSetup's own history() is disabled (history: false) so this is the
+    // single source of undo state; historyKeymap (still on) drives it.
+    historyCompartmentRef.current.of(history()),
     markdown({ base: markdownLanguage }),
     markdownLivePreview,
     tasksLivePreview,
@@ -1279,7 +1320,6 @@ export function CodeMirrorEditor({
   return (
     <div className="flex-1 overflow-hidden h-full relative bg-obsidianBlack">
       <CodeMirror
-        key={noteId}
         ref={cmRef}
         value={editorInitialValue}
         extensions={extensions}
@@ -1296,6 +1336,11 @@ export function CodeMirrorEditor({
           dropCursor: false,
           allowMultipleSelections: false,
           indentOnInput: false,
+          // History is provided via historyCompartmentRef so the per-note
+          // reset effect can clear the undo stack on note change. Disabling it
+          // here avoids a duplicate (uncleared) history field. historyKeymap
+          // stays enabled below and drives this compartment's history.
+          history: false,
           bracketMatching: false,
           closeBrackets: false,
           autocompletion: false,
