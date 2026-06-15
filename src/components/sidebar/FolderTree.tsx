@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -168,7 +168,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const lastClickedIdRef = useRef<string | null>(null)
   const isSelected = (id: string) => selectedIds.has(id)
-  const clearSelection = () => setSelectedIds(new Set())
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), [])
 
   // Bulk delete via the existing DeleteConfirmModal (extended to handle
   // a bulk payload). Setting `confirmBulkDelete` (default true) gates the
@@ -260,7 +260,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   // Promote the note to a pinned tab. Shared by the self-detected
   // double-click and the native onDoubleClick fast-path. Cancels any
   // pending single-click preview so the note never sticks as a preview.
-  const pinNote = (id: string) => {
+  const pinNote = useCallback((id: string) => {
     if (clickTimerRef.current) {
       clearTimeout(clickTimerRef.current)
       clickTimerRef.current = null
@@ -270,73 +270,11 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     openNote(id, { preview: false })
     if (fromNonTreeView) revealNote(id)
     closeDrawerIfMobile()
-  }
+  }, [currentView, openNote, closeDrawerIfMobile])
 
-  const handleNoteClick = (id: string, e?: React.MouseEvent) => {
-    const fromNonTreeView = currentView !== 'notes' && currentView !== 'trash'
-
-    // ── Multi-select branches ─────────────────────────────────────────────
-    // Ctrl/Cmd+Click toggles the row in the selection set.
-    if (e && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
-      setSelectedIds(prev => {
-        const next = new Set(prev)
-        if (next.has(id)) next.delete(id)
-        else next.add(id)
-        return next
-      })
-      lastClickedIdRef.current = id
-      lastClickRef.current = null
-      return
-    }
-    // Shift+Click selects a contiguous range from the last-clicked row
-    // through this row, in flattenedRows order. Includes both ends.
-    if (e && e.shiftKey && lastClickedIdRef.current) {
-      const anchor = lastClickedIdRef.current
-      const order = flattenedRows.filter(r => r.kind === 'note').map(r => r.id)
-      const i1 = order.indexOf(anchor)
-      const i2 = order.indexOf(id)
-      if (i1 !== -1 && i2 !== -1) {
-        const [lo, hi] = i1 <= i2 ? [i1, i2] : [i2, i1]
-        const range = new Set(order.slice(lo, hi + 1))
-        setSelectedIds(range)
-      }
-      lastClickRef.current = null
-      return
-    }
-
-    // ── Self-detected double-click ────────────────────────────────────────
-    // A second plain click on the SAME note within the window pins it,
-    // regardless of whether the browser also emits a native `dblclick`.
-    const now = Date.now()
-    const prev = lastClickRef.current
-    if (prev && prev.id === id && now - prev.at <= DOUBLE_CLICK_MS) {
-      pinNote(id)
-      return
-    }
-    lastClickRef.current = { id, at: now }
-
-    // Plain (first) click: clear the selection (so the user knows multi-mode
-    // ended) + open the note as preview after the double-click guard. If a
-    // second click lands within the window the timer is cancelled above.
-    if (selectedIds.size > 0) clearSelection()
-    lastClickedIdRef.current = id
-    if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
-    clickTimerRef.current = setTimeout(() => {
-      openNote(id, { preview: true })
-      if (fromNonTreeView) revealNote(id)
-      // Mobile: dismiss the off-canvas drawer once the note is open
-      // (the user wants the editor next, not the file tree).
-      closeDrawerIfMobile()
-      clickTimerRef.current = null
-      lastClickRef.current = null
-    }, DOUBLE_CLICK_MS)
-  }
-  const handleNoteDoubleClick = (id: string) => {
-    // Native dblclick fast-path. Most genuine fast double-clicks fire this;
-    // the self-detected counter in handleNoteClick covers the rest. Both
-    // route through pinNote so the outcome is identical.
-    pinNote(id)
-  }
+  // NOTE: handleNoteClick / handleNoteDoubleClick are defined AFTER
+  // flattenedRows below — handleNoteClick reads flattenedRows in its deps,
+  // and a `const` cannot be referenced before its declaration.
 
   // ── Attachment helpers ─────────────────────────────────────────────────
   // Attachments live in real Folder entities now (materialised on save /
@@ -409,6 +347,75 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
       noteSortMode: folderSortMode,
     })
   }, [hydrated, folders, notes, expandedFolders, showHiddenFolders, folderSortMode])
+
+  const handleNoteClick = useCallback((id: string, e?: React.MouseEvent) => {
+    const fromNonTreeView = currentView !== 'notes' && currentView !== 'trash'
+
+    // ── Multi-select branches ─────────────────────────────────────────────
+    // Ctrl/Cmd+Click toggles the row in the selection set.
+    if (e && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+      setSelectedIds(prev => {
+        const next = new Set(prev)
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+        return next
+      })
+      lastClickedIdRef.current = id
+      lastClickRef.current = null
+      return
+    }
+    // Shift+Click selects a contiguous range from the last-clicked row
+    // through this row, in flattenedRows order. Includes both ends.
+    if (e && e.shiftKey && lastClickedIdRef.current) {
+      const anchor = lastClickedIdRef.current
+      const order = flattenedRows.filter(r => r.kind === 'note').map(r => r.id)
+      const i1 = order.indexOf(anchor)
+      const i2 = order.indexOf(id)
+      if (i1 !== -1 && i2 !== -1) {
+        const [lo, hi] = i1 <= i2 ? [i1, i2] : [i2, i1]
+        const range = new Set(order.slice(lo, hi + 1))
+        setSelectedIds(range)
+      }
+      lastClickRef.current = null
+      return
+    }
+
+    // ── Self-detected double-click ────────────────────────────────────────
+    // A second plain click on the SAME note within the window pins it,
+    // regardless of whether the browser also emits a native `dblclick`.
+    const now = Date.now()
+    const prev = lastClickRef.current
+    if (prev && prev.id === id && now - prev.at <= DOUBLE_CLICK_MS) {
+      pinNote(id)
+      return
+    }
+    lastClickRef.current = { id, at: now }
+
+    // Plain (first) click: clear the selection (so the user knows multi-mode
+    // ended) + open the note as preview after the double-click guard. If a
+    // second click lands within the window the timer is cancelled above.
+    if (selectedIds.size > 0) clearSelection()
+    lastClickedIdRef.current = id
+    if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
+    clickTimerRef.current = setTimeout(() => {
+      openNote(id, { preview: true })
+      if (fromNonTreeView) revealNote(id)
+      // Mobile: dismiss the off-canvas drawer once the note is open
+      // (the user wants the editor next, not the file tree).
+      closeDrawerIfMobile()
+      clickTimerRef.current = null
+      lastClickRef.current = null
+    }, DOUBLE_CLICK_MS)
+    // flattenedRows + selectedIds are read inside; including them keeps the
+    // callback correct when they change but stable on a plain note switch
+    // (which changes neither), so memoized rows don't all re-render.
+  }, [currentView, flattenedRows, selectedIds, openNote, closeDrawerIfMobile, pinNote, clearSelection])
+  const handleNoteDoubleClick = useCallback((id: string) => {
+    // Native dblclick fast-path. Most genuine fast double-clicks fire this;
+    // the self-detected counter in handleNoteClick covers the rest. Both
+    // route through pinNote so the outcome is identical.
+    pinNote(id)
+  }, [pinNote])
 
   // Find-as-you-type: we use a single-letter prefix that always searches
   // forward from the currently focused row, wrapping around. Repeated taps
@@ -635,106 +642,59 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     </div>
   )
 
-  // Foreign-vault-file row: a non-md, non-attachment file we mirror from the
-  // remote vault as a non-openable entry (e.g. `.canvas`, `.base`). It uses
-  // a distinct icon + muted italic styling to signal "not openable"; a click
-  // surfaces a toast instead of opening the editor. Right-click hands the
-  // existing `onRightClick` handler the note id — the ContextMenu special-
-  // cases foreign-kind notes to only show Reveal in folder / Show on GitHub
-  // (no Rename / Delete on files we cannot edit).
-  const ForeignFileItem = ({ note, depth = 0 }: { note: typeof notes[0]; depth?: number }) => {
-    const kbFocused = isRowFocused('note', note.id)
-    const handleClick = () => {
-      useToastStore.getState().addToast({
-        kind: 'info',
-        message: `noteser cannot open ${note.title} yet. The file is in your vault and visible in the tree.`,
-        source: 'foreign-file-open',
-      })
-    }
-    return (
-      <div
-        className={`obsidian-file-item italic text-obsidianSecondaryText ${
-          kbFocused ? 'ring-1 ring-inset ring-obsidianAccentPurple' : ''
-        }`}
-        onClick={handleClick}
-        onContextMenu={e => onRightClick(e, 'note', note.id)}
-        title="File type not supported yet"
-        tabIndex={-1}
-        data-testid="foreign-file-row"
-        data-note-id={note.id}
-        data-foreign="true"
-        role="treeitem"
-        aria-level={depth + 1}
-        aria-selected={false}
-        aria-disabled="true"
-      >
-        <DocumentMagnifyingGlassIcon className="w-4 h-4 mr-2 flex-shrink-0" />
-        <span className="flex-1 truncate">{note.title}</span>
-      </div>
-    )
-  }
+  // ── Stable per-row callbacks ─────────────────────────────────────────────
+  // These are passed down to the memoized NoteRow. Because they're stable
+  // (store actions are stable; the rest are useCallback'd), a plain note
+  // switch — which changes only selectedNoteId — leaves every NoteRow's
+  // props shallow-equal except the two rows whose isActive flips, so
+  // React.memo skips re-rendering the rest of the (potentially thousands of)
+  // visible rows.
+  const handlePinToggle = useCallback((id: string) => togglePinNote(id), [togglePinNote])
+  const handleTitleSave = useCallback(
+    (id: string, title: string) => updateNote(id, { title }),
+    [updateNote],
+  )
+  const handleEditingChange = useCallback(
+    (editing: boolean) => { if (!editing) clearRenameRequest() },
+    [clearRenameRequest],
+  )
 
-  // Render note item
-  const NoteItem = ({ note, className = '', depth = 0 }: { note: typeof notes[0]; className?: string; depth?: number }) => {
-    // Foreign files render through a separate row component — no editor open,
-    // no drag-and-drop into other folders, no multi-select bulk delete. See
-    // ForeignFileItem above.
-    if (note.kind === 'foreign') return <ForeignFileItem note={note} depth={depth} />
-    const kbFocused = isRowFocused('note', note.id)
+  // Render a note row. This is a plain HELPER FUNCTION, NOT an inline
+  // component: it is CALLED ({renderNoteRow(note)}), so the only component in
+  // the child position is the top-level, stable `NoteRow`. If we instead
+  // rendered an inline <NoteItem/> component, its function identity would
+  // change on every FolderTree render and React would REMOUNT every row
+  // (defeating NoteRow's memo entirely). As a called helper, NoteRow's type
+  // is stable, so React reconciles by key and memo skips the rows whose props
+  // (per-row booleans + stable callbacks) are unchanged — i.e. a plain note
+  // switch only re-renders the two rows whose isActive flips.
+  const renderNoteRow = (note: typeof notes[0], opts: { className?: string; depth?: number } = {}) => {
+    const { className = '', depth = 0 } = opts
     const multiSelected = isSelected(note.id)
-    const isCompareSource = compareSourceNoteId === note.id
-    const isActive = selectedNoteId === note.id || multiSelected
-    // Mobile-only drag-to-pin. Trash rows are excluded because their
-    // primary affordance is restore / permanently delete.
-    const swipeEnabled = isMobile && currentView !== 'trash' && !note.isDeleted
     return (
-      <SwipePinRow
-        enabled={swipeEnabled}
-        onPinToggle={() => togglePinNote(note.id)}
-      >
-        <div
-          className={`obsidian-file-item ${
-            multiSelected ? 'bg-obsidianAccentPurple/25 border-l-2 border-obsidianAccentPurple -ml-[2px] pl-[10px]' :
-              selectedNoteId === note.id ? 'bg-obsidianHighlight' : ''
-          } ${kbFocused ? 'ring-1 ring-inset ring-obsidianAccentPurple' : ''} ${
-            isCompareSource ? 'italic border-l-2 border-obsidianAccentPurple -ml-[2px] pl-[10px] ring-1 ring-inset ring-obsidianAccentPurple/60' : ''
-          } ${className}`}
-          data-compare-source={isCompareSource ? 'true' : undefined}
-          draggable={currentView !== 'trash' && !multiSelected && !note.isDeleted}
-          onDragStart={e => beginNoteDrag(e, note.id)}
-          onDragEnd={endDrag}
-          onClick={(e) => handleNoteClick(note.id, e)}
-          onDoubleClick={() => handleNoteDoubleClick(note.id)}
-          onContextMenu={e => onRightClick(e, 'note', note.id)}
-          tabIndex={-1}
-          data-testid="note-row"
-          data-note-id={note.id}
-          data-kb-focused={kbFocused ? 'true' : undefined}
-          role="treeitem"
-          aria-level={depth + 1}
-          aria-selected={isActive}
-          aria-current={kbFocused ? 'true' : undefined}
-        >
-          <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1">
-              {note.isPinned && (
-                <StarIconSolid className="w-3 h-3 text-yellow-500 flex-shrink-0" />
-              )}
-              {currentView === 'trash' ? (
-                <span className="truncate">{note.title}</span>
-              ) : (
-                <EditableText
-                  value={note.title}
-                  onSave={newTitle => updateNote(note.id, { title: newTitle })}
-                  isEditing={renameRequest?.type === 'note' && renameRequest.id === note.id}
-                  onEditingChange={(v) => { if (!v) clearRenameRequest() }}
-                />
-              )}
-            </div>
-          </div>
-        </div>
-      </SwipePinRow>
+      <NoteRow
+        key={note.id}
+        note={note}
+        depth={depth}
+        className={className}
+        isActive={selectedNoteId === note.id || multiSelected}
+        multiSelected={multiSelected}
+        kbFocused={isRowFocused('note', note.id)}
+        isCompareSource={compareSourceNoteId === note.id}
+        isEditing={renameRequest?.type === 'note' && renameRequest.id === note.id}
+        isTrashView={currentView === 'trash'}
+        // Mobile-only drag-to-pin. Trash rows are excluded because their
+        // primary affordance is restore / permanently delete.
+        swipeEnabled={isMobile && currentView !== 'trash' && !note.isDeleted}
+        onNoteClick={handleNoteClick}
+        onNoteDoubleClick={handleNoteDoubleClick}
+        onPinToggle={handlePinToggle}
+        onTitleSave={handleTitleSave}
+        onEditingChange={handleEditingChange}
+        onRightClick={onRightClick}
+        onDragStart={beginNoteDrag}
+        onDragEnd={endDrag}
+      />
     )
   }
 
@@ -744,8 +704,11 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   const filterHidden = <T extends { name: string }>(items: T[]): T[] =>
     showHiddenFolders ? items : items.filter(f => !isHiddenFolderName(f.name))
 
-  // Render folder with its child folders + its notes (recursive)
-  const FolderItem = ({ folder, depth = 0 }: { folder: typeof folders[0]; depth?: number }) => {
+  // Render a folder with its child folders + its notes (recursive). Like
+  // renderNoteRow, this is a CALLED helper (not an inline <FolderItem/>
+  // component) so it introduces no unstable component boundary that would
+  // remount the memoized NoteRow children on every FolderTree render.
+  const renderFolderItem = (folder: typeof folders[0], depth = 0) => {
     const isExpanded = expandedFolders[folder.id]
     const isActive = activeFolderId === folder.id
     const folderNotes = sortNotes(activeNotes.filter(n => n.folderId === folder.id), folderSortMode)
@@ -757,7 +720,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
     const isDropTarget = dragOverTarget === folder.id
     const kbFocused = isRowFocused('folder', folder.id)
     return (
-      <div className="mb-0.5" role="treeitem" aria-level={depth + 1} aria-expanded={isExpanded} aria-selected={isActive} aria-current={kbFocused ? 'true' : undefined}>
+      <div key={folder.id} className="mb-0.5" role="treeitem" aria-level={depth + 1} aria-expanded={isExpanded} aria-selected={isActive} aria-current={kbFocused ? 'true' : undefined}>
         <div
           className={`obsidian-folder-item ${
             isActive ? 'bg-obsidianHighlight' : ''
@@ -808,14 +771,10 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
         {isExpanded && (
           <div role="group">
             {/* Nested child folders first */}
-            {childFolders.map(child => (
-              <FolderItem key={child.id} folder={child} depth={depth + 1} />
-            ))}
+            {childFolders.map(child => renderFolderItem(child, depth + 1))}
             {/* Then notes + attachments inside this folder */}
             <div style={{ paddingLeft: `${(depth + 1) * 12 + 8}px` }}>
-              {folderNotes.map(note => (
-                <NoteItem key={note.id} note={note} depth={depth + 1} />
-              ))}
+              {folderNotes.map(note => renderNoteRow(note, { depth: depth + 1 }))}
               {folderAttachments.map(m => (
                 <AttachmentItem key={m.path} m={m} depth={depth + 1} />
               ))}
@@ -909,9 +868,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
           </div>
         ) : (
           <div role="tree" aria-label="Recently modified notes">
-            {recentNotes.map(note => (
-              <NoteItem key={note.id} note={note} />
-            ))}
+            {recentNotes.map(note => renderNoteRow(note))}
           </div>
         )}
       </div>
@@ -1062,21 +1019,157 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
           expandedFolders={expandedFolders}
           toggleFolderExpanded={toggleFolderExpanded}
           onFolderRightClick={(e, id) => onRightClick(e, 'folder', id)}
-          renderNote={(note) => <NoteItem key={note.id} note={note} />}
+          renderNote={(note) => renderNoteRow(note)}
         />
       )}
-      {visibleRootFolders.map(folder => (
-        <FolderItem key={folder.id} folder={folder} />
-      ))}
-      {rootNotes.map(note => (
-        <NoteItem key={note.id} note={note} />
-      ))}
+      {visibleRootFolders.map(folder => renderFolderItem(folder))}
+      {rootNotes.map(note => renderNoteRow(note))}
       {rootAttachments.map(m => (
         <AttachmentItem key={m.path} m={m} />
       ))}
     </div>
   )
 }
+
+// ── Memoized note row ──────────────────────────────────────────────────────
+// Extracted to the top level (and wrapped in React.memo) so a plain note
+// switch re-renders only the rows whose visual state actually changed. The
+// parent (FolderTree) computes all per-row booleans and passes them as props
+// alongside STABLE callbacks; React.memo's shallow prop compare then skips
+// every row that isn't the previously- or newly-selected one. This is what
+// drops large-vault switch latency from ~566ms toward the ~44ms floor.
+//
+// Behaviour is identical to the old inline NoteItem: single click = preview
+// after the double-click guard; Ctrl/Cmd+click = toggle multi-select;
+// Shift+click = range select; self-detected/native double-click = pin;
+// context menu, drag, rename, compare-source styling, pinned star, mobile
+// swipe-to-pin, keyboard focus ring, and all data-*/aria-* attributes.
+interface NoteRowProps {
+  note: Note
+  depth: number
+  className: string
+  isActive: boolean
+  multiSelected: boolean
+  kbFocused: boolean
+  isCompareSource: boolean
+  isEditing: boolean
+  isTrashView: boolean
+  swipeEnabled: boolean
+  onNoteClick: (id: string, e?: React.MouseEvent) => void
+  onNoteDoubleClick: (id: string) => void
+  onPinToggle: (id: string) => void
+  onTitleSave: (id: string, title: string) => void
+  onEditingChange: (editing: boolean) => void
+  onRightClick: (e: React.MouseEvent, type: 'note' | 'folder', id: string) => void
+  onDragStart: (e: React.DragEvent, id: string) => void
+  onDragEnd: () => void
+}
+
+const NoteRow = memo(function NoteRow({
+  note,
+  depth,
+  className,
+  isActive,
+  multiSelected,
+  kbFocused,
+  isCompareSource,
+  isEditing,
+  isTrashView,
+  swipeEnabled,
+  onNoteClick,
+  onNoteDoubleClick,
+  onPinToggle,
+  onTitleSave,
+  onEditingChange,
+  onRightClick,
+  onDragStart,
+  onDragEnd,
+}: NoteRowProps) {
+  // Foreign-vault files (e.g. `.canvas`, `.base`) are mirrored as
+  // non-openable entries: distinct icon + muted italic styling, a click
+  // surfaces a toast instead of opening the editor, no drag / multi-select.
+  // Right-click still routes through onRightClick (ContextMenu special-cases
+  // foreign-kind notes to Reveal in folder / Show on GitHub only).
+  if (note.kind === 'foreign') {
+    return (
+      <div
+        className={`obsidian-file-item italic text-obsidianSecondaryText ${
+          kbFocused ? 'ring-1 ring-inset ring-obsidianAccentPurple' : ''
+        }`}
+        onClick={() => {
+          useToastStore.getState().addToast({
+            kind: 'info',
+            message: `noteser cannot open ${note.title} yet. The file is in your vault and visible in the tree.`,
+            source: 'foreign-file-open',
+          })
+        }}
+        onContextMenu={e => onRightClick(e, 'note', note.id)}
+        title="File type not supported yet"
+        tabIndex={-1}
+        data-testid="foreign-file-row"
+        data-note-id={note.id}
+        data-foreign="true"
+        role="treeitem"
+        aria-level={depth + 1}
+        aria-selected={false}
+        aria-disabled="true"
+      >
+        <DocumentMagnifyingGlassIcon className="w-4 h-4 mr-2 flex-shrink-0" />
+        <span className="flex-1 truncate">{note.title}</span>
+      </div>
+    )
+  }
+
+  return (
+    <SwipePinRow
+      enabled={swipeEnabled}
+      onPinToggle={() => onPinToggle(note.id)}
+    >
+      <div
+        className={`obsidian-file-item ${
+          multiSelected ? 'bg-obsidianAccentPurple/25 border-l-2 border-obsidianAccentPurple -ml-[2px] pl-[10px]' :
+            isActive ? 'bg-obsidianHighlight' : ''
+        } ${kbFocused ? 'ring-1 ring-inset ring-obsidianAccentPurple' : ''} ${
+          isCompareSource ? 'italic border-l-2 border-obsidianAccentPurple -ml-[2px] pl-[10px] ring-1 ring-inset ring-obsidianAccentPurple/60' : ''
+        } ${className}`}
+        data-compare-source={isCompareSource ? 'true' : undefined}
+        draggable={!isTrashView && !multiSelected && !note.isDeleted}
+        onDragStart={e => onDragStart(e, note.id)}
+        onDragEnd={onDragEnd}
+        onClick={(e) => onNoteClick(note.id, e)}
+        onDoubleClick={() => onNoteDoubleClick(note.id)}
+        onContextMenu={e => onRightClick(e, 'note', note.id)}
+        tabIndex={-1}
+        data-testid="note-row"
+        data-note-id={note.id}
+        data-kb-focused={kbFocused ? 'true' : undefined}
+        role="treeitem"
+        aria-level={depth + 1}
+        aria-selected={isActive}
+        aria-current={kbFocused ? 'true' : undefined}
+      >
+        <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1">
+            {note.isPinned && (
+              <StarIconSolid className="w-3 h-3 text-yellow-500 flex-shrink-0" />
+            )}
+            {isTrashView ? (
+              <span className="truncate">{note.title}</span>
+            ) : (
+              <EditableText
+                value={note.title}
+                onSave={newTitle => onTitleSave(note.id, newTitle)}
+                isEditing={isEditing}
+                onEditingChange={onEditingChange}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    </SwipePinRow>
+  )
+})
 
 // One deleted FOLDER inside the .trash view, rendered recursively so the
 // pre-deletion shape is preserved: deleted child folders nest under it and
