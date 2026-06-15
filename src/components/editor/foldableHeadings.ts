@@ -4,7 +4,6 @@ import {
   foldGutter,
   codeFolding,
   syntaxTree,
-  ensureSyntaxTree,
 } from '@codemirror/language'
 import type { EditorState } from '@codemirror/state'
 import type { Tree } from '@lezer/common'
@@ -45,10 +44,11 @@ interface HeadingInfo {
 const headingCache = new WeakMap<Tree, HeadingInfo[]>()
 
 function resolveTree(state: EditorState): Tree {
-  // Force a full parse so folding works for the whole document (and in headless
-  // test states with no view driving incremental parsing). Falls back to the
-  // partial tree if the parse times out on a very large doc.
-  return ensureSyntaxTree(state, state.doc.length, 5000) ?? syntaxTree(state)
+  // Use the non-blocking parsed tree (same as the other live-preview
+  // extensions). The fold gutter only queries visible lines, so a forced
+  // full-document parse on every per-note editor remount is unnecessary and
+  // caused a ~1s stall on each note switch.
+  return syntaxTree(state)
 }
 
 function collectHeadings(state: EditorState): HeadingInfo[] {
