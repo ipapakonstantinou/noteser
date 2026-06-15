@@ -18,7 +18,11 @@ import {
   ArrowsRightLeftIcon,
   EyeIcon,
   ArrowTopRightOnSquareIcon,
+  SignalIcon,
+  SignalSlashIcon,
 } from '@heroicons/react/24/outline'
+import { getConfiguredUrl } from '@/hooks/useCollaboration'
+import { useActiveCollabStore } from '@/stores/activeCollabStore'
 import { revealNote } from '@/utils/revealNote'
 import { useShallow } from 'zustand/react/shallow'
 import { useNoteStore, useFolderStore, useUIStore, useWorkspaceStore, useSettingsStore, useGitHubStore } from '@/stores'
@@ -147,6 +151,18 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   // entirely when off so users don't see a non-functional option.
   const aiProvider = useSettingsStore(s => s.aiProvider)
   const aiAvailable = aiProvider !== 'off'
+
+  // Per-note "Go live" toggle (mirrors the EditorFooter LiveCollabToggle, but
+  // operates on the RIGHT-CLICKED note, not necessarily the open one). Shown
+  // only when collaborationMode === 'per-note' AND the transport is configured.
+  // In 'off'/'repo' modes there is nothing meaningful to toggle per note.
+  const collaborationMode = useSettingsStore(s => s.collaborationMode)
+  const toggleCollab = useActiveCollabStore(s => s.toggle)
+  const collabActive = useActiveCollabStore(s =>
+    isNote ? s.activeNoteIds.has(contextMenu.id) : false,
+  )
+  const collabAvailable =
+    isNote && collaborationMode === 'per-note' && getConfiguredUrl() != null
   const filteredFolderPaths = useMemo(() => {
     const q = moveSearch.trim().toLowerCase()
     if (!q) return folderPaths
@@ -431,6 +447,11 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
     onClose()
   }
 
+  const handleToggleCollab = () => {
+    if (isNote) toggleCollab(contextMenu.id)
+    onClose()
+  }
+
   const handleSelectForCompare = () => {
     if (isNote) setCompareSource(contextMenu.id)
     onClose()
@@ -591,6 +612,13 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
               icon={ArrowsRightLeftIcon}
               label="Compare with Selected"
               onClick={handleCompareWithSelected}
+            />
+          )}
+          {collabAvailable && !isTrashedNote && (
+            <MenuButton
+              icon={collabActive ? SignalIcon : SignalSlashIcon}
+              label={collabActive ? 'Stop live' : 'Go live'}
+              onClick={handleToggleCollab}
             />
           )}
           {canViewHistory && (

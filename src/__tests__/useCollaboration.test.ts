@@ -167,7 +167,8 @@ describe('getCollabUrlForNote — mode + per-note gating', () => {
   const URL = 'wss://collab.example.com/room'
   beforeEach(() => {
     process.env.NEXT_PUBLIC_YJS_WS_URL = URL
-    useActiveCollabStore.setState({ activeNoteIds: {} })
+    window.localStorage.clear()
+    useActiveCollabStore.setState({ activeNoteIds: new Set() })
   })
 
   test('off → always null, regardless of activation', () => {
@@ -197,5 +198,21 @@ describe('getCollabUrlForNote — mode + per-note gating', () => {
     delete process.env.NEXT_PUBLIC_YJS_WS_URL
     useSettingsStore.setState({ collaborationMode: 'repo' })
     expect(getCollabUrlForNote('n1')).toBeNull()
+  })
+
+  test('per-note → a PERSISTED-active note resolves to the URL after a reload', async () => {
+    // Reload path: the active id was written by a prior session and the store
+    // rehydrates it from localStorage into the Set. In per-note mode the editor
+    // then sees a non-null URL on first mount and connects immediately — the
+    // anti-doubling guarantee (empty-before-attach) is verified in
+    // collabNoDoubling.test.tsx.
+    useSettingsStore.setState({ collaborationMode: 'per-note' })
+    window.localStorage.setItem(
+      'noteser-active-collab',
+      JSON.stringify({ state: { activeNoteIds: ['n1'] }, version: 0 }),
+    )
+    await useActiveCollabStore.persist.rehydrate()
+    expect(getCollabUrlForNote('n1')).toBe(URL)
+    expect(getCollabUrlForNote('n2')).toBeNull()
   })
 })

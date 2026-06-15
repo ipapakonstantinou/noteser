@@ -560,7 +560,7 @@ export function CodeMirrorEditor({
   // collabEnabled below). In 'per-note' mode an un-activated note resolves to
   // null here — identical to 'off' — so it seeds locally and stays fast.
   const collaborationMode = useSettingsStore(s => s.collaborationMode)
-  const noteCollabActive = useActiveCollabStore(s => s.activeNoteIds[noteId] === true)
+  const noteCollabActive = useActiveCollabStore(s => s.activeNoteIds.has(noteId))
   // Recomputed whenever mode / active flips; getCollabUrlForNote reads the same
   // stores so the value agrees with what the effect will see.
   const collabEnabled = getCollabUrlForNote(noteId) != null

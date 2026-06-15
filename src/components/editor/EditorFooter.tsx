@@ -214,7 +214,7 @@ function ShareCollabButton({ noteId }: { noteId: string | null }) {
 // the status there instead.
 function LiveCollabToggle({ noteId }: { noteId: string | null }) {
   const mode = useSettingsStore(s => s.collaborationMode)
-  const active = useActiveCollabStore(s => (noteId ? s.activeNoteIds[noteId] === true : false))
+  const active = useActiveCollabStore(s => (noteId ? s.activeNoteIds.has(noteId) : false))
   const toggle = useActiveCollabStore(s => s.toggle)
   const url = getConfiguredUrl()
   if (!url || !noteId || mode !== 'per-note') return null
