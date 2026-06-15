@@ -197,6 +197,42 @@ describe('PluginHost permission gate', () => {
     expect(earlyError).toBeUndefined()
   })
 
+  test('initialRevokedPermissions seeded via load() gates a declared capability without a separate revokePermission() call', async () => {
+    // The plugin DECLARES file-save, but the user had previously revoked
+    // it. Passing the revocation through load() means it is in effect the
+    // instant the worker is considered ready — no post-load revocation
+    // loop, no reliance on microtask-vs-macrotask ordering.
+    const fake = makeFakeWorker({
+      id: 'pre-revoked',
+      name: 'Pre revoked',
+      version: '1.0.0',
+      surfaces: { commands: [{ id: 'go', title: 'Go' }] },
+      permissions: ['file-save'],
+    })
+    const host = new PluginHost({ createWorker: () => fake.worker })
+    await host.load({
+      pluginId: 'pre-revoked',
+      pluginSource: '',
+      initialRevokedPermissions: ['file-save'],
+    })
+
+    fake.inject({
+      type: 'worker:requestFileSave',
+      seq: 5,
+      suggestedName: 'x.pdf',
+      mimeType: 'application/pdf',
+      bytesBase64: 'AAA',
+    })
+    await flush()
+
+    const reply = fake.sent.find((m) => m.type === 'host:fileSaveResult')
+    expect(reply).toBeDefined()
+    if (reply && reply.type === 'host:fileSaveResult') {
+      expect(reply.ok).toBe(false)
+      expect(reply.error).toMatch(/revoked/)
+    }
+  })
+
   test('respondFileSave sends ok=true on success', async () => {
     const fake = makeFakeWorker({
       id: 'p',
