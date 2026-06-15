@@ -198,7 +198,7 @@ export function tableToMarkdown(
       r.folderPath || '',
       ...columns.map((c) => {
         const v = r.frontmatter ? r.frontmatter[c.key] : undefined
-        return valueToText(v).replace(/\|/g, '\\|')
+        return valueToText(v).replace(/\\/g, '\\\\').replace(/\|/g, '\\|')
       }),
     ]
     lines.push(`| ${cells.join(' | ')} |`)

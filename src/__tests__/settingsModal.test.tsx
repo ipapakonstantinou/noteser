@@ -82,7 +82,7 @@ describe('SettingsModal — 2-pane layout', () => {
     fireEvent.click(screen.getByTestId('settings-cat-about'))
     const links = screen.getAllByRole('link')
     expect(links.some(a => a.getAttribute('href') === 'https://thetechjon.com')).toBe(true)
-    expect(links.some(a => a.getAttribute('href')?.includes('github.com'))).toBe(true)
+    expect(links.some(a => a.getAttribute('href') === 'https://github.com/ipapakonstantinou/noteser')).toBe(true)
   })
 
   test('returns null when modal is closed', () => {

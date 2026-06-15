@@ -125,7 +125,7 @@ function formatEmbed(title: string, body: string): string {
 }
 
 function escapeMd(s: string): string {
-  return s.replace(/[`*_]/g, '\\$&')
+  return s.replace(/[\\`*_]/g, '\\$&')
 }
 
 // Format an attachment path as a markdown image destination. CommonMark only
