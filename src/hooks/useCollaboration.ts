@@ -14,6 +14,8 @@
 // triggers a manual reconnect (or reloads).
 
 import { useEffect, useState, useRef, useCallback } from 'react'
+import { useSettingsStore } from '@/stores/settingsStore'
+import { useActiveCollabStore } from '@/stores/activeCollabStore'
 
 export type CollabStatus = 'off' | 'connecting' | 'connected' | 'disconnected' | 'error'
 
@@ -53,20 +55,25 @@ export function buildProbeUrl(url: string): string {
   return `${url.replace(/\/+$/, '')}/${PROBE_ROOM}`
 }
 
-// Exported so the Phase-B collaboration binding (collabExtension) shares the
-// exact same gate as the Phase-A connectivity probe: a single source of
-// truth for "is collab enabled, and at what URL". Returns null unless
-// NEXT_PUBLIC_YJS_WS_URL is a valid ws:// / wss:// URL — which is what keeps
-// the whole feature dormant by default.
+// Whether the collaboration TRANSPORT is configured: NEXT_PUBLIC_YJS_WS_URL is
+// a valid ws:// / wss:// URL AND the legacy NEXT_PUBLIC_COLLAB_DISABLED kill
+// switch is not set. This is purely about "could we connect at all" — it does
+// NOT consult the user's collaborationMode setting. Use it for UI that should
+// show whenever collaboration is *available* (e.g. the Share button + the
+// per-note Live toggle in EditorFooter). To decide whether to actually OPEN a
+// room for a given note, use getCollabUrlForNote() below, which layers the
+// mode + per-note active state on top.
+//
+// Returns null unless NEXT_PUBLIC_YJS_WS_URL is a valid ws:// / wss:// URL —
+// which keeps the whole feature dormant on any deploy without that env.
+//
+// NEXT_PUBLIC_COLLAB_DISABLED is kept as a hard env-level override (e.g. to
+// force collab off on a specific deploy regardless of any user's setting), but
+// it is no longer the PRIMARY control — the collaborationMode setting (default
+// 'off') is, so beta is fast without needing the env. See
+// [[project_noteser_note_switch_perf]].
 export function getConfiguredUrl(): string | null {
   if (typeof process === 'undefined') return null
-  // Kill-switch: when NEXT_PUBLIC_COLLAB_DISABLED is set, collab stays dormant
-  // even if a YJS URL is configured. Added 2026-06-15 to turn collab OFF on
-  // beta (set on the Vercel preview target) — with collab on, each note open
-  // builds the editor empty and connects a fresh yjs WebSocket room, so the
-  // body only appears after sync ("name changes, then content lags"; beta-only
-  // because NEXT_PUBLIC_YJS_WS_URL is a preview-only env). Proper fix
-  // (session-scoped collab) is backlogged. See [[project_noteser_note_switch_perf]].
   if (process.env.NEXT_PUBLIC_COLLAB_DISABLED === '1') return null
   const raw = process.env.NEXT_PUBLIC_YJS_WS_URL
   if (!raw) return null
@@ -83,8 +90,41 @@ export function getConfiguredUrl(): string | null {
   }
 }
 
-export function useCollaboration(): CollabState {
+// Resolve the URL the editor should actually dial for a SPECIFIC note, applying
+// the user's collaborationMode setting on top of the configured transport. This
+// is the single source of truth the Phase-B binding (collabExtension) gate uses
+// so the editor only connects when it should:
+//
+//   'off'      → always null (collab never connects; editor seeds locally).
+//   'repo'     → the configured URL for every note (old eager behaviour).
+//   'per-note' → the configured URL ONLY when this note has been explicitly
+//                activated this session (EditorFooter Live toggle / share-link
+//                join, tracked in useActiveCollabStore). Otherwise null, so an
+//                un-activated note behaves exactly like 'off' — no room, no
+//                socket, fast switch.
+//
+// Reads the stores via getState() so non-React callers (the editor effect) get
+// a fresh snapshot without subscribing.
+export function getCollabUrlForNote(noteId: string | null): string | null {
   const url = getConfiguredUrl()
+  if (!url) return null
+  const mode = useSettingsStore.getState().collaborationMode
+  if (mode === 'off') return null
+  if (mode === 'repo') return url
+  // per-note: gate on explicit activation for this note.
+  if (!noteId) return null
+  return useActiveCollabStore.getState().isActive(noteId) ? url : null
+}
+
+export function useCollaboration(): CollabState {
+  // The probe only dials when collaboration is in play at all: a transport is
+  // configured AND the user's mode isn't 'off'. In 'off' mode the probe stays
+  // dormant (url=null) so the status pill hides and no socket opens — which is
+  // exactly the fast default. In 'per-note' / 'repo' the probe reports server
+  // reachability for the status pill. Subscribing to collaborationMode makes
+  // the probe (re)bind live when the user flips the setting.
+  const mode = useSettingsStore(s => s.collaborationMode)
+  const url = mode === 'off' ? null : getConfiguredUrl()
   const [status, setStatus] = useState<CollabStatus>(url ? 'connecting' : 'off')
   const [attempts, setAttempts] = useState(0)
 
@@ -168,18 +208,24 @@ export function useCollaboration(): CollabState {
   }, [cleanup])
 
   useEffect(() => {
-    if (!url) return
+    // Mode 'off' (or no transport) → tear down any live probe and report off.
+    // Re-binds whenever `url` changes, which now happens when the user flips
+    // collaborationMode at runtime (the env itself is still fixed per deploy).
+    if (!url) {
+      intentRef.current = 'disconnect'
+      cleanup()
+      setStatus('off')
+      return
+    }
     intentRef.current = 'connect'
+    attemptsRef.current = 0
+    setAttempts(0)
     connect()
     return () => {
       intentRef.current = 'disconnect'
       cleanup()
     }
-    // url is read once at mount via the module-level helper — the env
-    // var doesn't change at runtime in a Next.js client component, so
-    // re-binding the effect on it is unnecessary noise.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [url, connect, cleanup])
 
   return { status, attempts, url, reconnect, disconnect }
 }

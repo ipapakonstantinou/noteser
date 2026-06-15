@@ -18,6 +18,6 @@ export type { SidebarSectionId, SidebarSectionState, SidebarTabId } from './uiSt
 export { useGitHubStore } from './githubStore'
 export { useWorkspaceStore } from './workspaceStore'
 export { useSettingsStore, newSidebarGroupId, legacyToSidebarGroups, MIN_GROUP_HEIGHT } from './settingsStore'
-export type { FolderSortMode, TaskListDensity, AIProvider, SidebarGroupState } from './settingsStore'
+export type { FolderSortMode, TaskListDensity, AIProvider, SidebarGroupState, CollaborationMode } from './settingsStore'
 export { useLocalFolderStore } from './localFolderStore'
 export type { LocalFolderStatus } from './localFolderStore'
