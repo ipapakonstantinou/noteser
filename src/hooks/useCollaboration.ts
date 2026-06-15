@@ -60,6 +60,14 @@ export function buildProbeUrl(url: string): string {
 // the whole feature dormant by default.
 export function getConfiguredUrl(): string | null {
   if (typeof process === 'undefined') return null
+  // Kill-switch: when NEXT_PUBLIC_COLLAB_DISABLED is set, collab stays dormant
+  // even if a YJS URL is configured. Added 2026-06-15 to turn collab OFF on
+  // beta (set on the Vercel preview target) — with collab on, each note open
+  // builds the editor empty and connects a fresh yjs WebSocket room, so the
+  // body only appears after sync ("name changes, then content lags"; beta-only
+  // because NEXT_PUBLIC_YJS_WS_URL is a preview-only env). Proper fix
+  // (session-scoped collab) is backlogged. See [[project_noteser_note_switch_perf]].
+  if (process.env.NEXT_PUBLIC_COLLAB_DISABLED === '1') return null
   const raw = process.env.NEXT_PUBLIC_YJS_WS_URL
   if (!raw) return null
   const trimmed = raw.trim()
