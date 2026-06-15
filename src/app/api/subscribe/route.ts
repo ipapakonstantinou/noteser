@@ -45,7 +45,7 @@ export async function POST(request: Request) {
   }
 
   const email = (body.email ?? '').trim().toLowerCase()
-  if (!email || !EMAIL_RE.test(email) || email.length > 254) {
+  if (!email || email.length > 254 || !EMAIL_RE.test(email)) {
     return NextResponse.json({ error: 'invalid_email', message: 'That does not look like a valid email address.' }, { status: 400 })
   }
 
