@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { EditorView, keymap, drawSelection, type Command } from '@codemirror/view'
@@ -596,17 +596,20 @@ export function CodeMirrorEditor({
   // react-codemirror's `value`-sync: that sync DEFERS the swap for 200ms
   // after any keystroke (its "typing latch"), so switching notes right after
   // typing left the previous note's text showing — sometimes until reload
-  // (the "16 and 17 look the same" bug, 2026-06-15). A layout effect runs
-  // before paint AND before the inner <CodeMirror>'s passive value-sync, so
-  // the new note's body is on screen instantly and the deferred sync becomes
-  // a no-op (doc already equals value). Three things reset per note:
+  // (the "16 and 17 look the same" bug, 2026-06-15). We run it as a PASSIVE
+  // effect (not useLayoutEffect): a layout effect does the full-doc replace +
+  // decoration rebuild SYNCHRONOUSLY before paint, which froze the UI on
+  // switch ("name changes, then the content lags"). A passive effect lets the
+  // new note's chrome paint immediately, then swaps the body a frame later —
+  // still deterministic (so the typing-latch race stays fixed), just
+  // non-blocking. Three things reset per note:
   //   1. the document (to the new note's content),
   //   2. the undo stack (so Ctrl+Z can't cross notes),
   //   3. scroll + cursor (a reused view keeps the previous note's offsets).
   // Under collaboration the shared Y.Text owns the document, so we skip the
   // manual doc swap there and let the collab binding populate it.
   const programmaticSwapRef = useRef(false)
-  useLayoutEffect(() => {
+  useEffect(() => {
     const view = cmRef.current?.view
     if (!view) return
     if (!collabEnabled) {
