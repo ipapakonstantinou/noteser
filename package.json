@@ -82,6 +82,8 @@
     "next": {
       "postcss": "^8.5.10"
     },
-    "prismjs": "^1.30.0"
+    "prismjs": "^1.30.0",
+    "js-yaml": "^4.2.0",
+    "@babel/core": "^7.29.6"
   }
 }
