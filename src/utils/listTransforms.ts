@@ -67,6 +67,29 @@ export function splitListLine(line: string): {
   return { indent, kind: 'plain', check: '', carrier: '', body: rest }
 }
 
+// ── Tight list continuation (Enter) ──────────────────────────────────────
+// Given the CURRENT line, return the text to insert AFTER a single newline to
+// continue the list "tightly" (indent + the next marker), or null when the
+// line should NOT continue: a plain line (default Enter splits it) or an empty
+// list item (default Enter exits the list). Used by the Enter command to
+// bypass @codemirror/lang-markdown's continuation, which inserts an extra
+// blank line before each new item in a "loose" list (items separated by blank
+// lines — the shape Jon's daily notes use), producing "\n\n- [ ] " instead of
+// "\n- [ ] ". Tasks always continue as a fresh unchecked box; ordered items
+// advance the number (the editor renumbers the run afterwards); bullets repeat
+// their marker.
+export function tightListContinuation(line: string): string | null {
+  const parts = splitListLine(line)
+  if (parts.kind === 'plain') return null
+  if (parts.body.trim() === '') return null // empty item → let default exit
+  if (parts.kind === 'task') return `${parts.indent}${parts.carrier}[ ] `
+  if (parts.kind === 'ordered') {
+    const n = parseInt(parts.carrier, 10) // carrier is "N. "
+    return `${parts.indent}${Number.isFinite(n) ? n + 1 : 1}. `
+  }
+  return `${parts.indent}${parts.carrier}` // bullet
+}
+
 // ── Toggle DONE (Mod+L, Obsidian "Toggle checkbox status") ────────────────
 // On a task line: flip [ ] <-> [x]. On a plain line or a bullet/ordered list
 // line: turn it INTO an unchecked task. This is Obsidian's documented Cmd/Ctrl
