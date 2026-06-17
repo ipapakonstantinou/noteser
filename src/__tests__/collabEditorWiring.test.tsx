@@ -60,6 +60,7 @@ jest.mock('../components/editor/collabExtension', () => ({
 
 import { CodeMirrorEditor } from '../components/editor/CodeMirrorEditor'
 import { useNoteStore } from '../stores/noteStore'
+import { useSettingsStore } from '../stores/settingsStore'
 
 const ORIGINAL_URL = process.env.NEXT_PUBLIC_YJS_WS_URL
 
@@ -71,11 +72,16 @@ beforeEach(() => {
   destroySpy.mockClear()
   fakeView.dispatch.mockClear()
   useNoteStore.setState({ notes: [], selectedNoteId: null })
+  // Collab gates on collaborationMode (default 'off' → never connect). These
+  // wiring tests want the ENABLED path, so connect for every note via 'repo'.
+  // The DORMANT test deletes the transport URL, which keeps it off regardless.
+  useSettingsStore.setState({ collaborationMode: 'repo' })
 })
 
 afterEach(() => {
   if (ORIGINAL_URL == null) delete process.env.NEXT_PUBLIC_YJS_WS_URL
   else process.env.NEXT_PUBLIC_YJS_WS_URL = ORIGINAL_URL
+  useSettingsStore.setState({ collaborationMode: 'off' })
 })
 
 function renderEditor(noteId: string, content: string) {

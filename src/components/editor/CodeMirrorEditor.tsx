@@ -55,7 +55,8 @@ import { saveAttachment } from '@/utils/attachments'
 import { isBareUrl, anchorFromHtml, markdownLink, FETCHING_TITLE_PLACEHOLDER } from '@/utils/pasteLink'
 import { WikilinkAutocomplete } from './WikilinkAutocomplete'
 import { TagAutocomplete } from './TagAutocomplete'
-import { getConfiguredUrl } from '@/hooks/useCollaboration'
+import { getCollabUrlForNote } from '@/hooks/useCollaboration'
+import { useActiveCollabStore } from '@/stores/activeCollabStore'
 // Type-only import: erased at compile time, so it does NOT pull yjs /
 // y-websocket / y-codemirror.next into the editor bundle. The actual
 // createCollabBinding implementation is loaded via dynamic import() inside
@@ -578,9 +579,26 @@ export function CodeMirrorEditor({
   // So when collab is on we build the editor EMPTY and let the Y.Text populate
   // it: the seeder sees its body exactly once, a joiner receives the shared
   // body over the wire exactly once. When collab is off this is a no-op and
-  // the editor is byte-for-byte identical to before. getConfiguredUrl() is the
-  // exact gate the collab effect below uses, so this branches together with it.
-  const collabEnabled = getConfiguredUrl() != null
+  // the editor is byte-for-byte identical to before. getCollabUrlForNote() is
+  // the exact gate the collab effect below uses, so this branches together
+  // with it.
+  //
+  // Reactive inputs: the collaborationMode setting and this note's per-note
+  // active-collab state. Subscribing to both means flipping the setting or the
+  // EditorFooter "Live" toggle re-renders the editor with the correct
+  // seed-vs-empty branch and re-runs the collab effect (which keys on
+  // collabEnabled below). In 'per-note' mode an un-activated note resolves to
+  // null here — identical to 'off' — so it seeds locally and stays fast.
+  const collaborationMode = useSettingsStore(s => s.collaborationMode)
+  const noteCollabActive = useActiveCollabStore(s => s.activeNoteIds.has(noteId))
+  // Recomputed whenever mode / active flips; getCollabUrlForNote reads the same
+  // stores so the value agrees with what the effect will see.
+  const collabEnabled = getCollabUrlForNote(noteId) != null
+  // collaborationMode + noteCollabActive are referenced so the component
+  // re-renders (and effects re-run) when they change; getCollabUrlForNote
+  // reads them via getState() for the actual decision.
+  void collaborationMode
+  void noteCollabActive
   const editorInitialValue = collabEnabled ? '' : initialContent
 
   // Live-collaboration (Phase B). A Compartment lets us swap the yCollab
@@ -692,22 +710,25 @@ export function CodeMirrorEditor({
   }, [noteId, lastSyncedAt])
 
   // ── Live collaboration (Phase B) ────────────────────────────────────
-  // Bind a shared Y.Doc to the editor when collab is enabled. DORMANT by
-  // default: getConfiguredUrl() returns null unless NEXT_PUBLIC_YJS_WS_URL
-  // is a valid ws/wss URL, in which case this effect returns immediately —
-  // no Y.Doc, no WebSocket, no awareness, compartment stays empty.
+  // Bind a shared Y.Doc to the editor when collab is enabled FOR THIS NOTE.
+  // DORMANT by default: getCollabUrlForNote() returns null when no transport
+  // is configured, when collaborationMode is 'off', or (in 'per-note' mode)
+  // when the user hasn't explicitly activated collab for this note — in which
+  // case this effect returns immediately: no Y.Doc, no WebSocket, no
+  // awareness, compartment stays empty.
   //
-  // Keyed on noteId so the provider+doc tear down and re-create on note
-  // change. The room name is the note's STABLE collabId (lazily minted via
-  // the store) so a shared room survives renames / folder moves. Remote
-  // edits arrive as CodeMirror transactions → the existing onChange path
-  // persists them to the note store, and the diff-gutter baseline effect is
-  // independent so the gutter keeps working.
+  // Keyed on noteId AND collabEnabled so the provider+doc tear down and
+  // re-create on note change OR when the user toggles collab on/off for this
+  // note mid-session. The room name is the note's STABLE collabId (lazily
+  // minted via the store) so a shared room survives renames / folder moves.
+  // Remote edits arrive as CodeMirror transactions → the existing onChange
+  // path persists them to the note store, and the diff-gutter baseline effect
+  // is independent so the gutter keeps working.
   const githubUser = useGitHubStore(s => s.user)
   const githubUserRef = useRef(githubUser)
   useEffect(() => { githubUserRef.current = githubUser }, [githubUser])
   useEffect(() => {
-    const url = getConfiguredUrl()
+    const url = getCollabUrlForNote(noteId)
     if (!url) return // dormant: identical to pre-Phase-B behaviour
 
     // Mint (or reuse) the stable room id for this note.
@@ -745,6 +766,22 @@ export function CodeMirrorEditor({
       const freshView = cmRef.current?.view
       if (!freshView) return
       const note = useNoteStore.getState().notes.find(n => n.id === noteId)
+      // #186 anti-doubling: the shared Y.Text becomes the SINGLE source of
+      // truth once the binding attaches — the seeder seeds it from the note
+      // body, then yCollab replays that text into the editor via its observer.
+      // If the editor still holds the same body (which it does whenever collab
+      // is activated MID-SESSION for an already-open, locally-seeded note),
+      // that replay lands on top and the body doubles. So clear the editor to
+      // empty right before attaching. On a fresh note-open with collab already
+      // enabled, editorInitialValue was '' anyway, so this is a no-op there.
+      // Mark it programmatic so handleChange skips the debounced save (we are
+      // not editing the note, just handing the doc to the CRDT).
+      if (freshView.state.doc.length > 0) {
+        programmaticSwapRef.current = true
+        freshView.dispatch({
+          changes: { from: 0, to: freshView.state.doc.length, insert: '' },
+        })
+      }
       binding = createCollabBinding({
         url,
         room,
@@ -771,11 +808,16 @@ export function CodeMirrorEditor({
       }
       binding?.destroy()
       if (collabBindingRef.current === binding) collabBindingRef.current = null
+      // On deactivation (collab toggled off mid-session), the editor keeps
+      // whatever text the Y.Text last replayed into it — that IS the note's
+      // current content, so a follow-up edit saves it locally as normal. We do
+      // not re-seed here; the per-note swap effect only fires on noteId change.
     }
     // githubUser is intentionally read via ref (not a dep) so a login change
     // mid-session doesn't tear down the live document; the cursor label
-    // updates on the next note open. Re-key only on noteId.
-  }, [noteId])
+    // updates on the next note open. Re-key on noteId AND collabEnabled so the
+    // binding attaches/detaches when the user toggles collab for this note.
+  }, [noteId, collabEnabled])
 
   // Listen for "scroll to fragment" requests fired by the wikilink click
   // handler. The fragment is either a heading text or a `^block-id`; we

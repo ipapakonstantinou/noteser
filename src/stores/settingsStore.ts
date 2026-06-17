@@ -6,6 +6,25 @@ import { localStorageJSON } from '@/utils/persistStorage'
 export type FolderSortMode = 'alphabetical' | 'modified' | 'created' | 'manual'
 export type TaskListDensity = 'compact' | 'comfortable'
 
+// Real-time collaboration scope. Replaces the old NEXT_PUBLIC_COLLAB_DISABLED
+// env kill-switch as the PRIMARY control over when the editor opens a yjs
+// WebSocket room.
+//   'off'      (DEFAULT) → collab never connects; the editor always seeds from
+//                          local content. Fast note-switching — no per-open
+//                          room handshake. This is the current beta behaviour.
+//   'per-note' → collab connects ONLY for a note the user has explicitly
+//                activated this session (the EditorFooter "Live" toggle, or
+//                opening a ?collab=… share link). Other notes stay solo/fast.
+//                Root-cause fix for the slow note-switch: the connection is
+//                gated on explicit per-note intent, not on note-open.
+//   'repo'     → collab active for ALL notes (the old eager behaviour), for
+//                users who want live editing everywhere.
+// Per-DEVICE — whether THIS device dials the collab server is a device choice;
+// the share link still works on any device regardless (it bumps the note into
+// active-collab state for the session). Requires NEXT_PUBLIC_YJS_WS_URL to be
+// configured for any non-'off' mode to actually connect.
+export type CollaborationMode = 'off' | 'per-note' | 'repo'
+
 // Trash behaviour on note + folder deletion.
 //   'trash'      → existing soft-delete (default). Items live in the Trash
 //                  view, can be restored, are removed from the active
@@ -249,6 +268,13 @@ export interface SettingsState {
   // predictive-text strip while writing prose. Per-device — autocorrect is
   // a property of the keyboard you're typing on, not the vault.
   editorAutocorrect: boolean
+  // ── Real-time collaboration ─────────────────────────────────────────────
+  // Governs WHEN the editor opens a yjs WebSocket room. See the
+  // CollaborationMode docs above. Default 'off' so beta is fast without
+  // needing the NEXT_PUBLIC_COLLAB_DISABLED env. Per-DEVICE — dialing the
+  // collab server is a device choice; the transport URL stays in
+  // NEXT_PUBLIC_YJS_WS_URL.
+  collaborationMode: CollaborationMode
   // When true (default), reopen the tabs that were open last session on
   // startup. When false, start fresh each load with an empty workspace.
   // Per-device — a startup/session preference, not vault content.
@@ -494,6 +520,7 @@ export interface SettingsState {
   setAiCommitMessages: (enabled: boolean) => void
   setNotesOpenInPreviewMode: (enabled: boolean) => void
   setEditorAutocorrect: (enabled: boolean) => void
+  setCollaborationMode: (mode: CollaborationMode) => void
   setReopenTabsOnStartup: (enabled: boolean) => void
   setCalendarWeekStartDay: (day: CalendarWeekStartDay) => void
   setShortcutOverride: (id: string, combo: string) => void
@@ -638,6 +665,7 @@ const DEFAULTS = {
   aiCommitMessages: false,
   notesOpenInPreviewMode: false,
   editorAutocorrect: true,
+  collaborationMode: 'off' as CollaborationMode,
   reopenTabsOnStartup: true,
   calendarWeekStartDay: 1 as CalendarWeekStartDay,
   shortcutOverrides: {} as Record<string, string>,
@@ -802,6 +830,7 @@ export const useSettingsStore = create<SettingsState>()(
         setAiCommitMessages: (aiCommitMessages) => set({ aiCommitMessages }),
         setNotesOpenInPreviewMode: (notesOpenInPreviewMode) => set({ notesOpenInPreviewMode }),
         setEditorAutocorrect: (editorAutocorrect) => set({ editorAutocorrect }),
+        setCollaborationMode: (collaborationMode) => set({ collaborationMode }),
         setReopenTabsOnStartup: (reopenTabsOnStartup) => set({ reopenTabsOnStartup }),
         setCalendarWeekStartDay: (calendarWeekStartDay) => set({ calendarWeekStartDay }),
         setShortcutOverride: (id, combo) =>
