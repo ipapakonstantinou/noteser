@@ -9,6 +9,7 @@ import {
   setCycleState,
   cycleListType,
   renumberOrderedRuns,
+  tightListContinuation,
 } from '@/utils/listTransforms'
 
 describe('splitListLine', () => {
@@ -229,5 +230,43 @@ describe('renumberOrderedRuns', () => {
     const input = ['2. a', '1. b'].join('\n')
     const once = renumberOrderedRuns(input)
     expect(renumberOrderedRuns(once)).toBe(once)
+  })
+})
+
+describe('tightListContinuation (Enter)', () => {
+  it('continues a task line with a single fresh unchecked box (no blank line)', () => {
+    // This is the regression: in a "loose" list the markdown keymap would
+    // produce "\n\n- [ ] "; the continuation we insert must be just "- [ ] ".
+    expect(tightListContinuation('- [ ] Some task')).toBe('- [ ] ')
+  })
+
+  it('continues a checked task as a fresh UNCHECKED box', () => {
+    expect(tightListContinuation('- [x] done')).toBe('- [ ] ')
+  })
+
+  it('preserves indentation for nested items', () => {
+    expect(tightListContinuation('  - [ ] nested')).toBe('  - [ ] ')
+    expect(tightListContinuation('\t- bullet')).toBe('\t- ')
+  })
+
+  it('repeats a bullet marker', () => {
+    expect(tightListContinuation('- foo')).toBe('- ')
+    expect(tightListContinuation('* foo')).toBe('* ')
+  })
+
+  it('advances an ordered item to the next number', () => {
+    expect(tightListContinuation('1. first')).toBe('2. ')
+    expect(tightListContinuation('  7. x')).toBe('  8. ')
+  })
+
+  it('returns null for a plain line (default Enter splits it)', () => {
+    expect(tightListContinuation('just text')).toBeNull()
+    expect(tightListContinuation('')).toBeNull()
+  })
+
+  it('returns null for an empty list item so default Enter exits the list', () => {
+    expect(tightListContinuation('- ')).toBeNull()
+    expect(tightListContinuation('1. ')).toBeNull()
+    expect(tightListContinuation('- [ ] ')).toBeNull()
   })
 })

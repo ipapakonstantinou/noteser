@@ -27,6 +27,7 @@ import { findNoteByTitleOrAlias } from '@/utils/aliases'
 import { toggleTaskLineText, UI_TASK_LINE_REGEX } from '@/utils/tasks'
 import {
   splitListLine,
+  tightListContinuation,
   cycleState,
   nextCycleState,
   setCycleState,
@@ -347,6 +348,35 @@ export const continueListItemParagraph: Command = (view) => {
     scrollIntoView: true,
     userEvent: 'input',
   })
+  return true
+}
+
+// Pressing Enter at the end of a NON-EMPTY list/task line continues the list
+// TIGHTLY: exactly one newline + the next marker. This pre-empts the markdown
+// keymap's `insertNewlineContinueMarkup`, which inserts an extra blank line
+// before each new item when the list is "loose" (its items are separated by
+// blank lines — the shape Jon's daily notes use), turning one Enter on
+// "- [ ] foo" into "\n\n- [ ] " instead of "\n- [ ] ". Returns false for a
+// plain line or an empty list item / mid-line caret so default Enter (split /
+// list-exit) still applies.
+const continueListTight: Command = (view) => {
+  const { state } = view
+  const sel = state.selection.main
+  if (!sel.empty) return false
+  const line = state.doc.lineAt(sel.head)
+  if (sel.head !== line.to) return false // only at the end of the line
+  const cont = tightListContinuation(line.text)
+  if (cont === null) return false
+  const insert = state.lineBreak + cont
+  view.dispatch({
+    changes: { from: sel.head, to: sel.head, insert },
+    selection: { anchor: sel.head + insert.length },
+    userEvent: 'input',
+    scrollIntoView: true,
+  })
+  // Advancing an ordered item can leave the rest of the run mis-numbered;
+  // heal it the same way the other list commands do.
+  if (splitListLine(line.text).kind === 'ordered') renumberDocument(view)
   return true
 }
 
@@ -913,9 +943,14 @@ export function CodeMirrorEditor({
     { key: 'Mod-Alt-[', preventDefault: true, run: foldAll },
     { key: 'Mod-Alt-]', preventDefault: true, run: unfoldAll },
     // Enter on an EMPTY checkbox exits the list. No preventDefault: when it
-    // returns false (any other line) the event falls through to the markdown
-    // keymap's normal Enter continuation.
+    // returns false (any other line) the event falls through to the next Enter
+    // binding / the markdown keymap.
     { key: 'Enter', run: exitEmptyCheckboxOnEnter },
+    // Enter on a NON-EMPTY list/task line continues it tightly (one newline +
+    // marker), pre-empting the markdown keymap's loose-list continuation that
+    // would otherwise insert an extra blank line. Falls through (returns false)
+    // for plain lines and empty list items.
+    { key: 'Enter', run: continueListTight },
     // Shift+Enter inside a list/task line: insert a continuation indent so the
     // next line parses as a paragraph inside the same list item (instead of a
     // top-level paragraph at column 0). Returns false on plain lines so the
