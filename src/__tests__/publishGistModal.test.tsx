@@ -217,10 +217,20 @@ describe('PublishGistModal — submit', () => {
     const descInput = screen.getByTestId('publish-gist-description')
     await user.clear(descInput)
     await user.type(descInput, 'Custom desc')
+    // Settle the typing-induced re-renders (and the Modal's rAF-deferred
+    // focus effect they interleave with) *inside* act() before clicking
+    // submit. Without this barrier the per-keystroke setDescription updates
+    // and the focus rAF can flush outside act() under CI load — which on the
+    // slower babel-7.29.7 transpile timing tipped the modal into unmounting
+    // mid-test ('Unable to find publish-gist-submit', body collapsed to
+    // <div/>). Asserting the input value here both forces the stable state
+    // and confirms the edit landed before we submit it.
+    await waitFor(() => expect(descInput).toHaveValue('Custom desc'))
     await user.click(await screen.findByTestId('publish-gist-submit'))
     await waitFor(() => expect(mockPublishGist).toHaveBeenCalledTimes(1))
     expect(mockPublishGist.mock.calls[0][0].description).toBe('Custom desc')
-    // Same act-bleed guard as above.
+    // Same act-bleed guard as above — let the submit handler's
+    // setResult/setPublishing settle before the test ends.
     await screen.findByTestId('publish-gist-url')
   })
 })
