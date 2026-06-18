@@ -36,7 +36,10 @@ export function isBareUrl(text: string): boolean {
 export function sanitizeLinkTitle(raw: string): string {
   const collapsed = raw.replace(/\s+/g, ' ').trim()
   const capped = collapsed.length > MAX_TITLE_CHARS ? `${collapsed.slice(0, MAX_TITLE_CHARS - 1)}…` : collapsed
-  return capped.replace(/([[\]])/g, '\\$1')
+  // Escape the backslash itself FIRST (it is in the class), then the
+  // brackets — otherwise a literal "\" in the title survives unescaped and
+  // can pair with our added escapes to break out of the `[...]` link text.
+  return capped.replace(/[\\[\]]/g, '\\$&')
 }
 
 /** Build a markdown link, sanitizing the title. */
@@ -82,7 +85,17 @@ export function extractHtmlTitle(html: string): string | null {
 }
 
 function stripTags(html: string): string {
-  return html.replace(/<[^>]*>/g, '')
+  // Removing tags once can re-form a tag from the surrounding text
+  // (e.g. "<<a>script>" → "<script>"), so repeat until the string is
+  // stable. The text is only used for the link title, never as HTML, but
+  // we keep stripping complete so no markup survives.
+  let prev: string
+  let out = html
+  do {
+    prev = out
+    out = out.replace(/<[^>]*>/g, '')
+  } while (out !== prev)
+  return out
 }
 
 const NAMED_ENTITIES: Record<string, string> = {

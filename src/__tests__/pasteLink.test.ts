@@ -62,6 +62,10 @@ describe('sanitizeLinkTitle', () => {
     )
   })
 
+  test('escapes a literal backslash so it cannot pair with bracket escapes', () => {
+    expect(sanitizeLinkTitle('a\\]b')).toBe('a\\\\\\]b')
+  })
+
   test('caps absurdly long titles with an ellipsis', () => {
     const long = 'x'.repeat(500)
     const out = sanitizeLinkTitle(long)
@@ -145,5 +149,9 @@ describe('extractHtmlTitle', () => {
   test('no usable title → null', () => {
     expect(extractHtmlTitle('<body>nothing here</body>')).toBeNull()
     expect(extractHtmlTitle('<title>   </title>')).toBeNull()
+  })
+
+  test('nested inline tags in title text are stripped, no markup survives', () => {
+    expect(extractHtmlTitle('<title>Hello <b>brave</b> <i>World</i></title>')).toBe('Hello brave World')
   })
 })
