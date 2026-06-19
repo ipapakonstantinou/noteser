@@ -183,6 +183,14 @@ export const SETTINGS_CATALOG: readonly SettingsCatalogEntry[] = [
     keywords: ['tabs', 'startup', 'restore', 'session'],
   },
   {
+    id: 'editor.collaborationMode',
+    categoryId: 'editor',
+    categoryLabel: 'Editor',
+    label: 'Collaboration',
+    description: 'Real-time editing scope. Off keeps notes solo and fast. Per-note connects only for notes you set Live or open from a share link. Whole repo makes every note live.',
+    keywords: ['collaboration', 'collab', 'live', 'real-time', 'realtime', 'share', 'yjs', 'websocket', 'multiplayer'],
+  },
+  {
     id: 'editor.taskListDensity',
     categoryId: 'editor',
     categoryLabel: 'Editor',

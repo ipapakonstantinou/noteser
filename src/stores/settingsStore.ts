@@ -6,6 +6,25 @@ import { localStorageJSON } from '@/utils/persistStorage'
 export type FolderSortMode = 'alphabetical' | 'modified' | 'created' | 'manual'
 export type TaskListDensity = 'compact' | 'comfortable'
 
+// Real-time collaboration scope. Replaces the old NEXT_PUBLIC_COLLAB_DISABLED
+// env kill-switch as the PRIMARY control over when the editor opens a yjs
+// WebSocket room.
+//   'off'      (DEFAULT) → collab never connects; the editor always seeds from
+//                          local content. Fast note-switching — no per-open
+//                          room handshake. This is the current beta behaviour.
+//   'per-note' → collab connects ONLY for a note the user has explicitly
+//                activated this session (the EditorFooter "Live" toggle, or
+//                opening a ?collab=… share link). Other notes stay solo/fast.
+//                Root-cause fix for the slow note-switch: the connection is
+//                gated on explicit per-note intent, not on note-open.
+//   'repo'     → collab active for ALL notes (the old eager behaviour), for
+//                users who want live editing everywhere.
+// Per-DEVICE — whether THIS device dials the collab server is a device choice;
+// the share link still works on any device regardless (it bumps the note into
+// active-collab state for the session). Requires NEXT_PUBLIC_YJS_WS_URL to be
+// configured for any non-'off' mode to actually connect.
+export type CollaborationMode = 'off' | 'per-note' | 'repo'
+
 // Trash behaviour on note + folder deletion.
 //   'trash'      → existing soft-delete (default). Items live in the Trash
 //                  view, can be restored, are removed from the active
@@ -215,11 +234,19 @@ export interface SettingsState {
   monthlyNoteDateFormat: string
   // Repo-relative folder for template notes (one .md per template).
   templatesFolder: string
-  // ID of the note (in `templatesFolder`) whose content seeds new daily
-  // notes. null = no template; new daily notes start empty.
+  // Repo path of the note (in `templatesFolder`) whose content seeds new
+  // daily notes, e.g. "Templates/Daily.md". null = no template; new daily
+  // notes start empty. We key off the repo PATH, not the note id: ids are
+  // regenerated on every pull (syncApply remoteCreated → fresh uuid), so an
+  // id-based reference silently breaks after a sync. The path is stable
+  // across clones (it tracks the note's gitPath). See templateResolve.ts.
+  dailyNoteTemplatePath: string | null
+  // Same idea for new weekly notes. Parallel to dailyNoteTemplatePath.
+  weeklyNoteTemplatePath: string | null
+  // DEPRECATED (pre-2026-06-19): id-based template reference. Kept so older
+  // synced settings.json files still parse and so we can lazily migrate the
+  // value to its path on first resolve. Never written by current clients.
   dailyNoteTemplateId: string | null
-  // Same idea for new weekly notes (2026-06-04). Parallel to
-  // dailyNoteTemplateId; null = no template, new weekly notes empty.
   weeklyNoteTemplateId: string | null
 
   // ── AI (BYO key) ──────────────────────────────────────────────────────
@@ -249,6 +276,13 @@ export interface SettingsState {
   // predictive-text strip while writing prose. Per-device — autocorrect is
   // a property of the keyboard you're typing on, not the vault.
   editorAutocorrect: boolean
+  // ── Real-time collaboration ─────────────────────────────────────────────
+  // Governs WHEN the editor opens a yjs WebSocket room. See the
+  // CollaborationMode docs above. Default 'off' so beta is fast without
+  // needing the NEXT_PUBLIC_COLLAB_DISABLED env. Per-DEVICE — dialing the
+  // collab server is a device choice; the transport URL stays in
+  // NEXT_PUBLIC_YJS_WS_URL.
+  collaborationMode: CollaborationMode
   // When true (default), reopen the tabs that were open last session on
   // startup. When false, start fresh each load with an empty workspace.
   // Per-device — a startup/session preference, not vault content.
@@ -485,8 +519,8 @@ export interface SettingsState {
   setMonthlyNotesFolder: (folder: string) => void
   setMonthlyNoteDateFormat: (format: string) => void
   setTemplatesFolder: (folder: string) => void
-  setDailyNoteTemplateId: (id: string | null) => void
-  setWeeklyNoteTemplateId: (id: string | null) => void
+  setDailyNoteTemplatePath: (path: string | null) => void
+  setWeeklyNoteTemplatePath: (path: string | null) => void
   setAiProvider: (provider: AIProvider) => void
   setAiApiKey: (key: string) => void
   setAiModel: (model: string) => void
@@ -494,6 +528,7 @@ export interface SettingsState {
   setAiCommitMessages: (enabled: boolean) => void
   setNotesOpenInPreviewMode: (enabled: boolean) => void
   setEditorAutocorrect: (enabled: boolean) => void
+  setCollaborationMode: (mode: CollaborationMode) => void
   setReopenTabsOnStartup: (enabled: boolean) => void
   setCalendarWeekStartDay: (day: CalendarWeekStartDay) => void
   setShortcutOverride: (id: string, combo: string) => void
@@ -590,6 +625,10 @@ export const VAULT_SETTING_KEYS = [
   'monthlyNotesFolder',
   'monthlyNoteDateFormat',
   'templatesFolder',
+  'dailyNoteTemplatePath',
+  'weeklyNoteTemplatePath',
+  // Deprecated id keys stay in the synced set so the value survives a
+  // round-trip through an older client (and so migration can read it).
   'dailyNoteTemplateId',
   'weeklyNoteTemplateId',
   'trashMode',
@@ -629,6 +668,8 @@ const DEFAULTS = {
   monthlyNotesFolder: 'Notes/Monthly',
   monthlyNoteDateFormat: 'YYYY-MM',
   templatesFolder: 'Templates',
+  dailyNoteTemplatePath: null as string | null,
+  weeklyNoteTemplatePath: null as string | null,
   dailyNoteTemplateId: null as string | null,
   weeklyNoteTemplateId: null as string | null,
   aiProvider: 'off' as AIProvider,
@@ -638,6 +679,7 @@ const DEFAULTS = {
   aiCommitMessages: false,
   notesOpenInPreviewMode: false,
   editorAutocorrect: true,
+  collaborationMode: 'off' as CollaborationMode,
   reopenTabsOnStartup: true,
   calendarWeekStartDay: 1 as CalendarWeekStartDay,
   shortcutOverrides: {} as Record<string, string>,
@@ -793,8 +835,13 @@ export const useSettingsStore = create<SettingsState>()(
         setMonthlyNotesFolder: (monthlyNotesFolder) => setVault({ monthlyNotesFolder }),
         setMonthlyNoteDateFormat: (monthlyNoteDateFormat) => setVault({ monthlyNoteDateFormat }),
         setTemplatesFolder: (templatesFolder) => setVault({ templatesFolder }),
-        setDailyNoteTemplateId: (dailyNoteTemplateId) => setVault({ dailyNoteTemplateId }),
-        setWeeklyNoteTemplateId: (weeklyNoteTemplateId) => setVault({ weeklyNoteTemplateId }),
+        // Selecting a template stores its stable repo path and clears any
+        // leftover deprecated id so the synced settings.json can't resurrect
+        // a stale id-based reference.
+        setDailyNoteTemplatePath: (dailyNoteTemplatePath) =>
+          setVault({ dailyNoteTemplatePath, dailyNoteTemplateId: null }),
+        setWeeklyNoteTemplatePath: (weeklyNoteTemplatePath) =>
+          setVault({ weeklyNoteTemplatePath, weeklyNoteTemplateId: null }),
         setAiProvider: (aiProvider) => set({ aiProvider }),
         setAiApiKey: (aiApiKey) => set({ aiApiKey }),
         setAiModel: (aiModel) => set({ aiModel }),
@@ -802,6 +849,7 @@ export const useSettingsStore = create<SettingsState>()(
         setAiCommitMessages: (aiCommitMessages) => set({ aiCommitMessages }),
         setNotesOpenInPreviewMode: (notesOpenInPreviewMode) => set({ notesOpenInPreviewMode }),
         setEditorAutocorrect: (editorAutocorrect) => set({ editorAutocorrect }),
+        setCollaborationMode: (collaborationMode) => set({ collaborationMode }),
         setReopenTabsOnStartup: (reopenTabsOnStartup) => set({ reopenTabsOnStartup }),
         setCalendarWeekStartDay: (calendarWeekStartDay) => set({ calendarWeekStartDay }),
         setShortcutOverride: (id, combo) =>

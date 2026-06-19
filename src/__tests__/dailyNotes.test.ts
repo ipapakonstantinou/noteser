@@ -73,20 +73,62 @@ describe('openTodayNote', () => {
     expect(useNoteStore.getState().notes).toHaveLength(1)
   })
 
-  test('seeds content from the configured template when set', () => {
-    // Set up: a Templates folder + a template note + the setting pointing at it.
+  test('seeds content from the configured template (by path) when set', () => {
+    // Set up: a Templates folder + a template note + the setting pointing at
+    // its stable repo path.
     const templateFolder = useFolderStore.getState().addFolder({ name: 'Templates' })
-    const tplNote = useNoteStore.getState().addNote({
+    useNoteStore.getState().addNote({
       title: 'Daily',
       folderId: templateFolder.id,
       content: '# Daily template\n\n- [ ] morning routine\n',
     })
-    useSettingsStore.setState({ dailyNoteTemplateId: tplNote.id })
+    useSettingsStore.setState({ dailyNoteTemplatePath: 'Templates/Daily.md' })
 
     openTodayNote(new Date(2026, 4, 19))
 
     const created = useNoteStore.getState().notes.find(n => n.title === '2026-05-19')
     expect(created?.content).toBe('# Daily template\n\n- [ ] morning routine\n')
+  })
+
+  test('template still resolves after a sync changes the note id (the bug)', () => {
+    // Reproduces the reported bug: a sync regenerates the template note's id.
+    // A path-based reference must survive it; an id-based one would not.
+    const templateFolder = useFolderStore.getState().addFolder({ name: 'Templates' })
+    useNoteStore.getState().addNote({
+      title: 'Daily',
+      folderId: templateFolder.id,
+      content: 'TPL-BODY',
+    })
+    useSettingsStore.setState({ dailyNoteTemplatePath: 'Templates/Daily.md' })
+
+    // Simulate the pull: same path + content, brand-new id (as syncApply mints).
+    const tpl = useNoteStore.getState().notes[0]
+    useNoteStore.setState({
+      notes: [{ ...tpl, id: 'regenerated-after-sync' }],
+    })
+
+    openTodayNote(new Date(2026, 4, 19))
+    const created = useNoteStore.getState().notes.find(n => n.title === '2026-05-19')
+    expect(created?.content).toBe('TPL-BODY')
+  })
+
+  test('migrates a legacy id-based template setting to its path', () => {
+    const templateFolder = useFolderStore.getState().addFolder({ name: 'Templates' })
+    const tplNote = useNoteStore.getState().addNote({
+      title: 'Daily',
+      folderId: templateFolder.id,
+      content: 'LEGACY-BODY',
+    })
+    // Old setting shape: id only, no path.
+    useSettingsStore.setState({ dailyNoteTemplateId: tplNote.id, dailyNoteTemplatePath: null })
+
+    openTodayNote(new Date(2026, 4, 19))
+
+    const created = useNoteStore.getState().notes.find(n => n.title === '2026-05-19')
+    expect(created?.content).toBe('LEGACY-BODY')
+    // The resolve lazily migrated the setting to the stable path and cleared id.
+    expect(useSettingsStore.getState().dailyNoteTemplatePath).toBe('Templates/Daily.md')
+    expect(useSettingsStore.getState().dailyNoteTemplateId).toBeNull()
   })
 
   test('honours a custom date format', () => {

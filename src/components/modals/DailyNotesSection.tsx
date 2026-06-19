@@ -103,11 +103,15 @@ export const DailyNotesSection = () => {
 export const TemplatesSection = () => {
   const notes = useNoteStore(s => s.notes)
   const templatesFolder = useSettingsStore(s => s.templatesFolder)
-  const dailyTemplateId = useSettingsStore(s => s.dailyNoteTemplateId)
-  const weeklyTemplateId = useSettingsStore(s => s.weeklyNoteTemplateId)
+  // Subscribe to both the path and the deprecated id so the picker re-renders
+  // (and recomputes the active selection) when either changes.
+  const dailyTemplatePath = useSettingsStore(s => s.dailyNoteTemplatePath)
+  const weeklyTemplatePath = useSettingsStore(s => s.weeklyNoteTemplatePath)
+  const dailyTemplateIdLegacy = useSettingsStore(s => s.dailyNoteTemplateId)
+  const weeklyTemplateIdLegacy = useSettingsStore(s => s.weeklyNoteTemplateId)
   const setTemplatesFolder = useSettingsStore(s => s.setTemplatesFolder)
-  const setDailyTemplateId = useSettingsStore(s => s.setDailyNoteTemplateId)
-  const setWeeklyTemplateId = useSettingsStore(s => s.setWeeklyNoteTemplateId)
+  const setDailyTemplatePath = useSettingsStore(s => s.setDailyNoteTemplatePath)
+  const setWeeklyTemplatePath = useSettingsStore(s => s.setWeeklyNoteTemplatePath)
 
   // Re-run when notes change so the dropdown reflects fresh template
   // files. listTemplateNotes reads from useNoteStore.getState() +
@@ -118,16 +122,29 @@ export const TemplatesSection = () => {
   const templateNotes = useMemo(() => listTemplateNotes(), [notes, templatesFolder])
 
   const NONE = '' // sentinel for "no template selected"
+  // Options are keyed by the note's stable repo path (not its id), matching
+  // what the setting stores. See templateResolve.ts for why.
   const options = useMemo(
     () => [
       { value: NONE, label: '— No template —' },
       ...templateNotes.map((n) => ({
-        value: n.id,
+        value: n.path,
         label: n.repoPath ? `${n.title} (${n.repoPath})` : n.title,
       })),
     ],
     [templateNotes],
   )
+
+  // Resolve the active selection to a path, transparently mapping a legacy
+  // id-based value (pre-migration) to its path so the dropdown reflects it.
+  // Recomputes on each render off the subscribed settings + templateNotes.
+  const resolveValue = (path: string | null, legacyId: string | null): string => {
+    if (path) return path
+    if (legacyId) return templateNotes.find(t => t.id === legacyId)?.path ?? NONE
+    return NONE
+  }
+  const dailyValue = resolveValue(dailyTemplatePath, dailyTemplateIdLegacy)
+  const weeklyValue = resolveValue(weeklyTemplatePath, weeklyTemplateIdLegacy)
 
   return (
     <>
@@ -147,8 +164,8 @@ export const TemplatesSection = () => {
         description="When a daily note is created (Alt+D / calendar click), its content is seeded from this note."
       >
         <SettingsSelect<string>
-          value={dailyTemplateId ?? NONE}
-          onChange={(v) => setDailyTemplateId(v === NONE ? null : v)}
+          value={dailyValue}
+          onChange={(v) => setDailyTemplatePath(v === NONE ? null : v)}
           options={options}
         />
       </Field>
@@ -157,8 +174,8 @@ export const TemplatesSection = () => {
         description="When a weekly note is created (calendar W-column click), its content is seeded from this note."
       >
         <SettingsSelect<string>
-          value={weeklyTemplateId ?? NONE}
-          onChange={(v) => setWeeklyTemplateId(v === NONE ? null : v)}
+          value={weeklyValue}
+          onChange={(v) => setWeeklyTemplatePath(v === NONE ? null : v)}
           options={options}
         />
       </Field>

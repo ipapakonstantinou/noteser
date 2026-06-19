@@ -9,6 +9,7 @@ import { classifyPendingChanges, totalPendingCount } from '@/utils/syncChanges'
 import { computeStreakFromDateStrings, dailyDateSet } from '@/utils/dailyStreak'
 import { useCollaboration, getConfiguredUrl } from '@/hooks/useCollaboration'
 import { buildCollabShareLink } from '@/utils/collabShare'
+import { useActiveCollabStore } from '@/stores/activeCollabStore'
 import { useHydration } from '@/hooks'
 
 // App-wide status bar — ONE slim strip across the bottom of the window
@@ -128,6 +129,7 @@ export const EditorFooter = () => {
         {hydrated && (
           <>
             <ShareCollabButton noteId={activeNoteId} />
+            <LiveCollabToggle noteId={activeNoteId} />
             <CollabPill />
             {streak.length >= 2 && (
               <span
@@ -199,9 +201,47 @@ function ShareCollabButton({ noteId }: { noteId: string | null }) {
   )
 }
 
+// Per-note "Live" toggle for the `per-note` collaboration mode. Lets the user
+// explicitly turn live collaboration on or off for the note currently in focus
+// — this is the gesture that gates the yjs connection in per-note mode (the
+// editor only dials a room for a note the user has activated, keeping every
+// other note solo + fast). Visible ONLY when:
+//   - the transport is configured (getConfiguredUrl() non-null), AND
+//   - collaborationMode === 'per-note', AND
+//   - a note is open.
+// In 'off' mode there's nothing to toggle; in 'repo' mode every note is live
+// already so a per-note switch would be misleading — the CollabPill carries
+// the status there instead.
+function LiveCollabToggle({ noteId }: { noteId: string | null }) {
+  const mode = useSettingsStore(s => s.collaborationMode)
+  const active = useActiveCollabStore(s => (noteId ? s.activeNoteIds.has(noteId) : false))
+  const toggle = useActiveCollabStore(s => s.toggle)
+  const url = getConfiguredUrl()
+  if (!url || !noteId || mode !== 'per-note') return null
+
+  return (
+    <button
+      type="button"
+      onClick={() => toggle(noteId)}
+      className={`flex items-center gap-1 transition-colors ${
+        active ? 'text-green-500' : 'hover:text-obsidianText'
+      }`}
+      title={active
+        ? 'Live collaboration is ON for this note. Click to stop sharing edits and return to solo editing.'
+        : 'Turn ON live collaboration for this note. Edits sync in real time with anyone who has its share link. Other notes stay solo.'}
+      data-testid="status-bar-collab-toggle"
+      aria-pressed={active}
+    >
+      {active ? <SignalIcon className="w-3 h-3" /> : <SignalSlashIcon className="w-3 h-3" />}
+      <span>{active ? 'Live: on' : 'Go live'}</span>
+    </button>
+  )
+}
+
 // Tiny presence pill — shows the live-collab WebSocket health when
-// NEXT_PUBLIC_YJS_WS_URL is configured. Hidden when collab is off so
-// the footer stays uncluttered for the default single-user case.
+// collaboration is connecting/connected (mode !== 'off' and a transport is
+// configured). Hidden when collab is off so the footer stays uncluttered for
+// the default single-user case.
 function CollabPill() {
   const { status, attempts, url } = useCollaboration()
   if (status === 'off' || url == null) return null

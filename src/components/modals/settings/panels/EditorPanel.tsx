@@ -1,7 +1,8 @@
 'use client'
 
 import { useSettingsStore } from '@/stores'
-import type { TaskListDensity } from '@/stores'
+import type { TaskListDensity, CollaborationMode } from '@/stores'
+import { getConfiguredUrl } from '@/hooks/useCollaboration'
 import {
   Field,
   SettingsSelect,
@@ -20,6 +21,12 @@ export function EditorPanel() {
   const setEditorAutocorrect = useSettingsStore(s => s.setEditorAutocorrect)
   const reopenTabsOnStartup = useSettingsStore(s => s.reopenTabsOnStartup)
   const setReopenTabsOnStartup = useSettingsStore(s => s.setReopenTabsOnStartup)
+  const collaborationMode = useSettingsStore(s => s.collaborationMode)
+  const setCollaborationMode = useSettingsStore(s => s.setCollaborationMode)
+  // The transport (NEXT_PUBLIC_YJS_WS_URL) must be configured for any non-off
+  // mode to actually connect. When it isn't, we still show the control so the
+  // setting is discoverable, but add a note that no server is configured.
+  const collabTransportConfigured = getConfiguredUrl() != null
 
   return (
     <div className="space-y-4">
@@ -61,6 +68,25 @@ export function EditorPanel() {
           options={[
             { value: 'compact', label: 'Compact' },
             { value: 'comfortable', label: 'Comfortable' },
+          ]}
+        />
+      </Field>
+      <Field
+        label="Collaboration"
+        description={
+          collabTransportConfigured
+            ? 'Real-time editing over a shared connection. Off (default) keeps every note solo and fast. Per-note connects only for notes you switch to Live (status bar) or open from a share link — others stay solo. Whole repo makes every note live.'
+            : 'Real-time editing over a shared connection. No collaboration server is configured on this deployment, so the connection stays dormant whatever you pick here. Off (default) keeps every note solo and fast.'
+        }
+      >
+        <SettingsSelect<CollaborationMode>
+          value={collaborationMode}
+          onChange={setCollaborationMode}
+          data-testid="settings-collaboration-mode"
+          options={[
+            { value: 'off', label: 'Off' },
+            { value: 'per-note', label: 'Per-note' },
+            { value: 'repo', label: 'Whole repo' },
           ]}
         />
       </Field>

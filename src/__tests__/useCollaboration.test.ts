@@ -10,7 +10,9 @@
  */
 
 import { renderHook, act } from '@testing-library/react'
-import { useCollaboration, buildProbeUrl } from '../hooks/useCollaboration'
+import { useCollaboration, buildProbeUrl, getCollabUrlForNote } from '../hooks/useCollaboration'
+import { useSettingsStore } from '../stores/settingsStore'
+import { useActiveCollabStore } from '../stores/activeCollabStore'
 
 // Test double for window.WebSocket. Captures whichever instance the
 // hook constructs so tests can fire open/close events synchronously.
@@ -48,12 +50,18 @@ beforeEach(() => {
   MockWebSocket.instances = []
   MockWebSocket.lastConstructorArg = ''
   ;(global as unknown as { WebSocket: typeof MockWebSocket }).WebSocket = MockWebSocket
+  // The probe now also gates on the collaborationMode setting. Default is
+  // 'off', under which the hook never dials — so the connection-behaviour
+  // tests below set 'repo' (connect whenever a transport is configured). The
+  // dedicated "mode off" test overrides this back to 'off'.
+  useSettingsStore.setState({ collaborationMode: 'repo' })
 })
 
 afterEach(() => {
   ;(global as unknown as { WebSocket: typeof ORIGINAL_WS }).WebSocket = ORIGINAL_WS
   if (ORIGINAL_URL == null) delete process.env.NEXT_PUBLIC_YJS_WS_URL
   else process.env.NEXT_PUBLIC_YJS_WS_URL = ORIGINAL_URL
+  useSettingsStore.setState({ collaborationMode: 'off' })
 })
 
 describe('buildProbeUrl', () => {
@@ -76,6 +84,15 @@ describe('buildProbeUrl', () => {
 describe('useCollaboration', () => {
   test('without NEXT_PUBLIC_YJS_WS_URL: status is "off" and no WS is opened', () => {
     delete process.env.NEXT_PUBLIC_YJS_WS_URL
+    const { result } = renderHook(() => useCollaboration())
+    expect(result.current.status).toBe('off')
+    expect(result.current.url).toBeNull()
+    expect(MockWebSocket.instances).toHaveLength(0)
+  })
+
+  test('collaborationMode "off" keeps the probe dormant even with a configured URL', () => {
+    process.env.NEXT_PUBLIC_YJS_WS_URL = 'wss://collab.example.com/room'
+    useSettingsStore.setState({ collaborationMode: 'off' })
     const { result } = renderHook(() => useCollaboration())
     expect(result.current.status).toBe('off')
     expect(result.current.url).toBeNull()
@@ -143,5 +160,59 @@ describe('useCollaboration', () => {
       expect(MockWebSocket.instances.length).toBe(before)
       r()
     }, 20))
+  })
+})
+
+describe('getCollabUrlForNote — mode + per-note gating', () => {
+  const URL = 'wss://collab.example.com/room'
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_YJS_WS_URL = URL
+    window.localStorage.clear()
+    useActiveCollabStore.setState({ activeNoteIds: new Set() })
+  })
+
+  test('off → always null, regardless of activation', () => {
+    useSettingsStore.setState({ collaborationMode: 'off' })
+    useActiveCollabStore.getState().activate('n1')
+    expect(getCollabUrlForNote('n1')).toBeNull()
+  })
+
+  test('repo → the configured URL for every note', () => {
+    useSettingsStore.setState({ collaborationMode: 'repo' })
+    expect(getCollabUrlForNote('n1')).toBe(URL)
+    expect(getCollabUrlForNote('n2')).toBe(URL)
+  })
+
+  test('per-note → URL only for an activated note, null otherwise', () => {
+    useSettingsStore.setState({ collaborationMode: 'per-note' })
+    expect(getCollabUrlForNote('n1')).toBeNull()
+    useActiveCollabStore.getState().activate('n1')
+    expect(getCollabUrlForNote('n1')).toBe(URL)
+    expect(getCollabUrlForNote('n2')).toBeNull()
+    // Deactivating returns it to solo.
+    useActiveCollabStore.getState().deactivate('n1')
+    expect(getCollabUrlForNote('n1')).toBeNull()
+  })
+
+  test('no transport configured → null even in repo mode', () => {
+    delete process.env.NEXT_PUBLIC_YJS_WS_URL
+    useSettingsStore.setState({ collaborationMode: 'repo' })
+    expect(getCollabUrlForNote('n1')).toBeNull()
+  })
+
+  test('per-note → a PERSISTED-active note resolves to the URL after a reload', async () => {
+    // Reload path: the active id was written by a prior session and the store
+    // rehydrates it from localStorage into the Set. In per-note mode the editor
+    // then sees a non-null URL on first mount and connects immediately — the
+    // anti-doubling guarantee (empty-before-attach) is verified in
+    // collabNoDoubling.test.tsx.
+    useSettingsStore.setState({ collaborationMode: 'per-note' })
+    window.localStorage.setItem(
+      'noteser-active-collab',
+      JSON.stringify({ state: { activeNoteIds: ['n1'] }, version: 0 }),
+    )
+    await useActiveCollabStore.persist.rehydrate()
+    expect(getCollabUrlForNote('n1')).toBe(URL)
+    expect(getCollabUrlForNote('n2')).toBeNull()
   })
 })

@@ -13,6 +13,7 @@ import {
   mondayOfIsoWeek,
 } from '@/utils/calendarGrid'
 import { openWeekNote, findWeeklyNoteId } from '@/utils/periodicNotes'
+import { resolveTemplateContent } from '@/utils/templateResolve'
 import { CalendarDayContextMenu } from './CalendarDayContextMenu'
 
 const MONTH_NAMES = [
@@ -52,7 +53,6 @@ export const CalendarView = () => {
   const openModal = useUIStore(s => s.openModal)
   const ensureFolderPath = useFolderStore(s => s.ensureFolderPath)
   const dateFormat = useSettingsStore(s => s.dailyNoteDateFormat)
-  const dailyTemplateId = useSettingsStore(s => s.dailyNoteTemplateId)
   const weekStartDay = useSettingsStore(s => s.calendarWeekStartDay)
 
   const [menu, setMenu] = useState<CellMenuState | null>(null)
@@ -124,13 +124,10 @@ export const CalendarView = () => {
       openNote(existing.id)
       return
     }
-    const template = dailyTemplateId
-      ? notes.find(n => !n.isDeleted && n.id === dailyTemplateId)
-      : undefined
     const created = addNote({
       title,
       folderId,
-      content: template?.content ?? '',
+      content: resolveTemplateContent('daily') ?? '',
     })
     openNote(created.id)
   }

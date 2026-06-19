@@ -40,6 +40,7 @@ import { useUIStore, useWorkspaceStore, useGitHubStore, DEFAULT_SIDEBAR_WIDTH, D
 import { switchVault } from '@/utils/switchVault'
 import { notesKey } from '@/utils/repoStorage'
 import { useNoteStore } from '@/stores/noteStore'
+import { useActiveCollabStore } from '@/stores/activeCollabStore'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
 import { installTestHooks } from '@/utils/testHooks'
 import { shouldTrackSwipe, detectSwipeAction } from '@/utils/edgeSwipe'
@@ -347,6 +348,11 @@ export default function Home() {
             collabId: parsed.collabId,
           }).id
       useWorkspaceStore.getState().openNote(noteId, { preview: false })
+      // Arriving via a share link is an explicit collaboration intent: mark
+      // the note active so the editor dials the room under 'per-note' mode
+      // (in 'repo' mode it would connect anyway; in 'off' mode collab stays
+      // dormant by design and the user must opt in via Settings first).
+      useActiveCollabStore.getState().activate(noteId)
       window.history.replaceState({}, '', window.location.pathname)
     }
     void open()
