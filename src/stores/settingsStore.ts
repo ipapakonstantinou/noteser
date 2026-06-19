@@ -234,11 +234,19 @@ export interface SettingsState {
   monthlyNoteDateFormat: string
   // Repo-relative folder for template notes (one .md per template).
   templatesFolder: string
-  // ID of the note (in `templatesFolder`) whose content seeds new daily
-  // notes. null = no template; new daily notes start empty.
+  // Repo path of the note (in `templatesFolder`) whose content seeds new
+  // daily notes, e.g. "Templates/Daily.md". null = no template; new daily
+  // notes start empty. We key off the repo PATH, not the note id: ids are
+  // regenerated on every pull (syncApply remoteCreated → fresh uuid), so an
+  // id-based reference silently breaks after a sync. The path is stable
+  // across clones (it tracks the note's gitPath). See templateResolve.ts.
+  dailyNoteTemplatePath: string | null
+  // Same idea for new weekly notes. Parallel to dailyNoteTemplatePath.
+  weeklyNoteTemplatePath: string | null
+  // DEPRECATED (pre-2026-06-19): id-based template reference. Kept so older
+  // synced settings.json files still parse and so we can lazily migrate the
+  // value to its path on first resolve. Never written by current clients.
   dailyNoteTemplateId: string | null
-  // Same idea for new weekly notes (2026-06-04). Parallel to
-  // dailyNoteTemplateId; null = no template, new weekly notes empty.
   weeklyNoteTemplateId: string | null
 
   // ── AI (BYO key) ──────────────────────────────────────────────────────
@@ -511,8 +519,8 @@ export interface SettingsState {
   setMonthlyNotesFolder: (folder: string) => void
   setMonthlyNoteDateFormat: (format: string) => void
   setTemplatesFolder: (folder: string) => void
-  setDailyNoteTemplateId: (id: string | null) => void
-  setWeeklyNoteTemplateId: (id: string | null) => void
+  setDailyNoteTemplatePath: (path: string | null) => void
+  setWeeklyNoteTemplatePath: (path: string | null) => void
   setAiProvider: (provider: AIProvider) => void
   setAiApiKey: (key: string) => void
   setAiModel: (model: string) => void
@@ -617,6 +625,10 @@ export const VAULT_SETTING_KEYS = [
   'monthlyNotesFolder',
   'monthlyNoteDateFormat',
   'templatesFolder',
+  'dailyNoteTemplatePath',
+  'weeklyNoteTemplatePath',
+  // Deprecated id keys stay in the synced set so the value survives a
+  // round-trip through an older client (and so migration can read it).
   'dailyNoteTemplateId',
   'weeklyNoteTemplateId',
   'trashMode',
@@ -656,6 +668,8 @@ const DEFAULTS = {
   monthlyNotesFolder: 'Notes/Monthly',
   monthlyNoteDateFormat: 'YYYY-MM',
   templatesFolder: 'Templates',
+  dailyNoteTemplatePath: null as string | null,
+  weeklyNoteTemplatePath: null as string | null,
   dailyNoteTemplateId: null as string | null,
   weeklyNoteTemplateId: null as string | null,
   aiProvider: 'off' as AIProvider,
@@ -821,8 +835,13 @@ export const useSettingsStore = create<SettingsState>()(
         setMonthlyNotesFolder: (monthlyNotesFolder) => setVault({ monthlyNotesFolder }),
         setMonthlyNoteDateFormat: (monthlyNoteDateFormat) => setVault({ monthlyNoteDateFormat }),
         setTemplatesFolder: (templatesFolder) => setVault({ templatesFolder }),
-        setDailyNoteTemplateId: (dailyNoteTemplateId) => setVault({ dailyNoteTemplateId }),
-        setWeeklyNoteTemplateId: (weeklyNoteTemplateId) => setVault({ weeklyNoteTemplateId }),
+        // Selecting a template stores its stable repo path and clears any
+        // leftover deprecated id so the synced settings.json can't resurrect
+        // a stale id-based reference.
+        setDailyNoteTemplatePath: (dailyNoteTemplatePath) =>
+          setVault({ dailyNoteTemplatePath, dailyNoteTemplateId: null }),
+        setWeeklyNoteTemplatePath: (weeklyNoteTemplatePath) =>
+          setVault({ weeklyNoteTemplatePath, weeklyNoteTemplateId: null }),
         setAiProvider: (aiProvider) => set({ aiProvider }),
         setAiApiKey: (aiApiKey) => set({ aiApiKey }),
         setAiModel: (aiModel) => set({ aiModel }),

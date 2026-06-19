@@ -17,6 +17,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { dailyNotesFolder } from './systemFolder'
 import { formatDate } from './dateFormat'
+import { noteRepoPath, resolveTemplateContent } from './templateResolve'
 
 // Opens today's daily note, creating it (with the configured template)
 // if it doesn't exist yet. Returns the resolved note id.
@@ -35,12 +36,9 @@ export function openTodayNote(now: Date = new Date()): string {
     return existing.id
   }
 
-  // Look up the configured template (if any) and copy its content.
-  const templateId = settings.dailyNoteTemplateId
-  const template = templateId
-    ? notes.find(n => !n.isDeleted && n.id === templateId)
-    : undefined
-  const content = template?.content ?? ''
+  // Look up the configured template (if any) and copy its content. Resolved
+  // by stable repo path, not the volatile note id — see templateResolve.ts.
+  const content = resolveTemplateContent('daily') ?? ''
 
   const created = addNote({ title, folderId, content })
   useWorkspaceStore.getState().openNote(created.id, { preview: false })
@@ -50,7 +48,7 @@ export function openTodayNote(now: Date = new Date()): string {
 // Helper for the Settings dropdown: list every active note inside the
 // configured templates folder (and its subfolders) so the user can pick
 // one. Returns { id, title, repoPath } for display.
-export function listTemplateNotes(): Array<{ id: string; title: string; repoPath: string }> {
+export function listTemplateNotes(): Array<{ id: string; title: string; repoPath: string; path: string }> {
   const { notes } = useNoteStore.getState()
   const { folders } = useFolderStore.getState()
   const settings = useSettingsStore.getState()
@@ -72,12 +70,14 @@ export function listTemplateNotes(): Array<{ id: string; title: string; repoPath
     return segs.join('/')
   }
 
-  const out: Array<{ id: string; title: string; repoPath: string }> = []
+  const out: Array<{ id: string; title: string; repoPath: string; path: string }> = []
   for (const n of notes) {
     if (n.isDeleted) continue
     const folderPath = pathFor(n.folderId)
     if (folderPath !== templatesRoot && !folderPath.startsWith(`${templatesRoot}/`)) continue
-    out.push({ id: n.id, title: n.title, repoPath: folderPath })
+    // `path` is the stable per-note identifier the template setting stores;
+    // `repoPath` (folder only) is retained for the dropdown's display label.
+    out.push({ id: n.id, title: n.title, repoPath: folderPath, path: noteRepoPath(n, folders) })
   }
   out.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
   return out

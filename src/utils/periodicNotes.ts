@@ -16,6 +16,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { weeklyNotesFolder, monthlyNotesFolder } from './systemFolder'
 import { formatDate } from './dateFormat'
+import { resolveTemplateContent } from './templateResolve'
 
 // Open or create a periodic note for the given date in the given
 // folder. `templateContent` (when supplied) seeds the body on first
@@ -45,16 +46,10 @@ function openPeriodicNote(
 }
 
 // Resolve the configured weekly-note template's body (or undefined
-// when no template is selected / the template note is missing). Kept
-// private because the daily-note path uses the same dance inline.
+// when no template is selected / the template note is missing). Keyed
+// by stable repo path, not the volatile note id — see templateResolve.ts.
 function weeklyTemplateContent(): string | undefined {
-  const settings = useSettingsStore.getState()
-  const id = settings.weeklyNoteTemplateId
-  if (!id) return undefined
-  const note = useNoteStore.getState().notes.find(
-    n => !n.isDeleted && n.id === id,
-  )
-  return note?.content
+  return resolveTemplateContent('weekly')
 }
 
 export function openThisWeekNote(now: Date = new Date()): string {
