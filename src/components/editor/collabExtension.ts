@@ -91,17 +91,38 @@ export function colorForUser(seed: string): string {
 export const defaultProviderFactory: ProviderFactory = (url, room, doc) =>
   new WebsocketProvider(url, room, doc) as unknown as ProviderLike
 
+// Shared meta map key prefix recording which clients seeded a fresh room.
+// One entry per seeder: `seeder:<clientID> → 1`. Used to elect a single
+// deterministic "collapser" when a concurrent seed race happens.
+const SEEDER_PREFIX = 'seeder:'
+
 /**
  * Build the live-collaboration binding for one note. Callers (the editor)
  * only invoke this when collab is enabled AND a note is open, passing the
  * note's stable collabId as `room`.
  *
- * Seeding: we attach the local content to the Y.Text only AFTER the
- * provider reports 'sync' AND the shared text is still empty. This avoids a
- * double-seed race — the first client to join a fresh room seeds it; later
- * clients receive the already-seeded content over the wire and skip
- * seeding. (Checking `ytext.length === 0` post-sync is the documented Yjs
- * idiom for "is this a brand-new document".)
+ * Seeding (and the concurrent-seed race): we attach the local content to the
+ * Y.Text only AFTER the provider reports 'sync' AND the shared text is still
+ * empty. The `ytext.length === 0` check alone is NOT race-safe: when two
+ * empty clients (e.g. a PC and a phone) join the same fresh room at nearly
+ * the same time, both fire 'sync' while still empty and BOTH insert
+ * `initialContent`. The Y.Text is a sequence CRDT, so the two inserts both
+ * survive the merge → the body appears N times and (once saved back) the
+ * duplication compounds day over day. A plain `meta.seeded` flag does NOT fix
+ * this either: the Y.Map flag resolves last-write-wins to one value, but the
+ * two text inserts still both survive.
+ *
+ * The fix is a self-healing single-seeder election that needs no server or
+ * protocol change:
+ *   1. Every client that seeds records `seeder:<its clientID>` in a shared
+ *      `meta` Y.Map (in the same transaction as the insert).
+ *   2. The elected "collapser" is the LOWEST clientID among recorded seeders.
+ *      Reacting to text/meta changes, the collapser deletes the duplicate
+ *      copies, keeping exactly one — but ONLY when the text is an exact
+ *      k-fold (k≥2) repeat of `initialContent`. If a real edit landed during
+ *      the race window the text is no longer an exact repeat, so we leave it
+ *      untouched: never destroy a genuine edit (data safety over tidiness).
+ * This converges to a single body regardless of message timing.
  */
 export function createCollabBinding(
   options: CreateCollabBindingOptions,
@@ -116,7 +137,9 @@ export function createCollabBinding(
 
   const doc = new Y.Doc()
   const ytext = doc.getText('content')
+  const meta = doc.getMap<number>('meta')
   const provider = providerFactory(url, room, doc)
+  const myKey = SEEDER_PREFIX + doc.clientID
 
   // Awareness — label this client's cursor for remote peers. Derive a
   // stable color from the GitHub login when available; otherwise a random
@@ -128,26 +151,74 @@ export function createCollabBinding(
     color: colorForUser(colorSeed),
   })
 
-  // Seed-on-empty: wait for the first sync, then seed only if nobody else
-  // already populated the room.
+  let destroyed = false
+
+  // Collapse a concurrent double-seed back to a single body. Only the elected
+  // collapser (lowest seeder clientID) acts, and only when the text is an
+  // EXACT k-fold (k≥2) repeat of initialContent — see the doc comment above.
+  // Idempotent and re-entrant: re-runs on every text/meta change until the
+  // text is a single copy (or has been genuinely edited), so a late-arriving
+  // concurrent seed is trimmed too.
+  const reconcileSeed = () => {
+    if (destroyed || initialContent.length === 0) return
+    const seederIds: number[] = []
+    for (const k of meta.keys()) {
+      if (!k.startsWith(SEEDER_PREFIX)) continue
+      const id = Number(k.slice(SEEDER_PREFIX.length))
+      if (Number.isFinite(id)) seederIds.push(id)
+    }
+    if (seederIds.length < 2) return // no concurrent seed → nothing to collapse
+    if (doc.clientID !== Math.min(...seederIds)) return // not the elected collapser
+
+    const text = ytext.toString()
+    const unit = initialContent.length
+    if (text.length <= unit || text.length % unit !== 0) return
+    const k = text.length / unit
+    if (text !== initialContent.repeat(k)) return // a real edit happened → leave it
+
+    doc.transact(() => {
+      // Keep the first copy; drop the remaining (k-1) identical copies.
+      ytext.delete(unit, text.length - unit)
+      // Prune the losers' markers so meta converges to just the collapser's.
+      for (const id of seederIds) {
+        if (id !== doc.clientID) meta.delete(SEEDER_PREFIX + id)
+      }
+    })
+  }
+
+  // Seed-on-empty: wait for the first sync, then seed only if the room is
+  // still empty. Records this client as a seeder (same transaction) so a
+  // concurrent double-seed can be detected and collapsed.
   const onSync = (isSynced: boolean) => {
     if (!isSynced) return
     if (ytext.length === 0 && initialContent.length > 0) {
-      // Wrap in a transaction so it's a single CRDT update.
       doc.transact(() => {
+        meta.set(myKey, 1)
         ytext.insert(0, initialContent)
       })
     }
+    reconcileSeed()
   }
   provider.on('sync', onSync)
 
+  // React to remote seeds / text arriving so the elected collapser trims any
+  // duplicate a concurrent seeder produced, converging to one copy.
+  const onChange = () => reconcileSeed()
+  ytext.observe(onChange)
+  meta.observe(onChange)
+
   const extension = yCollab(ytext, provider.awareness as never)
 
-  let destroyed = false
   const destroy = () => {
     if (destroyed) return
     destroyed = true
     provider.off?.('sync', onSync)
+    try {
+      ytext.unobserve(onChange)
+      meta.unobserve(onChange)
+    } catch {
+      /* ignore — observers may already be gone with the doc */
+    }
     try {
       provider.destroy()
     } catch {
