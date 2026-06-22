@@ -201,39 +201,64 @@ function ShareCollabButton({ noteId }: { noteId: string | null }) {
   )
 }
 
-// Per-note "Live" toggle for the `per-note` collaboration mode. Lets the user
-// explicitly turn live collaboration on or off for the note currently in focus
-// — this is the gesture that gates the yjs connection in per-note mode (the
-// editor only dials a room for a note the user has activated, keeping every
-// other note solo + fast). Visible ONLY when:
+// Per-note "Live" toggle for the `per-note` collaboration mode. This is the
+// SINGLE control for live collaboration in per-note mode: one button that both
+// flips the note live/solo AND reflects the current state (label + green dot +
+// connection health), so there is no separate status badge competing with it.
+// It gates the yjs connection in per-note mode (the editor only dials a room
+// for a note the user has activated, keeping every other note solo + fast).
+// Visible ONLY when:
 //   - the transport is configured (getConfiguredUrl() non-null), AND
 //   - collaborationMode === 'per-note', AND
 //   - a note is open.
 // In 'off' mode there's nothing to toggle; in 'repo' mode every note is live
 // already so a per-note switch would be misleading — the CollabPill carries
-// the status there instead.
+// the status there instead (and the pill suppresses itself in per-note mode so
+// the two never both show "Live: on" at once).
 function LiveCollabToggle({ noteId }: { noteId: string | null }) {
   const mode = useSettingsStore(s => s.collaborationMode)
   const active = useActiveCollabStore(s => (noteId ? s.activeNoteIds.has(noteId) : false))
   const toggle = useActiveCollabStore(s => s.toggle)
+  // The WebSocket probe health, so the live button can show connecting/
+  // retrying/unreachable on the SAME control instead of a separate pill.
+  const { status, attempts } = useCollaboration()
   const url = getConfiguredUrl()
   if (!url || !noteId || mode !== 'per-note') return null
+
+  // When the note is OFF, the button is a plain "Go live" affordance. When it
+  // is ON, the label + colour + tooltip reflect the live connection state, so
+  // state is shown exactly once here rather than duplicated in a status badge.
+  const label = !active
+    ? 'Go live'
+    : status === 'connecting'
+      ? 'Live: connecting…'
+      : status === 'disconnected'
+        ? attempts > 0 ? `Live: retrying (${attempts}/5)` : 'Live: paused'
+        : status === 'error'
+          ? 'Live: unreachable'
+          : 'Live: on'
+  const color = !active
+    ? 'hover:text-obsidianText'
+    : status === 'connected'
+      ? 'text-green-500'
+      : status === 'error'
+        ? 'text-red-400'
+        : 'text-amber-400'
+  const liveOn = active && status === 'connected'
 
   return (
     <button
       type="button"
       onClick={() => toggle(noteId)}
-      className={`flex items-center gap-1 transition-colors ${
-        active ? 'text-green-500' : 'hover:text-obsidianText'
-      }`}
+      className={`flex items-center gap-1 transition-colors ${color}`}
       title={active
-        ? 'Live collaboration is ON for this note. Click to stop sharing edits and return to solo editing.'
+        ? `Live collaboration is ON for this note (${label.replace(/^Live: /, '')}). Click to stop sharing edits and return to solo editing.`
         : 'Turn ON live collaboration for this note. Edits sync in real time with anyone who has its share link. Other notes stay solo.'}
       data-testid="status-bar-collab-toggle"
       aria-pressed={active}
     >
-      {active ? <SignalIcon className="w-3 h-3" /> : <SignalSlashIcon className="w-3 h-3" />}
-      <span>{active ? 'Live: on' : 'Go live'}</span>
+      {liveOn ? <SignalIcon className="w-3 h-3" /> : <SignalSlashIcon className="w-3 h-3" />}
+      <span>{active ? 'Stop live' : 'Go live'}</span>
     </button>
   )
 }
@@ -241,10 +266,13 @@ function LiveCollabToggle({ noteId }: { noteId: string | null }) {
 // Tiny presence pill — shows the live-collab WebSocket health when
 // collaboration is connecting/connected (mode !== 'off' and a transport is
 // configured). Hidden when collab is off so the footer stays uncluttered for
-// the default single-user case.
+// the default single-user case. ALSO hidden in 'per-note' mode: there the
+// LiveCollabToggle is the single control and already carries the live status,
+// so showing the pill too would duplicate the "Live: on" indicator.
 function CollabPill() {
+  const mode = useSettingsStore(s => s.collaborationMode)
   const { status, attempts, url } = useCollaboration()
-  if (status === 'off' || url == null) return null
+  if (status === 'off' || url == null || mode === 'per-note') return null
 
   const labelByStatus: Record<Exclude<typeof status, 'off'>, string> = {
     connecting: 'Live: connecting…',
