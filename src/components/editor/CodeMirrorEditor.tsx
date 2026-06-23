@@ -400,10 +400,13 @@ function moveLineThenRenumber(base: Command): Command {
 // AND the change inserted or deleted a newline (the operations that shift item
 // counts); pure in-line typing is left alone for performance.
 const ORDERED_LINE_PROBE = /(^|\n)\s*\d+\.\s/
-let renumberInFlight = false
+// Per-view guard. A single module-level boolean would be shared by every
+// editor instance, so in a split-pane layout one pane's in-flight renumber
+// would suppress another pane's. Key the flag on the EditorView instead.
+const renumberInFlight = new WeakMap<EditorView, boolean>()
 const renumberOnEdit = EditorView.updateListener.of((update) => {
   if (!update.docChanged) return
-  if (renumberInFlight) return
+  if (renumberInFlight.get(update.view)) return
   if (update.view.composing) return
 
   let touchedNewline = false
@@ -434,14 +437,14 @@ const renumberOnEdit = EditorView.updateListener.of((update) => {
   if (!touchedNewline && !touchedOrderedLineStart) return
   if (!ORDERED_LINE_PROBE.test(update.state.doc.toString())) return
 
-  renumberInFlight = true
+  renumberInFlight.set(update.view, true)
   // Defer to escape the current update cycle (dispatching inside an
   // updateListener is discouraged).
   queueMicrotask(() => {
     try {
       renumberDocument(update.view)
     } finally {
-      renumberInFlight = false
+      renumberInFlight.delete(update.view)
     }
   })
 })
