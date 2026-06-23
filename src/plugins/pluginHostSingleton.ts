@@ -141,17 +141,15 @@ export async function confirmAndInstallPlugin(record: InstalledPluginRecord): Pr
   if (host === null) throw new Error('Plugins are unavailable during server-side rendering.')
   usePluginInstallStore.getState().install(record)
   if (host.isLoaded(record.manifest.id)) host.unload(record.manifest.id)
+  // Persisted revocations are seeded into load() so they are in effect
+  // BEFORE the worker boots — a capability call from onActivate must
+  // already see them (matters on the reinstall path, where the record
+  // carries revocations from the previous install).
   await host.load({
     pluginId: record.manifest.id,
     pluginSource: record.mainSource,
+    initialRevokedPermissions: record.revokedPermissions,
   })
-  // Apply any persisted revocations from previous sessions. Without
-  // this a user who revokes a capability, restarts the app, and lets
-  // the bootstrap reload the plugin would silently regain the
-  // capability on next call.
-  for (const perm of record.revokedPermissions ?? []) {
-    host.revokePermission(record.manifest.id, perm)
-  }
 }
 
 /**
@@ -206,18 +204,16 @@ export async function bootstrapInstalledPlugins(): Promise<void> {
     }
 
     try {
+      // Persisted revocations are seeded into load() so they are in
+      // effect BEFORE the worker boots. Applying them after load()
+      // left a window: load() resolves on worker:ready, which the
+      // worker only sends AFTER onActivate has run — so a capability
+      // call from onActivate bypassed the user's revocation.
       await host.load({
         pluginId: record.manifest.id,
         pluginSource: record.mainSource,
+        initialRevokedPermissions: record.revokedPermissions,
       })
-      // Re-apply persisted capability revocations from previous
-      // sessions before the worker gets a chance to make any
-      // capability call from onActivate (the load() above already
-      // ran onActivate, but the worker can also fire requests on
-      // the next event loop tick — better to apply right away).
-      for (const perm of record.revokedPermissions ?? []) {
-        host.revokePermission(record.manifest.id, perm)
-      }
     } catch (err) {
       // The host emits bootError separately, which lands in the toast
       // via the listener. Swallow here so one bad plugin does not

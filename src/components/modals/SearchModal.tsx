@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { MagnifyingGlassIcon, DocumentTextIcon, SparklesIcon } from '@heroicons/react/24/outline'
 import { useUIStore, useNoteStore, useFolderStore, useWorkspaceStore, useSettingsStore } from '@/stores'
 import { searchNotes, getMatchSnippet } from '@/utils/search'
@@ -53,22 +53,31 @@ export const SearchModal = () => {
     return searchNotes(activeNotes, fuzzyDebounced).slice(0, 10)
   }, [activeNotes, fuzzyDebounced])
 
+  // Clear semantic state WITHOUT scheduling a re-render when it's already
+  // clear. Functional updaters that return the same reference are a no-op in
+  // React, so this can run on every effect pass (the effect re-fires whenever
+  // `activeNotes` changes) without feeding an update loop. A plain
+  // setSemanticResults([]) allocates a fresh array each call, which React
+  // treats as a change — during a large note influx that cascade tripped
+  // "Maximum update depth exceeded".
+  const resetSemanticState = useCallback(() => {
+    setSemanticResults(prev => (prev.length ? [] : prev))
+    setSemanticError(prev => (prev === null ? prev : null))
+    setSemanticPending(prev => (prev ? false : prev))
+  }, [])
+
   // Run semantic search when in semantic mode + debounced query changes.
   // Each call: embed the query, cosine-rank against every cached note
   // embedding, surface the top 10. Falls back to fuzzy results when
   // the embed call fails (network / quota).
   useEffect(() => {
     if (mode !== 'semantic' || !semanticAvailable) {
-      setSemanticResults([])
-      setSemanticError(null)
-      setSemanticPending(false)
+      resetSemanticState()
       return
     }
     const query = semanticDebounced.trim()
     if (!query) {
-      setSemanticResults([])
-      setSemanticError(null)
-      setSemanticPending(false)
+      resetSemanticState()
       return
     }
     let cancelled = false
@@ -116,7 +125,7 @@ export const SearchModal = () => {
       }
     })()
     return () => { cancelled = true }
-  }, [mode, semanticDebounced, semanticAvailable, activeNotes])
+  }, [mode, semanticDebounced, semanticAvailable, activeNotes, resetSemanticState])
 
   // Recent notes shown when the query box is empty (Obsidian quick-switcher /
   // VS Code Ctrl+P style). Resolve the MRU note-id list against the ACTIVE
