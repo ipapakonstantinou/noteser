@@ -277,6 +277,10 @@ export class PluginHost {
     pluginId: string
     pluginSource: string
     timeoutMs?: number
+    /** Persisted user revocations, seeded BEFORE the worker boots so a
+     *  capability call from `onActivate` cannot slip through the window
+     *  between `worker:ready` and a post-load revokePermission() loop. */
+    initialRevokedPermissions?: Iterable<PluginPermission>
   }): Promise<PluginManifest> {
     const { pluginId, pluginSource } = args
     const timeoutMs = args.timeoutMs ?? 5000
@@ -291,7 +295,7 @@ export class PluginHost {
       lastMessageWindowStart: nowMs(),
       messagesInWindow: 0,
       ready: false,
-      revokedPermissions: new Set<PluginPermission>(),
+      revokedPermissions: new Set<PluginPermission>(args.initialRevokedPermissions),
     }
     const entry: WorkerEntry = {
       plugin,
