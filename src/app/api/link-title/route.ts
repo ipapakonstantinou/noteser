@@ -1,5 +1,8 @@
 import { lookup } from 'node:dns/promises'
+import type { LookupFunction } from 'node:net'
 import { isIP } from 'node:net'
+import { Agent, fetch as undiciFetch } from 'undici'
+import type { Response as UndiciResponse } from 'undici'
 import { NextResponse } from 'next/server'
 import { checkRateLimit, getClientIp } from '@/utils/rateLimit'
 import { isOriginAllowed } from '@/utils/originAllowlist'
@@ -18,7 +21,15 @@ import { extractHtmlTitle } from '@/utils/pasteLink'
 //     EVERY resolved address is public — this closes the DNS-rebinding /
 //     cloud-metadata (169.254.169.254) hole where a public-looking name
 //     points at internal space
-//   - 5s fetch timeout, response body read capped at 256 KB
+//   - the connection is pinned to the exact address(es) that were just
+//     validated (via a custom dispatcher lookup), so the TCP connect
+//     can't race a second, independent DNS resolution that answers
+//     differently than the one we checked
+//   - redirects are NOT auto-followed by the HTTP client: each hop's
+//     Location is re-validated and re-pinned from scratch, so a public
+//     URL can't bounce the request into internal space via a 3xx
+//   - 5s fetch timeout (shared across all hops), response body read
+//     capped at 256 KB
 //
 // Auth-walled pages (e.g. a private Jira) return their login page's title
 // or fail entirely — the client falls back to pasting the bare URL.
@@ -26,6 +37,9 @@ import { extractHtmlTitle } from '@/utils/pasteLink'
 const FETCH_TIMEOUT_MS = 5_000
 const MAX_BODY_BYTES = 256 * 1024
 const MAX_URL_CHARS = 2_048
+const MAX_REDIRECTS = 5
+
+type ValidatedTarget = { url: URL; addresses: { address: string; family: number }[] }
 
 export async function GET(request: Request) {
   const origin = isOriginAllowed(request)
@@ -42,7 +56,7 @@ export async function GET(request: Request) {
   }
 
   const target = new URL(request.url).searchParams.get('url') ?? ''
-  const validated = await validateTargetUrl(target)
+  let validated = await validateTargetUrl(target)
   if (!validated.ok) {
     return NextResponse.json({ error: 'invalid_url', message: validated.reason }, { status: 400 })
   }
@@ -50,28 +64,53 @@ export async function GET(request: Request) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
   try {
-    const res = await fetch(validated.url, {
-      signal: controller.signal,
-      redirect: 'follow',
-      headers: {
-        // Some sites refuse requests without a UA; identify honestly.
-        'User-Agent': 'noteser-link-title/1.0 (+https://noteser.app)',
-        Accept: 'text/html,application/xhtml+xml',
-      },
-    })
+    for (let hop = 0; ; hop++) {
+      const agent = new Agent({ connect: { lookup: pinnedLookup(validated.value.addresses) } })
+      let res: UndiciResponse
+      try {
+        res = await undiciFetch(validated.value.url, {
+          signal: controller.signal,
+          redirect: 'manual',
+          headers: {
+            // Some sites refuse requests without a UA; identify honestly.
+            'User-Agent': 'noteser-link-title/1.0 (+https://noteser.app)',
+            Accept: 'text/html,application/xhtml+xml',
+          },
+          dispatcher: agent,
+        })
+      } finally {
+        void agent.close().catch(() => {})
+      }
 
-    const contentType = res.headers.get('content-type') ?? ''
-    if (!res.ok || !/text\/html|application\/xhtml/i.test(contentType)) {
-      return NextResponse.json({ title: null })
+      if (isRedirectStatus(res.status)) {
+        if (hop >= MAX_REDIRECTS) return NextResponse.json({ title: null })
+        const location = res.headers.get('location')
+        if (!location) return NextResponse.json({ title: null })
+        let nextRaw: string
+        try {
+          nextRaw = new URL(location, validated.value.url).toString()
+        } catch {
+          return NextResponse.json({ title: null })
+        }
+        const nextValidated = await validateTargetUrl(nextRaw)
+        if (!nextValidated.ok) return NextResponse.json({ title: null })
+        validated = nextValidated
+        continue
+      }
+
+      const contentType = res.headers.get('content-type') ?? ''
+      if (!res.ok || !/text\/html|application\/xhtml/i.test(contentType)) {
+        return NextResponse.json({ title: null })
+      }
+
+      const html = await readCapped(res, MAX_BODY_BYTES)
+      const title = extractHtmlTitle(html)
+      return NextResponse.json(
+        { title },
+        // Titles are stable; let the CDN absorb repeat pastes of hot links.
+        { headers: { 'Cache-Control': 'public, max-age=3600, s-maxage=86400' } },
+      )
     }
-
-    const html = await readCapped(res, MAX_BODY_BYTES)
-    const title = extractHtmlTitle(html)
-    return NextResponse.json(
-      { title },
-      // Titles are stable; let the CDN absorb repeat pastes of hot links.
-      { headers: { 'Cache-Control': 'public, max-age=3600, s-maxage=86400' } },
-    )
   } catch {
     // Timeout, DNS failure, TLS error — all map to "no title available".
     return NextResponse.json({ title: null })
@@ -80,9 +119,30 @@ export async function GET(request: Request) {
   }
 }
 
+function isRedirectStatus(status: number): boolean {
+  return status === 301 || status === 302 || status === 303 || status === 307 || status === 308
+}
+
+// Builds a dns.lookup-compatible function that ignores whatever hostname
+// it's asked about and always answers with the addresses that were
+// already validated for this hop. This is what lets the HTTP client
+// connect to the exact IP we checked instead of re-resolving DNS (and
+// possibly getting a different, unchecked answer) at connect time.
+function pinnedLookup(addresses: { address: string; family: number }[]): LookupFunction {
+  return (_hostname, options, callback) => {
+    if (options && typeof options === 'object' && options.all) {
+      callback(null, addresses)
+      return
+    }
+    const wantFamily = typeof options === 'object' ? options?.family : undefined
+    const match = (wantFamily ? addresses.find((a) => a.family === wantFamily) : undefined) ?? addresses[0]
+    callback(null, match.address, match.family)
+  }
+}
+
 async function validateTargetUrl(
   raw: string,
-): Promise<{ ok: true; url: URL } | { ok: false; reason: string }> {
+): Promise<{ ok: true; value: ValidatedTarget } | { ok: false; reason: string }> {
   if (!raw || raw.length > MAX_URL_CHARS) return { ok: false, reason: 'missing or oversized url' }
   let url: URL
   try {
@@ -100,16 +160,19 @@ async function validateTargetUrl(
   // Resolve the name and refuse unless every resolved address is public.
   // Without this, a public-looking host can point at 127.0.0.1, RFC1918
   // space, or the 169.254.169.254 cloud-metadata endpoint (SSRF). We
-  // gate on the resolved IPs the OS will actually connect to.
+  // gate on the resolved IPs the OS will actually connect to, and the
+  // caller pins the connection to exactly these addresses (see
+  // `pinnedLookup`) so a later, independent lookup can't disagree.
   const literal = isIP(url.hostname)
   if (literal) {
     // hostname is an IP literal: validate it directly (strip IPv6 brackets).
-    if (!isPublicAddress(stripBrackets(url.hostname))) {
+    const address = stripBrackets(url.hostname)
+    if (!isPublicAddress(address)) {
       return { ok: false, reason: 'host not allowed' }
     }
-    return { ok: true, url }
+    return { ok: true, value: { url, addresses: [{ address, family: literal }] } }
   }
-  let addresses: { address: string }[]
+  let addresses: { address: string; family: number }[]
   try {
     addresses = await lookup(url.hostname, { all: true })
   } catch {
@@ -118,7 +181,7 @@ async function validateTargetUrl(
   if (addresses.length === 0 || !addresses.every((a) => isPublicAddress(a.address))) {
     return { ok: false, reason: 'host resolves to a non-public address' }
   }
-  return { ok: true, url }
+  return { ok: true, value: { url, addresses } }
 }
 
 function stripBrackets(host: string): string {
@@ -175,7 +238,7 @@ function isPublicIPv6(ip: string): boolean {
   return true
 }
 
-async function readCapped(res: Response, maxBytes: number): Promise<string> {
+async function readCapped(res: UndiciResponse, maxBytes: number): Promise<string> {
   const reader = res.body?.getReader()
   if (!reader) return ''
   const decoder = new TextDecoder('utf-8', { fatal: false })

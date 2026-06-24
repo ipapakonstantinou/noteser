@@ -1,5 +1,10 @@
 # CLAUDE.md
 
+> **Knowledge home (product / strategy): the Obsidian vault.** Roadmap, GTM/launch, backlog, sync-provider
+> plans, and design decisions live in `Personal/` + Claude Memory (`project-noteser`, `project-noteser-launch`,
+> `noteser-open-backlog`, `project-noteser-codeberg-sync`, `project-noteser-sync-test-harness`, …). This file
+> stays the **code** guide for the repo.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Commands
