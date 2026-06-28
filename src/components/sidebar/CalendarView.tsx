@@ -115,8 +115,8 @@ export const CalendarView = () => {
     [activeNotes, year, month, dateFormat, ensureFolderPath],
   )
 
-  const openDay = (day: number) => {
-    const dayDate = new Date(year, month, day)
+  const openDay = (day: number, dayYear: number = year, dayMonth: number = month) => {
+    const dayDate = new Date(dayYear, dayMonth, day)
     const title = formatDate(dayDate, dateFormat || 'YYYY-MM-DD')
     const folderId = ensureFolderPath(dailyNotesFolder.get().split('/'))
     const existing = activeNotes.find(n => n.folderId === folderId && n.title === title)
@@ -134,7 +134,7 @@ export const CalendarView = () => {
 
   const goToToday = () => {
     setViewDate(new Date(today.getFullYear(), today.getMonth(), 1))
-    openDay(today.getDate())
+    openDay(today.getDate(), today.getFullYear(), today.getMonth())
   }
 
   const onDayContextMenu = (e: React.MouseEvent, day: number) => {
