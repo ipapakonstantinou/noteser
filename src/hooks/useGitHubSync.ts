@@ -474,7 +474,18 @@ export function useGitHubSync(): UseGitHubSyncResult {
           message: okMessage,
           url: result.commitUrl,
         })
-        addSyncToast({ kind: 'success', message: okMessage })
+        // attachment-timeout-retry: notes pushed fine, but the push skipped
+        // attachments this cycle (stalled IDB read) — say so instead of a
+        // plain success toast, since nothing was marked "pushed" and the
+        // next sync will pick them up automatically.
+        if (result.attachmentSyncSkipped) {
+          addSyncToast({
+            kind: 'info',
+            message: 'Synced, but attachments could not be read from this device — will retry on the next sync.',
+          })
+        } else {
+          addSyncToast({ kind: 'success', message: okMessage })
+        }
         setTimeout(() => setSyncState({ kind: 'idle' }), 5000)
       })
     } catch (err) {

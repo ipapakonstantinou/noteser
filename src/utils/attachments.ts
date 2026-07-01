@@ -138,8 +138,17 @@ export function resolveAttachmentPath(nameOrPath: string): string | null {
 const IDB_TIMEOUT_MS = 8_000
 let idbTimeoutWarned = false
 
-function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  return new Promise<T>(resolve => {
+// Tracked variant: same degrade-to-fallback behaviour, but also reports
+// WHETHER the fallback fired. The push path needs this — "timed out, unknown
+// local state" and "genuinely resolved to an empty/false/null value" must not
+// be conflated into the same push decision (see listAttachmentPathsTracked
+// and friends below).
+function withTimeoutTracked<T>(
+  promise: Promise<T>,
+  ms: number,
+  fallback: T,
+): Promise<{ value: T; timedOut: boolean }> {
+  return new Promise(resolve => {
     let settled = false
     const timer = setTimeout(() => {
       if (settled) return
@@ -150,24 +159,28 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
           `[attachments] IndexedDB op exceeded ${ms}ms — degrading gracefully (sync continues).`,
         )
       }
-      resolve(fallback)
+      resolve({ value: fallback, timedOut: true })
     }, ms)
     promise.then(
       value => {
         if (settled) return
         settled = true
         clearTimeout(timer)
-        resolve(value)
+        resolve({ value, timedOut: false })
       },
       () => {
         // An IDB rejection is also best-effort: degrade rather than reject.
         if (settled) return
         settled = true
         clearTimeout(timer)
-        resolve(fallback)
+        resolve({ value: fallback, timedOut: true })
       },
     )
   })
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return withTimeoutTracked(promise, ms, fallback).then(r => r.value)
 }
 
 export interface StoredAttachment {
@@ -413,6 +426,14 @@ export function listAttachmentPaths(): Promise<string[]> {
   return withTimeout(listAttachmentPathsUnbounded(), IDB_TIMEOUT_MS, [])
 }
 
+// PUSH-only variant: a timeout here must NOT be read as "zero local
+// attachments" (the push would then silently upload nothing and look
+// successful). syncPush uses `timedOut` to abort the whole attachment
+// section for this cycle instead of trusting the `[]` fallback.
+export function listAttachmentPathsTracked(): Promise<{ value: string[]; timedOut: boolean }> {
+  return withTimeoutTracked(listAttachmentPathsUnbounded(), IDB_TIMEOUT_MS, [])
+}
+
 async function listAttachmentPathsUnbounded(): Promise<string[]> {
   const allKeys = await keys()
   const out: string[] = []
@@ -467,6 +488,18 @@ export function getAttachmentDoNotSync(path: string): Promise<boolean> {
   )
 }
 
+// PUSH-only variant — see listAttachmentPathsTracked for why the push path
+// needs to distinguish "genuinely false" from "timed out".
+export function getAttachmentDoNotSyncTracked(
+  path: string,
+): Promise<{ value: boolean; timedOut: boolean }> {
+  return withTimeoutTracked(
+    get<StoredAttachment>(PREFIX + path).then(record => record?.doNotSync === true),
+    IDB_TIMEOUT_MS,
+    false,
+  )
+}
+
 // do-not-sync (#179): set/clear the doNotSync flag on an EXISTING stored
 // attachment. No-op when the path is unknown or the flag already matches.
 // Used by the feature-tour seeder's healing pass and the one-time boot
@@ -488,6 +521,14 @@ export function getAttachmentGitSha(path: string): Promise<string | null> {
   // (pull's attachment comparison) skips the update when the SHA is null, so a
   // stall means "don't re-download" rather than wedging the sync.
   return withTimeout(getAttachmentGitShaUnbounded(path), IDB_TIMEOUT_MS, null)
+}
+
+// PUSH-only variant — see listAttachmentPathsTracked for why the push path
+// needs to distinguish "genuinely null" from "timed out".
+export function getAttachmentGitShaTracked(
+  path: string,
+): Promise<{ value: string | null; timedOut: boolean }> {
+  return withTimeoutTracked(getAttachmentGitShaUnbounded(path), IDB_TIMEOUT_MS, null)
 }
 
 async function getAttachmentGitShaUnbounded(path: string): Promise<string | null> {
