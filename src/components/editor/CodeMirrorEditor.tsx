@@ -89,11 +89,22 @@ interface CodeMirrorEditorProps {
 // references into the document at `pos`. Async on purpose — the drop/paste
 // event handler kicks this off and returns immediately so CodeMirror doesn't
 // block on the IDB write.
-async function insertImagesAt(view: EditorView, files: File[], pos: number): Promise<void> {
+//
+// `binding` is this note's live collab session, if any (null when collab is
+// off/not active for this note). Relaying is fired WITHOUT awaiting it — the
+// local save has already succeeded, so the paste UX (ref insertion below)
+// must not wait on base64-encoding + a Yjs transaction.
+async function insertImagesAt(
+  view: EditorView,
+  files: File[],
+  pos: number,
+  binding: CollabBinding | null,
+): Promise<void> {
   const refs: string[] = []
   for (const file of files) {
     try {
       const path = await saveAttachment(file, file.name || 'image.png')
+      void binding?.shareAttachment(path, file, file.name || 'image.png')
       const alt = (file.name || 'image').replace(/\.[^.]+$/, '')
       refs.push(`![${alt}](${path})`)
     } catch (err) {
@@ -1228,7 +1239,7 @@ export function CodeMirrorEditor({
         event.preventDefault()
         const dropPos = view.posAtCoords({ x: event.clientX, y: event.clientY })
           ?? view.state.selection.main.head
-        insertImagesAt(view, images, dropPos)
+        insertImagesAt(view, images, dropPos, collabBindingRef.current)
         return true
       },
       paste(event, view) {
@@ -1243,7 +1254,7 @@ export function CodeMirrorEditor({
           if (text !== '') return false
           event.preventDefault()
           const head = view.state.selection.main.head
-          insertImagesAt(view, images, head)
+          insertImagesAt(view, images, head, collabBindingRef.current)
           return true
         }
 
