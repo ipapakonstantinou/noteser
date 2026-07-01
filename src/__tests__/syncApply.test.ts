@@ -35,6 +35,7 @@ const mockPutAttachmentAtPath = jest.fn().mockResolvedValue(undefined)
 jest.mock('../utils/attachments', () => ({
   isAttachmentPath: (p: string) => p.startsWith('attachments/'),
   listAttachmentPaths: async () => [],
+  listAttachmentPathsTracked: async () => ({ value: [], timedOut: false }),
   getAttachmentBlob: async () => null,
   getAttachmentGitSha: async () => null,
   getAttachmentTombstones: async () => [],

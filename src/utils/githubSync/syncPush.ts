@@ -22,10 +22,10 @@ import {
   type GitTreeEntry,
 } from '../github'
 import {
-  listAttachmentPaths,
+  listAttachmentPathsTracked,
   getAttachmentBlob,
-  getAttachmentGitSha,
-  getAttachmentDoNotSync,
+  getAttachmentGitShaTracked,
+  getAttachmentDoNotSyncTracked,
   getAttachmentTombstones,
   clearAttachmentTombstones,
 } from '../attachments'
@@ -393,27 +393,48 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   // attachment whose SHA differs from the remote. Files only present
   // locally get created remotely; files present in both get updated when
   // their content drifts. Same upload-cache + progress treatment as notes.
-  const localAttachmentPaths = await listAttachmentPaths()
+  //
+  // attachment-timeout-retry: a stalled IDB read (mobile Safari) must not
+  // silently look like "zero local attachments" — that would push a commit
+  // that omits real attachments while reporting the sync as successful, and
+  // nothing would ever retry it (the attachment was already durably saved
+  // locally, just never uploaded). So the *Tracked reads report `timedOut`
+  // and, the moment any one of them fires, we abort the ENTIRE attachment
+  // section for this cycle: no partial plan, no tree entries, no
+  // `uploadedShas` writes. Because nothing gets marked as pushed, the next
+  // sync's 3b runs exactly as if this one never attempted it — that's what
+  // makes the retry automatic without a dedicated retry-queue.
+  let attachmentSyncSkipped = false
+  const { value: localAttachmentPaths, timedOut: listTimedOut } = await listAttachmentPathsTracked()
+  if (listTimedOut) attachmentSyncSkipped = true
   interface AttachmentPlan { path: string; localSha: string; remoteSha: string | undefined }
   const attachmentPlan: AttachmentPlan[] = []
   for (const path of localAttachmentPaths) {
+    if (attachmentSyncSkipped) break
     if (pushMatcher.isIgnored(path)) continue
     // do-not-sync (#179): app-local attachments (the seeded feature-tour
     // screenshots) are flagged on their stored record and never enter the
     // push plan — no hash, no upload, no tree entry. This is a per-record
     // flag, NOT a path exclusion: a user's own folder that happens to be
     // named `feature-tour/` syncs normally.
-    if (await getAttachmentDoNotSync(path)) continue
-    const localSha = await getAttachmentGitSha(path)
+    const { value: doNotSync, timedOut: dnsTimedOut } = await getAttachmentDoNotSyncTracked(path)
+    if (dnsTimedOut) { attachmentSyncSkipped = true; break }
+    if (doNotSync) continue
+    const { value: localSha, timedOut: shaTimedOut } = await getAttachmentGitShaTracked(path)
+    if (shaTimedOut) { attachmentSyncSkipped = true; break }
     if (!localSha) continue
     const remoteSha = remoteTree.get(path)
     attachmentPlan.push({ path, localSha, remoteSha })
   }
-  const attachmentsToUpload = attachmentPlan.filter(p => p.remoteSha !== p.localSha && !uploadedShas.has(p.localSha))
-  const attachmentsCached   = attachmentPlan.filter(p => p.remoteSha !== p.localSha &&  uploadedShas.has(p.localSha))
+  const effectiveAttachmentPlan = attachmentSyncSkipped ? [] : attachmentPlan
+  const attachmentsToUpload = effectiveAttachmentPlan.filter(p => p.remoteSha !== p.localSha && !uploadedShas.has(p.localSha))
+  const attachmentsCached   = effectiveAttachmentPlan.filter(p => p.remoteSha !== p.localSha &&  uploadedShas.has(p.localSha))
   blobsTotal += attachmentsToUpload.length
   blobsSkipped += attachmentsCached.length
   if (blobsTotal > 0 || blobsSkipped > 0) emitBlobProgress()
+  if (attachmentSyncSkipped) {
+    console.warn('[syncPush] attachment sync skipped this cycle (IndexedDB stalled) — will retry next sync.')
+  }
 
   for (const plan of attachmentsCached) {
     entries.push({ path: plan.path, mode: '100644', type: 'blob', sha: plan.localSha })
@@ -437,7 +458,12 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   // re-download them every cycle (the orphan-comes-back bug). We only
   // delete entries that actually exist remotely; stale tombstones (file
   // already gone remotely) get cleared too.
-  const tombstones = await getAttachmentTombstones()
+  //
+  // Skipped alongside 3b when attachment state is untrustworthy this cycle:
+  // consuming tombstones here would clear them even though we never confirmed
+  // what's actually on disk, and a deletion decided from partial/absent local
+  // state is exactly the kind of "confirmed" bookkeeping we must not write.
+  const tombstones = attachmentSyncSkipped ? [] : await getAttachmentTombstones()
   const consumedTombstones: string[] = []
   for (const path of tombstones) {
     if (remoteTree.has(path)) {
@@ -578,7 +604,7 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     // remotely) so they don't re-attempt every sync.
     if (consumedTombstones.length > 0) await clearAttachmentTombstones(consumedTombstones)
     return {
-      result: { unchanged: true, created: 0, updated: 0, deleted: 0, commitSha: parentCommitSha, commitUrl: null },
+      result: { unchanged: true, created: 0, updated: 0, deleted: 0, commitSha: parentCommitSha, commitUrl: null, attachmentSyncSkipped },
       pathUpdates,
       vaultSettingsHashPushed,
       vaultGitignorePushed,
@@ -602,7 +628,7 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     uploadedShas.clear()
     onProgress?.({ phase: 'done' })
     return {
-      result: { unchanged: true, created: 0, updated: 0, deleted: 0, commitSha: parentCommitSha, commitUrl: null },
+      result: { unchanged: true, created: 0, updated: 0, deleted: 0, commitSha: parentCommitSha, commitUrl: null, attachmentSyncSkipped },
       pathUpdates,
       vaultSettingsHashPushed,
       vaultGitignorePushed,
@@ -624,7 +650,7 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   onProgress?.({ phase: 'done' })
 
   return {
-    result: { unchanged: false, created, updated, deleted, commitSha, commitUrl: html_url },
+    result: { unchanged: false, created, updated, deleted, commitSha, commitUrl: html_url, attachmentSyncSkipped },
     pathUpdates,
     vaultSettingsHashPushed,
     vaultGitignorePushed,
