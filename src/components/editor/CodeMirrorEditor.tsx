@@ -1029,17 +1029,25 @@ export function CodeMirrorEditor({
     // line(s) through plain -> numbered ("1. ") -> task ("- [ ] ") -> plain.
     // Replaces the earlier trio of Mod+Shift+7/8/9 toggles. Separate from
     // Mod+L (which only toggles a checkbox done/undone).
+    // Spelled 'Mod-Alt-L' (capital, no explicit "Shift-" word) rather than
+    // 'Mod-Alt-Shift-l': CodeMirror's runHandlers() skips its case-insensitive
+    // base-key fallback whenever ctrlKey+altKey are both held on Windows (its
+    // AltGr-avoidance guard), so a lowercase-letter spec can never match
+    // event.key's uppercase 'L' there and the binding silently never fires.
+    // The uppercase form matches on the first (always-tried) lookup on every
+    // platform. See @codemirror/view's `runHandlers`/`modifiers` internals.
     {
-      key: 'Mod-Alt-Shift-l',
+      key: 'Mod-Alt-L',
       preventDefault: true,
       run: cycleListTypeCommand,
     },
     // (3) Mod+Alt+Shift+B — Toggle a plain bullet list ("- ") on the current
     // line(s). A STANDALONE toggle, NOT part of the Mod+Alt+Shift+L cycle:
     // a plain line gains "- ", a "- " bullet drops it. Multi-line aware,
-    // indentation preserved.
+    // indentation preserved. Same 'Mod-Alt-B' (not '...-Shift-b') spelling
+    // rationale as the cycle-list binding above.
     {
-      key: 'Mod-Alt-Shift-b',
+      key: 'Mod-Alt-B',
       preventDefault: true,
       run: toggleBulletCommand,
     },
