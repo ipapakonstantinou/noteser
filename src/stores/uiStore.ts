@@ -41,6 +41,7 @@ export type SidebarTabId =
   | 'calendar'
   | 'related'
   | 'plugins'
+  | 'broken-links'
 
 export interface SidebarSectionState {
   collapsed: boolean
