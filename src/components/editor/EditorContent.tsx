@@ -3,6 +3,9 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, createElement } from 'react'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { remarkCallouts } from '@/utils/remarkCallouts'
+import { CALLOUT_TYPES, type CalloutType } from '@/utils/callouts'
+import { CalloutBox } from '@/components/shared/CalloutBox'
 import dynamic from 'next/dynamic'
 
 // Lazy-loaded — react-syntax-highlighter + the oneDark theme ship ~300kB
@@ -519,6 +522,24 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
     return Block as React.ComponentType<unknown>
   }
 
+  // remarkCallouts (mdast pass, applied via remarkPlugins below) tags a
+  // `> [!NOTE]`-style blockquote's hast node with `data-callout`; render
+  // those as a CalloutBox instead of a plain <blockquote>.
+  const Blockquote = ({ node, className, children, ...rest }: MdProps) => {
+    const calloutAttr = (rest as Record<string, unknown>)['data-callout']
+    const calloutType = typeof calloutAttr === 'string' && (CALLOUT_TYPES as string[]).includes(calloutAttr)
+      ? (calloutAttr as CalloutType)
+      : null
+    const cursorCls = isCursorBlock(node) ? 'preview-cursor-block' : ''
+    if (calloutType) {
+      return <CalloutBox type={calloutType} className={cursorCls || undefined}>{children}</CalloutBox>
+    }
+    const cls = [className, cursorCls].filter(Boolean).join(' ')
+    return <blockquote className={cls || undefined}>{children}</blockquote>
+  }
+  Blockquote.displayName = 'MdBlockquote'
+  const TypedBlockquote = Blockquote as React.ComponentType<unknown>
+
   const ListItem = ({ node, className, children, ...rest }: MdProps) => {
     // react-markdown v10 doesn't pass `checked` — derive it from the HAST node.
     // `isTaskItemDone` finds the checkbox belonging to THIS item (skipping
@@ -564,7 +585,7 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
       h4: wrapBlock('h4'),
       h5: wrapBlock('h5'),
       h6: wrapBlock('h6'),
-      blockquote: wrapBlock('blockquote'),
+      blockquote: TypedBlockquote,
       pre: wrapBlock('pre'),
       li: TypedListItem,
     }
@@ -606,7 +627,7 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
         >
           <div className="prose prose-invert max-w-none">
             <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
+              remarkPlugins={[remarkGfm, remarkCallouts]}
               components={components}
               // react-markdown v10's defaultUrlTransform strips
               // anything outside its (http|https|mailto|tel|#) allowlist
