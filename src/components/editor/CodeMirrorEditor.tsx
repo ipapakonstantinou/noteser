@@ -99,11 +99,12 @@ async function insertImagesAt(
   files: File[],
   pos: number,
   binding: CollabBinding | null,
+  noteTitle: string,
 ): Promise<void> {
   const refs: string[] = []
   for (const file of files) {
     try {
-      const path = await saveAttachment(file, file.name || 'image.png')
+      const path = await saveAttachment(file, file.name || 'image.png', new Date(), noteTitle)
       void binding?.shareAttachment(path, file, file.name || 'image.png')
       const alt = (file.name || 'image').replace(/\.[^.]+$/, '')
       refs.push(`![${alt}](${path})`)
@@ -1247,7 +1248,8 @@ export function CodeMirrorEditor({
         event.preventDefault()
         const dropPos = view.posAtCoords({ x: event.clientX, y: event.clientY })
           ?? view.state.selection.main.head
-        insertImagesAt(view, images, dropPos, collabBindingRef.current)
+        const noteTitle = activeNotesRef.current.find(n => n.id === noteIdRef.current)?.title ?? ''
+        insertImagesAt(view, images, dropPos, collabBindingRef.current, noteTitle)
         return true
       },
       paste(event, view) {
@@ -1262,7 +1264,8 @@ export function CodeMirrorEditor({
           if (text !== '') return false
           event.preventDefault()
           const head = view.state.selection.main.head
-          insertImagesAt(view, images, head, collabBindingRef.current)
+          const noteTitle = activeNotesRef.current.find(n => n.id === noteIdRef.current)?.title ?? ''
+          insertImagesAt(view, images, head, collabBindingRef.current, noteTitle)
           return true
         }
 

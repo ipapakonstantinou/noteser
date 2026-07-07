@@ -55,6 +55,7 @@ import {
   resolveAttachmentPath,
   _clearAttachmentUrlCache,
 } from '../utils/attachments'
+import { DEFAULT_ATTACHMENT_FILENAME_PATTERN } from '../utils/attachmentFilename'
 import { useSettingsStore } from '../stores/settingsStore'
 
 // ── URL.createObjectURL / revokeObjectURL stubs ───────────────────────────────
@@ -86,8 +87,9 @@ beforeEach(() => {
   _clearAttachmentUrlCache()
   createSpy.mockClear()
   revokeSpy.mockClear()
-  // Reset the configurable folder to the default so tests don't leak state.
+  // Reset the configurable folder/pattern to their defaults so tests don't leak state.
   useSettingsStore.getState().setAttachmentsFolder(DEFAULT_ATTACHMENT_DIR)
+  useSettingsStore.getState().setAttachmentFilenamePattern(DEFAULT_ATTACHMENT_FILENAME_PATTERN)
 })
 
 // ── sanitizeAttachmentName ────────────────────────────────────────────────────
@@ -228,6 +230,40 @@ describe('saveAttachment', () => {
     const p2 = await saveAttachment(blob, 'noext', now)
     expect(p1).toBe('attachments/20260519095612-noext')
     expect(p2).toBe('attachments/20260519095612-noext-1')
+  })
+})
+
+// ── saveAttachment honours the configured filename pattern (#124) ───────────
+
+describe('saveAttachment with configured filename pattern', () => {
+  test('applies a {noteTitle}/{counter} pattern instead of the default', async () => {
+    useSettingsStore.getState().setAttachmentFilenamePattern('{noteTitle}-{counter}')
+    const blob = new Blob(['x'], { type: 'image/png' })
+    const path = await saveAttachment(blob, 'shot.png', new Date(), 'My Note')
+    expect(path).toBe('attachments/My Note-1.png')
+  })
+
+  test('bumps {counter} on collision instead of appending a bare -N suffix', async () => {
+    useSettingsStore.getState().setAttachmentFilenamePattern('{noteTitle}-{counter}')
+    const blob = new Blob(['x'], { type: 'image/png' })
+    const p1 = await saveAttachment(blob, 'a.png', new Date(), 'Journal')
+    const p2 = await saveAttachment(blob, 'b.png', new Date(), 'Journal')
+    expect(p1).toBe('attachments/Journal-1.png')
+    expect(p2).toBe('attachments/Journal-2.png')
+  })
+
+  test('blank pattern setting falls back to the default', async () => {
+    useSettingsStore.getState().setAttachmentFilenamePattern('')
+    const blob = new Blob(['x'], { type: 'image/png' })
+    const path = await saveAttachment(blob, 'pic.png', new Date(2026, 4, 19, 9, 56, 12))
+    expect(path).toBe('attachments/20260519095612-pic.png')
+  })
+
+  test('missing noteTitle argument defaults to empty string', async () => {
+    useSettingsStore.getState().setAttachmentFilenamePattern('{noteTitle}img')
+    const blob = new Blob(['x'], { type: 'image/png' })
+    const path = await saveAttachment(blob, 'pic.png', new Date())
+    expect(path).toBe('attachments/img.png')
   })
 })
 

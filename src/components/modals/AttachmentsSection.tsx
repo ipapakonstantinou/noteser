@@ -8,6 +8,7 @@ import {
   deleteAttachment,
   type AttachmentMeta,
 } from '@/utils/attachments'
+import { DEFAULT_ATTACHMENT_FILENAME_PATTERN } from '@/utils/attachmentFilename'
 import { findOrphanAttachments } from '@/utils/attachmentRefs'
 import { SettingsTextInput } from './settings'
 
@@ -24,6 +25,8 @@ export const AttachmentsSection = () => {
   const notes = useNoteStore(s => s.notes)
   const attachmentsFolderSetting = useSettingsStore(s => s.attachmentsFolder)
   const setAttachmentsFolder = useSettingsStore(s => s.setAttachmentsFolder)
+  const filenamePattern = useSettingsStore(s => s.attachmentFilenamePattern)
+  const setFilenamePattern = useSettingsStore(s => s.setAttachmentFilenamePattern)
   const [meta, setMeta] = useState<AttachmentMeta[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -78,6 +81,21 @@ export const AttachmentsSection = () => {
       </div>
       <div className="text-[11px] text-obsidianSecondaryText -mt-1">
         Affects new attachments only. Existing files keep their original path; both old and new are still recognised.
+      </div>
+
+      <div className="flex items-center gap-2 text-sm">
+        <span className="text-obsidianSecondaryText whitespace-nowrap">Filename pattern</span>
+        <SettingsTextInput
+          value={filenamePattern}
+          onCommit={(v) => setFilenamePattern(v.trim() || DEFAULT_ATTACHMENT_FILENAME_PATTERN)}
+          placeholder={DEFAULT_ATTACHMENT_FILENAME_PATTERN}
+          mono
+        />
+      </div>
+      <div className="text-[11px] text-obsidianSecondaryText -mt-1">
+        Tokens: <code>{'{date}'}</code>, <code>{'{date:YYYY-MM-DD}'}</code>, <code>{'{noteTitle}'}</code>,{' '}
+        <code>{'{originalName}'}</code>, <code>{'{counter}'}</code>. The file extension is always kept from the
+        pasted image.
       </div>
 
       <div className="flex items-center justify-between gap-4 text-sm">
