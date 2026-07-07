@@ -11,6 +11,7 @@ import { isChunkLoadError, showChunkReloadToast, CHUNK_RELOAD_MESSAGE } from '@/
 // prefetch). pullFromZipball still lives in githubSync.ts for callers/tests.
 import { syncToGitHub, pullFromGitHub } from '@/utils/githubSync'
 import type { PullClassification, SyncResult, GitPathUpdate } from '@/utils/githubSync'
+import { makeGitHostProvider } from '@/utils/gitHost'
 import { getValidGitHubToken, withTokenRefresh, ReconnectRequiredError } from '@/utils/tokenRefresh'
 import { applyNonConflicts, applyAttachmentClassifications } from '@/utils/syncApply'
 import { fillShellsInBackground } from '@/utils/backgroundFill'
@@ -186,8 +187,9 @@ async function runPull(
   // clone runs on the user's own authenticated GitHub API quota instead of
   // Noteser's Vercel bandwidth. pullFromZipball + fetchZipball + the
   // /api/github/zipball route are kept in the tree but no longer on this path.
+  const { host, baseUrl } = useGitHubStore.getState()
   const { classifications, latestCommitSha } = await pullFromGitHub({
-    token, repo,
+    provider: makeGitHostProvider({ host, token, baseUrl }), repo,
     notes: localNotes, folders: localFolders,
     excludedFolderPaths,
     vaultSettingsPath,
@@ -242,8 +244,9 @@ async function runPush(
     }
   }
 
+  const { host, baseUrl } = useGitHubStore.getState()
   const outcome = await syncToGitHub({
-    token, repo, notes, folders, commitMessage,
+    provider: makeGitHostProvider({ host, token, baseUrl }), repo, notes, folders, commitMessage,
     vaultSettings: vaultSettingsInput,
     // gi9n: thread the editor's draft through. Null = no pending edit;
     // syncToGitHub will leave the remote `.gitignore` alone.

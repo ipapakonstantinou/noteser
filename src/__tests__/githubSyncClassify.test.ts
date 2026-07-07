@@ -54,6 +54,7 @@ jest.mock('../utils/github', () => ({
 }))
 
 import { pullFromGitHub } from '../utils/githubSync'
+import { GitHubProvider } from '../utils/gitHost/githubProvider'
 import type { Note, Folder, SyncRepo } from '@/types'
 
 const REPO: SyncRepo = { owner: 'me', name: 'vault', branch: 'main', isPrivate: false }
@@ -93,7 +94,7 @@ test('classifies a stable local note with matching remote SHA as unchanged', asy
   mockGitBlobSha.mockResolvedValue('sha-foo')
 
   const local: Note[] = [note({ id: '1', title: 'Foo', content: 'body', gitPath: 'Foo.md', gitLastPushedSha: 'sha-foo' })]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   expect(classifications).toHaveLength(1)
   expect(classifications[0]).toEqual({ kind: 'unchanged', noteId: '1' })
@@ -107,7 +108,7 @@ test('classifies a remote-only file (no local match) as remoteCreated', async ()
   mockGetTreeMap.mockResolvedValue(new Map([['Brand new.md', 'sha-new']]))
   mockGetBlobContent.mockResolvedValue('hello world')
 
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: [], folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [] })
 
   expect(classifications).toHaveLength(1)
   expect(classifications[0]).toMatchObject({
@@ -128,7 +129,7 @@ test('remote changed + local untouched = remoteUpdated', async () => {
   const local: Note[] = [
     note({ id: '1', title: 'Foo', content: 'old body', gitPath: 'Foo.md', gitLastPushedSha: 'sha-old' }),
   ]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   expect(classifications).toHaveLength(1)
   expect(classifications[0]).toMatchObject({
@@ -164,7 +165,7 @@ test('non-overlapping local + remote edits auto-merge', async () => {
   const local: Note[] = [
     note({ id: '1', title: 'Foo', content: localContent, gitPath: 'Foo.md', gitLastPushedSha: 'sha-ancestor' }),
   ]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   expect(classifications).toHaveLength(1)
   expect(classifications[0].kind).toBe('autoMerged')
@@ -186,7 +187,7 @@ test('overlapping local + remote edits on the same line = conflict', async () =>
   const local: Note[] = [
     note({ id: '1', title: 'Foo', content: localContent, gitPath: 'Foo.md', gitLastPushedSha: 'sha-ancestor' }),
   ]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   expect(classifications).toHaveLength(1)
   expect(classifications[0]).toMatchObject({
@@ -207,7 +208,7 @@ test('no lastPushed sha → falls through to conflict instead of crashing', asyn
   const local: Note[] = [
     note({ id: '1', title: 'Foo', content: 'local body', gitPath: 'Foo.md', gitLastPushedSha: null }),
   ]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   expect(classifications).toHaveLength(1)
   expect(classifications[0].kind).toBe('conflict')
@@ -224,7 +225,7 @@ test('local note with gitPath that disappeared remotely = remoteDeleted', async 
   const local: Note[] = [
     note({ id: '1', title: 'Foo', content: 'body', gitPath: 'Foo.md', gitLastPushedSha: 'sha-clean', updatedAt: 0 }),
   ]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   expect(classifications).toHaveLength(1)
   expect(classifications[0]).toMatchObject({ kind: 'remoteDeleted', noteId: '1' })
@@ -244,7 +245,7 @@ test('remote deleted while local edited (sha drifted) = conflictDeleted', async 
       gitLastPushedSha: 'sha-old',
     }),
   ]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   expect(classifications).toHaveLength(1)
   expect(classifications[0].kind).toBe('conflictDeleted')
@@ -274,7 +275,7 @@ test('mixed batch: unchanged + remoteCreated + remoteUpdated in one pull', async
     note({ id: '1', title: 'Stable',  content: 'stable body',  gitPath: 'Stable.md',  gitLastPushedSha: 'sha-stable' }),
     note({ id: '2', title: 'Drifted', content: 'drifted body', gitPath: 'Drifted.md', gitLastPushedSha: 'sha-drifted-old' }),
   ]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   const kinds = classifications.map(c => c.kind).sort()
   expect(kinds).toEqual(['remoteCreated', 'remoteUpdated', 'unchanged'])
@@ -314,7 +315,7 @@ test('bulk-delete + sync emits sha:null tree entries for every deleted note', as
     note({ id: '2', title: 'Note B', content: 'b body', gitPath: 'Note B.md', gitLastPushedSha: 'sha-b', isDeleted: true }),
   ]
 
-  const result = await syncToGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const result = await syncToGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   // The push step emitted a tree with TWO sha:null deletions, no blob uploads.
   expect(mockCreateBlob).not.toHaveBeenCalled()
@@ -347,7 +348,7 @@ test('soft-deleted local note with matching gitPath is NOT classified as remoteC
       isDeleted: true,
     }),
   ]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   // Classified as unchanged (no fetch, no apply churn). The push step's
   // delete-handling pass is what propagates the deletion to the remote.
@@ -367,7 +368,7 @@ test('non-.md entries route to separate kinds (attachments, folderCreated)', asy
   ]))
   mockGetBlobContent.mockResolvedValue('body')
 
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: [], folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [] })
 
   const kinds = classifications.map(c => c.kind).sort()
   expect(kinds).toContain('remoteCreated')
@@ -397,7 +398,7 @@ test('folder derivation skips parents of dying paths (deleted-folder re-derive b
     note({ id: '1', title: 'note', content: '', gitPath: '.foo/note.md', gitLastPushedSha: 'sha-foo', folderId: null }),
   ]
 
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   const folderCreates = classifications.filter(c => c.kind === 'folderCreated')
   expect(folderCreates).toHaveLength(0)
@@ -411,7 +412,7 @@ test('folder derivation still fires for genuinely-remote folders', async () => {
   ]))
   mockGetBlobContent.mockResolvedValue('body')
 
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: [], folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [] })
 
   const folderCreates = classifications.filter(c => c.kind === 'folderCreated')
   expect(folderCreates.map(c => (c as { path: string }).path)).toContain('.foo')
@@ -427,7 +428,7 @@ test('folder derivation skips parents of soft-deleted notes', async () => {
     note({ id: '1', title: 'note', content: '', gitPath: '.foo/note.md', gitLastPushedSha: 'sha-foo', isDeleted: true }),
   ]
 
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   const folderCreates = classifications.filter(c => c.kind === 'folderCreated')
   expect(folderCreates).toHaveLength(0)
@@ -447,7 +448,7 @@ test('excludedFolderPaths tombstones a hidden folder from being re-derived', asy
   ]))
 
   const { classifications } = await pullFromGitHub({
-    token: 't', repo: REPO, notes: [], folders: [],
+    provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [],
     excludedFolderPaths: ['.obsidian'],
   })
 
@@ -464,7 +465,7 @@ test('excludedFolderPaths also blocks nested paths inside the tombstone', async 
   ]))
 
   const { classifications } = await pullFromGitHub({
-    token: 't', repo: REPO, notes: [], folders: [],
+    provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [],
     excludedFolderPaths: ['.obsidian'],
   })
 
@@ -481,7 +482,7 @@ test('excludedFolderPaths leaves OTHER folders alone', async () => {
   mockGetBlobContent.mockResolvedValue('body')
 
   const { classifications } = await pullFromGitHub({
-    token: 't', repo: REPO, notes: [], folders: [],
+    provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [],
     excludedFolderPaths: ['.obsidian'],
   })
 
@@ -510,7 +511,7 @@ test('pull skips remote .md files matching a vault .gitignore', async () => {
   })
 
   const { classifications } = await pullFromGitHub({
-    token: 't', repo: REPO, notes: [], folders: [],
+    provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [],
   })
 
   // The keeper survives; the ignored one is filtered out completely.
@@ -547,7 +548,7 @@ test('vault settings conflict — local + remote both dirty since last sync', as
   }))
 
   const { classifications } = await pullFromGitHub({
-    token: 't', repo: REPO, notes: [], folders: [],
+    provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [],
     vaultSettingsPath: '.noteser/settings.json',
     vaultSettingsLocalUpdatedAt: 1000,
   })
@@ -588,7 +589,7 @@ test('vault settings updates (not conflict) when local is clean', async () => {
   }))
 
   const { classifications } = await pullFromGitHub({
-    token: 't', repo: REPO, notes: [], folders: [],
+    provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [],
     vaultSettingsPath: '.noteser/settings.json',
     vaultSettingsLocalUpdatedAt: 1000,
   })
@@ -616,7 +617,7 @@ test('pull combines the remote .gitignore with the local overlay (gi9n UI)', asy
   })
 
   const { classifications } = await pullFromGitHub({
-    token: 't', repo: REPO, notes: [], folders: [],
+    provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [],
   })
 
   const paths = classifications
@@ -636,7 +637,7 @@ test('pull applies the default OS-junk preset when no .gitignore exists', async 
   ]))
 
   const { classifications } = await pullFromGitHub({
-    token: 't', repo: REPO, notes: [], folders: [],
+    provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [],
   })
 
   const attaches = classifications.filter(c => c.kind === 'attachmentCreated')
@@ -664,7 +665,7 @@ test('PROBE: local DELETES a line that remote MODIFIED → must be conflict', as
   const local: Note[] = [
     note({ id: '1', title: 'Foo', content: localContent, gitPath: 'Foo.md', gitLastPushedSha: 'sha-ancestor' }),
   ]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
   expect(classifications[0].kind).toBe('conflict')
 })
 
@@ -682,7 +683,7 @@ test('PROBE: local MODIFIES a line that remote DELETED → must be conflict', as
   const local: Note[] = [
     note({ id: '1', title: 'Foo', content: localContent, gitPath: 'Foo.md', gitLastPushedSha: 'sha-ancestor' }),
   ]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
   expect(classifications[0].kind).toBe('conflict')
 })
 
@@ -700,7 +701,7 @@ test('PROBE: edits on CONSECUTIVE lines (no overlap) auto-merge — they should 
   const local: Note[] = [
     note({ id: '1', title: 'Foo', content: localContent, gitPath: 'Foo.md', gitLastPushedSha: 'sha-ancestor' }),
   ]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
   expect(classifications[0].kind).toBe('autoMerged')
 })
 
@@ -721,7 +722,7 @@ test('PROBE: local + remote add DIFFERENT lines at the same position → conflic
   const local: Note[] = [
     note({ id: '1', title: 'Foo', content: localContent, gitPath: 'Foo.md', gitLastPushedSha: 'sha-ancestor' }),
   ]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
   expect(classifications[0].kind).toBe('conflict')
 })
 
@@ -742,7 +743,7 @@ test('PROBE: ancestor blob fetch FAILS → falls through to manual conflict (not
   const local: Note[] = [
     note({ id: '1', title: 'Foo', content: localContent, gitPath: 'Foo.md', gitLastPushedSha: 'sha-ancestor' }),
   ]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
   expect(classifications[0].kind).toBe('conflict')
 })
 
@@ -767,7 +768,7 @@ test('REGRESSION GUARD: unpushed local note whose notePath matches a remote file
   const local: Note[] = [
     note({ id: '1', title: 'Temp', content: 'local body', gitPath: null, gitLastPushedSha: null }),
   ]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   expect(classifications).toHaveLength(1)
   // Must NOT be remoteCreated (that would create a duplicate note).
@@ -792,7 +793,7 @@ test('reconcile adopt: byte-identical unpushed local note → unchanged + adoptP
   const local: Note[] = [
     note({ id: '1', title: 'Temp', content: 'same body', gitPath: null, gitLastPushedSha: null }),
   ]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   expect(classifications).toHaveLength(1)
   expect(classifications[0]).toMatchObject({ kind: 'unchanged', noteId: '1', adoptPath: 'Temp.md' })
@@ -807,7 +808,7 @@ test('genuinely new remote file with NO local counterpart is still remoteCreated
   const local: Note[] = [
     note({ id: '9', title: 'Other', content: 'unrelated', gitPath: null }),
   ]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   const created = classifications.filter(c => c.kind === 'remoteCreated')
   expect(created).toHaveLength(1)
@@ -828,7 +829,7 @@ test('reconcile adopt: STALE gitPath (not in remote tree) but notePath matches r
   const local: Note[] = [
     note({ id: '1', title: 'Temp', content: 'local body', gitPath: 'Old.md', gitLastPushedSha: 'sha-old', gitRemoteBaseSha: 'sha-old' }),
   ]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   // No remoteCreated for Temp.md (no twin).
   expect(classifications.find(c => c.kind === 'remoteCreated')).toBeUndefined()
@@ -856,7 +857,7 @@ test('reconcile adopt is conservative when AMBIGUOUS: two unlinked notes map to 
     note({ id: '1', title: 'Temp', content: 'one', gitPath: null }),
     note({ id: '2', title: 'Temp', content: 'two', gitPath: null }),
   ]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   // Ambiguous + no clean SHA match → remoteCreated (conservative). Neither
   // local note is adopted; they fall to the orphan pass as never-synced
@@ -884,7 +885,7 @@ test('reconcile adopt resolves AMBIGUITY via clean blob-SHA match', async () => 
     note({ id: '1', title: 'Temp', content: 'different', gitPath: null }),
     note({ id: '2', title: 'Temp', content: 'identical', gitPath: null }),
   ]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   // No duplicate created.
   expect(classifications.find(c => c.kind === 'remoteCreated')).toBeUndefined()
@@ -907,7 +908,7 @@ test('PROBE: identical local + remote content despite drifted ancestor → uncha
   const local: Note[] = [
     note({ id: '1', title: 'Foo', content: 'same content', gitPath: 'Foo.md', gitLastPushedSha: 'sha-ancestor' }),
   ]
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
   expect(classifications[0].kind).toBe('unchanged')
 })
 
@@ -920,7 +921,7 @@ test('PROBE: identical local + remote content despite drifted ancestor → uncha
 test('classifies a remote .canvas file with no local match as foreignFile', async () => {
   mockGetTreeMap.mockResolvedValue(new Map([['Untitled.canvas', 'sha-canvas']]))
 
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: [], folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [] })
 
   // Exactly one classification, exactly the foreignFile entry — no body fetch.
   const foreign = classifications.filter(c => c.kind === 'foreignFile')
@@ -935,7 +936,7 @@ test('classifies both a .canvas and a .base remote file as foreignFile', async (
     ['Untitled.base', 'sha-base'],
   ]))
 
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: [], folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [] })
 
   const foreign = classifications.filter(c => c.kind === 'foreignFile')
   expect(foreign).toHaveLength(2)
@@ -961,7 +962,7 @@ test('does not re-emit foreignFile when a local foreign note already mirrors the
   // Tag it as foreign — note() helper doesn't expose `kind` directly.
   ;(local[0] as { kind?: string }).kind = 'foreign'
 
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   expect(classifications.find(c => c.kind === 'foreignFile')).toBeUndefined()
 })
@@ -984,7 +985,7 @@ test('local foreign mirror whose remote file is gone classifies as remoteDeleted
   ]
   ;(local[0] as { kind?: string }).kind = 'foreign'
 
-  const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   expect(classifications).toHaveLength(1)
   expect(classifications[0]).toEqual({ kind: 'remoteDeleted', noteId: '1' })
@@ -1005,7 +1006,7 @@ test('non-md non-attachment file under an ignored path does NOT classify as fore
       ['ignored.canvas',  'sha-ignored'],
     ]))
 
-    const { classifications } = await pullFromGitHub({ token: 't', repo: REPO, notes: [], folders: [] })
+    const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [] })
 
     const foreign = classifications.filter(c => c.kind === 'foreignFile')
     expect(foreign).toHaveLength(1)

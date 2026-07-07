@@ -11,20 +11,10 @@
 import type JSZip from 'jszip'
 import type { Note, SyncRepo } from '@/types'
 import {
-  getBranchRefSha,
-  getCommitTreeSha,
   gitBlobSha,
   gitBlobShaBytes,
-  fetchZipball,
 } from '../github'
-// #69: pull-side blob/tree reads go through the ETag-conditional wrappers
-// so a re-sync of an unchanged repo comes back as 304s and doesn't burn
-// quota. Push-side reads in `syncPush.ts` still call the bare helpers from
-// `../github` — the cache is read-side only.
-import {
-  getBlobContentConditional,
-  getTreeMapConditional,
-} from '../githubETagCache'
+import type { GitHostProvider } from '../gitHost/types'
 import { threeWayMerge } from '../lineDiff'
 import {
   isAttachmentPath,
@@ -54,7 +44,12 @@ function sameTagSet(a: string[], b: string[]): boolean {
 }
 
 export async function pullFromGitHub(input: {
-  token: string
+  // Host abstraction for every remote read. The pull pipeline calls
+  // provider.* and never branches on host kind; the GitHubProvider
+  // encapsulates GitHub's ETag-conditional caching (#69) behind
+  // getTreeMapCached / getBlobContentCached so re-syncs of an unchanged
+  // repo still come back as 304s.
+  provider: GitHostProvider
   repo: SyncRepo
   notes: Note[]
   folders: import('@/types').Folder[]
@@ -83,15 +78,14 @@ export async function pullFromGitHub(input: {
   // own progress via the onPhase callback wired in useGitHubSync.
   onBlobProgress?: (loaded: number, total: number) => void
 }): Promise<PullOutcome> {
-  const { token, repo, notes } = input
+  const { provider, repo, notes } = input
   const excluded = input.excludedFolderPaths ?? []
   const vaultSettingsPath = input.vaultSettingsPath ?? null
   const vaultSettingsLocalUpdatedAt = input.vaultSettingsLocalUpdatedAt ?? 0
   const isFirstClone = input.isFirstClone ?? false
-  const { owner, name, branch } = repo
-  const headSha = await getBranchRefSha(token, owner, name, branch)
-  const treeSha = await getCommitTreeSha(token, owner, name, headSha)
-  const remoteTree = await getTreeMapConditional(token, repo, treeSha)
+  const headSha = await provider.getBranchHeadSha(repo)
+  const treeSha = await provider.getCommitTreeSha(repo, headSha)
+  const remoteTree = await provider.getTreeMapCached(repo, treeSha)
 
   // Build the gitignore matcher BEFORE walking the tree so step 1's
   // .md loop can short-circuit on ignored paths. The matcher is also
@@ -111,7 +105,7 @@ export async function pullFromGitHub(input: {
   let remoteRaw = ''
   if (gitignoreSha) {
     try {
-      remoteRaw = await getBlobContentConditional(token, repo, gitignoreSha)
+      remoteRaw = await provider.getBlobContentCached(repo, gitignoreSha)
     } catch {
       remoteRaw = ''
     }
@@ -219,7 +213,7 @@ export async function pullFromGitHub(input: {
         // didn't cover). The conditional read may itself be served from the
         // ETag cache and short-circuit before hitting the network. decrypt
         // runs here either way.
-        const raw = prefetchedBlobs.get(remoteSha) ?? await getBlobContentConditional(token, repo, remoteSha)
+        const raw = prefetchedBlobs.get(remoteSha) ?? await provider.getBlobContentCached(repo, remoteSha)
         remoteContent = await maybeDecryptFromPull(raw)
       }
       return remoteContent
@@ -398,14 +392,14 @@ export async function pullFromGitHub(input: {
       // and remote edits don't overlap line-wise we can auto-merge and the
       // user never sees the conflict tab. The common ancestor is the REMOTE
       // blob we last synced against (`gitRemoteBaseSha`, fetchable via
-      // getBlobContentConditional) — NOT gitLastPushedSha, which is the SHA of
+      // provider.getBlobContentCached) — NOT gitLastPushedSha, which is the SHA of
       // the transformed local bytes and may not exist as a remote blob at all.
       // Anything that goes wrong (no ancestor sha, blob GC'd, network hiccup,
       // overlapping edits) falls back to the existing manual conflict flow.
       let autoMerged: string | null = null
       if (remoteBase) {
         try {
-          const ancestorRaw = await getBlobContentConditional(token, repo, remoteBase)
+          const ancestorRaw = await provider.getBlobContentCached(repo, remoteBase)
           const ancestor = await maybeDecryptFromPull(ancestorRaw)
           const merged = threeWayMerge(ancestor, localContent, content)
           if (merged.ok) autoMerged = merged.merged
@@ -508,7 +502,7 @@ export async function pullFromGitHub(input: {
     const remoteSettingsSha = remoteTree.get(vaultSettingsPath)
     if (remoteSettingsSha) {
       try {
-        const raw = await getBlobContentConditional(token, repo, remoteSettingsSha)
+        const raw = await provider.getBlobContentCached(repo, remoteSettingsSha)
         const { parseVaultSettings, vaultSettingsHash, pickVaultSlice, serializeVaultSettings } = await import('../vaultSettings')
         const parsed = parseVaultSettings(raw)
         if (parsed && parsed.updatedAt > vaultSettingsLocalUpdatedAt) {
@@ -689,19 +683,29 @@ export async function pullFromGitHub(input: {
 // same SHA-1 of `blob <len>\0<content>`), so a separate tree fetch isn't
 // necessary.
 export async function pullFromZipball(input: {
-  token: string
+  // Host abstraction. The archive download goes through provider.fetchArchive
+  // (GitHub: zipball). A provider without an archive endpoint can't take this
+  // fast path — callers gate on `provider.fetchArchive` before choosing it.
+  provider: GitHostProvider
   repo: SyncRepo
   // Phase hint so the caller can surface "Downloading vault (retrying)…" when
   // a corrupted/truncated archive triggers a re-download. Optional — the retry
   // loop works regardless.
   onPhase?: (msg: string) => void
 }): Promise<PullOutcome> {
-  const { token, repo, onPhase } = input
-  const { owner, name, branch } = repo
+  const { provider, repo, onPhase } = input
+  const { branch } = repo
+
+  // This fast path only exists for hosts with a whole-repo archive endpoint.
+  // Callers gate on provider.fetchArchive; guard here at the boundary so a
+  // mis-wired caller fails loudly rather than throwing an opaque TypeError.
+  if (!provider.fetchArchive) {
+    throw new Error(`pullFromZipball: provider "${provider.kind}" has no archive endpoint`)
+  }
 
   // The ref is cheap and we need it for `latestCommitSha` regardless — fetch
   // it once up front, independent of the archive retry loop below.
-  const headSha = await getBranchRefSha(token, owner, name, branch)
+  const headSha = await provider.getBranchHeadSha(repo)
 
   // Lazy-load jszip — only callers of pullFromZipball pay the
   // ~140kB cost. The rest of the sync flow (push, regular pull via
@@ -723,7 +727,7 @@ export async function pullFromZipball(input: {
   let attempt = 0
   for (;;) {
     try {
-      const zipBuffer = await fetchZipball(token, owner, name, branch)
+      const zipBuffer = await provider.fetchArchive(repo, branch)
       zip = await JSZip.loadAsync(zipBuffer)
       break
     } catch (err) {

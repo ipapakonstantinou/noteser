@@ -65,6 +65,7 @@ jest.mock('jszip', () => ({
 }))
 
 import { pullFromZipball } from '../utils/githubSync'
+import { GitHubProvider } from '../utils/gitHost/githubProvider'
 import type { SyncRepo } from '@/types'
 
 const REPO: SyncRepo = { owner: 'me', name: 'vault', branch: 'main', isPrivate: false }
@@ -114,7 +115,7 @@ test('retries a corrupted first attempt and SUCCEEDS without surfacing the error
     .mockResolvedValueOnce(fakeZipWithOneNote())
 
   const onPhase = jest.fn()
-  const outcome = await runWithTimers(pullFromZipball({ token: 't', repo: REPO, onPhase }))
+  const outcome = await runWithTimers(pullFromZipball({ provider: new GitHubProvider('t'), repo: REPO, onPhase }))
 
   // It retried: download + parse each ran twice.
   expect(mockFetchZipball).toHaveBeenCalledTimes(2)
@@ -133,7 +134,7 @@ test('also retries when fetchZipball itself throws (e.g. truncated-length guard)
     .mockResolvedValueOnce(new ArrayBuffer(8))
   mockLoadAsync.mockResolvedValueOnce(fakeZipWithOneNote())
 
-  const outcome = await runWithTimers(pullFromZipball({ token: 't', repo: REPO }))
+  const outcome = await runWithTimers(pullFromZipball({ provider: new GitHubProvider('t'), repo: REPO }))
 
   expect(mockFetchZipball).toHaveBeenCalledTimes(2)
   expect(outcome.classifications).toHaveLength(1)
@@ -144,7 +145,7 @@ test('gives up and surfaces the error after the max attempts', async () => {
   mockLoadAsync.mockRejectedValue(err)
 
   await expect(
-    runWithTimers(pullFromZipball({ token: 't', repo: REPO })),
+    runWithTimers(pullFromZipball({ provider: new GitHubProvider('t'), repo: REPO })),
   ).rejects.toThrow("can't find end of central directory")
 
   // Three attempts total (MAX_ATTEMPTS), then the error is re-thrown.

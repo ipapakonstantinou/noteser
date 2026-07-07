@@ -72,6 +72,7 @@ import {
   bodyWithInlineTags,
 } from '../utils/syncApply'
 import { pullFromGitHub, serializeNote, type PullClassification } from '../utils/githubSync'
+import { GitHubProvider } from '../utils/gitHost/githubProvider'
 import { gitBlobSha } from '../utils/github'
 import { useNoteStore } from '../stores/noteStore'
 import { useFolderStore } from '../stores/folderStore'
@@ -391,7 +392,7 @@ test('ROUND-TRIP INVARIANT: a pulled frontmatter note re-classifies as `unchange
   mockGetTreeMap.mockResolvedValue(new Map([['Note.md', remoteSha]]))
   mockGetBlobContent.mockResolvedValue(rawRemote)
 
-  const first = await pullFromGitHub({ token: 't', repo: REPO, notes: [], folders: [] })
+  const first = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [] })
   expect(first.classifications.find(c => c.kind === 'remoteCreated')).toBeDefined()
 
   await applyNonConflicts(first.classifications)
@@ -412,7 +413,7 @@ test('ROUND-TRIP INVARIANT: a pulled frontmatter note re-classifies as `unchange
   mockGetBlobContent.mockResolvedValue(rawRemote)
 
   const second = await pullFromGitHub({
-    token: 't', repo: REPO,
+    provider: new GitHubProvider('t'), repo: REPO,
     notes: useNoteStore.getState().notes,
     folders: [],
   })

@@ -22,6 +22,7 @@
  */
 
 import { syncToGitHub, _resetUploadedShaCache, serializeNote } from '../utils/githubSync'
+import { GitHubProvider } from '../utils/gitHost/githubProvider'
 import { gitBlobSha } from '../utils/github'
 import type { Note, Folder, SyncRepo } from '@/types'
 
@@ -150,7 +151,7 @@ describe('syncToGitHub — push only on a real edit (churn fix)', () => {
     const { fetchMock, record } = makeFetchMock(new Map([['Note.md', remoteSha]]))
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const outcome = await syncToGitHub({ token: 't', repo: REPO, notes: [note], folders: [] as Folder[] })
+    const outcome = await syncToGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [note], folders: [] as Folder[] })
 
     // Nothing was pushed.
     expect(outcome.result.unchanged).toBe(true)
@@ -180,7 +181,7 @@ describe('syncToGitHub — push only on a real edit (churn fix)', () => {
     const { fetchMock, record } = makeFetchMock(new Map([['Note.md', remoteSha]]))
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const outcome = await syncToGitHub({ token: 't', repo: REPO, notes: [edited], folders: [] as Folder[] })
+    const outcome = await syncToGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [edited], folders: [] as Folder[] })
 
     expect(outcome.result.unchanged).toBe(false)
     expect(outcome.result.updated).toBe(1)
@@ -201,7 +202,7 @@ describe('syncToGitHub — push only on a real edit (churn fix)', () => {
     const { fetchMock, record } = makeFetchMock(new Map()) // empty remote tree
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const outcome = await syncToGitHub({ token: 't', repo: REPO, notes: [fresh], folders: [] as Folder[] })
+    const outcome = await syncToGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [fresh], folders: [] as Folder[] })
 
     expect(outcome.result.created).toBe(1)
     expect(record.blobsCreated).toHaveLength(1)
@@ -228,7 +229,7 @@ describe('syncToGitHub — push only on a real edit (churn fix)', () => {
     const { fetchMock, record } = makeFetchMock(new Map([['Old.md', oldRemoteSha]]))
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const outcome = await syncToGitHub({ token: 't', repo: REPO, notes: [moved], folders: [] as Folder[] })
+    const outcome = await syncToGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [moved], folders: [] as Folder[] })
 
     // New path written (created — no remote blob there), old path deleted.
     expect(outcome.result.created).toBe(1)
@@ -266,7 +267,7 @@ describe('syncToGitHub — push only on a real edit (churn fix)', () => {
     const { fetchMock, record } = makeFetchMock(remoteBlobs, blobReadBodies)
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const outcome = await syncToGitHub({ token: 't', repo: REPO, notes: [legacy], folders: [] as Folder[] })
+    const outcome = await syncToGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [legacy], folders: [] as Folder[] })
 
     // Nothing pushed — the byte-exact normalization check identified it as unedited.
     expect(outcome.result.unchanged).toBe(true)
@@ -297,7 +298,7 @@ describe('syncToGitHub — push only on a real edit (churn fix)', () => {
     const { fetchMock, record } = makeFetchMock(remoteBlobs, blobReadBodies)
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const outcome = await syncToGitHub({ token: 't', repo: REPO, notes: [edited], folders: [] as Folder[] })
+    const outcome = await syncToGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [edited], folders: [] as Folder[] })
 
     // The normalized bodies DIFFER (real edit) → push goes through.
     expect(outcome.result.unchanged).toBe(false)

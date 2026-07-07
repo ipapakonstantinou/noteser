@@ -69,6 +69,7 @@ jest.mock('../utils/github', () => {
 })
 
 import { pullFromGitHub } from '../utils/githubSync'
+import { GitHubProvider } from '../utils/gitHost/githubProvider'
 import { applyNonConflicts } from '../utils/syncApply'
 import { gitBlobSha } from '../utils/github'
 import { useNoteStore } from '../stores/noteStore'
@@ -104,7 +105,7 @@ test('REPRO (a): pulled frontmatter note round-trips to `unchanged` on the next 
   mockGetTreeMap.mockResolvedValue(new Map([['Note.md', remoteSha]]))
   mockGetBlobContent.mockResolvedValue(rawRemote)
 
-  const first = await pullFromGitHub({ token: 't', repo: REPO, notes: [], folders: [] })
+  const first = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [] })
   const created = first.classifications.find(c => c.kind === 'remoteCreated')
   expect(created).toBeDefined()
 
@@ -123,7 +124,7 @@ test('REPRO (a): pulled frontmatter note round-trips to `unchanged` on the next 
   mockGetBlobContent.mockResolvedValue(rawRemote)
 
   const second = await pullFromGitHub({
-    token: 't', repo: REPO,
+    provider: new GitHubProvider('t'), repo: REPO,
     notes: useNoteStore.getState().notes,
     folders: [],
   })
@@ -159,7 +160,7 @@ test('REPRO (b): untouched local + remote-only edit must be `remoteUpdated`, nev
   // 1) First pull + apply → seeds the local note (transformed, no frontmatter).
   mockGetTreeMap.mockResolvedValue(new Map([['Note.md', originalSha]]))
   mockGetBlobContent.mockResolvedValue(rawOriginal)
-  const first = await pullFromGitHub({ token: 't', repo: REPO, notes: [], folders: [] })
+  const first = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [] })
   await applyNonConflicts(first.classifications)
   const noteId = useNoteStore.getState().notes[0].id
 
@@ -185,7 +186,7 @@ test('REPRO (b): untouched local + remote-only edit must be `remoteUpdated`, nev
   })
 
   const second = await pullFromGitHub({
-    token: 't', repo: REPO,
+    provider: new GitHubProvider('t'), repo: REPO,
     notes: useNoteStore.getState().notes,
     folders: [],
   })
@@ -237,7 +238,7 @@ test('REPRO (c): unlinked local note matching a remote path is adopted on apply 
   mockGetBlobContent.mockResolvedValue(rawRemote)
 
   const pull = await pullFromGitHub({
-    token: 't', repo: REPO,
+    provider: new GitHubProvider('t'), repo: REPO,
     notes: useNoteStore.getState().notes,
     folders: [],
   })
@@ -293,7 +294,7 @@ test('REPRO (c2): non-identical unlinked local note adopts via remoteUpdated and
   mockGetBlobContent.mockResolvedValue(rawRemoteNew)
 
   const pull = await pullFromGitHub({
-    token: 't', repo: REPO,
+    provider: new GitHubProvider('t'), repo: REPO,
     notes: useNoteStore.getState().notes,
     folders: [],
   })
@@ -364,7 +365,7 @@ test('REPRO (rename): unlinked note adopts a renamed remote file by CONTENT HASH
   mockGetBlobContent.mockResolvedValue(body)
 
   const pull = await pullFromGitHub({
-    token: 't', repo: REPO,
+    provider: new GitHubProvider('t'), repo: REPO,
     notes: useNoteStore.getState().notes,
     folders: [],
   })
