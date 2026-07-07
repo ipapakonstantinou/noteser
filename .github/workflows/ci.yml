@@ -67,6 +67,41 @@ jobs:
       - name: Audit dependencies
         run: npm audit --audit-level=high
 
+  collab-server:
+    name: Collab server (typecheck · test · audit)
+    runs-on: ubuntu-latest
+    # Separate package with its own lockfile (Cloudflare Workers), so it
+    # needs its own install + audit — the root `npm ci`/`npm audit` above
+    # never sees these dependencies.
+    defaults:
+      run:
+        working-directory: collab-server
+    env:
+      NODE_VERSION: '22'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: collab-server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest

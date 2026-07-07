@@ -26,7 +26,9 @@ import * as awarenessProtocol from 'y-protocols/awareness'
 import * as encoding from 'lib0/encoding'
 import * as decoding from 'lib0/decoding'
 
-export interface Env {
+import { isMessageTooLarge, isRoomFull, MessageRateLimiter, resolveLimits, type LimitsEnv } from './limits'
+
+export interface Env extends LimitsEnv {
   Y_ROOM: DurableObjectNamespace
   // Optional shared secret. When set, connections must carry it as the
   // path segment BEFORE the room: wss://<host>/<AUTH_TOKEN>/<room>.
@@ -72,13 +74,18 @@ export class YRoom {
   private readonly state: DurableObjectState
   private readonly doc = new Y.Doc()
   private readonly awareness: awarenessProtocol.Awareness
+  private readonly limits: ReturnType<typeof resolveLimits>
   // socket → awareness client ids announced over it, so a disconnect can
   // clear exactly that peer's cursors for everyone else.
   private readonly conns = new Map<WebSocket, Set<number>>()
+  // socket → its own message-rate window. Per-connection so one abusive
+  // peer can't burn through the budget of everyone else in the room.
+  private readonly rateLimiters = new Map<WebSocket, MessageRateLimiter>()
   private persistTimer: ReturnType<typeof setTimeout> | null = null
 
-  constructor(state: DurableObjectState) {
+  constructor(state: DurableObjectState, env: Env) {
     this.state = state
+    this.limits = resolveLimits(env)
     this.awareness = new awarenessProtocol.Awareness(this.doc)
     this.awareness.setLocalState(null) // the server is not a participant
 
@@ -121,6 +128,11 @@ export class YRoom {
     if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response('Expected WebSocket', { status: 426 })
     }
+    // Cap concurrent sockets per room so one client can't force unbounded
+    // fan-out/storage growth by opening connections in a loop.
+    if (isRoomFull(this.conns.size, this.limits)) {
+      return new Response('Room is full', { status: 429 })
+    }
     const pair = new WebSocketPair()
     const client = pair[0]
     const server = pair[1]
@@ -131,9 +143,18 @@ export class YRoom {
   private accept(ws: WebSocket): void {
     ws.accept()
     this.conns.set(ws, new Set())
+    this.rateLimiters.set(ws, new MessageRateLimiter(this.limits))
 
     ws.addEventListener('message', event => {
       if (!(event.data instanceof ArrayBuffer)) return
+      if (isMessageTooLarge(event.data.byteLength, this.limits)) {
+        ws.close(1009, 'Message too large')
+        return
+      }
+      if (this.rateLimiters.get(ws)?.allow() === false) {
+        ws.close(1008, 'Rate limit exceeded')
+        return
+      }
       try {
         this.handleMessage(ws, new Uint8Array(event.data))
       } catch {
@@ -193,6 +214,7 @@ export class YRoom {
     const owned = this.conns.get(ws)
     if (!owned) return // already dropped (close + error both fire)
     this.conns.delete(ws)
+    this.rateLimiters.delete(ws)
     if (owned.size > 0) {
       awarenessProtocol.removeAwarenessStates(this.awareness, [...owned], null)
     }
