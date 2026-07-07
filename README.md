@@ -98,9 +98,16 @@ NEXT_PUBLIC_GITHUB_CLIENT_ID=Ov23li...
 # real-time collaboration. Leave unset to use local-only persistence (the
 # default; the previous public demo server was removed for security).
 NEXT_PUBLIC_YJS_WS_URL=wss://your-server.example.com
+
+# Optional. Allow-lists ONE self-hosted Forgejo/Gitea instance in the
+# Content-Security-Policy so the browser may call its API for vault sync.
+# Codeberg (https://codeberg.org) is built in and needs no entry here.
+NEXT_PUBLIC_FORGEJO_BASE_URL=https://your-forgejo.example.com
 ```
 
 `.env.local` is gitignored. For your hosting platform, add the same keys to the project's environment-variable settings.
+
+Using Codeberg (or a self-hosted Forgejo/Gitea) instead of GitHub as the vault host? See **[docs/codeberg.md](docs/codeberg.md)** — a Codeberg-only setup needs no GitHub OAuth app at all.
 
 ### Setting up the GitHub OAuth app
 
