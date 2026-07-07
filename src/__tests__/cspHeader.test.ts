@@ -161,6 +161,35 @@ describe('other CSP directives are preserved verbatim', () => {
 })
 
 /**
+ * img-src on /share — the public share page renders content from a URL
+ * fragment that can come from anyone with the link. Without restricting
+ * img-src there, a shared note's `![]()` becomes a tracking pixel: it
+ * confirms the link was opened and leaks the viewer's IP/UA to whatever
+ * host the image URL points at. `restrictImages` (wired in middleware.ts
+ * for the /share path) drops the `https:` wildcard while keeping
+ * same-origin/data:/blob: for the app's own assets and attachments.
+ */
+describe('img-src with restrictImages (the /share page)', () => {
+  it('defaults to including the https: wildcard when unset', () => {
+    const csp = buildCsp(NONCE, { isDev: false, wsOrigin: null })
+    expect(getDirective(csp, 'img-src')).toBe("img-src 'self' data: blob: https:")
+  })
+
+  it('drops the https: wildcard when restrictImages is true', () => {
+    const csp = buildCsp(NONCE, { isDev: false, wsOrigin: null, restrictImages: true })
+    expect(getDirective(csp, 'img-src')).toBe("img-src 'self' data: blob:")
+  })
+
+  it('keeps same-origin/data:/blob: even when restricted', () => {
+    const csp = buildCsp(NONCE, { isDev: false, wsOrigin: null, restrictImages: true })
+    const directive = getDirective(csp, 'img-src')
+    expect(directive).toContain("'self'")
+    expect(directive).toContain('data:')
+    expect(directive).toContain('blob:')
+  })
+})
+
+/**
  * PWA directives — the installable-PWA work adds a same-origin service
  * worker (public/sw.js) and a web app manifest. Without these, the strict
  * nonce-based CSP would block worker registration and the manifest fetch.

@@ -22,6 +22,9 @@ export function middleware(request: NextRequest) {
   const csp = buildCsp(nonce, {
     isDev: process.env.NODE_ENV !== 'production',
     wsOrigin: deriveCollabWsOrigin(process.env.NEXT_PUBLIC_YJS_WS_URL),
+    // /share renders arbitrary shared content to arbitrary visitors — no
+    // remote-image tracking pixels there. See BuildCspOptions.restrictImages.
+    restrictImages: request.nextUrl.pathname.startsWith('/share'),
   })
 
   // Forward the nonce to the request so server components (layout.tsx) can

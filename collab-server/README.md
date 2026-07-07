@@ -50,6 +50,11 @@ you will see each other's cursors.
   3 s, flushed when the last client leaves), so state survives object
   eviction. GitHub sync remains the source of truth for note bodies;
   this store only keeps live sessions converging.
+- Abuse limits (`src/limits.ts`) bound a single room: 1 MB max message
+  size, 20 max connections, 200 messages/second per connection. Override
+  with the `MAX_MESSAGE_BYTES` / `MAX_CONNECTIONS_PER_ROOM` /
+  `MAX_MESSAGES_PER_WINDOW` / `WINDOW_MS` wrangler vars if a real
+  workload needs different numbers.
 
 ## Security notes
 
