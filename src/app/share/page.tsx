@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ComponentType, type ReactNode } from 'react'
 import Link from 'next/link'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -10,6 +10,21 @@ import {
   isShareLinkBurned,
   markShareLinkBurned,
 } from '@/utils/shareLink'
+import { remarkCallouts } from '@/utils/remarkCallouts'
+import { CALLOUT_TYPES, type CalloutType } from '@/utils/callouts'
+import { CalloutBox } from '@/components/shared/CalloutBox'
+
+// remarkCallouts tags a `> [!NOTE]`-style blockquote's hast node with
+// `data-callout`; render those as a CalloutBox for parity with the in-app
+// preview and with github.com's own rendering.
+const ShareBlockquote = (({ children, ...rest }: { children?: ReactNode; [key: string]: unknown }) => {
+  const calloutAttr = rest['data-callout']
+  const calloutType = typeof calloutAttr === 'string' && (CALLOUT_TYPES as string[]).includes(calloutAttr)
+    ? (calloutAttr as CalloutType)
+    : null
+  if (calloutType) return <CalloutBox type={calloutType}>{children}</CalloutBox>
+  return <blockquote>{children}</blockquote>
+}) as ComponentType<unknown>
 
 // Read-only viewer for a shared note. The note content is encoded in the
 // URL hash fragment (`/share#<b64>`); we decode on mount + render as
@@ -130,7 +145,7 @@ export default function SharePage() {
       </header>
       <main className="max-w-3xl mx-auto px-6 py-8">
         <article className="prose prose-invert max-w-none">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          <ReactMarkdown remarkPlugins={[remarkGfm, remarkCallouts]} components={{ blockquote: ShareBlockquote }}>
             {note.content || '*This note is empty.*'}
           </ReactMarkdown>
         </article>

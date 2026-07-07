@@ -1,5 +1,5 @@
 import {
-  Decoration, EditorView,
+  Decoration, EditorView, WidgetType,
   type DecorationSet,
 } from '@codemirror/view'
 import { StateField, RangeSetBuilder } from '@codemirror/state'
@@ -7,6 +7,7 @@ import { syntaxTree } from '@codemirror/language'
 import type { EditorState } from '@codemirror/state'
 import type { SyntaxNode } from '@lezer/common'
 import { toggleTaskLineText } from '@/utils/tasks'
+import { matchCalloutType, CALLOUT_LABELS, CALLOUT_ICON_SHAPES, type CalloutType } from '@/utils/callouts'
 
 /**
  * Live-preview markdown decorations.
@@ -27,6 +28,54 @@ const lineDecos = {
   blockquote: Decoration.line({ class: 'cm-lp-blockquote' }),
   taskDone: Decoration.line({ class: 'cm-lp-task-done' }),
   list: Decoration.line({ class: 'cm-lp-list' }),
+}
+
+const calloutLineDecos: Record<CalloutType, Decoration> = {
+  note: Decoration.line({ class: 'cm-lp-callout-line cm-lp-callout-note' }),
+  tip: Decoration.line({ class: 'cm-lp-callout-line cm-lp-callout-tip' }),
+  important: Decoration.line({ class: 'cm-lp-callout-line cm-lp-callout-important' }),
+  warning: Decoration.line({ class: 'cm-lp-callout-line cm-lp-callout-warning' }),
+  caution: Decoration.line({ class: 'cm-lp-callout-line cm-lp-callout-caution' }),
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg'
+
+// Replaces a `[!TYPE]` marker line with an icon + label, matching the
+// rendered CalloutBox (src/components/shared/CalloutBox.tsx) — same icon
+// geometry from @/utils/callouts, built via the DOM API since CodeMirror
+// widgets aren't React.
+class CalloutLabelWidget extends WidgetType {
+  constructor(readonly type: CalloutType) {
+    super()
+  }
+
+  eq(other: CalloutLabelWidget): boolean {
+    return other.type === this.type
+  }
+
+  toDOM(): HTMLElement {
+    const wrap = document.createElement('span')
+    wrap.className = `cm-lp-callout-label cm-lp-callout-label-${this.type}`
+    const svg = document.createElementNS(SVG_NS, 'svg')
+    svg.setAttribute('viewBox', '0 0 16 16')
+    svg.setAttribute('width', '14')
+    svg.setAttribute('height', '14')
+    svg.classList.add('cm-lp-callout-icon')
+    for (const shape of CALLOUT_ICON_SHAPES[this.type]) {
+      const el = document.createElementNS(SVG_NS, shape.tag)
+      for (const [k, v] of Object.entries(shape.attrs)) el.setAttribute(k, String(v))
+      svg.appendChild(el)
+    }
+    wrap.appendChild(svg)
+    const label = document.createElement('span')
+    label.textContent = CALLOUT_LABELS[this.type]
+    wrap.appendChild(label)
+    return wrap
+  }
+
+  ignoreEvent(): boolean {
+    return true
+  }
 }
 
 const bold       = Decoration.mark({ class: 'cm-lp-bold' })
@@ -69,6 +118,26 @@ function buildDecorations(state: EditorState): DecorationSet {
     // list-marker pass below skips these so `    1. ` inside code doesn't get
     // styled as a list item.
     const codeBlockLines = new Set<number>()
+
+    // ── Callout detection pass ────────────────────────────────────────────
+    // A separate pass (like the #tag/list-marker passes below) because a
+    // Blockquote's callout-ness depends on its very first line, which we
+    // need to know before the main walk styles each QuoteMark line-by-line.
+    const calloutLineTypes = new Map<number, CalloutType>()
+    const calloutMarkerRanges: Array<{ from: number; to: number; type: CalloutType }> = []
+    syntaxTree(state).iterate({
+      enter(node) {
+        if (node.name !== 'Blockquote') return
+        const startLine = doc.lineAt(node.from)
+        const prefixMatch = /^(?:>\s?)+/.exec(startLine.text)
+        const bodyStart = prefixMatch ? startLine.from + prefixMatch[0].length : startLine.from
+        const type = matchCalloutType(doc.sliceString(bodyStart, startLine.to))
+        if (!type) return
+        const endLine = doc.lineAt(node.to)
+        for (let n = startLine.number; n <= endLine.number; n++) calloutLineTypes.set(n, type)
+        calloutMarkerRanges.push({ from: bodyStart, to: startLine.to, type })
+      },
+    })
 
     syntaxTree(state).iterate({
       enter(node) {
@@ -116,10 +185,12 @@ function buildDecorations(state: EditorState): DecorationSet {
           return
         }
 
-        // ── Blockquotes (> quoted) ──────────────────────────────────────────
+        // ── Blockquotes (> quoted) ───────────────────────────────────────────
         if (node.name === 'QuoteMark') {
           const lineStart = doc.lineAt(node.from).from
-          specs.push([lineStart, lineStart, lineDecos.blockquote])
+          const lineNum = doc.lineAt(node.from).number
+          const calloutType = calloutLineTypes.get(lineNum)
+          specs.push([lineStart, lineStart, calloutType ? calloutLineDecos[calloutType] : lineDecos.blockquote])
           if (!atCursor) specs.push([node.from, node.to, hidden])
           return false
         }
@@ -180,6 +251,15 @@ function buildDecorations(state: EditorState): DecorationSet {
       const tagStart = m.index + m[1].length
       const tagEnd = tagStart + m[2].length
       specs.push([tagStart, tagEnd, inlineTag])
+    }
+
+    // ── Callout marker widget pass ───────────────────────────────────────────
+    // Swap the raw `[!TYPE]` text for an icon+label widget, same as headings
+    // hide their `#` marks — but only off the cursor's line so the marker
+    // stays editable as plain text while the user is on it.
+    for (const { from, to, type } of calloutMarkerRanges) {
+      if (doc.lineAt(from).number === cursorLine) continue
+      specs.push([from, to, Decoration.replace({ widget: new CalloutLabelWidget(type) })])
     }
 
     // ── List-marker fallback pass ──────────────────────────────────────────
@@ -273,6 +353,27 @@ const livePreviewTheme = EditorView.baseTheme({
     padding: '0 3px',
     fontWeight: '500',
   },
+  // Callouts (`> [!NOTE]` etc.) — colors match CalloutBox.tsx's Tailwind
+  // classes (border/bg-{color}-500) so the editor and rendered preview agree.
+  '.cm-lp-callout-line': { paddingLeft: '10px', borderLeft: '3px solid transparent' },
+  '.cm-lp-callout-note': { borderLeftColor: '#3b82f6', background: 'rgba(59, 130, 246, 0.07)' },
+  '.cm-lp-callout-tip': { borderLeftColor: '#22c55e', background: 'rgba(34, 197, 94, 0.07)' },
+  '.cm-lp-callout-important': { borderLeftColor: '#a855f7', background: 'rgba(168, 85, 247, 0.07)' },
+  '.cm-lp-callout-warning': { borderLeftColor: '#eab308', background: 'rgba(234, 179, 8, 0.07)' },
+  '.cm-lp-callout-caution': { borderLeftColor: '#ef4444', background: 'rgba(239, 68, 68, 0.07)' },
+  '.cm-lp-callout-label': {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '5px',
+    fontWeight: '600',
+    fontStyle: 'normal',
+  },
+  '.cm-lp-callout-label-note': { color: '#3b82f6' },
+  '.cm-lp-callout-label-tip': { color: '#22c55e' },
+  '.cm-lp-callout-label-important': { color: '#a855f7' },
+  '.cm-lp-callout-label-warning': { color: '#eab308' },
+  '.cm-lp-callout-label-caution': { color: '#ef4444' },
+  '.cm-lp-callout-icon': { flex: 'none' },
 })
 
 // Click on a `[ ]` / `[x]` marker in the editor → toggle the task and stamp/
