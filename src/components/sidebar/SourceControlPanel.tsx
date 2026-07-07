@@ -68,13 +68,25 @@ export function groupChangesByFolder(
   return root
 }
 
-// Branches GitHub treats as the repo default — we omit the `/tree/<branch>`
-// suffix for these so the link lands on the repo root.
+// Branches git hosts treat as the repo default — we omit the branch suffix
+// for these so the link lands on the repo root.
 const DEFAULT_BRANCHES = new Set(['main', 'master'])
 
-// Build the GitHub web URL for the configured vault repo. Appends
-// `/tree/<branch>` only when the branch isn't the conventional default.
-function repoWebUrl(repo: { owner: string; name: string; branch: string }): string {
+// Build the web URL for the configured vault repo. Host-aware:
+// - GitHub  → https://github.com/{owner}/{name}[/tree/{branch}]
+// - Forgejo → {baseUrl}/{owner}/{name}[/src/branch/{branch}]
+//   (Gitea/Codeberg uses /src/branch/ instead of GitHub's /tree/)
+function repoWebUrl(
+  repo: { owner: string; name: string; branch: string },
+  host: 'github' | 'forgejo',
+  baseUrl: string | null,
+): string {
+  if (host === 'forgejo') {
+    const base = (baseUrl ?? 'https://codeberg.org').replace(/\/+$/, '')
+    const root = `${base}/${repo.owner}/${repo.name}`
+    return DEFAULT_BRANCHES.has(repo.branch) ? root : `${root}/src/branch/${repo.branch}`
+  }
+  // GitHub
   const base = `https://github.com/${repo.owner}/${repo.name}`
   return DEFAULT_BRANCHES.has(repo.branch) ? base : `${base}/tree/${repo.branch}`
 }
@@ -84,6 +96,8 @@ export function SourceControlPanel() {
   const folders = useFolderStore(s => s.folders)
   const lastSyncedAt = useGitHubStore(s => s.lastSyncedAt)
   const syncRepo = useGitHubStore(s => s.syncRepo)
+  const host = useGitHubStore(s => s.host)
+  const baseUrl = useGitHubStore(s => s.baseUrl)
   const openNote = useWorkspaceStore(s => s.openNote)
 
   // Pass `folders` so created (never-pushed) notes carry a synthetic
@@ -120,14 +134,14 @@ export function SourceControlPanel() {
                 {syncRepo.owner}/{syncRepo.name}
               </span>
               <a
-                href={repoWebUrl(syncRepo)}
+                href={repoWebUrl(syncRepo, host, baseUrl)}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={e => e.stopPropagation()}
                 className="flex-none text-obsidianSecondaryText hover:text-obsidianText transition-colors"
-                data-noteser-tip="Open in GitHub"
+                data-noteser-tip={host === 'github' ? 'Open in GitHub' : 'Open in browser'}
                 data-testid="source-control-open-github"
-                aria-label="Open in GitHub"
+                aria-label={host === 'github' ? 'Open in GitHub' : 'Open in browser'}
               >
                 <ArrowTopRightOnSquareIcon className="w-3 h-3" />
               </a>
@@ -168,6 +182,7 @@ const RecentCommits = () => {
   const token = useGitHubStore(s => s.token)
   const repo = useGitHubStore(s => s.syncRepo)
   const lastCommitSha = useGitHubStore(s => s.lastCommitSha)
+  const isGitHubHost = useGitHubStore(s => s.host === 'github')
   const [open, setOpen] = useState(true)
   const [commits, setCommits] = useState<FileCommitEntry[] | null>(null)
   const [loading, setLoading] = useState(false)
@@ -204,7 +219,7 @@ const RecentCommits = () => {
     return () => { cancelled = true }
   }, [token, repo, lastCommitSha])
 
-  if (!token || !repo) return null
+  if (!token || !repo || !isGitHubHost) return null
 
   return (
     <div className="mt-3 pt-2 border-t border-obsidianBorder" data-testid="source-control-recent-commits">
