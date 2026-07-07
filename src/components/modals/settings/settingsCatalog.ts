@@ -227,6 +227,14 @@ export const SETTINGS_CATALOG: readonly SettingsCatalogEntry[] = [
     keywords: ['attachment', 'folder', 'images', 'files'],
   },
   {
+    id: 'attachments.filenamePattern',
+    categoryId: 'attachments',
+    categoryLabel: 'Attachments',
+    label: 'Filename pattern',
+    description: 'Filename for new pasted/dropped images. Tokens: {date} {date:FORMAT} {noteTitle} {originalName} {counter}.',
+    keywords: ['attachment', 'filename', 'pattern', 'paste', 'rename', 'image'],
+  },
+  {
     id: 'attachments.cleanupOrphans',
     categoryId: 'attachments',
     categoryLabel: 'Attachments',

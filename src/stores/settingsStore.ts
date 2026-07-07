@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { STORAGE_KEYS } from '@/utils/storageKeys'
 import { localStorageJSON } from '@/utils/persistStorage'
+import { DEFAULT_ATTACHMENT_FILENAME_PATTERN } from '@/utils/attachmentFilename'
 
 export type FolderSortMode = 'alphabetical' | 'modified' | 'created' | 'manual'
 export type TaskListDensity = 'compact' | 'comfortable'
@@ -204,6 +205,10 @@ export interface SettingsState {
   // falls back to the historical default `attachments`. Old refs in note
   // content continue to resolve regardless of this setting.
   attachmentsFolder: string
+  // Filename pattern applied to new pasted/dropped/attached images (#124).
+  // Tokens: {date} / {date:FORMAT}, {noteTitle}, {originalName}, {counter}.
+  // Empty falls back to the historical default (see DEFAULT_ATTACHMENT_FILENAME_PATTERN).
+  attachmentFilenamePattern: string
   // Run a sync (pull-then-push) once on app boot if a repo is connected.
   autoSyncOnStart: boolean
   // When true, the startup auto-sync runs PULL-ONLY — local edits that
@@ -508,6 +513,7 @@ export interface SettingsState {
   setTaskQueryLenientDoneToday: (value: boolean) => void
   setShowHiddenFolders: (value: boolean) => void
   setAttachmentsFolder: (folder: string) => void
+  setAttachmentFilenamePattern: (pattern: string) => void
   setAutoSyncOnStart: (value: boolean) => void
   setPullOnlyOnStartup: (value: boolean) => void
   setAutoSyncIntervalMinutes: (minutes: number) => void
@@ -618,6 +624,7 @@ export const VAULT_SETTING_KEYS = [
   'taskListDensity',
   'showHiddenFolders',
   'attachmentsFolder',
+  'attachmentFilenamePattern',
   'dailyNotesFolder',
   'dailyNoteDateFormat',
   'weeklyNotesFolder',
@@ -657,6 +664,7 @@ const DEFAULTS = {
   taskQueryLenientDoneToday: false,
   showHiddenFolders: true,
   attachmentsFolder: 'Files',
+  attachmentFilenamePattern: DEFAULT_ATTACHMENT_FILENAME_PATTERN,
   autoSyncOnStart: true,
   pullOnlyOnStartup: false,
   autoSyncIntervalMinutes: 0,
@@ -824,6 +832,7 @@ export const useSettingsStore = create<SettingsState>()(
         setTaskQueryLenientDoneToday: (taskQueryLenientDoneToday) => set({ taskQueryLenientDoneToday }),
         setShowHiddenFolders: (showHiddenFolders) => setVault({ showHiddenFolders }),
         setAttachmentsFolder: (attachmentsFolder) => setVault({ attachmentsFolder }),
+        setAttachmentFilenamePattern: (attachmentFilenamePattern) => setVault({ attachmentFilenamePattern }),
         setAutoSyncOnStart: (autoSyncOnStart) => set({ autoSyncOnStart }),
         setPullOnlyOnStartup: (pullOnlyOnStartup) => set({ pullOnlyOnStartup }),
         setAutoSyncIntervalMinutes: (autoSyncIntervalMinutes) => set({ autoSyncIntervalMinutes }),

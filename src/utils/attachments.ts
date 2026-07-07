@@ -14,8 +14,13 @@ import { get, set, del, keys } from 'idb-keyval'
 import { gitBlobShaBytes } from './github'
 import { ATTACHMENTS_CHANGED_EVENT } from './events'
 import { useFolderStore } from '@/stores/folderStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 import { attachmentsFolder } from './systemFolder'
 import { STORAGE_KEYS } from './storageKeys'
+import {
+  DEFAULT_ATTACHMENT_FILENAME_PATTERN,
+  resolveAttachmentFilename,
+} from './attachmentFilename'
 
 // Materialise the parent folder of an attachment path as a real Folder
 // entity. Without this, attachment files would appear "orphaned" — the
@@ -196,21 +201,6 @@ export interface StoredAttachment {
   doNotSync?: boolean
 }
 
-function pad(n: number): string {
-  return n < 10 ? `0${n}` : `${n}`
-}
-
-function timestamp(date: Date): string {
-  return [
-    date.getFullYear(),
-    pad(date.getMonth() + 1),
-    pad(date.getDate()),
-    pad(date.getHours()),
-    pad(date.getMinutes()),
-    pad(date.getSeconds()),
-  ].join('')
-}
-
 // Strip directory components and characters that don't survive on either
 // Windows or Unix-ish filesystems. We also collapse runs of whitespace so the
 // markdown reference stays readable.
@@ -224,27 +214,25 @@ export function isAttachmentPath(path: string): boolean {
   return attachmentsFolder.matchesPath(path)
 }
 
-// Save a blob under a unique, timestamped path. Sub-second collisions append a
-// counter to the stem so the path stays unique even when two drops fire in the
-// same wall-clock second. New saves land under the currently-configured
+// Save a blob under a filename generated from the configured attachment
+// filename pattern (#124) — see utils/attachmentFilename.ts for the token
+// grammar and collision policy. New saves land under the currently-configured
 // attachments folder; old saves remain at their original path.
 export async function saveAttachment(
   blob: Blob,
   originalName: string,
   now: Date = new Date(),
+  noteTitle: string = '',
 ): Promise<string> {
   const dir = attachmentsFolder.get()
-  const safeName = sanitizeAttachmentName(originalName)
-  const ts = timestamp(now)
-  let path = `${dir}/${ts}-${safeName}`
-  let counter = 1
-  while ((await get(PREFIX + path)) !== undefined) {
-    const dotIdx = safeName.lastIndexOf('.')
-    const stem = dotIdx === -1 ? safeName : safeName.slice(0, dotIdx)
-    const ext = dotIdx === -1 ? '' : safeName.slice(dotIdx)
-    path = `${dir}/${ts}-${stem}-${counter}${ext}`
-    counter++
-  }
+  const pattern = useSettingsStore.getState().attachmentFilenamePattern
+    || DEFAULT_ATTACHMENT_FILENAME_PATTERN
+  const filename = await resolveAttachmentFilename(
+    pattern,
+    { now, noteTitle, originalName },
+    async (name) => (await get(PREFIX + `${dir}/${name}`)) !== undefined,
+  )
+  const path = `${dir}/${filename}`
   const record: StoredAttachment = {
     blob,
     mime: blob.type || 'application/octet-stream',
