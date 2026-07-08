@@ -8,29 +8,11 @@ wider backlog.
 Last refresh: 2026-05-30 (evening, post-launch tranche).
 
 > Everything below "Recently shipped (2026-05-25 → 2026-05-30)" is now
-> in prod at noteser.app (main `48b53b5`). The launch GTM thread also
-> kicked off this week — see "Launch / GTM status" below.
+> in prod at noteser.app (main `48b53b5`).
 
 ## In flight
 
 _Nothing right now._
-
-## Launch / GTM status (2026-05-30)
-
-- **r/ObsidianMD** — POSTED + PERMA-BANNED on launch day. Mods removed
-  the post citing pinned-rules violation (the sub funnels project
-  showcases through mod pre-approval; we did not check). 614 views
-  in 60 min before removal. Lesson recorded in
-  `~/.claude/projects/-home-jon-github/memory/project_noteser_launch.md`:
-  ALWAYS read pinned posts + sidebar rules on every niche sub BEFORE
-  posting. r/ObsidianMD is closed off going forward.
-- **r/PKMS** — Mod pre-approved a Self Promotion thread comment.
-  Pending Jon's actual post.
-- **r/SideProject (300k members)** — queued for Sunday morning EST.
-  Recon required: pinned thread vs. standalone post.
-- **r/selfhosted, r/Notetaking, r/opensource** — queued, one per
-  24h pacing rule.
-- **Show HN** — queued, no mod pre-approval needed.
 
 ## Next (genuinely upcoming)
 
