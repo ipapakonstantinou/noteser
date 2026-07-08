@@ -21,6 +21,7 @@ import {
   BookmarkIcon,
   CodeBracketIcon,
   LinkIcon,
+  LinkSlashIcon,
   PuzzlePieceIcon,
 } from '@heroicons/react/24/outline'
 import { type SidebarTabId } from '@/stores'
@@ -42,6 +43,7 @@ const SidebarSearchPanel = dynamic(
 import { SidebarBookmarksPanel } from './SidebarBookmarksPanel'
 import { SidebarRelatedPanel } from './SidebarRelatedPanel'
 import { PluginsPanel } from './PluginsPanel'
+import { BrokenLinksView } from './BrokenLinksView'
 
 interface PanelDef {
   id: SidebarTabId
@@ -58,6 +60,7 @@ export const PANELS: readonly PanelDef[] = [
   { id: 'bookmarks',      Icon: BookmarkIcon,          title: 'Bookmarks' },
   { id: 'related',        Icon: LinkIcon,              title: 'Related notes' },
   { id: 'plugins',        Icon: PuzzlePieceIcon,       title: 'Plugins' },
+  { id: 'broken-links',   Icon: LinkSlashIcon,         title: 'Broken links' },
 ]
 
 export const KNOWN_IDS = new Set<SidebarTabId>(PANELS.map(p => p.id))
@@ -97,5 +100,6 @@ export const PanelBody = ({
     case 'bookmarks':      return <SidebarBookmarksPanel />
     case 'related':        return <SidebarRelatedPanel />
     case 'plugins':        return <PluginsPanel />
+    case 'broken-links':   return <BrokenLinksView />
   }
 }

@@ -1,0 +1,23 @@
+version: 2
+updates:
+  # Main Next.js app.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+
+  # collab-server has its own lockfile (Cloudflare Workers package) and was
+  # previously not covered by any dependabot config at all.
+  - package-ecosystem: npm
+    directory: /collab-server
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+
+  # Keep the workflow actions themselves (actions/checkout, setup-node, ...)
+  # patched too — dependabot-auto-merge.yml only helps if updates exist.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

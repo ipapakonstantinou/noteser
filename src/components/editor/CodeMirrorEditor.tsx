@@ -89,11 +89,23 @@ interface CodeMirrorEditorProps {
 // references into the document at `pos`. Async on purpose — the drop/paste
 // event handler kicks this off and returns immediately so CodeMirror doesn't
 // block on the IDB write.
-async function insertImagesAt(view: EditorView, files: File[], pos: number): Promise<void> {
+//
+// `binding` is this note's live collab session, if any (null when collab is
+// off/not active for this note). Relaying is fired WITHOUT awaiting it — the
+// local save has already succeeded, so the paste UX (ref insertion below)
+// must not wait on base64-encoding + a Yjs transaction.
+async function insertImagesAt(
+  view: EditorView,
+  files: File[],
+  pos: number,
+  binding: CollabBinding | null,
+  noteTitle: string,
+): Promise<void> {
   const refs: string[] = []
   for (const file of files) {
     try {
-      const path = await saveAttachment(file, file.name || 'image.png')
+      const path = await saveAttachment(file, file.name || 'image.png', new Date(), noteTitle)
+      void binding?.shareAttachment(path, file, file.name || 'image.png')
       const alt = (file.name || 'image').replace(/\.[^.]+$/, '')
       refs.push(`![${alt}](${path})`)
     } catch (err) {
@@ -1018,17 +1030,25 @@ export function CodeMirrorEditor({
     // line(s) through plain -> numbered ("1. ") -> task ("- [ ] ") -> plain.
     // Replaces the earlier trio of Mod+Shift+7/8/9 toggles. Separate from
     // Mod+L (which only toggles a checkbox done/undone).
+    // Spelled 'Mod-Alt-L' (capital, no explicit "Shift-" word) rather than
+    // 'Mod-Alt-Shift-l': CodeMirror's runHandlers() skips its case-insensitive
+    // base-key fallback whenever ctrlKey+altKey are both held on Windows (its
+    // AltGr-avoidance guard), so a lowercase-letter spec can never match
+    // event.key's uppercase 'L' there and the binding silently never fires.
+    // The uppercase form matches on the first (always-tried) lookup on every
+    // platform. See @codemirror/view's `runHandlers`/`modifiers` internals.
     {
-      key: 'Mod-Alt-Shift-l',
+      key: 'Mod-Alt-L',
       preventDefault: true,
       run: cycleListTypeCommand,
     },
     // (3) Mod+Alt+Shift+B — Toggle a plain bullet list ("- ") on the current
     // line(s). A STANDALONE toggle, NOT part of the Mod+Alt+Shift+L cycle:
     // a plain line gains "- ", a "- " bullet drops it. Multi-line aware,
-    // indentation preserved.
+    // indentation preserved. Same 'Mod-Alt-B' (not '...-Shift-b') spelling
+    // rationale as the cycle-list binding above.
     {
-      key: 'Mod-Alt-Shift-b',
+      key: 'Mod-Alt-B',
       preventDefault: true,
       run: toggleBulletCommand,
     },
@@ -1228,7 +1248,8 @@ export function CodeMirrorEditor({
         event.preventDefault()
         const dropPos = view.posAtCoords({ x: event.clientX, y: event.clientY })
           ?? view.state.selection.main.head
-        insertImagesAt(view, images, dropPos)
+        const noteTitle = activeNotesRef.current.find(n => n.id === noteIdRef.current)?.title ?? ''
+        insertImagesAt(view, images, dropPos, collabBindingRef.current, noteTitle)
         return true
       },
       paste(event, view) {
@@ -1243,7 +1264,8 @@ export function CodeMirrorEditor({
           if (text !== '') return false
           event.preventDefault()
           const head = view.state.selection.main.head
-          insertImagesAt(view, images, head)
+          const noteTitle = activeNotesRef.current.find(n => n.id === noteIdRef.current)?.title ?? ''
+          insertImagesAt(view, images, head, collabBindingRef.current, noteTitle)
           return true
         }
 

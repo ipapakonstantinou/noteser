@@ -76,16 +76,23 @@ model reflects that:
   content forever. Surfaced in the UI footer of the /share page.
 - **AI API key in localStorage.** Same XSS exposure as the GitHub token.
   Acceptable for a personal tool; not for a hosted SaaS.
-- **Yjs collaboration token has no auth.** Anyone who knows a note ID
-  on the configured Yjs server can read/write that note's CRDT. The
-  default is no server (collaboration disabled), so this only bites
-  users who explicitly set `NEXT_PUBLIC_YJS_WS_URL` AND share a note
-  ID. Document this in the env-var comment.
+- **Yjs collaboration token has no real auth.** The optional `AUTH_TOKEN`
+  ships inline in the client bundle (`NEXT_PUBLIC_YJS_WS_URL`) — it is
+  structurally public, not a secret, so it gates nothing an attacker
+  couldn't read out of the page source. The room UUID is the real
+  credential: anyone who knows a room's id on the configured Yjs server
+  can read/write that room's CRDT. The default is no server
+  (collaboration disabled), so this only bites users who explicitly set
+  `NEXT_PUBLIC_YJS_WS_URL` AND share a room id. `collab-server/` now caps
+  message size, connections per room, and messages per second (2026-07-06)
+  to bound DoS/storage-bloat from a client that *does* have a room id, but
+  none of that is confidentiality — treat a room id like a `/share` link.
 
 ## Audit log
 
 | Date | Change | Notes |
 |---|---|---|
+| 2026-07-06 | collab-server: size/rate/connection-cap limits + first test suite; `/share` img-src drops the `https:` wildcard; `.github/dependabot.yml` added (covers root + collab-server); collab-server wired into CI | 2026-07-06 deep security review |
 | 2026-05-20 | Initial security audit doc written | sh3d |
 | 2026-05-20 | `crypto.subtle` secure-context check + clear error | (LAN-over-HTTP regression) |
 | 2026-05-20 | `PERSISTED_RESET_VERSION` kill-switch + `?reset=1` | recovery for sync drift |

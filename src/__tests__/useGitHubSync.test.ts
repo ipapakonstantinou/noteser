@@ -488,6 +488,42 @@ describe('useGitHubSync — runSync (pull → apply → push)', () => {
     expect(useGitHubStore.getState().isSyncing).toBe(false)
   })
 
+  test('attachmentSyncSkipped surfaces a non-error warning toast instead of a plain success one', async () => {
+    // syncToGitHub reports attachmentSyncSkipped when a stalled IDB read
+    // (attachment-timeout-retry) forced it to abort the attachment section
+    // for this cycle. Notes still pushed — this is not a sync failure, just
+    // an incomplete cycle the user should know will retry.
+    pullFromGitHubMock.mockResolvedValue({
+      classifications: [{ kind: 'unchanged', noteId: 'note-1' }],
+      latestCommitSha: 'pulled-sha',
+    })
+    syncToGitHubMock.mockResolvedValue({
+      result: {
+        created: 1,
+        updated: 0,
+        deleted: 0,
+        unchanged: false,
+        commitSha: 'push-sha',
+        commitUrl: 'https://github.com/octocat/vault/commit/push-sha',
+        attachmentSyncSkipped: true,
+      },
+      pathUpdates: [],
+    })
+
+    const { result } = renderHook(() => useGitHubSync())
+    await act(async () => {
+      await result.current.runSync()
+    })
+
+    // The sync itself is still reported as ok — notes pushed fine.
+    expect(result.current.syncState.kind).toBe('ok')
+    // But the toast is an 'info' warning, not a plain 'success', and it says
+    // attachments will retry.
+    const toasts = useToastStore.getState().toasts
+    expect(toasts.some(t => t.kind === 'info' && /attachments/i.test(t.message) && /retry/i.test(t.message))).toBe(true)
+    expect(toasts.some(t => t.kind === 'success')).toBe(false)
+  })
+
   test('push failure surfaces a retryable error and releases the guard', async () => {
     pullFromGitHubMock.mockResolvedValue({
       classifications: [{ kind: 'unchanged', noteId: 'note-1' }],

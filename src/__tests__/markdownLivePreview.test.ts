@@ -300,6 +300,79 @@ describe('markdownLivePreview StateField', () => {
   })
 })
 
+// ── Callouts (`> [!NOTE]` etc.) ──────────────────────────────────────────────
+//
+// GitHub-style alert blockquotes: the `[!TYPE]` marker line gets swapped for
+// an icon+label widget (off-cursor) and every line of the blockquote gets a
+// type-specific line class instead of the generic `cm-lp-blockquote`.
+
+describe('Callouts', () => {
+  function findReplace(state: EditorState) {
+    const decos = state.field(markdownLivePreviewField)
+    const out: Array<{ from: number; to: number; type: string }> = []
+    const cursor = decos.iter()
+    while (cursor.value !== null) {
+      const widget = (cursor.value.spec as { widget?: { type?: string } })?.widget
+      if (widget?.type) out.push({ from: cursor.from, to: cursor.to, type: widget.type })
+      cursor.next()
+    }
+    return out
+  }
+
+  test.each([
+    ['NOTE', 'note'], ['TIP', 'tip'], ['IMPORTANT', 'important'], ['WARNING', 'warning'], ['CAUTION', 'caution'],
+  ])('marker [!%s] gets a cm-lp-callout-%s line class on every quoted line', (marker, type) => {
+    const doc = `> [!${marker}]\n> Body text.\n`
+    const state = makeState(doc, doc.length) // cursor away from the blockquote
+    const decos = collectDecos(state)
+
+    const line1 = decos.find(d => d.from === 0 && d.to === 0)
+    const line2Start = doc.indexOf('> Body text.')
+    const line2 = decos.find(d => d.from === line2Start && d.to === line2Start)
+    expect(line1?.class).toBe(`cm-lp-callout-line cm-lp-callout-${type}`)
+    expect(line2?.class).toBe(`cm-lp-callout-line cm-lp-callout-${type}`)
+  })
+
+  test('marker is case-insensitive ([!warning] lowercase still detected)', () => {
+    const doc = '> [!warning]\n> Body.\n'
+    const state = makeState(doc, doc.length)
+    const decos = collectDecos(state)
+    const line1 = decos.find(d => d.from === 0 && d.to === 0)
+    expect(line1?.class).toBe('cm-lp-callout-line cm-lp-callout-warning')
+  })
+
+  test('replaces the [!TYPE] marker text with a label widget when cursor is elsewhere', () => {
+    const doc = '> [!NOTE]\n> Body.\n'
+    const state = makeState(doc, doc.length)
+    const widgets = findReplace(state)
+    // "[!NOTE]" spans [2, 9) — QuoteMark ("> ") occupies [0, 2).
+    expect(widgets).toContainEqual({ from: 2, to: 9, type: 'note' })
+  })
+
+  test('leaves the raw marker text editable (no widget) when the cursor is on that line', () => {
+    const doc = '> [!NOTE]\n> Body.\n'
+    const state = makeState(doc, 3) // cursor inside "[!NOTE]"
+    const widgets = findReplace(state)
+    expect(widgets).toEqual([])
+  })
+
+  test('a plain (non-callout) blockquote keeps the generic cm-lp-blockquote class', () => {
+    const doc = '> Just a regular quote.\n'
+    const state = makeState(doc, doc.length)
+    const decos = collectDecos(state)
+    const line1 = decos.find(d => d.from === 0 && d.to === 0)
+    expect(line1?.class).toBe('cm-lp-blockquote')
+  })
+
+  test('a line that merely contains "[!NOTE]" as part of a larger sentence is not a callout', () => {
+    const doc = '> See [!NOTE] for details.\n'
+    const state = makeState(doc, doc.length)
+    const decos = collectDecos(state)
+    const line1 = decos.find(d => d.from === 0 && d.to === 0)
+    expect(line1?.class).toBe('cm-lp-blockquote')
+  })
+})
+
 // ── Task-marker click handler ────────────────────────────────────────────────
 //
 // Mounts a real EditorView in jsdom and clicks the task-marker span to

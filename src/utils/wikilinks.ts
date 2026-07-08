@@ -1,3 +1,5 @@
+import { parseWikilinkTarget } from './wikilinkTarget'
+
 // Check if cursor is inside [[... (no closing ]] yet) — used for autocomplete
 export function getActiveWikilinkQuery(
   content: string,
@@ -41,4 +43,38 @@ export function extractWikilinkTitles(content: string): string[] {
     titles.push(match[1].trim())
   }
   return titles
+}
+
+export interface WikilinkOccurrence {
+  title: string
+  fragment: string | null
+  /** True for `![[…]]` (embed syntax) vs a plain `[[…]]` link. */
+  isEmbed: boolean
+  /** 1-indexed source line. */
+  line: number
+  /** Char offset of the `[[` (or `![[`'s `[[`) in `content`. */
+  index: number
+}
+
+// Same match target as extractWikilinkTitles, but excludes newlines from the
+// title/alias (a real wikilink never spans a line) and reports position, so
+// callers that need to jump to or diagnose a specific occurrence — e.g. the
+// broken-links scanner — don't have to re-implement the regex.
+const WIKILINK_OCCURRENCE_REGEX = /\[\[([^\]|\n]+?)(?:\|[^\]\n]+?)?\]\]/g
+
+export function extractWikilinkOccurrences(content: string): WikilinkOccurrence[] {
+  const out: WikilinkOccurrence[] = []
+  if (!content) return out
+  WIKILINK_OCCURRENCE_REGEX.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = WIKILINK_OCCURRENCE_REGEX.exec(content)) !== null) {
+    const isEmbed = match.index > 0 && content[match.index - 1] === '!'
+    const { title, fragment } = parseWikilinkTarget(match[1])
+    let line = 1
+    for (let i = 0; i < match.index; i++) {
+      if (content.charCodeAt(i) === 10 /* \n */) line++
+    }
+    out.push({ title, fragment, isEmbed, line, index: match.index })
+  }
+  return out
 }

@@ -28,6 +28,7 @@ import type { Note, Folder, SyncRepo } from '@/types'
 jest.mock('../utils/attachments', () => ({
   isAttachmentPath: () => false,
   listAttachmentPaths: async () => [],
+  listAttachmentPathsTracked: async () => ({ value: [], timedOut: false }),
   getAttachmentBlob: async () => null,
   getAttachmentGitSha: async () => null,
   getAttachmentTombstones: async () => [],

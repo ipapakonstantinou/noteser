@@ -14,8 +14,13 @@ import { get, set, del, keys } from 'idb-keyval'
 import { gitBlobShaBytes } from './github'
 import { ATTACHMENTS_CHANGED_EVENT } from './events'
 import { useFolderStore } from '@/stores/folderStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 import { attachmentsFolder } from './systemFolder'
 import { STORAGE_KEYS } from './storageKeys'
+import {
+  DEFAULT_ATTACHMENT_FILENAME_PATTERN,
+  resolveAttachmentFilename,
+} from './attachmentFilename'
 
 // Materialise the parent folder of an attachment path as a real Folder
 // entity. Without this, attachment files would appear "orphaned" — the
@@ -138,8 +143,17 @@ export function resolveAttachmentPath(nameOrPath: string): string | null {
 const IDB_TIMEOUT_MS = 8_000
 let idbTimeoutWarned = false
 
-function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  return new Promise<T>(resolve => {
+// Tracked variant: same degrade-to-fallback behaviour, but also reports
+// WHETHER the fallback fired. The push path needs this — "timed out, unknown
+// local state" and "genuinely resolved to an empty/false/null value" must not
+// be conflated into the same push decision (see listAttachmentPathsTracked
+// and friends below).
+function withTimeoutTracked<T>(
+  promise: Promise<T>,
+  ms: number,
+  fallback: T,
+): Promise<{ value: T; timedOut: boolean }> {
+  return new Promise(resolve => {
     let settled = false
     const timer = setTimeout(() => {
       if (settled) return
@@ -150,24 +164,28 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
           `[attachments] IndexedDB op exceeded ${ms}ms — degrading gracefully (sync continues).`,
         )
       }
-      resolve(fallback)
+      resolve({ value: fallback, timedOut: true })
     }, ms)
     promise.then(
       value => {
         if (settled) return
         settled = true
         clearTimeout(timer)
-        resolve(value)
+        resolve({ value, timedOut: false })
       },
       () => {
         // An IDB rejection is also best-effort: degrade rather than reject.
         if (settled) return
         settled = true
         clearTimeout(timer)
-        resolve(fallback)
+        resolve({ value: fallback, timedOut: true })
       },
     )
   })
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return withTimeoutTracked(promise, ms, fallback).then(r => r.value)
 }
 
 export interface StoredAttachment {
@@ -183,21 +201,6 @@ export interface StoredAttachment {
   doNotSync?: boolean
 }
 
-function pad(n: number): string {
-  return n < 10 ? `0${n}` : `${n}`
-}
-
-function timestamp(date: Date): string {
-  return [
-    date.getFullYear(),
-    pad(date.getMonth() + 1),
-    pad(date.getDate()),
-    pad(date.getHours()),
-    pad(date.getMinutes()),
-    pad(date.getSeconds()),
-  ].join('')
-}
-
 // Strip directory components and characters that don't survive on either
 // Windows or Unix-ish filesystems. We also collapse runs of whitespace so the
 // markdown reference stays readable.
@@ -211,27 +214,25 @@ export function isAttachmentPath(path: string): boolean {
   return attachmentsFolder.matchesPath(path)
 }
 
-// Save a blob under a unique, timestamped path. Sub-second collisions append a
-// counter to the stem so the path stays unique even when two drops fire in the
-// same wall-clock second. New saves land under the currently-configured
+// Save a blob under a filename generated from the configured attachment
+// filename pattern (#124) — see utils/attachmentFilename.ts for the token
+// grammar and collision policy. New saves land under the currently-configured
 // attachments folder; old saves remain at their original path.
 export async function saveAttachment(
   blob: Blob,
   originalName: string,
   now: Date = new Date(),
+  noteTitle: string = '',
 ): Promise<string> {
   const dir = attachmentsFolder.get()
-  const safeName = sanitizeAttachmentName(originalName)
-  const ts = timestamp(now)
-  let path = `${dir}/${ts}-${safeName}`
-  let counter = 1
-  while ((await get(PREFIX + path)) !== undefined) {
-    const dotIdx = safeName.lastIndexOf('.')
-    const stem = dotIdx === -1 ? safeName : safeName.slice(0, dotIdx)
-    const ext = dotIdx === -1 ? '' : safeName.slice(dotIdx)
-    path = `${dir}/${ts}-${stem}-${counter}${ext}`
-    counter++
-  }
+  const pattern = useSettingsStore.getState().attachmentFilenamePattern
+    || DEFAULT_ATTACHMENT_FILENAME_PATTERN
+  const filename = await resolveAttachmentFilename(
+    pattern,
+    { now, noteTitle, originalName },
+    async (name) => (await get(PREFIX + `${dir}/${name}`)) !== undefined,
+  )
+  const path = `${dir}/${filename}`
   const record: StoredAttachment = {
     blob,
     mime: blob.type || 'application/octet-stream',
@@ -413,6 +414,14 @@ export function listAttachmentPaths(): Promise<string[]> {
   return withTimeout(listAttachmentPathsUnbounded(), IDB_TIMEOUT_MS, [])
 }
 
+// PUSH-only variant: a timeout here must NOT be read as "zero local
+// attachments" (the push would then silently upload nothing and look
+// successful). syncPush uses `timedOut` to abort the whole attachment
+// section for this cycle instead of trusting the `[]` fallback.
+export function listAttachmentPathsTracked(): Promise<{ value: string[]; timedOut: boolean }> {
+  return withTimeoutTracked(listAttachmentPathsUnbounded(), IDB_TIMEOUT_MS, [])
+}
+
 async function listAttachmentPathsUnbounded(): Promise<string[]> {
   const allKeys = await keys()
   const out: string[] = []
@@ -467,6 +476,18 @@ export function getAttachmentDoNotSync(path: string): Promise<boolean> {
   )
 }
 
+// PUSH-only variant — see listAttachmentPathsTracked for why the push path
+// needs to distinguish "genuinely false" from "timed out".
+export function getAttachmentDoNotSyncTracked(
+  path: string,
+): Promise<{ value: boolean; timedOut: boolean }> {
+  return withTimeoutTracked(
+    get<StoredAttachment>(PREFIX + path).then(record => record?.doNotSync === true),
+    IDB_TIMEOUT_MS,
+    false,
+  )
+}
+
 // do-not-sync (#179): set/clear the doNotSync flag on an EXISTING stored
 // attachment. No-op when the path is unknown or the flag already matches.
 // Used by the feature-tour seeder's healing pass and the one-time boot
@@ -488,6 +509,14 @@ export function getAttachmentGitSha(path: string): Promise<string | null> {
   // (pull's attachment comparison) skips the update when the SHA is null, so a
   // stall means "don't re-download" rather than wedging the sync.
   return withTimeout(getAttachmentGitShaUnbounded(path), IDB_TIMEOUT_MS, null)
+}
+
+// PUSH-only variant — see listAttachmentPathsTracked for why the push path
+// needs to distinguish "genuinely null" from "timed out".
+export function getAttachmentGitShaTracked(
+  path: string,
+): Promise<{ value: string | null; timedOut: boolean }> {
+  return withTimeoutTracked(getAttachmentGitShaUnbounded(path), IDB_TIMEOUT_MS, null)
 }
 
 async function getAttachmentGitShaUnbounded(path: string): Promise<string | null> {

@@ -28,6 +28,7 @@ jest.mock('idb-keyval', () => ({
 jest.mock('../utils/attachments', () => ({
   isAttachmentPath: () => false,
   listAttachmentPaths: async () => [],
+  listAttachmentPathsTracked: async () => ({ value: [], timedOut: false }),
   getAttachmentBlob: async () => null,
   getAttachmentGitSha: async () => null,
   getAttachmentTombstones: async () => [],

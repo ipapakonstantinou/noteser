@@ -334,4 +334,9 @@ export interface SyncResult {
   deleted: number
   commitSha: string
   commitUrl: string | null
+  // attachment-timeout-retry: true when a stalled IndexedDB read forced this
+  // push to skip attachment upload entirely (see syncPush.ts section 3b).
+  // Notes still pushed; the caller should surface this so the user knows to
+  // expect another sync before the attachment lands.
+  attachmentSyncSkipped?: boolean
 }
