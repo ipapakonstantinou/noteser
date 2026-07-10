@@ -310,23 +310,28 @@ export const CalendarView = () => {
             : null
           const weekMonday = anchorDate ? mondayOfIsoWeek(anchorDate) : null
           const weekNumber = anchorDate ? isoWeekNumber(anchorDate) : null
+          const hasWeekNote = weekMonday ? findWeeklyNoteId(weekMonday).id !== null : false
 
           return (
             <React.Fragment key={`row-${rowIdx}`}>
               {/* W column cell — small text button, muted compared to
                   day cells. Click opens / creates the weekly note;
                   right-click opens the same context menu the day cell
-                  uses, but in 'week' mode. */}
+                  uses, but in 'week' mode. Dot mirrors the day cells'
+                  "has a note" indicator (2026-07-10 — was missing). */}
               {weekNumber != null && weekMonday ? (
                 <button
                   onClick={() => openWeek(weekMonday)}
                   onContextMenu={(e) => onWeekContextMenu(e, weekMonday)}
-                  className="flex items-center justify-center rounded py-1 text-[9px] text-obsidianSecondaryText/70 hover:bg-obsidianHighlight hover:text-obsidianText transition-colors"
+                  className="relative flex items-center justify-center rounded py-1 text-[9px] text-obsidianSecondaryText/70 hover:bg-obsidianHighlight hover:text-obsidianText transition-colors"
                   data-testid={`calendar-week-${weekMonday.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`}
                   title={`Week ${weekNumber} — open or create weekly note`}
                   aria-label={`Open weekly note for week ${weekNumber}`}
                 >
                   {weekNumber}
+                  {hasWeekNote && (
+                    <span className="absolute bottom-0.5 w-1 h-1 rounded-full bg-obsidianAccentPurple" />
+                  )}
                 </button>
               ) : (
                 <div />

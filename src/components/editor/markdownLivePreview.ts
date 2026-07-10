@@ -8,6 +8,7 @@ import type { EditorState } from '@codemirror/state'
 import type { SyntaxNode } from '@lezer/common'
 import { toggleTaskLineText } from '@/utils/tasks'
 import { matchCalloutType, CALLOUT_LABELS, CALLOUT_ICON_SHAPES, type CalloutType } from '@/utils/callouts'
+import { findCellRanges } from '@/utils/markdownTable'
 
 /**
  * Live-preview markdown decorations.
@@ -78,6 +79,90 @@ class CalloutLabelWidget extends WidgetType {
   }
 }
 
+type CellAlign = 'left' | 'center' | 'right' | null
+
+function alignForDividerCell(text: string): CellAlign {
+  const t = text.trim()
+  const left = t.startsWith(':')
+  const right = t.endsWith(':')
+  if (left && right) return 'center'
+  if (right) return 'right'
+  if (left) return 'left'
+  return null
+}
+
+// Renders a GFM table (header + divider + body rows, raw source lines
+// already validated by the caller) as a real `<table>` — swapped in for
+// the whole block while the cursor is elsewhere. Clicking anywhere in
+// the rendered table drops the cursor at the table's first line, which
+// reveals the raw markdown for editing (same reveal-on-cursor pattern
+// as headings/callouts, just at block granularity since column
+// alignment can't be faked with inline marks on plain text).
+class TableWidget extends WidgetType {
+  constructor(readonly lines: readonly string[]) {
+    super()
+  }
+
+  eq(other: TableWidget): boolean {
+    return other.lines.length === this.lines.length &&
+      other.lines.every((l, i) => l === this.lines[i])
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const wrap = document.createElement('div')
+    wrap.className = 'cm-lp-table-wrap'
+
+    const headerCells = findCellRanges(this.lines[0])
+      .map(r => this.lines[0].slice(r.contentStart, r.contentEnd))
+    const aligns: CellAlign[] = findCellRanges(this.lines[1])
+      .map(r => alignForDividerCell(this.lines[1].slice(r.contentStart, r.contentEnd)))
+
+    const table = document.createElement('table')
+    table.className = 'cm-lp-table'
+
+    const thead = document.createElement('thead')
+    const headRow = document.createElement('tr')
+    headerCells.forEach((text, i) => {
+      const th = document.createElement('th')
+      th.textContent = text
+      if (aligns[i]) th.style.textAlign = aligns[i]!
+      headRow.appendChild(th)
+    })
+    thead.appendChild(headRow)
+    table.appendChild(thead)
+
+    const tbody = document.createElement('tbody')
+    for (let i = 2; i < this.lines.length; i++) {
+      const cells = findCellRanges(this.lines[i])
+        .map(r => this.lines[i].slice(r.contentStart, r.contentEnd))
+      if (cells.length === 0) continue
+      const tr = document.createElement('tr')
+      cells.forEach((text, ci) => {
+        const td = document.createElement('td')
+        td.textContent = text
+        if (aligns[ci]) td.style.textAlign = aligns[ci]!
+        tr.appendChild(td)
+      })
+      tbody.appendChild(tr)
+    }
+    table.appendChild(tbody)
+    wrap.appendChild(table)
+
+    wrap.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      const pos = view.posAtDOM(wrap)
+      view.dispatch({ selection: { anchor: pos }, scrollIntoView: true })
+      view.focus()
+    })
+
+    return wrap
+  }
+
+  ignoreEvent(): boolean {
+    return true
+  }
+}
+
 const bold       = Decoration.mark({ class: 'cm-lp-bold' })
 const italic     = Decoration.mark({ class: 'cm-lp-italic' })
 const inlineCode = Decoration.mark({ class: 'cm-lp-code' })
@@ -87,6 +172,7 @@ const listMark   = Decoration.mark({ class: 'cm-lp-list-mark' })
 const taskUnchecked = Decoration.mark({ class: 'cm-lp-task-unchecked' })
 const taskChecked   = Decoration.mark({ class: 'cm-lp-task-checked' })
 const inlineTag  = Decoration.mark({ class: 'cm-lp-tag' })
+const tableDelim = Decoration.mark({ class: 'cm-lp-table-delim' })
 
 // Match Obsidian-style #tags: hash + [A-Za-z0-9_/-]+, NOT preceded by a word
 // character (so we don't accidentally style `foo#bar`). We run this in a
@@ -205,6 +291,30 @@ function buildDecorations(state: EditorState): DecorationSet {
 
         if (node.name === 'ListMark') {
           specs.push([node.from, node.to, listMark])
+          return false
+        }
+
+        // ── GFM tables ───────────────────────────────────────────────────────
+        // Whole-block replace with a rendered `<table>` when the cursor is
+        // outside the table (column alignment can't be faked with inline
+        // marks on plain text); dim the `|` delimiters instead while the
+        // cursor is inside so the raw source stays fully editable.
+        if (node.name === 'Table') {
+          const startLine = doc.lineAt(node.from)
+          const endLine = doc.lineAt(node.to)
+          const withinCursor = cursorLine >= startLine.number && cursorLine <= endLine.number
+          if (withinCursor) {
+            for (let n = startLine.number; n <= endLine.number; n++) {
+              const line = doc.line(n)
+              for (let i = 0; i < line.text.length; i++) {
+                if (line.text[i] === '|') specs.push([line.from + i, line.from + i + 1, tableDelim])
+              }
+            }
+          } else {
+            const lines: string[] = []
+            for (let n = startLine.number; n <= endLine.number; n++) lines.push(doc.line(n).text)
+            specs.push([node.from, node.to, Decoration.replace({ widget: new TableWidget(lines), block: true })])
+          }
           return false
         }
 
@@ -374,6 +484,25 @@ const livePreviewTheme = EditorView.baseTheme({
   '.cm-lp-callout-label-warning': { color: '#eab308' },
   '.cm-lp-callout-label-caution': { color: '#ef4444' },
   '.cm-lp-callout-icon': { flex: 'none' },
+  '.cm-lp-table-delim': { color: '#6b7280', opacity: '0.6' },
+  '.cm-lp-table-wrap': { display: 'block', margin: '4px 0', overflowX: 'auto', cursor: 'text' },
+  '.cm-lp-table': {
+    borderCollapse: 'collapse',
+    fontSize: '0.92em',
+    minWidth: '100%',
+  },
+  '.cm-lp-table th, .cm-lp-table td': {
+    border: '1px solid #3a3a3a',
+    padding: '4px 10px',
+    textAlign: 'left',
+  },
+  '.cm-lp-table th': {
+    background: 'rgba(255, 255, 255, 0.06)',
+    fontWeight: '600',
+  },
+  '.cm-lp-table tbody tr:nth-child(even)': {
+    background: 'rgba(255, 255, 255, 0.025)',
+  },
 })
 
 // Click on a `[ ]` / `[x]` marker in the editor → toggle the task and stamp/
