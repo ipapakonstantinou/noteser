@@ -152,14 +152,28 @@ class TableWidget extends WidgetType {
     table.appendChild(tbody)
     wrap.appendChild(table)
 
+    // A cell holding nothing or just "x" reads as a checkbox-style mark
+    // (e.g. a habit scoreboard) — click toggles it in place with no
+    // selection change, so the table stays rendered instead of dropping
+    // to raw source. A cell with real content (a row label, a header)
+    // still needs free-text editing, so that falls back to the old
+    // behavior: select the cell's source range, which puts the cursor
+    // on that line and reveals the raw markdown to type into.
     wrap.addEventListener('mousedown', (e) => {
       e.preventDefault()
       const cell = (e.target as HTMLElement)?.closest?.('td, th') as HTMLElement | null
       const range = cell ? cellPos.get(cell) : undefined
-      const selection = range
-        ? { anchor: range.from, head: range.to }
-        : { anchor: view.posAtDOM(wrap) }
-      view.dispatch({ selection, scrollIntoView: true })
+      if (!range) {
+        view.dispatch({ selection: { anchor: view.posAtDOM(wrap) }, scrollIntoView: true })
+        view.focus()
+        return
+      }
+      const current = view.state.doc.sliceString(range.from, range.to).trim()
+      if (current === '' || current.toLowerCase() === 'x') {
+        view.dispatch({ changes: { from: range.from, to: range.to, insert: current === '' ? 'x' : '' } })
+        return
+      }
+      view.dispatch({ selection: { anchor: range.from, head: range.to }, scrollIntoView: true })
       view.focus()
     })
 
