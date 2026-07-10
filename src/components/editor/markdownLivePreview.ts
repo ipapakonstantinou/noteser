@@ -93,13 +93,13 @@ function alignForDividerCell(text: string): CellAlign {
 
 // Renders a GFM table (header + divider + body rows, raw source lines
 // already validated by the caller) as a real `<table>` — swapped in for
-// the whole block while the cursor is elsewhere. Clicking anywhere in
-// the rendered table drops the cursor at the table's first line, which
-// reveals the raw markdown for editing (same reveal-on-cursor pattern
-// as headings/callouts, just at block granularity since column
-// alignment can't be faked with inline marks on plain text).
+// the whole block while the cursor is elsewhere. `lineStarts[i]` is the
+// absolute doc offset of `lines[i]`, so each rendered cell can carry the
+// exact source range of its content — clicking a cell selects that
+// range (empty cells collapse to a caret) so typing immediately edits
+// that cell instead of dumping the cursor at the top of the table.
 class TableWidget extends WidgetType {
-  constructor(readonly lines: readonly string[]) {
+  constructor(readonly lines: readonly string[], readonly lineStarts: readonly number[]) {
     super()
   }
 
@@ -112,8 +112,17 @@ class TableWidget extends WidgetType {
     const wrap = document.createElement('div')
     wrap.className = 'cm-lp-table-wrap'
 
-    const headerCells = findCellRanges(this.lines[0])
-      .map(r => this.lines[0].slice(r.contentStart, r.contentEnd))
+    const cellPos = new WeakMap<HTMLElement, { from: number; to: number }>()
+    const makeCell = (tag: 'th' | 'td', lineIdx: number, contentStart: number, contentEnd: number, text: string, align: CellAlign) => {
+      const el = document.createElement(tag)
+      el.textContent = text
+      if (align) el.style.textAlign = align
+      const base = this.lineStarts[lineIdx]
+      cellPos.set(el, { from: base + contentStart, to: base + contentEnd })
+      return el
+    }
+
+    const headerRanges = findCellRanges(this.lines[0])
     const aligns: CellAlign[] = findCellRanges(this.lines[1])
       .map(r => alignForDividerCell(this.lines[1].slice(r.contentStart, r.contentEnd)))
 
@@ -122,26 +131,21 @@ class TableWidget extends WidgetType {
 
     const thead = document.createElement('thead')
     const headRow = document.createElement('tr')
-    headerCells.forEach((text, i) => {
-      const th = document.createElement('th')
-      th.textContent = text
-      if (aligns[i]) th.style.textAlign = aligns[i]!
-      headRow.appendChild(th)
+    headerRanges.forEach((r, i) => {
+      const text = this.lines[0].slice(r.contentStart, r.contentEnd)
+      headRow.appendChild(makeCell('th', 0, r.contentStart, r.contentEnd, text, aligns[i] ?? null))
     })
     thead.appendChild(headRow)
     table.appendChild(thead)
 
     const tbody = document.createElement('tbody')
     for (let i = 2; i < this.lines.length; i++) {
-      const cells = findCellRanges(this.lines[i])
-        .map(r => this.lines[i].slice(r.contentStart, r.contentEnd))
-      if (cells.length === 0) continue
+      const ranges = findCellRanges(this.lines[i])
+      if (ranges.length === 0) continue
       const tr = document.createElement('tr')
-      cells.forEach((text, ci) => {
-        const td = document.createElement('td')
-        td.textContent = text
-        if (aligns[ci]) td.style.textAlign = aligns[ci]!
-        tr.appendChild(td)
+      ranges.forEach((r, ci) => {
+        const text = this.lines[i].slice(r.contentStart, r.contentEnd)
+        tr.appendChild(makeCell('td', i, r.contentStart, r.contentEnd, text, aligns[ci] ?? null))
       })
       tbody.appendChild(tr)
     }
@@ -150,8 +154,12 @@ class TableWidget extends WidgetType {
 
     wrap.addEventListener('mousedown', (e) => {
       e.preventDefault()
-      const pos = view.posAtDOM(wrap)
-      view.dispatch({ selection: { anchor: pos }, scrollIntoView: true })
+      const cell = (e.target as HTMLElement)?.closest?.('td, th') as HTMLElement | null
+      const range = cell ? cellPos.get(cell) : undefined
+      const selection = range
+        ? { anchor: range.from, head: range.to }
+        : { anchor: view.posAtDOM(wrap) }
+      view.dispatch({ selection, scrollIntoView: true })
       view.focus()
     })
 
@@ -312,8 +320,13 @@ function buildDecorations(state: EditorState): DecorationSet {
             }
           } else {
             const lines: string[] = []
-            for (let n = startLine.number; n <= endLine.number; n++) lines.push(doc.line(n).text)
-            specs.push([node.from, node.to, Decoration.replace({ widget: new TableWidget(lines), block: true })])
+            const lineStarts: number[] = []
+            for (let n = startLine.number; n <= endLine.number; n++) {
+              const line = doc.line(n)
+              lines.push(line.text)
+              lineStarts.push(line.from)
+            }
+            specs.push([node.from, node.to, Decoration.replace({ widget: new TableWidget(lines, lineStarts), block: true })])
           }
           return false
         }
