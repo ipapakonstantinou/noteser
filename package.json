@@ -40,7 +40,7 @@
     "file-saver": "^2.0.5",
     "fuse.js": "^7.4.2",
     "idb-keyval": "^6.2.6",
-    "isomorphic-git": "^1.38.1",
+    "isomorphic-git": "^1.38.7",
     "jszip": "^3.10.1",
     "next": "^15.5.18",
     "react": "^19.1.0",
