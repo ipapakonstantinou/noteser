@@ -39,3 +39,26 @@ describe('formatDate', () => {
     expect(formatDate(jan3, 'M/D')).toBe('1/3')
   })
 })
+
+describe('literal escaping', () => {
+  // The Settings help text has always advertised `YYYY-[W]WW` → 2026-W23, but the
+  // formatter had no bracket support, so the W inside the brackets was read as the
+  // week number and the promised format could not actually be typed.
+  test('[...] passes through verbatim so a literal W is expressible', () => {
+    expect(formatDate(new Date(2026, 6, 20), 'YYYY-[W]WW')).toBe('2026-W30')
+    expect(formatDate(new Date(2026, 0, 5), 'YYYY-[W]WW')).toBe('2026-W02')
+  })
+
+  test('brackets do not swallow tokens outside them', () => {
+    expect(formatDate(new Date(2026, 6, 17), '[week] WW [of] YYYY')).toBe('week 29 of 2026')
+  })
+
+  test('an empty bracket pair emits nothing', () => {
+    expect(formatDate(new Date(2026, 6, 17), 'YYYY[]MM')).toBe('202607')
+  })
+
+  test('unbracketed formats keep working', () => {
+    expect(formatDate(new Date(2026, 6, 17), 'YYYY-MM-DD')).toBe('2026-07-17')
+    expect(formatDate(new Date(2026, 6, 17), 'YYYY-WW')).toBe('2026-29')
+  })
+})

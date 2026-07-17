@@ -55,7 +55,7 @@ function weeklyTemplateContent(): string | undefined {
 export function openThisWeekNote(now: Date = new Date()): string {
   const settings = useSettingsStore.getState()
   const folder = weeklyNotesFolder.get()
-  const format = settings.weeklyNoteDateFormat || 'YYYY-WW'
+  const format = settings.weeklyNoteDateFormat || 'YYYY-[W]WW'
   return openPeriodicNote(now, folder, format, weeklyTemplateContent())
 }
 
@@ -67,7 +67,7 @@ export function openThisWeekNote(now: Date = new Date()): string {
 export function openWeekNote(weekStartDate: Date): string {
   const settings = useSettingsStore.getState()
   const folder = weeklyNotesFolder.get()
-  const format = settings.weeklyNoteDateFormat || 'YYYY-WW'
+  const format = settings.weeklyNoteDateFormat || 'YYYY-[W]WW'
   return openPeriodicNote(weekStartDate, folder, format, weeklyTemplateContent())
 }
 
@@ -77,7 +77,7 @@ export function openWeekNote(weekStartDate: Date): string {
 // the right-click menu can branch on "has note" without an open call.
 export function findWeeklyNoteId(weekStartDate: Date): { id: string | null; title: string } {
   const settings = useSettingsStore.getState()
-  const format = settings.weeklyNoteDateFormat || 'YYYY-WW'
+  const format = settings.weeklyNoteDateFormat || 'YYYY-[W]WW'
   const title = formatDate(weekStartDate, format)
   const folder = weeklyNotesFolder.get()
   const segments = folder.split('/')

@@ -36,7 +36,10 @@ function pad(n: number): string {
 
 // Single regex captures every supported token in one pass, longest
 // alternative first so the lexer doesn't bail on a shorter prefix.
-const TOKEN_RE = /YYYY|YY|MMMM|MMM|MM|M|DD|D|dddd|ddd|WW|W|Q/g
+// `[...]` escapes a literal, the moment.js/Obsidian convention: "YYYY-[W]WW" -> "2026-W30".
+// It has to lead the alternation so the lexer swallows the whole bracket group before it
+// can see the tokens inside — otherwise the W in [W] is read as the week number.
+const TOKEN_RE = /\[([^\]]*)\]|YYYY|YY|MMMM|MMM|MM|M|DD|D|dddd|ddd|WW|W|Q/g
 
 // ISO 8601 week number — Thursday of the current week determines the
 // year-week pair. Weeks start on Monday. Returns 1..53.
@@ -59,7 +62,8 @@ export function formatDate(date: Date, format: string): string {
   const week = isoWeek(date)
   const quarter = Math.floor(month0 / 3) + 1
 
-  return format.replace(TOKEN_RE, (token) => {
+  return format.replace(TOKEN_RE, (token, literal: string | undefined) => {
+    if (literal !== undefined) return literal // bracketed text passes through verbatim
     switch (token) {
       case 'YYYY': return String(year)
       case 'YY':   return String(year).slice(-2)
