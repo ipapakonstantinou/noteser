@@ -46,6 +46,10 @@ export function WikilinkAutocomplete({
       const hit = aliases.find(a => a.toLowerCase().includes(q))
       if (hit) rows.push({ note, matchedAlias: hit })
     }
+    // Newest first. Titles here are overwhelmingly dated daily notes, and with the
+    // 8-row cap an ascending order surfaces only the OLDEST matches — typing "[[202"
+    // offered 2024 and never reached this year.
+    rows.sort((a, b) => b.note.title.localeCompare(a.note.title))
     return rows.slice(0, 8)
   }, [notes, query])
 
@@ -86,12 +90,13 @@ export function WikilinkAutocomplete({
 
   return createPortal(
     <div
-      className="fixed z-[9999] bg-obsidianGray border border-obsidianBorder rounded-lg shadow-obsidian overflow-hidden min-w-[200px] max-w-[320px] max-h-72 overflow-y-auto"
+      className="fixed z-9999 bg-obsidianGray border border-obsidianBorder rounded-lg shadow-obsidian overflow-hidden min-w-[200px] max-w-[320px] max-h-72 overflow-y-auto"
       style={{ top, left: position.left }}
     >
       {filtered.map(({ note, matchedAlias }, i) => (
         <div
           key={note.id}
+          data-testid="wikilink-row"
           ref={i === activeIndex ? activeRef : null}
           className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer transition-colors ${
             i === activeIndex
@@ -104,7 +109,7 @@ export function WikilinkAutocomplete({
           }}
           onMouseEnter={() => setActiveIndex(i)}
         >
-          <DocumentTextIcon className="w-4 h-4 flex-shrink-0" />
+          <DocumentTextIcon className="w-4 h-4 shrink-0" />
           <span className="truncate">{note.title}</span>
           {matchedAlias && (
             <span className="truncate text-xs text-obsidianSecondaryText/70 italic">
