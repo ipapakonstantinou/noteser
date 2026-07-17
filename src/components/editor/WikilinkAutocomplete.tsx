@@ -20,6 +20,9 @@ interface WikilinkAutocompleteProps {
 interface AutocompleteRow {
   note: Note
   matchedAlias: string | null
+  // Query matched at the start of the title/alias rather than somewhere inside it.
+  // Ranks above mere substring hits — see the sort below.
+  isPrefix: boolean
 }
 
 export function WikilinkAutocomplete({
@@ -36,20 +39,28 @@ export function WikilinkAutocomplete({
     const q = query.toLowerCase()
     const rows: AutocompleteRow[] = []
     for (const note of notes) {
-      if (note.title.toLowerCase().includes(q)) {
-        rows.push({ note, matchedAlias: null })
+      const title = note.title.toLowerCase()
+      if (title.includes(q)) {
+        rows.push({ note, matchedAlias: null, isPrefix: title.startsWith(q) })
         continue
       }
       // Title didn't match — check aliases. We show the FIRST alias that
       // matched the query so the user can see why this row appeared.
       const aliases = getAliasesForNote(note)
       const hit = aliases.find(a => a.toLowerCase().includes(q))
-      if (hit) rows.push({ note, matchedAlias: hit })
+      if (hit) rows.push({ note, matchedAlias: hit, isPrefix: hit.toLowerCase().startsWith(q) })
     }
-    // Newest first. Titles here are overwhelmingly dated daily notes, and with the
-    // 8-row cap an ascending order surfaces only the OLDEST matches — typing "[[202"
-    // offered 2024 and never reached this year.
-    rows.sort((a, b) => b.note.title.localeCompare(a.note.title))
+    // Rank: what the query STARTS, then newest first.
+    //
+    // Both halves are load-bearing. The filter is `includes`, so "2026-0" also matches
+    // "Worklog 2026-07-16" — without the prefix rank those crowd out the daily note the
+    // query is plainly reaching for (and reverse-alphabetically "W" even sorts above "2").
+    // Within a group, newest first: these titles are dated, and the 8-row cap below would
+    // otherwise show only the oldest matches.
+    rows.sort(
+      (a, b) =>
+        Number(b.isPrefix) - Number(a.isPrefix) || b.note.title.localeCompare(a.note.title)
+    )
     return rows.slice(0, 8)
   }, [notes, query])
 

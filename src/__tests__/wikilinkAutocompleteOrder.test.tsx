@@ -36,6 +36,20 @@ describe('WikilinkAutocomplete ordering', () => {
     expect(titlesShown()).toEqual(['2026-07-17', '2025-01-02', '2024-02-23'])
   })
 
+  it('ranks what the query starts above what merely contains it', () => {
+    // The filter is `includes`, so "2026-0" also hits every "Worklog 2026-..." note.
+    // Those must not crowd out the daily note the query is reaching for.
+    const notes = [
+      note('Worklog 2026-07-16'),
+      note('Worklog IIA classifier 2026-06-15'),
+      note('2026-07-17'),
+      note('Worklog 2026-07-15'),
+      note('2026-07-16'),
+    ]
+    render(<WikilinkAutocomplete query="2026-0" notes={notes} {...props} />)
+    expect(titlesShown().slice(0, 2)).toEqual(['2026-07-17', '2026-07-16'])
+  })
+
   it('keeps the newest inside the 8-row cap when many match', () => {
     // 12 dated notes ascending; the cap must not strand the recent ones off-list
     const notes = Array.from({ length: 12 }, (_, i) =>
