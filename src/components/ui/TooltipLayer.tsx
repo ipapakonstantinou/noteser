@@ -181,7 +181,7 @@ export function TooltipLayer() {
       document.removeEventListener('keydown', onKeyDown, true)
       document.removeEventListener('mousedown', dismiss, true)
       window.removeEventListener('scroll', dismiss, true)
-      window.removeEventListener('blur', dismiss)
+      window.removeEventListener('blur-sm', dismiss)
       clearTimer()
     }
   }, [clearTimer, hide])
@@ -214,7 +214,7 @@ function TooltipBubble({ text, anchor }: { text: string; anchor: DOMRect }) {
     <div
       ref={ref}
       role="tooltip"
-      className="fixed z-[9999] pointer-events-none select-none max-w-xs rounded-md border border-obsidianBorder bg-obsidianDarkGray px-2 py-1 text-xs leading-snug text-obsidianText shadow-obsidian"
+      className="fixed z-9999 pointer-events-none select-none max-w-xs rounded-md border border-obsidianBorder bg-obsidianDarkGray px-2 py-1 text-xs leading-snug text-obsidianText shadow-obsidian"
       style={{
         left: pos?.left ?? -9999,
         top: pos?.top ?? -9999,

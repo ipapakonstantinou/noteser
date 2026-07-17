@@ -125,8 +125,8 @@ export const RevertToCommitModal = () => {
           <blockquote className="px-3 py-2 border-l-2 border-obsidianAccentPurple/50 text-xs text-obsidianText bg-obsidianDarkGray/40 rounded-r">
             {data.message || '(no commit message)'}
           </blockquote>
-          <div className="flex items-start gap-2 p-3 rounded bg-amber-900/20 border border-amber-900/40 text-amber-200">
-            <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2 p-3 rounded-sm bg-amber-900/20 border border-amber-900/40 text-amber-200">
+            <ExclamationTriangleIcon className="w-5 h-5 shrink-0 mt-0.5" />
             <div className="text-xs space-y-1 text-amber-200/90">
               <div>
                 Pushed notes get their content rewritten to match the
@@ -144,8 +144,8 @@ export const RevertToCommitModal = () => {
           </div>
 
           {error && (
-            <div className="flex items-start gap-2 p-3 rounded bg-red-900/20 border border-red-900/40 text-xs text-red-300">
-              <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <div className="flex items-start gap-2 p-3 rounded-sm bg-red-900/20 border border-red-900/40 text-xs text-red-300">
+              <ExclamationTriangleIcon className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
           )}
@@ -171,16 +171,16 @@ export const RevertToCommitModal = () => {
         // ── Step 2: show diff summary + push ──────────────────────────────
         <div className="space-y-4 text-sm">
           {!pushedOk ? (
-            <div className="flex items-start gap-2 p-3 rounded bg-emerald-900/20 border border-emerald-900/40 text-emerald-200">
-              <CheckCircleIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <div className="flex items-start gap-2 p-3 rounded-sm bg-emerald-900/20 border border-emerald-900/40 text-emerald-200">
+              <CheckCircleIcon className="w-5 h-5 shrink-0 mt-0.5" />
               <div className="text-xs space-y-0.5">
                 <div className="font-medium">Local state rewound to {data.shortSha}.</div>
                 <div className="text-obsidianSecondaryText">Push now to make GitHub match — it&apos;ll land as a new commit on top of the current branch.</div>
               </div>
             </div>
           ) : (
-            <div className="flex items-start gap-2 p-3 rounded bg-emerald-900/20 border border-emerald-900/40 text-emerald-200">
-              <CheckCircleIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <div className="flex items-start gap-2 p-3 rounded-sm bg-emerald-900/20 border border-emerald-900/40 text-emerald-200">
+              <CheckCircleIcon className="w-5 h-5 shrink-0 mt-0.5" />
               <div className="text-xs space-y-0.5">
                 <div className="font-medium">Pushed. Vault and remote both at {data.shortSha}.</div>
               </div>
@@ -195,8 +195,8 @@ export const RevertToCommitModal = () => {
           </dl>
 
           {error && (
-            <div className="flex items-start gap-2 p-3 rounded bg-red-900/20 border border-red-900/40 text-xs text-red-300">
-              <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <div className="flex items-start gap-2 p-3 rounded-sm bg-red-900/20 border border-red-900/40 text-xs text-red-300">
+              <ExclamationTriangleIcon className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
           )}

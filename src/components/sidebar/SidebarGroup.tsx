@@ -23,7 +23,7 @@ export interface SidebarGroupProps {
   //                vertical space lands somewhere.
   //   - 'fixed'  → height taken from `group.height` (user-resized
   //                or transient draft).
-  //   - 'auto'   → no explicit height; flex-shrink-0 so the strip + body
+  //   - 'auto'   → no explicit height; shrink-0 so the strip + body
   //                size to content. Used for groups that haven't been
   //                resized yet AND aren't the trailing fill target.
   // When `draftHeight` is set, it overrides group.height for the duration
@@ -83,7 +83,7 @@ export const SidebarGroup = ({
     : undefined
   const wrapperClass = !isCollapsed && layoutMode === 'fill'
     ? 'flex-1 min-h-0 flex flex-col border-t border-obsidianBorder'
-    : 'flex-shrink-0 flex flex-col border-t border-obsidianBorder'
+    : 'shrink-0 flex flex-col border-t border-obsidianBorder'
 
   return (
     <div
@@ -112,7 +112,7 @@ export const SidebarGroup = ({
           <button
             type="button"
             onClick={() => toggleGroupCollapsed(group.id)}
-            className="flex items-center justify-center w-5 h-5 rounded text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText transition-colors flex-none"
+            className="flex items-center justify-center w-5 h-5 rounded-sm text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText transition-colors flex-none"
             title={isCollapsed ? `Expand ${activePanelTitle}` : `Collapse ${activePanelTitle}`}
             aria-label={isCollapsed ? 'Expand sidebar group' : 'Collapse sidebar group'}
             aria-expanded={!isCollapsed}

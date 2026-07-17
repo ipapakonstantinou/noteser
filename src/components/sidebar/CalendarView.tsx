@@ -274,7 +274,7 @@ export const CalendarView = () => {
           extra 4px right margin (via gap-x-1) so the day columns get
           breathing room from the week numbers. User feedback 2026-06-04
           flagged the previous flush layout as "squeezed". */}
-      <div className="grid grid-cols-[18px_repeat(7,_1fr)] gap-x-1 mb-1">
+      <div className="grid grid-cols-[18px_repeat(7,1fr)] gap-x-1 mb-1">
         <div
           className="text-center text-[9px] text-obsidianSecondaryText/60 py-1"
           aria-label="ISO week number"
@@ -296,7 +296,7 @@ export const CalendarView = () => {
           start with a leading blank still anchor on the row's first
           REAL day (the Monday derived from that day is always the
           row's ISO-week Monday). */}
-      <div className="grid grid-cols-[18px_repeat(7,_1fr)] gap-x-1 gap-y-0.5">
+      <div className="grid grid-cols-[18px_repeat(7,1fr)] gap-x-1 gap-y-0.5">
         {Array.from({ length: Math.ceil(cells.length / 7) }, (_, rowIdx) => {
           const rowStart = rowIdx * 7
           const rowCells = cells.slice(rowStart, rowStart + 7)
@@ -323,7 +323,7 @@ export const CalendarView = () => {
                 <button
                   onClick={() => openWeek(weekMonday)}
                   onContextMenu={(e) => onWeekContextMenu(e, weekMonday)}
-                  className="relative flex items-center justify-center rounded py-1 text-[9px] text-obsidianSecondaryText/70 hover:bg-obsidianHighlight hover:text-obsidianText transition-colors"
+                  className="relative flex items-center justify-center rounded-sm py-1 text-[9px] text-obsidianSecondaryText/70 hover:bg-obsidianHighlight hover:text-obsidianText transition-colors"
                   data-testid={`calendar-week-${weekMonday.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`}
                   title={`Week ${weekNumber} — open or create weekly note`}
                   aria-label={`Open weekly note for week ${weekNumber}`}

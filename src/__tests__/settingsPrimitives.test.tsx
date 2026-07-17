@@ -107,7 +107,7 @@ describe('SettingsTextInput', () => {
     expect(onCommit).not.toHaveBeenCalled()
   })
 
-  test('commits on blur with the draft value', async () => {
+  test('commits on blur-sm with the draft value', async () => {
     const user = userEvent.setup()
     const onCommit = jest.fn()
     render(
@@ -134,7 +134,7 @@ describe('SettingsTextInput', () => {
     expect(onCommit).toHaveBeenCalledWith('world')
   })
 
-  test('Escape: programmatic blur fires commit with stale draft (known behaviour)', async () => {
+  test('Escape: programmatic blur-sm fires commit with stale draft (known behaviour)', async () => {
     // Escape sets draft → prop-value, then calls .blur() which fires onBlur →
     // commit() synchronously. Because React state hasn't re-rendered yet at
     // that point, commit() reads the pre-Escape draft ("world") and calls

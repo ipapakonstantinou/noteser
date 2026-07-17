@@ -43,7 +43,7 @@ export const CompareView = ({ tabId, leftNoteId, rightNoteId }: Props) => {
   return (
     <div className="flex-1 h-full flex flex-col overflow-hidden bg-obsidianBlack">
       <div className="px-4 py-2 border-b border-obsidianBorder flex items-center gap-2">
-        <DocumentDuplicateIcon className="w-5 h-5 flex-shrink-0 text-obsidianAccentPurple" />
+        <DocumentDuplicateIcon className="w-5 h-5 shrink-0 text-obsidianAccentPurple" />
         <div className="flex-1 min-w-0">
           <div className="text-sm text-obsidianText truncate">
             {left.title || 'Untitled'} <span className="text-obsidianSecondaryText">↔</span> {right.title || 'Untitled'}
@@ -120,7 +120,7 @@ const SidePanel = ({
   side: 'left' | 'right'
   rows: DisplayRow[]
 }) => (
-  <div className="border border-obsidianBorder rounded overflow-hidden">
+  <div className="border border-obsidianBorder rounded-sm overflow-hidden">
     <div className="px-2 py-1 bg-obsidianDarkGray text-obsidianText border-b border-obsidianBorder truncate" title={title}>
       {title}
     </div>
@@ -137,10 +137,10 @@ const SidePanel = ({
             : ''
         return (
           <div key={idx} className={`flex ${bg}`} data-testid={`compare-row-${side}`}>
-            <div className="select-none w-10 text-right pr-2 py-0.5 text-obsidianSecondaryText/60 flex-shrink-0">
+            <div className="select-none w-10 text-right pr-2 py-0.5 text-obsidianSecondaryText/60 shrink-0">
               {lineNo ?? ''}
             </div>
-            <pre className="flex-1 py-0.5 px-2 text-obsidianText whitespace-pre-wrap break-words min-w-0">
+            <pre className="flex-1 py-0.5 px-2 text-obsidianText whitespace-pre-wrap wrap-break-word min-w-0">
               {present ? (text === '' ? ' ' : text) : ''}
             </pre>
           </div>

@@ -86,7 +86,7 @@ export function WikilinkAutocomplete({
 
   return createPortal(
     <div
-      className="fixed z-[9999] bg-obsidianGray border border-obsidianBorder rounded-lg shadow-obsidian overflow-hidden min-w-[200px] max-w-[320px] max-h-72 overflow-y-auto"
+      className="fixed z-9999 bg-obsidianGray border border-obsidianBorder rounded-lg shadow-obsidian overflow-hidden min-w-[200px] max-w-[320px] max-h-72 overflow-y-auto"
       style={{ top, left: position.left }}
     >
       {filtered.map(({ note, matchedAlias }, i) => (
@@ -104,7 +104,7 @@ export function WikilinkAutocomplete({
           }}
           onMouseEnter={() => setActiveIndex(i)}
         >
-          <DocumentTextIcon className="w-4 h-4 flex-shrink-0" />
+          <DocumentTextIcon className="w-4 h-4 shrink-0" />
           <span className="truncate">{note.title}</span>
           {matchedAlias && (
             <span className="truncate text-xs text-obsidianSecondaryText/70 italic">

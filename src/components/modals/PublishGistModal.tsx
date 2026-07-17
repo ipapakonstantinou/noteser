@@ -257,7 +257,7 @@ export const PublishGistModal = () => {
               value={description}
               onChange={e => setDescription(e.target.value)}
               placeholder="Optional — defaults to the note title"
-              className="w-full px-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded text-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple"
+              className="w-full px-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden focus:border-obsidianAccentPurple"
               autoFocus
               data-testid="publish-gist-description"
             />
@@ -304,7 +304,7 @@ export const PublishGistModal = () => {
           </div>
 
           {scopeFlow && (
-            <div className="space-y-2 p-3 rounded bg-obsidianDarkGray border border-obsidianAccentPurple/40">
+            <div className="space-y-2 p-3 rounded-sm bg-obsidianDarkGray border border-obsidianAccentPurple/40">
               <p className="text-xs text-obsidianSecondaryText">
                 Enter this code on GitHub to grant the gist scope. The
                 modal will retry publishing as soon as you authorise.
@@ -324,7 +324,7 @@ export const PublishGistModal = () => {
                   // failed clipboard write does not block authorisation.
                   navigator.clipboard?.writeText(scopeFlow.user_code).catch(() => {})
                 }}
-                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-obsidianAccentPurple text-white rounded text-sm hover:bg-opacity-90 transition-colors no-underline"
+                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-obsidianAccentPurple text-white rounded-sm text-sm hover:bg-opacity-90 transition-colors no-underline"
                 data-testid="publish-gist-scope-link"
               >
                 <ArrowTopRightOnSquareIcon className="w-4 h-4" />
@@ -334,8 +334,8 @@ export const PublishGistModal = () => {
           )}
 
           {error && (
-            <div className="flex items-start gap-2 p-3 rounded bg-red-900/20 border border-red-900/40 text-xs text-red-300">
-              <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <div className="flex items-start gap-2 p-3 rounded-sm bg-red-900/20 border border-red-900/40 text-xs text-red-300">
+              <ExclamationTriangleIcon className="w-4 h-4 shrink-0 mt-0.5" />
               <div className="flex-1">
                 <div>{error}</div>
                 {scopeError && (
@@ -378,8 +378,8 @@ export const PublishGistModal = () => {
         </div>
       ) : (
         <div className="space-y-4" data-testid="publish-gist-result">
-          <div className="flex items-start gap-2 p-3 rounded bg-emerald-900/20 border border-emerald-900/40 text-sm text-emerald-200">
-            <CheckIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2 p-3 rounded-sm bg-emerald-900/20 border border-emerald-900/40 text-sm text-emerald-200">
+            <CheckIcon className="w-5 h-5 shrink-0 mt-0.5" />
             <div>
               <div className="font-medium">Gist published</div>
               <div className="text-xs text-obsidianSecondaryText mt-0.5">
@@ -397,14 +397,14 @@ export const PublishGistModal = () => {
                 type="text"
                 readOnly
                 value={result.htmlUrl}
-                className="flex-1 px-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded text-xs text-obsidianText font-mono"
+                className="flex-1 px-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-xs text-obsidianText font-mono"
                 onClick={e => (e.target as HTMLInputElement).select()}
                 data-testid="publish-gist-url"
               />
               <button
                 type="button"
                 onClick={handleCopy}
-                className="px-3 py-2 rounded border border-obsidianBorder bg-obsidianDarkGray text-obsidianSecondaryText hover:text-obsidianText hover:border-obsidianAccentPurple transition-colors"
+                className="px-3 py-2 rounded-sm border border-obsidianBorder bg-obsidianDarkGray text-obsidianSecondaryText hover:text-obsidianText hover:border-obsidianAccentPurple transition-colors"
                 title="Copy URL to clipboard"
                 data-testid="publish-gist-copy"
               >
@@ -414,7 +414,7 @@ export const PublishGistModal = () => {
                 href={result.htmlUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-3 py-2 rounded border border-obsidianBorder bg-obsidianDarkGray text-obsidianSecondaryText hover:text-obsidianText hover:border-obsidianAccentPurple transition-colors"
+                className="px-3 py-2 rounded-sm border border-obsidianBorder bg-obsidianDarkGray text-obsidianSecondaryText hover:text-obsidianText hover:border-obsidianAccentPurple transition-colors"
                 title="Open gist on GitHub"
               >
                 <ArrowTopRightOnSquareIcon className="w-4 h-4" />

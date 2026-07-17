@@ -230,7 +230,7 @@ export const GitHubAuthModal = () => {
             target="_blank"
             rel="noopener noreferrer"
             onClick={handleAnchorClick}
-            className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-obsidianAccentPurple text-white rounded text-sm hover:bg-opacity-90 transition-colors no-underline"
+            className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-obsidianAccentPurple text-white rounded-sm text-sm hover:bg-opacity-90 transition-colors no-underline"
           >
             <ArrowTopRightOnSquareIcon className="w-4 h-4" />
             {copied ? 'Code copied — Opening GitHub…' : 'Copy code & Open GitHub'}
@@ -300,8 +300,8 @@ export const GitHubAuthModal = () => {
 
       {showDeviceViews && status.kind === 'error' && (
         <div className="space-y-4">
-          <div className="flex items-start gap-2 p-3 bg-red-900/20 border border-red-900/40 rounded">
-            <ExclamationCircleIcon className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2 p-3 bg-red-900/20 border border-red-900/40 rounded-sm">
+            <ExclamationCircleIcon className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
             <p className="text-sm text-red-300">{status.message}</p>
           </div>
           <div className="flex justify-end gap-2">

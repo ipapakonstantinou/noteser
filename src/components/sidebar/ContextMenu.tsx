@@ -664,7 +664,7 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
                 onChange={e => setMoveSearch(e.target.value)}
                 placeholder="Filter folders…"
                 autoFocus
-                className="w-[calc(100%-1.5rem)] mx-3 my-1 px-2 py-1 bg-obsidianDarkGray border border-obsidianBorder rounded text-xs text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple"
+                className="w-[calc(100%-1.5rem)] mx-3 my-1 px-2 py-1 bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-xs text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden focus:border-obsidianAccentPurple"
               />
               <div className="max-h-60 overflow-y-auto">
                 <button

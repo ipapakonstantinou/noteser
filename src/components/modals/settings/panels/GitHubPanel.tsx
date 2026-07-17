@@ -140,7 +140,7 @@ function VaultEncryptionField() {
         <button
           type="button"
           onClick={() => openModal({ type: 'vault-encryption', data: { mode: 'enable', returnTo: 'settings' } })}
-          className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors"
+          className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded-sm hover:bg-obsidianAccentPurple/25 transition-colors"
           data-testid="settings-encryption-enable"
         >
           Enable encryption…
@@ -160,7 +160,7 @@ function VaultEncryptionField() {
                   const { lockVault } = await import('@/utils/vaultKey')
                   lockVault()
                 }}
-                className="px-3 py-1.5 text-sm border border-obsidianBorder text-obsidianText rounded hover:bg-obsidianHighlight transition-colors"
+                className="px-3 py-1.5 text-sm border border-obsidianBorder text-obsidianText rounded-sm hover:bg-obsidianHighlight transition-colors"
                 data-testid="settings-encryption-lock"
               >
                 Lock now
@@ -169,7 +169,7 @@ function VaultEncryptionField() {
               <button
                 type="button"
                 onClick={() => openModal({ type: 'vault-encryption', data: { mode: 'unlock', returnTo: 'settings' } })}
-                className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors"
+                className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded-sm hover:bg-obsidianAccentPurple/25 transition-colors"
                 data-testid="settings-encryption-unlock"
               >
                 Unlock…
@@ -183,7 +183,7 @@ function VaultEncryptionField() {
               <button
                 type="button"
                 onClick={() => openModal({ type: 'vault-encryption', data: { mode: 'change', returnTo: 'settings' } })}
-                className="px-3 py-1.5 text-sm border border-obsidianBorder text-obsidianText rounded hover:bg-obsidianHighlight transition-colors"
+                className="px-3 py-1.5 text-sm border border-obsidianBorder text-obsidianText rounded-sm hover:bg-obsidianHighlight transition-colors"
                 data-testid="settings-encryption-change"
               >
                 Change passphrase…
@@ -192,7 +192,7 @@ function VaultEncryptionField() {
             <button
               type="button"
               onClick={() => openModal({ type: 'vault-encryption', data: { mode: 'confirm-disable', returnTo: 'settings' } })}
-              className="px-3 py-1.5 text-sm border border-red-900/40 text-red-300 rounded hover:bg-red-900/20 transition-colors"
+              className="px-3 py-1.5 text-sm border border-red-900/40 text-red-300 rounded-sm hover:bg-red-900/20 transition-colors"
               data-testid="settings-encryption-disable"
             >
               Disable encryption…
@@ -264,7 +264,7 @@ function ResetToRemoteField() {
             Reset local to match remote…
           </Button>
         ) : (
-          <div ref={confirmRef} className="space-y-2 p-3 border border-amber-900/40 rounded bg-amber-900/10">
+          <div ref={confirmRef} className="space-y-2 p-3 border border-amber-900/40 rounded-sm bg-amber-900/10">
             <div className="text-sm text-amber-200">
               This drops every local note that has a synced path. The next pull will re-create them from the repo. There is no undo.
             </div>
@@ -350,7 +350,7 @@ function VaultGitignoreField() {
             type="button"
             onClick={handleFetch}
             disabled={!connected || fetching}
-            className="px-2 py-1 text-xs rounded border border-obsidianBorder bg-obsidianDarkGray text-obsidianText hover:border-obsidianAccentPurple disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-2 py-1 text-xs rounded-sm border border-obsidianBorder bg-obsidianDarkGray text-obsidianText hover:border-obsidianAccentPurple disabled:opacity-50 disabled:cursor-not-allowed"
             data-testid="vault-gitignore-fetch"
           >
             {fetching ? 'Fetching…' : (hasContent ? 'Refetch from sync repo' : 'Fetch from sync repo')}
@@ -384,7 +384,7 @@ function VaultGitignoreField() {
           rows={6}
           spellCheck={false}
           disabled={!connected}
-          className="w-full px-2 py-1.5 text-sm bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple font-mono resize-y disabled:opacity-50"
+          className="w-full px-2 py-1.5 text-sm bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden focus:border-obsidianAccentPurple font-mono resize-y disabled:opacity-50"
           data-testid="vault-gitignore-textarea"
         />
       </div>
@@ -413,7 +413,7 @@ function GitignoreOverlayField() {
         placeholder={'# extras only on this device\n*.scratch\n!important.scratch'}
         rows={5}
         spellCheck={false}
-        className="w-full px-2 py-1.5 text-sm bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple font-mono resize-y"
+        className="w-full px-2 py-1.5 text-sm bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden focus:border-obsidianAccentPurple font-mono resize-y"
         data-testid="local-gitignore-overlay"
       />
     </Field>

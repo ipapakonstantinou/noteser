@@ -87,7 +87,7 @@ export const BacklinksView = () => {
               <li key={r.noteId}>
                 <button
                   onClick={() => openNote(r.noteId, { preview: false })}
-                  className="w-full text-left rounded px-2 py-1.5 hover:bg-obsidianDarkGray transition-colors group"
+                  className="w-full text-left rounded-sm px-2 py-1.5 hover:bg-obsidianDarkGray transition-colors group"
                   title={r.title}
                 >
                   <div className="text-sm text-obsidianText truncate group-hover:text-obsidianAccentPurple">

@@ -71,7 +71,7 @@ export function TagAutocomplete({ query, tags, position, onSelect, onClose }: Ta
 
   return createPortal(
     <div
-      className="fixed z-[9999] bg-obsidianGray border border-obsidianBorder rounded-lg shadow-obsidian overflow-hidden min-w-[200px] max-w-[320px] max-h-72 overflow-y-auto"
+      className="fixed z-9999 bg-obsidianGray border border-obsidianBorder rounded-lg shadow-obsidian overflow-hidden min-w-[200px] max-w-[320px] max-h-72 overflow-y-auto"
       style={{ top, left: position.left }}
       data-testid="tag-autocomplete"
     >
@@ -88,7 +88,7 @@ export function TagAutocomplete({ query, tags, position, onSelect, onClose }: Ta
           onMouseEnter={() => setActiveIndex(i)}
           data-testid={`tag-row-${name}`}
         >
-          <HashtagIcon className="w-4 h-4 flex-shrink-0" />
+          <HashtagIcon className="w-4 h-4 shrink-0" />
           <span className="truncate flex-1">{name}</span>
           <span className="text-xs text-obsidianSecondaryText/70 tabular-nums">{count}</span>
         </div>

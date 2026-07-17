@@ -77,7 +77,7 @@ export const EmailSignup = ({ source = 'site-landing', compact = false }: Props)
           // text inputs, which would otherwise leave the light obsidianText
           // colour unreadable on top of it.
           style={{ backgroundColor: 'var(--obsidian-black, #1b1b1b)', color: 'var(--obsidian-text, #dadada)' }}
-          className="flex-1 appearance-none px-3 py-2 rounded-md border border-obsidianBorder text-sm placeholder:text-obsidianSecondaryText focus:outline-none focus:border-noteserAccent disabled:opacity-60"
+          className="flex-1 appearance-none px-3 py-2 rounded-md border border-obsidianBorder text-sm placeholder:text-obsidianSecondaryText focus:outline-hidden focus:border-noteserAccent disabled:opacity-60"
         />
         <button
           type="submit"

@@ -156,7 +156,7 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
           }
         >
           <div className="flex items-center gap-3">
-            <FolderOpenIcon className={`w-6 h-6 flex-shrink-0 ${localFolderSupported ? 'text-obsidianAccentPurple' : 'text-obsidianSecondaryText'}`} />
+            <FolderOpenIcon className={`w-6 h-6 shrink-0 ${localFolderSupported ? 'text-obsidianAccentPurple' : 'text-obsidianSecondaryText'}`} />
             <div className="flex-1 min-w-0">
               <div className="text-base font-semibold text-obsidianText">
                 Open your existing vault
@@ -192,7 +192,7 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
             className="w-full text-left p-4 rounded-lg border border-obsidianAccentPurple/40 bg-obsidianAccentPurple/10 hover:bg-obsidianAccentPurple/20 hover:border-obsidianAccentPurple transition-colors"
           >
             <div className="flex items-center gap-3">
-              <CloudArrowUpIcon className="w-6 h-6 text-obsidianAccentPurple flex-shrink-0" />
+              <CloudArrowUpIcon className="w-6 h-6 text-obsidianAccentPurple shrink-0" />
               <div className="flex-1 min-w-0">
                 <div id="welcome-obsidian" className="text-base font-semibold text-obsidianText">
                   Coming from Obsidian?
@@ -272,9 +272,9 @@ export const WelcomePane = ({ tabId }: { tabId: string }) => {
             <li className="flex items-start gap-2">
               <SparklesIcon className="w-4 h-4 mt-0.5 text-obsidianSecondaryText" />
               <span className="text-obsidianText">
-                Press <kbd className="px-1 py-0.5 text-xs rounded bg-obsidianHighlight text-obsidianText">Ctrl</kbd>
+                Press <kbd className="px-1 py-0.5 text-xs rounded-sm bg-obsidianHighlight text-obsidianText">Ctrl</kbd>
                 {' + '}
-                <kbd className="px-1 py-0.5 text-xs rounded bg-obsidianHighlight text-obsidianText">K</kbd>
+                <kbd className="px-1 py-0.5 text-xs rounded-sm bg-obsidianHighlight text-obsidianText">K</kbd>
                 <span className="text-obsidianSecondaryText"> to search across every note. Toggle to semantic mode for concept matches.</span>
               </span>
             </li>
@@ -464,7 +464,7 @@ const FeatureTourCard = ({ onSeeded }: { onSeeded: () => void }) => {
       className="w-full text-left p-4 rounded-lg border border-obsidianAccentPurple/40 bg-obsidianAccentPurple/10 hover:bg-obsidianAccentPurple/20 hover:border-obsidianAccentPurple transition-colors disabled:opacity-60 disabled:cursor-progress"
     >
       <div className="flex items-center gap-3">
-        <BookOpenIcon className="w-6 h-6 text-obsidianAccentPurple flex-shrink-0" />
+        <BookOpenIcon className="w-6 h-6 text-obsidianAccentPurple shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="text-base font-semibold text-obsidianText">
             {busy ? 'Seeding tour…' : 'Take the feature tour'}

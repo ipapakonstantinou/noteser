@@ -68,7 +68,7 @@ export const BrokenLinksView = () => {
               <li key={r.noteId}>
                 <button
                   onClick={() => openNote(r.noteId, { preview: false })}
-                  className="w-full text-left rounded px-2 py-1 hover:bg-obsidianDarkGray transition-colors group"
+                  className="w-full text-left rounded-sm px-2 py-1 hover:bg-obsidianDarkGray transition-colors group"
                   title={r.title}
                 >
                   <div className="text-sm text-obsidianText truncate group-hover:text-obsidianAccentPurple">
@@ -80,7 +80,7 @@ export const BrokenLinksView = () => {
                     <li key={idx}>
                       <button
                         onClick={() => jumpTo(r.noteId, link.line)}
-                        className="w-full text-left rounded px-2 py-1 hover:bg-obsidianDarkGray transition-colors"
+                        className="w-full text-left rounded-sm px-2 py-1 hover:bg-obsidianDarkGray transition-colors"
                         title={`Line ${link.line}`}
                       >
                         <BrokenLinkLabel link={link} />

@@ -130,7 +130,7 @@ function FieldRow({
         type="text"
         value={field.key}
         onChange={e => onChange({ key: e.target.value })}
-        className="font-mono w-32 px-2 py-1 bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple"
+        className="font-mono w-32 px-2 py-1 bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden focus:border-obsidianAccentPurple"
       />
       <ValueInput field={field} onChange={onChange} />
       <button
@@ -177,7 +177,7 @@ function ValueInput({
           onChange({ value: next, isArray: true })
         }}
         placeholder="comma-separated"
-        className="flex-1 px-2 py-1 bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText focus:outline-none focus:border-obsidianAccentPurple"
+        className="flex-1 px-2 py-1 bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-obsidianText focus:outline-hidden focus:border-obsidianAccentPurple"
       />
     )
   }
@@ -188,7 +188,7 @@ function ValueInput({
         type="number"
         value={field.value}
         onChange={e => onChange({ value: e.target.value === '' ? 0 : Number(e.target.value) })}
-        className="flex-1 px-2 py-1 bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText focus:outline-none focus:border-obsidianAccentPurple"
+        className="flex-1 px-2 py-1 bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-obsidianText focus:outline-hidden focus:border-obsidianAccentPurple"
       />
     )
   }
@@ -199,7 +199,7 @@ function ValueInput({
       type="text"
       value={s}
       onChange={e => onChange({ value: e.target.value })}
-      className="flex-1 px-2 py-1 bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText focus:outline-none focus:border-obsidianAccentPurple"
+      className="flex-1 px-2 py-1 bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-obsidianText focus:outline-hidden focus:border-obsidianAccentPurple"
     />
   )
 }

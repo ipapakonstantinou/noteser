@@ -239,7 +239,7 @@ export const PluginsSettingsPanel = () => {
         <div className="text-sm text-obsidianText mb-1">Add a plugin</div>
         <p className="text-xs text-obsidianSecondaryText mb-2">
           Paste the URL of the plugin&apos;s manifest.json (e.g.{' '}
-          <code className="text-[11px] bg-obsidianHighlight/40 px-1 rounded">https://example.com/my-plugin/manifest.json</code>
+          <code className="text-[11px] bg-obsidianHighlight/40 px-1 rounded-sm">https://example.com/my-plugin/manifest.json</code>
           ).
         </p>
         <div className="flex gap-2">
@@ -248,7 +248,7 @@ export const PluginsSettingsPanel = () => {
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://…/manifest.json"
-            className="flex-1 appearance-none px-3 py-2 rounded-md border border-obsidianBorder bg-obsidianBlack/40 text-sm text-obsidianText placeholder:text-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple"
+            className="flex-1 appearance-none px-3 py-2 rounded-md border border-obsidianBorder bg-obsidianBlack/40 text-sm text-obsidianText placeholder:text-obsidianSecondaryText focus:outline-hidden focus:border-obsidianAccentPurple"
           />
           <button
             type="button"
@@ -265,7 +265,7 @@ export const PluginsSettingsPanel = () => {
       <section>
         <div className="text-sm text-obsidianText mb-1">Scan vault for plugins</div>
         <p className="text-xs text-obsidianSecondaryText mb-2">
-          Look through your vault for notes titled <code className="text-[11px] bg-obsidianHighlight/40 px-1 rounded">manifest.json</code> that declare a plugin. Each match shows up below with an Install button.
+          Look through your vault for notes titled <code className="text-[11px] bg-obsidianHighlight/40 px-1 rounded-sm">manifest.json</code> that declare a plugin. Each match shows up below with an Install button.
         </p>
         <button
           type="button"
@@ -305,7 +305,7 @@ export const PluginsSettingsPanel = () => {
                     </span>
                   </div>
                   <div className="text-xs text-obsidianSecondaryText mt-0.5">
-                    <code className="text-[11px] bg-obsidianHighlight/40 px-1 rounded">{c.manifest.id}</code>
+                    <code className="text-[11px] bg-obsidianHighlight/40 px-1 rounded-sm">{c.manifest.id}</code>
                     {c.manifest.author && <span> · by {c.manifest.author}</span>}
                   </div>
                   <div className="text-[11px] text-obsidianSecondaryText/80 mt-1 truncate">
@@ -371,7 +371,7 @@ export const PluginsSettingsPanel = () => {
                             were granted dangerous capabilities. */}
                         {grantedDestructive.length > 0 && (
                           <span
-                            className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide font-semibold text-red-300 bg-red-500/10 border border-red-500/40 px-1.5 py-0.5 rounded"
+                            className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide font-semibold text-red-300 bg-red-500/10 border border-red-500/40 px-1.5 py-0.5 rounded-sm"
                             title={grantedDestructive
                               .map((p) => PERMISSION_DESCRIPTIONS[p])
                               .join(' ')}
@@ -383,7 +383,7 @@ export const PluginsSettingsPanel = () => {
                         )}
                       </div>
                       <div className="text-xs text-obsidianSecondaryText mt-0.5">
-                        <code className="text-[11px] bg-obsidianHighlight/40 px-1 rounded">{m.id}</code>
+                        <code className="text-[11px] bg-obsidianHighlight/40 px-1 rounded-sm">{m.id}</code>
                         {m.author && <span> · by {m.author}</span>}
                       </div>
                       <div className="text-[11px] text-obsidianSecondaryText/80 mt-1 truncate">
@@ -404,7 +404,7 @@ export const PluginsSettingsPanel = () => {
                           type="button"
                           onClick={() => window.location.reload()}
                           title="Reload page to re-boot the plugin"
-                          className="p-1 rounded hover:bg-obsidianHighlight/40 text-obsidianSecondaryText hover:text-obsidianText"
+                          className="p-1 rounded-sm hover:bg-obsidianHighlight/40 text-obsidianSecondaryText hover:text-obsidianText"
                         >
                           <ArrowPathIcon className="w-4 h-4" />
                         </button>
@@ -412,7 +412,7 @@ export const PluginsSettingsPanel = () => {
                           type="button"
                           onClick={() => handleUninstall(m.id)}
                           title="Uninstall"
-                          className="p-1 rounded hover:bg-obsidianHighlight/40 text-obsidianSecondaryText hover:text-red-300"
+                          className="p-1 rounded-sm hover:bg-obsidianHighlight/40 text-obsidianSecondaryText hover:text-red-300"
                         >
                           <TrashIcon className="w-4 h-4" />
                         </button>
@@ -524,7 +524,7 @@ const PluginAuditPanel = () => {
                 {new Date(e.ts).toLocaleString()}
               </span>
               <span className="text-obsidianText">
-                <code className="text-[10px] bg-obsidianHighlight/40 px-1 rounded">
+                <code className="text-[10px] bg-obsidianHighlight/40 px-1 rounded-sm">
                   {e.pluginId}
                 </code>{' '}
                 <span

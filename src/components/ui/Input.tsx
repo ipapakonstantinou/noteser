@@ -28,7 +28,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             className={`
               w-full px-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded
               text-obsidianText placeholder-obsidianSecondaryText
-              focus:outline-none focus:ring-2 focus:ring-obsidianAccentPurple focus:border-transparent
+              focus:outline-hidden focus:ring-2 focus:ring-obsidianAccentPurple focus:border-transparent
               ${icon ? 'pl-10' : ''}
               ${error ? 'border-red-500' : ''}
               ${className}

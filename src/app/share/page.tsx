@@ -97,7 +97,7 @@ export default function SharePage() {
         <div className="max-w-md text-center space-y-4">
           <h1 className="text-2xl font-medium">Couldn&apos;t open this note</h1>
           <p className="text-obsidianSecondaryText">{error}</p>
-          <Link href="/" className="inline-block px-4 py-2 bg-obsidianAccentPurple/20 text-obsidianAccentPurple rounded hover:bg-obsidianAccentPurple/30">
+          <Link href="/" className="inline-block px-4 py-2 bg-obsidianAccentPurple/20 text-obsidianAccentPurple rounded-sm hover:bg-obsidianAccentPurple/30">
             Go to Noteser
           </Link>
         </div>
@@ -119,7 +119,7 @@ export default function SharePage() {
 
   return (
     <div className="min-h-screen bg-obsidianBlack text-obsidianText">
-      <header className="border-b border-obsidianBorder px-6 py-4 flex items-center justify-between bg-obsidianBlack/80 backdrop-blur sticky top-0 z-10 gap-4">
+      <header className="border-b border-obsidianBorder px-6 py-4 flex items-center justify-between bg-obsidianBlack/80 backdrop-blur-sm sticky top-0 z-10 gap-4">
         <div className="min-w-0">
           <div className="text-xs text-obsidianSecondaryText">Shared via Noteser · {generatedDate}</div>
           <h1 className="text-xl font-medium truncate">{note.title}</h1>
@@ -131,13 +131,13 @@ export default function SharePage() {
           <Link
             href={`/?import=${encodeURIComponent(fragment)}`}
             data-testid="share-import-cta"
-            className="text-sm px-3 py-1.5 bg-obsidianAccentPurple text-white rounded hover:bg-obsidianAccentPurple/85 transition-colors"
+            className="text-sm px-3 py-1.5 bg-obsidianAccentPurple text-white rounded-sm hover:bg-obsidianAccentPurple/85 transition-colors"
           >
             Import to my vault
           </Link>
           <Link
             href="/"
-            className="text-sm px-3 py-1.5 bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors"
+            className="text-sm px-3 py-1.5 bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded-sm hover:bg-obsidianAccentPurple/25 transition-colors"
           >
             Open Noteser →
           </Link>

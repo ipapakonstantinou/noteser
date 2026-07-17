@@ -48,7 +48,7 @@ export function AppearancePanel() {
               onClick={() => setThemeOverrides(preset.overrides)}
               title={preset.description}
               data-testid={`theme-preset-${preset.id}`}
-              className="px-3 py-1.5 text-sm rounded border border-obsidianBorder bg-obsidianDarkGray hover:bg-obsidianHighlight text-obsidianText"
+              className="px-3 py-1.5 text-sm rounded-sm border border-obsidianBorder bg-obsidianDarkGray hover:bg-obsidianHighlight text-obsidianText"
             >
               {preset.label}
             </button>
@@ -87,7 +87,7 @@ export function AppearancePanel() {
                   // format until the user picks a new value.
                   value={normalizeForPicker(value, token.defaultColor)}
                   onChange={e => setThemeToken(token.cssVar, e.target.value)}
-                  className="w-8 h-8 rounded border border-obsidianBorder bg-transparent cursor-pointer"
+                  className="w-8 h-8 rounded-sm border border-obsidianBorder bg-transparent cursor-pointer"
                   data-testid={`theme-input-${token.cssVar}`}
                 />
                 <span className="flex-1 truncate">{token.label}</span>
@@ -221,7 +221,7 @@ function FontSlotRow({
             spellCheck={false}
             placeholder="e.g. JetBrains Mono"
             data-testid={`font-custom-${slot.id}`}
-            className="block w-full bg-obsidianDarkGray border border-obsidianBorder rounded px-2 py-1 text-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple"
+            className="block w-full bg-obsidianDarkGray border border-obsidianBorder rounded-sm px-2 py-1 text-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden focus:border-obsidianAccentPurple"
           />
         )}
       </div>

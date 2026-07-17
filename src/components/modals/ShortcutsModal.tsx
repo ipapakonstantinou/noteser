@@ -34,7 +34,7 @@ export const ShortcutsModal = () => {
   const ShortcutRow = ({ shortcut }: { shortcut: typeof KEYBOARD_SHORTCUTS[0] }) => (
     <div className="flex items-center justify-between py-2">
       <span className="text-obsidianText">{shortcut.description}</span>
-      <kbd className="px-2 py-1 bg-obsidianDarkGray border border-obsidianBorder rounded text-xs font-mono text-obsidianSecondaryText">
+      <kbd className="px-2 py-1 bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-xs font-mono text-obsidianSecondaryText">
         {formatKey(shortcut)}
       </kbd>
     </div>

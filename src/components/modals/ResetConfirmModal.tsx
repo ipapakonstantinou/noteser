@@ -35,7 +35,7 @@ export function ResetConfirmModal({
         </p>
 
         {hasUnsynced && (
-          <div className="rounded border border-yellow-700/40 bg-yellow-900/10 p-3 text-yellow-200">
+          <div className="rounded-sm border border-yellow-700/40 bg-yellow-900/10 p-3 text-yellow-200">
             <strong>Heads up:</strong> you have local notes that haven&apos;t
             been pushed to GitHub yet. Sync them first (Sidebar → GitHub →
             Sync) if you want them preserved.

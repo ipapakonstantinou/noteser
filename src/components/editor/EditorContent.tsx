@@ -452,14 +452,14 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
       return (
         <PrismHighlighter
           language={language}
-          className="rounded-lg !bg-obsidianDarkGray !mt-2 !mb-2"
+          className="rounded-lg !bg-obsidianDarkGray mt-2! mb-2!"
         >
           {String(children).replace(/\n$/, '')}
         </PrismHighlighter>
       )
     }
     return (
-      <code className={`${className} px-1 py-0.5 bg-obsidianDarkGray rounded text-sm`} {...props}>
+      <code className={`${className} px-1 py-0.5 bg-obsidianDarkGray rounded-sm text-sm`} {...props}>
         {children}
       </code>
     )
@@ -595,7 +595,7 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
     <div className="relative flex-1 h-full overflow-hidden flex flex-col">
       {noteLoading && (
         <div
-          className="absolute top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full bg-obsidianDarkGray/90 border border-obsidianBorder text-xs text-obsidianSecondaryText shadow"
+          className="absolute top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full bg-obsidianDarkGray/90 border border-obsidianBorder text-xs text-obsidianSecondaryText shadow-sm"
           data-testid="note-loading-hint"
         >
           <span className="inline-block w-3 h-3 border-2 border-obsidianSecondaryText/40 border-t-obsidianAccentPurple rounded-full animate-spin" />

@@ -45,7 +45,7 @@ export const InterGroupDropZone = ({ active, onDropId }: InterGroupDropZoneProps
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`${active ? 'h-6' : 'h-0'} transition-all flex-shrink-0 flex items-center justify-center text-[10px] uppercase tracking-wide ${
+      className={`${active ? 'h-6' : 'h-0'} transition-all shrink-0 flex items-center justify-center text-[10px] uppercase tracking-wide ${
         hot
           ? 'bg-obsidianAccentPurple text-white'
           : active

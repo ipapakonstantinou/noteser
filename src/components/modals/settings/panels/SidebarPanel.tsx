@@ -25,12 +25,12 @@ export function SidebarPanel() {
       </p>
 
       {hiddenPanels.length === 0 ? (
-        <div className="text-sm text-obsidianSecondaryText italic px-2 py-3 border border-obsidianBorder rounded">
+        <div className="text-sm text-obsidianSecondaryText italic px-2 py-3 border border-obsidianBorder rounded-sm">
           No hidden tabs. Right-click any sidebar tab icon to hide it.
         </div>
       ) : (
         <div
-          className="border border-obsidianBorder rounded divide-y divide-obsidianBorder"
+          className="border border-obsidianBorder rounded-sm divide-y divide-obsidianBorder"
           data-testid="settings-hidden-tabs"
         >
           {hiddenPanels.map(p => {
@@ -48,7 +48,7 @@ export function SidebarPanel() {
                 <button
                   type="button"
                   onClick={() => showSidebarTab(p.id)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs text-obsidianAccentPurple hover:bg-obsidianHighlight rounded transition-colors"
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-obsidianAccentPurple hover:bg-obsidianHighlight rounded-sm transition-colors"
                   data-testid={`settings-show-tab-${p.id}`}
                 >
                   <EyeIcon className="w-3.5 h-3.5" />

@@ -145,8 +145,8 @@ export const VaultEncryptionModal = () => {
     return (
       <Modal isOpen={isOpen} onClose={dismiss} title="Enable vault encryption" size="md">
         <div className="space-y-4 text-sm">
-          <div className="flex items-start gap-2 p-3 rounded bg-amber-900/20 border border-amber-900/40 text-amber-200">
-            <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2 p-3 rounded-sm bg-amber-900/20 border border-amber-900/40 text-amber-200">
+            <ExclamationTriangleIcon className="w-5 h-5 shrink-0 mt-0.5" />
             <div className="space-y-1 text-xs">
               <div className="font-medium">Read this first.</div>
               <ul className="list-disc pl-4 space-y-0.5 text-amber-200/80">
@@ -183,8 +183,8 @@ export const VaultEncryptionModal = () => {
           )}
 
           {error && (
-            <div className="flex items-start gap-2 p-3 rounded bg-red-900/20 border border-red-900/40 text-xs text-red-300">
-              <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <div className="flex items-start gap-2 p-3 rounded-sm bg-red-900/20 border border-red-900/40 text-xs text-red-300">
+              <ExclamationTriangleIcon className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
           )}
@@ -246,8 +246,8 @@ export const VaultEncryptionModal = () => {
             onSubmit={handleUnlock}
           />
           {error && (
-            <div className="flex items-start gap-2 p-3 rounded bg-red-900/20 border border-red-900/40 text-xs text-red-300">
-              <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <div className="flex items-start gap-2 p-3 rounded-sm bg-red-900/20 border border-red-900/40 text-xs text-red-300">
+              <ExclamationTriangleIcon className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
           )}
@@ -322,8 +322,8 @@ export const VaultEncryptionModal = () => {
     return (
       <Modal isOpen={isOpen} onClose={dismiss} title="Change vault passphrase" size="md">
         <div className="space-y-4 text-sm">
-          <div className="flex items-start gap-2 p-3 rounded bg-amber-900/20 border border-amber-900/40 text-amber-200">
-            <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2 p-3 rounded-sm bg-amber-900/20 border border-amber-900/40 text-amber-200">
+            <ExclamationTriangleIcon className="w-5 h-5 shrink-0 mt-0.5" />
             <div className="space-y-1 text-xs">
               <div className="font-medium">Before you change it.</div>
               <ul className="list-disc pl-4 space-y-0.5 text-amber-200/80">
@@ -370,8 +370,8 @@ export const VaultEncryptionModal = () => {
           )}
 
           {error && (
-            <div className="flex items-start gap-2 p-3 rounded bg-red-900/20 border border-red-900/40 text-xs text-red-300">
-              <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <div className="flex items-start gap-2 p-3 rounded-sm bg-red-900/20 border border-red-900/40 text-xs text-red-300">
+              <ExclamationTriangleIcon className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
           )}
@@ -405,8 +405,8 @@ export const VaultEncryptionModal = () => {
   return (
     <Modal isOpen={isOpen} onClose={dismiss} title="Disable vault encryption" size="md">
       <div className="space-y-4 text-sm">
-        <div className="flex items-start gap-2 p-3 rounded bg-amber-900/20 border border-amber-900/40 text-amber-200">
-          <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+        <div className="flex items-start gap-2 p-3 rounded-sm bg-amber-900/20 border border-amber-900/40 text-amber-200">
+          <ExclamationTriangleIcon className="w-5 h-5 shrink-0 mt-0.5" />
           <div className="space-y-1 text-xs">
             <div className="font-medium">Heads up.</div>
             <ul className="list-disc pl-4 space-y-0.5 text-amber-200/80">
@@ -456,7 +456,7 @@ const PassphraseField = ({
           onSubmit()
         }
       }}
-      className="w-full px-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded text-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple"
+      className="w-full px-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden focus:border-obsidianAccentPurple"
       autoComplete="new-password"
       {...rest}
     />

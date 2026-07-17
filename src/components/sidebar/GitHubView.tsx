@@ -178,7 +178,7 @@ export const GitHubView = () => {
             target="_blank"
             rel="noopener noreferrer"
             title="Open repo on GitHub"
-            className="p-1.5 rounded text-obsidianSecondaryText hover:bg-obsidianHighlight/40 hover:text-obsidianText transition-colors"
+            className="p-1.5 rounded-sm text-obsidianSecondaryText hover:bg-obsidianHighlight/40 hover:text-obsidianText transition-colors"
             data-testid="scm-open-repo"
           >
             <ArrowTopRightOnSquareIcon className="w-4 h-4" />
@@ -208,13 +208,13 @@ export const GitHubView = () => {
                 onSyncClick()
               }
             }}
-            className="w-full px-2 py-1 text-sm bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple resize-none"
+            className="w-full px-2 py-1 text-sm bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden focus:border-obsidianAccentPurple resize-none"
           />
           <button
             onClick={onSyncClick}
             disabled={isSyncing}
             data-testid="scm-commit-button"
-            className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded bg-obsidianAccentPurple text-white text-sm hover:opacity-90 disabled:opacity-60"
+            className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-sm bg-obsidianAccentPurple text-white text-sm hover:opacity-90 disabled:opacity-60"
           >
             <ArrowUpTrayIcon className="w-4 h-4" />
             <span>
@@ -253,9 +253,9 @@ export const GitHubView = () => {
 
         {/* Conflicts */}
         {conflictTabs.length > 0 && (
-          <div className="space-y-2 rounded border border-yellow-700/40 bg-yellow-900/10 px-2 py-2">
+          <div className="space-y-2 rounded-sm border border-yellow-700/40 bg-yellow-900/10 px-2 py-2">
             <div className="flex items-center gap-2 text-sm text-yellow-300">
-              <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
+              <ExclamationTriangleIcon className="w-4 h-4 shrink-0" />
               {conflictTabs.length} conflict{conflictTabs.length === 1 ? '' : 's'} need review
             </div>
             <ul className="space-y-0.5">
@@ -263,7 +263,7 @@ export const GitHubView = () => {
                 <li key={c.tabId}>
                   <button
                     onClick={() => focusTab(c.tabId)}
-                    className="w-full text-left text-xs text-obsidianText hover:text-obsidianAccentPurple truncate px-1 py-0.5 rounded hover:bg-obsidianDarkGray"
+                    className="w-full text-left text-xs text-obsidianText hover:text-obsidianAccentPurple truncate px-1 py-0.5 rounded-sm hover:bg-obsidianDarkGray"
                     title={c.title}
                   >
                     {c.title}
@@ -280,7 +280,7 @@ export const GitHubView = () => {
             <div className="flex items-center gap-1.5">
               {user.avatar_url && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={user.avatar_url} alt={user.login} className="w-3.5 h-3.5 rounded-full flex-shrink-0" />
+                <img src={user.avatar_url} alt={user.login} className="w-3.5 h-3.5 rounded-full shrink-0" />
               )}
               <span className="truncate">@{user.login}</span>
             </div>
@@ -347,7 +347,7 @@ const ToolbarButton = ({
     disabled={disabled}
     title={title}
     data-testid={testId}
-    className="p-1.5 rounded text-obsidianSecondaryText hover:bg-obsidianHighlight/40 hover:text-obsidianText transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+    className="p-1.5 rounded-sm text-obsidianSecondaryText hover:bg-obsidianHighlight/40 hover:text-obsidianText transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
   >
     {children}
   </button>

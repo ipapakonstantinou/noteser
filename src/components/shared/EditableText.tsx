@@ -72,7 +72,7 @@ export const EditableText = ({
         onKeyDown={handleKeyDown}
         onClick={e => e.stopPropagation()}
         onDoubleClick={e => e.stopPropagation()}
-        className="bg-obsidianDarkGray border border-obsidianBorder rounded px-1 py-0 text-sm text-obsidianText focus:outline-none focus:ring-1 focus:ring-obsidianAccentPurple w-full"
+        className="bg-obsidianDarkGray border border-obsidianBorder rounded-sm px-1 py-0 text-sm text-obsidianText focus:outline-hidden focus:ring-1 focus:ring-obsidianAccentPurple w-full"
         placeholder={placeholder}
       />
     )

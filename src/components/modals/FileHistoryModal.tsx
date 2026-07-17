@@ -134,7 +134,7 @@ export const FileHistoryModal = () => {
     return (
       <Modal isOpen={isOpen} onClose={closeModal} title="File history" size="lg">
         <div className="flex items-start gap-2 text-sm text-amber-200">
-          <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <ExclamationTriangleIcon className="w-5 h-5 shrink-0 mt-0.5" />
           <span>This note hasn&apos;t been pushed yet — no commit history exists for it.</span>
         </div>
       </Modal>
@@ -180,7 +180,7 @@ export const FileHistoryModal = () => {
           )}
           {error && (
             <div className="p-4 text-xs text-red-400 flex items-start gap-2">
-              <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <ExclamationTriangleIcon className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
           )}
@@ -214,7 +214,7 @@ export const FileHistoryModal = () => {
                   href={c.htmlUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="absolute top-1.5 right-1.5 p-1 rounded text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText transition-colors"
+                  className="absolute top-1.5 right-1.5 p-1 rounded-sm text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText transition-colors"
                   title="Open commit on GitHub"
                   data-testid="file-history-row-external-link"
                 >
@@ -239,7 +239,7 @@ export const FileHistoryModal = () => {
                 href={commits.find(c => c.sha === selectedSha)?.htmlUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="p-1.5 rounded text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText transition-colors"
+                className="p-1.5 rounded-sm text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText transition-colors"
                 title="Open commit on GitHub"
               >
                 <ArrowTopRightOnSquareIcon className="w-4 h-4" />
@@ -250,7 +250,7 @@ export const FileHistoryModal = () => {
             {contentLoading && <div className="text-obsidianSecondaryText">Loading content…</div>}
             {contentError && (
               <div className="text-red-400 flex items-start gap-2">
-                <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <ExclamationTriangleIcon className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>{contentError}</span>
               </div>
             )}

@@ -309,8 +309,8 @@ export const Ribbon = () => {
               className={[
                 'relative',
                 dragging ? 'opacity-40' : '',
-                isDropTarget && dropPos.current === 'before' ? 'border-t-2 border-obsidianAccentPurple -mt-[2px]' : '',
-                isDropTarget && dropPos.current === 'after'  ? 'border-b-2 border-obsidianAccentPurple -mb-[2px]' : '',
+                isDropTarget && dropPos.current === 'before' ? 'border-t-2 border-obsidianAccentPurple mt-[-2px]' : '',
+                isDropTarget && dropPos.current === 'after'  ? 'border-b-2 border-obsidianAccentPurple mb-[-2px]' : '',
               ].join(' ')}
             >
               <RibbonButton onClick={item.action} title={item.title}>
@@ -366,7 +366,7 @@ const RibbonButton = ({
     data-testid={testId}
     aria-pressed={active}
     className={[
-      'p-2 max-md:p-2.5 rounded transition-colors inline-flex items-center justify-center max-md:min-w-[44px] max-md:min-h-[44px]',
+      'p-2 max-md:p-2.5 rounded-sm transition-colors inline-flex items-center justify-center max-md:min-w-[44px] max-md:min-h-[44px]',
       active
         ? 'bg-obsidianHighlight text-obsidianText'
         : 'text-obsidianSecondaryText hover:bg-obsidianDarkGray hover:text-obsidianText',

@@ -138,7 +138,7 @@ export const ExportModal = () => {
                 type="checkbox"
                 checked={options.includeMetadata}
                 onChange={e => setOptions(prev => ({ ...prev, includeMetadata: e.target.checked }))}
-                className="w-4 h-4 rounded border-obsidianBorder bg-obsidianDarkGray text-obsidianAccentPurple focus:ring-obsidianAccentPurple"
+                className="w-4 h-4 rounded-sm border-obsidianBorder bg-obsidianDarkGray text-obsidianAccentPurple focus:ring-obsidianAccentPurple"
               />
               <span className="text-sm text-obsidianText">Include metadata (dates, IDs)</span>
             </label>
@@ -147,7 +147,7 @@ export const ExportModal = () => {
                 type="checkbox"
                 checked={options.includeTags}
                 onChange={e => setOptions(prev => ({ ...prev, includeTags: e.target.checked }))}
-                className="w-4 h-4 rounded border-obsidianBorder bg-obsidianDarkGray text-obsidianAccentPurple focus:ring-obsidianAccentPurple"
+                className="w-4 h-4 rounded-sm border-obsidianBorder bg-obsidianDarkGray text-obsidianAccentPurple focus:ring-obsidianAccentPurple"
               />
               <span className="text-sm text-obsidianText">Include tags</span>
             </label>

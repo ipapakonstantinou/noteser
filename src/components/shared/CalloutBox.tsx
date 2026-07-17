@@ -40,7 +40,7 @@ export function CalloutBox({
         <CalloutIcon type={type} className={style.text} />
         {CALLOUT_LABELS[type]}
       </div>
-      <div className="[&>:first-child]:mt-0 [&>:last-child]:mb-0">{children}</div>
+      <div className="*:first:mt-0 *:last:mb-0">{children}</div>
     </div>
   )
 }

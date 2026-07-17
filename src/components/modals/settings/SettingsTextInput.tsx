@@ -52,7 +52,7 @@ export const SettingsTextInput = ({
       spellCheck={false}
       placeholder={placeholder}
       className={
-        'bg-obsidianDarkGray border border-obsidianBorder rounded px-2 py-1 text-sm text-obsidianText focus:outline-none focus:border-obsidianAccentPurple' +
+        'bg-obsidianDarkGray border border-obsidianBorder rounded-sm px-2 py-1 text-sm text-obsidianText focus:outline-hidden focus:border-obsidianAccentPurple' +
         (mono ? ' font-mono' : '')
       }
     />

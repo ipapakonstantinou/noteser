@@ -82,7 +82,7 @@ export const RightSidebarStack = () => {
       window.removeEventListener('dragend', onEnd)
       window.removeEventListener('drop', onEnd)
       window.removeEventListener('mouseup', onEnd)
-      window.removeEventListener('blur', onEnd)
+      window.removeEventListener('blur-sm', onEnd)
     }
   }, [])
 
@@ -143,7 +143,7 @@ export const RightSidebarStack = () => {
         // stretches to fill the remaining vertical space.
         const wrapperClass = layoutMode === 'fill'
           ? 'flex-1 min-h-0 flex flex-col'
-          : 'flex-shrink-0 flex flex-col'
+          : 'shrink-0 flex flex-col'
         return (
           <div key={g.id} ref={setGroupRef(g.id)} className={wrapperClass}>
             <RightInterGroupDropZone

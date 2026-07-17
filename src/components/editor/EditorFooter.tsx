@@ -114,7 +114,7 @@ export const EditorFooter = () => {
                 <button
                   type="button"
                   onClick={() => setCurrentView('github')}
-                  className="px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 transition-colors"
+                  className="px-1.5 py-0.5 rounded-sm bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 transition-colors"
                   title="Open Source Control panel"
                   data-testid="status-bar-pending"
                 >

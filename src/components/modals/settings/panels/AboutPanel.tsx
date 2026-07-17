@@ -135,7 +135,7 @@ export function AboutPanel() {
           type="button"
           onClick={() => openModal({ type: 'bug-report' })}
           data-testid="settings-report-bug"
-          className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors"
+          className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded-sm hover:bg-obsidianAccentPurple/25 transition-colors"
         >
           Report a bug
         </button>

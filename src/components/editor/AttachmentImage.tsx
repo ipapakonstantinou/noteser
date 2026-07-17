@@ -115,14 +115,14 @@ export const AttachmentImage = ({ src: srcProp, alt, title }: AttachmentImagePro
   if (src && isStored) {
     if (missing) {
       return (
-        <span className="inline-block px-2 py-1 rounded bg-obsidianDarkGray text-xs text-obsidianSecondaryText">
+        <span className="inline-block px-2 py-1 rounded-sm bg-obsidianDarkGray text-xs text-obsidianSecondaryText">
           Missing attachment: {src}
         </span>
       )
     }
     if (!resolved) {
       return (
-        <span className="inline-block px-2 py-1 rounded bg-obsidianDarkGray text-xs text-obsidianSecondaryText">
+        <span className="inline-block px-2 py-1 rounded-sm bg-obsidianDarkGray text-xs text-obsidianSecondaryText">
           Loading {alt || src}…
         </span>
       )
@@ -131,7 +131,7 @@ export const AttachmentImage = ({ src: srcProp, alt, title }: AttachmentImagePro
     // IndexedDB-stored attachment, which next/image's optimizer can't fetch.
     // Plain <img> is the right call.
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={resolved} alt={alt} title={title} className="max-w-full rounded" />
+    return <img src={resolved} alt={alt} title={title} className="max-w-full rounded-sm" />
   }
 
   // Same reason as above — `src` may be a wikilink-style ref we resolved to a
@@ -139,7 +139,7 @@ export const AttachmentImage = ({ src: srcProp, alt, title }: AttachmentImagePro
   // Use the RAW (un-decoded) src here so external URLs keep their original
   // encoding; only the attachment lookup above needs the decoded form.
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={rawSrc} alt={alt} title={title} className="max-w-full rounded" />
+  return <img src={rawSrc} alt={alt} title={title} className="max-w-full rounded-sm" />
 }
 
 export default AttachmentImage

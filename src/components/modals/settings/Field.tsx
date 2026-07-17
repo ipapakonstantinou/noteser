@@ -14,6 +14,6 @@ export const Field = ({
       <div className="text-obsidianText text-sm">{label}</div>
       <div className="text-obsidianSecondaryText text-xs mt-0.5">{description}</div>
     </div>
-    <div className="flex-shrink-0">{children}</div>
+    <div className="shrink-0">{children}</div>
   </div>
 )

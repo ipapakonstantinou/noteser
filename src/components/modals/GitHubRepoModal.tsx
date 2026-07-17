@@ -219,7 +219,7 @@ export const GitHubRepoModal = () => {
       {view.kind === 'list' && (
         <div className="space-y-3">
           {syncRepo && (
-            <div className="flex items-center gap-2 px-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded text-sm">
+            <div className="flex items-center gap-2 px-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-sm">
               <CheckCircleIcon className="w-4 h-4 text-green-500" />
               <span className="text-obsidianText">Current vault:</span>
               <code className="text-obsidianAccentPurple">{syncRepo.owner}/{syncRepo.name}</code>
@@ -235,13 +235,13 @@ export const GitHubRepoModal = () => {
                 placeholder="Filter repos…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-8 pr-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded text-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple"
+                className="w-full pl-8 pr-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden focus:border-obsidianAccentPurple"
                 autoFocus
               />
             </div>
             <button
               onClick={() => setView({ kind: 'create' })}
-              className="inline-flex items-center gap-1 px-3 py-2 bg-obsidianAccentPurple text-white rounded text-sm hover:bg-opacity-90 transition-colors"
+              className="inline-flex items-center gap-1 px-3 py-2 bg-obsidianAccentPurple text-white rounded-sm text-sm hover:bg-opacity-90 transition-colors"
             >
               <PlusIcon className="w-4 h-4" />
               New repo
@@ -274,12 +274,12 @@ export const GitHubRepoModal = () => {
                         }`}
                       >
                         {repo.private ? (
-                          <LockClosedIcon className="w-4 h-4 text-obsidianSecondaryText flex-shrink-0" />
+                          <LockClosedIcon className="w-4 h-4 text-obsidianSecondaryText shrink-0" />
                         ) : (
-                          <GlobeAltIcon className="w-4 h-4 text-obsidianSecondaryText flex-shrink-0" />
+                          <GlobeAltIcon className="w-4 h-4 text-obsidianSecondaryText shrink-0" />
                         )}
                         <span className="flex-1 truncate text-obsidianText">{repo.full_name}</span>
-                        <span className="text-xs text-obsidianSecondaryText flex-shrink-0">{repo.default_branch}</span>
+                        <span className="text-xs text-obsidianSecondaryText shrink-0">{repo.default_branch}</span>
                       </button>
                     </li>
                   )
@@ -317,7 +317,7 @@ export const GitHubRepoModal = () => {
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               placeholder="noteser-vault"
-              className="w-full px-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded text-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple"
+              className="w-full px-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden focus:border-obsidianAccentPurple"
               autoFocus
             />
             <p className="text-xs text-obsidianSecondaryText mt-1">
@@ -353,8 +353,8 @@ export const GitHubRepoModal = () => {
 
       {view.kind === 'confirm-switch' && syncRepo && (
         <div className="space-y-4">
-          <div className="flex items-start gap-3 p-3 bg-yellow-900/15 border border-yellow-900/40 rounded">
-            <ExclamationTriangleIcon className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+          <div className="flex items-start gap-3 p-3 bg-yellow-900/15 border border-yellow-900/40 rounded-sm">
+            <ExclamationTriangleIcon className="w-5 h-5 text-yellow-400 shrink-0 mt-0.5" />
             <div className="text-sm text-obsidianText">
               <p>
                 <strong>{view.unpushed}</strong> note{view.unpushed === 1 ? '' : 's'} in{' '}
@@ -405,8 +405,8 @@ export const GitHubRepoModal = () => {
 
       {view.kind === 'error' && (
         <div className="space-y-4">
-          <div className="flex items-start gap-2 p-3 bg-red-900/20 border border-red-900/40 rounded">
-            <ExclamationCircleIcon className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2 p-3 bg-red-900/20 border border-red-900/40 rounded-sm">
+            <ExclamationCircleIcon className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
             <p className="text-sm text-red-300">{view.message}</p>
           </div>
           <div className="flex justify-end gap-2">
