@@ -46,6 +46,10 @@ export function WikilinkAutocomplete({
       const hit = aliases.find(a => a.toLowerCase().includes(q))
       if (hit) rows.push({ note, matchedAlias: hit })
     }
+    // Newest first. Titles here are overwhelmingly dated daily notes, and with the
+    // 8-row cap an ascending order surfaces only the OLDEST matches — typing "[[202"
+    // offered 2024 and never reached this year.
+    rows.sort((a, b) => b.note.title.localeCompare(a.note.title))
     return rows.slice(0, 8)
   }, [notes, query])
 
@@ -92,6 +96,7 @@ export function WikilinkAutocomplete({
       {filtered.map(({ note, matchedAlias }, i) => (
         <div
           key={note.id}
+          data-testid="wikilink-row"
           ref={i === activeIndex ? activeRef : null}
           className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer transition-colors ${
             i === activeIndex
