@@ -29,6 +29,12 @@ async function openSettings(page: import('@playwright/test').Page) {
   // dev-mode indicator overlay (`<nextjs-portal>`) also lives — in dev it
   // intercepts the click. The keyboard shortcut is a legitimate user path
   // and sidesteps the dev-overlay collision.
+  //
+  // The shortcut handler is registered by useKeyboardShortcuts on client
+  // mount — a keypress fired before hydration is silently dropped and the
+  // visibility wait below times out. Wait for the testHooks bridge (also
+  // set on mount) so the handler is guaranteed to exist first.
+  await waitForHooks(page)
   await page.keyboard.press('Control+,')
   await expect(page.getByTestId('settings-categories')).toBeVisible()
 }
