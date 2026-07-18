@@ -89,7 +89,7 @@ export const TaskQueryBlock = ({ source }: { source: string }) => {
                           }}
                           title={`Open ${key}`}
                           data-testid={`task-query-header-link-${noteId}`}
-                          className="text-obsidianAccentPurple hover:underline cursor-pointer focus:outline-none focus:ring-1 focus:ring-obsidianAccentPurple rounded"
+                          className="text-obsidianAccentPurple hover:underline cursor-pointer focus:outline-hidden focus:ring-1 focus:ring-obsidianAccentPurple rounded-sm"
                         >
                           {key}
                         </span>
@@ -111,7 +111,7 @@ export const TaskQueryBlock = ({ source }: { source: string }) => {
                     type="checkbox"
                     checked={task.completed}
                     onChange={() => handleToggle(task)}
-                    className={`flex-shrink-0 accent-obsidianAccentPurple cursor-pointer ${
+                    className={`shrink-0 accent-obsidianAccentPurple cursor-pointer ${
                       isComfortable ? 'mt-1 h-4 w-4' : 'mt-1'
                     }`}
                   />
@@ -185,8 +185,8 @@ export const TaskQueryBlock = ({ source }: { source: string }) => {
                         title={`Open ${task.noteTitle}`}
                         className={
                           isComfortable
-                            ? 'ml-2 px-1.5 py-0.5 rounded bg-obsidianDarkGray text-[11px] text-obsidianAccentPurple hover:bg-obsidianHighlight hover:underline cursor-pointer focus:outline-none focus:ring-1 focus:ring-obsidianAccentPurple'
-                            : 'ml-2 text-[11px] text-obsidianAccentPurple hover:underline cursor-pointer focus:outline-none focus:ring-1 focus:ring-obsidianAccentPurple rounded'
+                            ? 'ml-2 px-1.5 py-0.5 rounded-sm bg-obsidianDarkGray text-[11px] text-obsidianAccentPurple hover:bg-obsidianHighlight hover:underline cursor-pointer focus:outline-hidden focus:ring-1 focus:ring-obsidianAccentPurple'
+                            : 'ml-2 text-[11px] text-obsidianAccentPurple hover:underline cursor-pointer focus:outline-hidden focus:ring-1 focus:ring-obsidianAccentPurple rounded-sm'
                         }
                       >
                         {isComfortable ? task.noteTitle : `— ${task.noteTitle}`}

@@ -672,7 +672,7 @@ const DEFAULTS = {
   dailyNotesFolder: 'Notes/Daily',
   dailyNoteDateFormat: 'YYYY-MM-DD',
   weeklyNotesFolder: 'Notes/Weekly',
-  weeklyNoteDateFormat: 'YYYY-WW',
+  weeklyNoteDateFormat: 'YYYY-[W]WW',
   monthlyNotesFolder: 'Notes/Monthly',
   monthlyNoteDateFormat: 'YYYY-MM',
   templatesFolder: 'Templates',
@@ -1021,7 +1021,7 @@ export const useSettingsStore = create<SettingsState>()(
       // keeps SSR / node-env Jest suites free of "storage is currently
       // unavailable" persist warnings (issue #131).
       storage: localStorageJSON,
-      version: 3,
+      version: 4,
       // Migration ladder:
       //   v0→v1 (2026-05-20): pinnedPanels used to default to
       //     ['calendar'] so Calendar showed as a header-less pinned
@@ -1044,6 +1044,12 @@ export const useSettingsStore = create<SettingsState>()(
       //     hidden, callers can append it as a trailing group — but
       //     that field lives in a different persisted key, so the
       //     migration here only covers what's in THIS slice.
+      //   v3→v4 (2026-07-17): weeklyNoteDateFormat default 'YYYY-WW'
+      //     -> 'YYYY-[W]WW'. The old default named weekly notes
+      //     "2026-30", which reads as a date and does not match the
+      //     Obsidian convention ("2026-W30") the Settings help text
+      //     already advertised. Only the exact old default is
+      //     rewritten, so a deliberately customised format is kept.
       migrate: (persistedState: unknown, version: number) => {
         const state = (persistedState ?? {}) as Partial<SettingsState> & {
           pinnedPanels?: unknown
@@ -1099,6 +1105,9 @@ export const useSettingsStore = create<SettingsState>()(
           delete (state as Record<string, unknown>).pinnedPanels
           delete (state as Record<string, unknown>).sidebarTabOrder
           delete (state as Record<string, unknown>).collapsedPinnedGroups
+        }
+        if (version < 4 && state.weeklyNoteDateFormat === 'YYYY-WW') {
+          state.weeklyNoteDateFormat = 'YYYY-[W]WW'
         }
         return state as SettingsState
       },

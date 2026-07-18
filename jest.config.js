@@ -13,11 +13,13 @@ const customJestConfig = {
   // re-run every worktree's copy. /collab-server/ is its own package with
   // its own lockfile + vitest runner (see .github/workflows/ci.yml).
   testPathIgnorePatterns: ['/node_modules/', '/.next/', '/e2e/', '/.claude/worktrees/', '/collab-server/'],
-  // @vercel/analytics ships ESM-only and trips Jest's CJS loader. Tests
-  // never need real analytics calls; stub the module to a no-op track().
+  // @vercel/analytics and uuid (v14+) ship ESM-only and trip Jest's CJS
+  // loader. Stub analytics to a no-op track(); back uuid's v4 with
+  // crypto.randomUUID() so tests still get real v4 UUIDs.
   moduleNameMapper: {
     '^@vercel/analytics$': '<rootDir>/jest.stubs/vercel-analytics.js',
     '^@vercel/analytics/next$': '<rootDir>/jest.stubs/vercel-analytics.js',
+    '^uuid$': '<rootDir>/jest.stubs/uuid.js',
   },
 }
 

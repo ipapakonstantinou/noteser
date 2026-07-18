@@ -115,7 +115,7 @@ export const VaultSettingsConflictModal = () => {
           <button
             type="button"
             onClick={() => handleTakeAll('local')}
-            className="px-2 py-1 rounded border border-obsidianBorder text-obsidianText hover:bg-obsidianHighlight/40"
+            className="px-2 py-1 rounded-sm border border-obsidianBorder text-obsidianText hover:bg-obsidianHighlight/40"
             data-testid="vs8x-conflict-take-all-local"
           >
             Take all local
@@ -123,7 +123,7 @@ export const VaultSettingsConflictModal = () => {
           <button
             type="button"
             onClick={() => handleTakeAll('remote')}
-            className="px-2 py-1 rounded border border-obsidianBorder text-obsidianText hover:bg-obsidianHighlight/40"
+            className="px-2 py-1 rounded-sm border border-obsidianBorder text-obsidianText hover:bg-obsidianHighlight/40"
             data-testid="vs8x-conflict-take-all-remote"
           >
             Take all remote
@@ -133,7 +133,7 @@ export const VaultSettingsConflictModal = () => {
           </span>
         </div>
 
-        <div className="max-h-[55dvh] overflow-y-auto border border-obsidianBorder rounded">
+        <div className="max-h-[55dvh] overflow-y-auto border border-obsidianBorder rounded-sm">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-obsidianGray text-[11px] uppercase tracking-wide text-obsidianSecondaryText">
               <tr>

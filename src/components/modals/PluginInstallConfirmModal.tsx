@@ -155,10 +155,10 @@ export const PluginInstallConfirmModal = () => {
       {state.status === 'error' && (
         <div className="space-y-4" data-testid="plugin-preview-error">
           <div className="flex items-start gap-2 text-sm text-red-300">
-            <ExclamationTriangleIcon className="w-5 h-5 mt-0.5 flex-shrink-0" />
+            <ExclamationTriangleIcon className="w-5 h-5 mt-0.5 shrink-0" />
             <div>
               <div className="font-medium">Could not load this plugin.</div>
-              <div className="text-xs text-red-300/80 mt-1 whitespace-pre-wrap break-words">
+              <div className="text-xs text-red-300/80 mt-1 whitespace-pre-wrap wrap-break-word">
                 {state.message}
               </div>
             </div>
@@ -214,7 +214,7 @@ const PreviewBody = ({ record, busy, installError, onCancel, onInstall }: Previe
           <span className="text-xs text-obsidianSecondaryText">v{manifest.version}</span>
         </div>
         <div className="text-xs text-obsidianSecondaryText mt-0.5">
-          <code className="text-[11px] bg-obsidianHighlight/40 px-1 rounded">{manifest.id}</code>
+          <code className="text-[11px] bg-obsidianHighlight/40 px-1 rounded-sm">{manifest.id}</code>
           {manifest.author && <span> · by {manifest.author}</span>}
         </div>
         {manifest.homepage && (
@@ -261,7 +261,7 @@ const PreviewBody = ({ record, busy, installError, onCancel, onInstall }: Previe
                 className="flex items-start gap-2 text-sm"
                 data-testid={`plugin-preview-capability-${row.key}`}
               >
-                <CheckCircleIcon className="w-4 h-4 mt-0.5 text-emerald-400 flex-shrink-0" />
+                <CheckCircleIcon className="w-4 h-4 mt-0.5 text-emerald-400 shrink-0" />
                 <div>
                   <span className="font-medium text-obsidianText">{row.label}</span>
                   <div className="text-xs text-obsidianSecondaryText mt-0.5">{row.description}</div>
@@ -282,7 +282,7 @@ const PreviewBody = ({ record, busy, installError, onCancel, onInstall }: Previe
                 className="flex items-start gap-2 text-sm"
                 data-testid={`plugin-preview-capability-${perm}`}
               >
-                <CheckCircleIcon className="w-4 h-4 mt-0.5 text-amber-400 flex-shrink-0" />
+                <CheckCircleIcon className="w-4 h-4 mt-0.5 text-amber-400 shrink-0" />
                 <div>
                   <span className="font-medium text-obsidianText">{perm}</span>
                   <div className="text-xs text-obsidianSecondaryText mt-0.5">
@@ -312,7 +312,7 @@ const PreviewBody = ({ record, busy, installError, onCancel, onInstall }: Previe
                 data-testid={`plugin-preview-destructive-${perm}`}
               >
                 <span
-                  className="mt-2 w-2 h-2 rounded-full bg-red-500 flex-shrink-0"
+                  className="mt-2 w-2 h-2 rounded-full bg-red-500 shrink-0"
                   aria-hidden="true"
                 />
                 <div className="flex-1">

@@ -40,14 +40,14 @@ export function BasesBlock({ source }: Props) {
 
   if (error) {
     return (
-      <div className="my-2 p-3 border border-red-500/40 bg-red-500/5 rounded text-sm text-red-400">
+      <div className="my-2 p-3 border border-red-500/40 bg-red-500/5 rounded-sm text-sm text-red-400">
         <strong>Bases query error:</strong> {error}
       </div>
     )
   }
   if (rows.length === 0) {
     return (
-      <div className="my-2 p-3 border border-obsidianBorder bg-obsidianDarkGray/40 rounded text-sm text-obsidianSecondaryText">
+      <div className="my-2 p-3 border border-obsidianBorder bg-obsidianDarkGray/40 rounded-sm text-sm text-obsidianSecondaryText">
         <em>No matching notes.</em>
       </div>
     )
@@ -128,7 +128,7 @@ export function BasesBlock({ source }: Props) {
                           }
                         }}
                         autoFocus
-                        className="w-full bg-obsidianDarkGray border border-obsidianAccentPurple rounded px-1.5 py-0.5 text-obsidianText focus:outline-none"
+                        className="w-full bg-obsidianDarkGray border border-obsidianAccentPurple rounded-sm px-1.5 py-0.5 text-obsidianText focus:outline-hidden"
                         data-testid={`bases-edit-${row.noteId}-${col}`}
                       />
                     </td>

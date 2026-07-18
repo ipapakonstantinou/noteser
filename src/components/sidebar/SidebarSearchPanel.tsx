@@ -38,7 +38,7 @@ export const SidebarSearchPanel = () => {
             placeholder="Search notes…"
             autoFocus
             data-testid="sidebar-search-input"
-            className="w-full pl-7 pr-7 py-1.5 text-sm bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple"
+            className="w-full pl-7 pr-7 py-1.5 text-sm bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden focus:border-obsidianAccentPurple"
           />
           {query && (
             <button

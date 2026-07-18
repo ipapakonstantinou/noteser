@@ -32,14 +32,14 @@ export const DrawerHandle = () => {
       aria-label="Open sidebar"
       title="Open sidebar"
       data-testid="mobile-drawer-handle"
-      className="fixed left-0 top-1/2 -translate-y-1/2 z-20 flex items-center justify-start w-11 h-12 pl-[max(2px,env(safe-area-inset-left))] group focus:outline-none"
+      className="fixed left-0 top-1/2 -translate-y-1/2 z-20 flex items-center justify-start w-11 h-12 pl-[max(2px,env(safe-area-inset-left))] group focus:outline-hidden"
     >
       {/* The visible pill. The wide button above is the tap target; this
           slim bar is the only thing the user sees. */}
       <span
         className="flex items-center justify-center w-[7px] h-12 rounded-r-md bg-obsidianAccent text-obsidianSecondaryText border-y border-r border-obsidianBorder shadow-obsidian transition-colors group-hover:bg-obsidianHighlight group-hover:text-obsidianText group-active:bg-obsidianHighlight"
       >
-        <ChevronRightIcon className="w-3 h-3 -ml-[1px]" />
+        <ChevronRightIcon className="w-3 h-3 -ml-px" />
       </span>
     </button>
   )

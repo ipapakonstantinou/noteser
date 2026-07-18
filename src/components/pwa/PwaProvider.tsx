@@ -214,7 +214,7 @@ export function PwaProvider() {
 
   return (
     <div
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-[55] flex flex-col items-center gap-2 px-4"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-55 flex flex-col items-center gap-2 px-4"
       style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 1rem)' }}
     >
       {/* Update-available prompt: quiet, dismissable, non-blocking. */}
@@ -224,7 +224,7 @@ export function PwaProvider() {
           <button
             type="button"
             onClick={handleReload}
-            className="flex-none rounded px-2 py-1 text-xs font-medium text-obsidianAccentPurple hover:bg-obsidianHighlight focus:outline-none focus:ring-2 focus:ring-obsidianAccentPurple"
+            className="flex-none rounded-sm px-2 py-1 text-xs font-medium text-obsidianAccentPurple hover:bg-obsidianHighlight focus:outline-hidden focus:ring-2 focus:ring-obsidianAccentPurple"
           >
             Reload
           </button>
@@ -232,7 +232,7 @@ export function PwaProvider() {
             type="button"
             aria-label="Dismiss"
             onClick={() => setWaitingWorker(null)}
-            className="flex-none rounded p-1 text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText focus:outline-none focus:ring-2 focus:ring-obsidianAccentPurple"
+            className="flex-none rounded-sm p-1 text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText focus:outline-hidden focus:ring-2 focus:ring-obsidianAccentPurple"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
               <path d="M18 6 6 18M6 6l12 12" />
@@ -251,7 +251,7 @@ export function PwaProvider() {
           <button
             type="button"
             onClick={handleInstall}
-            className="flex-none rounded px-2 py-1 text-xs font-medium text-obsidianAccentPurple hover:bg-obsidianHighlight focus:outline-none focus:ring-2 focus:ring-obsidianAccentPurple"
+            className="flex-none rounded-sm px-2 py-1 text-xs font-medium text-obsidianAccentPurple hover:bg-obsidianHighlight focus:outline-hidden focus:ring-2 focus:ring-obsidianAccentPurple"
             data-testid="pwa-install-button"
           >
             Install noteser
@@ -260,7 +260,7 @@ export function PwaProvider() {
             type="button"
             aria-label="Dismiss"
             onClick={dismiss}
-            className="flex-none rounded p-1 text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText focus:outline-none focus:ring-2 focus:ring-obsidianAccentPurple"
+            className="flex-none rounded-sm p-1 text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText focus:outline-hidden focus:ring-2 focus:ring-obsidianAccentPurple"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
               <path d="M18 6 6 18M6 6l12 12" />

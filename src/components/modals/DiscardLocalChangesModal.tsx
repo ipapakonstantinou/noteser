@@ -63,8 +63,8 @@ export const DiscardLocalChangesModal = () => {
     <Modal isOpen={isOpen} onClose={closeModal} title="Discard local changes" size="md">
       {!done ? (
         <div className="space-y-4 text-sm">
-          <div className="flex items-start gap-2 p-3 rounded bg-red-900/20 border border-red-900/40 text-red-200">
-            <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2 p-3 rounded-sm bg-red-900/20 border border-red-900/40 text-red-200">
+            <ExclamationTriangleIcon className="w-5 h-5 shrink-0 mt-0.5" />
             <div className="space-y-1 text-xs text-red-200/90">
               <div className="font-medium text-red-200">This is destructive.</div>
               <div>
@@ -96,8 +96,8 @@ export const DiscardLocalChangesModal = () => {
           </label>
 
           {error && (
-            <div className="flex items-start gap-2 p-3 rounded bg-red-900/20 border border-red-900/40 text-xs text-red-300">
-              <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <div className="flex items-start gap-2 p-3 rounded-sm bg-red-900/20 border border-red-900/40 text-xs text-red-300">
+              <ExclamationTriangleIcon className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
           )}
@@ -117,8 +117,8 @@ export const DiscardLocalChangesModal = () => {
         </div>
       ) : (
         <div className="space-y-4 text-sm">
-          <div className="flex items-start gap-2 p-3 rounded bg-emerald-900/20 border border-emerald-900/40 text-emerald-200 text-xs">
-            <CheckCircleIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2 p-3 rounded-sm bg-emerald-900/20 border border-emerald-900/40 text-emerald-200 text-xs">
+            <CheckCircleIcon className="w-5 h-5 shrink-0 mt-0.5" />
             <span>Local changes discarded. The vault now matches what&apos;s on the remote.</span>
           </div>
           <div className="flex justify-end pt-2 border-t border-obsidianBorder">

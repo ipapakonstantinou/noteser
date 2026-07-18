@@ -44,13 +44,13 @@ function ToastItem({ toast }: { toast: Toast }) {
         KIND_STYLES[toast.kind],
       ].join(' ')}
     >
-      <span className="min-w-0 flex-1 break-words">{toast.message}</span>
+      <span className="min-w-0 flex-1 wrap-break-word">{toast.message}</span>
 
       {toast.actionLabel && (
         <button
           type="button"
           onClick={handleAction}
-          className="flex-none rounded px-2 py-1 text-xs font-medium text-obsidianAccentPurple hover:bg-obsidianHighlight focus:outline-none focus:ring-2 focus:ring-obsidianAccentPurple"
+          className="flex-none rounded-sm px-2 py-1 text-xs font-medium text-obsidianAccentPurple hover:bg-obsidianHighlight focus:outline-hidden focus:ring-2 focus:ring-obsidianAccentPurple"
         >
           {toast.actionLabel}
         </button>
@@ -60,7 +60,7 @@ function ToastItem({ toast }: { toast: Toast }) {
         type="button"
         aria-label="Dismiss"
         onClick={() => dismissToast(toast.id)}
-        className="flex-none rounded p-1 text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText focus:outline-none focus:ring-2 focus:ring-obsidianAccentPurple"
+        className="flex-none rounded-sm p-1 text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText focus:outline-hidden focus:ring-2 focus:ring-obsidianAccentPurple"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           <path d="M18 6 6 18M6 6l12 12" />
@@ -76,7 +76,7 @@ export function Toaster() {
 
   return (
     <div
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex flex-col items-center gap-2 px-4"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-60 flex flex-col items-center gap-2 px-4"
       // Sit above the mobile bottom edge / home indicator. The extra 1rem keeps
       // the stack clear of any bottom chrome even on devices without a safe-area
       // inset. pointer-events are re-enabled on each toast so the gaps stay

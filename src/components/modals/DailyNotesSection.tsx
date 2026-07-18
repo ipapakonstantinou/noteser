@@ -91,8 +91,8 @@ export const DailyNotesSection = () => {
       >
         <SettingsTextInput
           value={weeklyFormat}
-          onCommit={(v) => setWeeklyFormat(v.trim() || 'YYYY-WW')}
-          placeholder="YYYY-WW"
+          onCommit={(v) => setWeeklyFormat(v.trim() || 'YYYY-[W]WW')}
+          placeholder="YYYY-[W]WW"
           mono
         />
       </Field>

@@ -872,7 +872,7 @@ function renderInput(v: VNodeInput, ctx: RenderContext): ReactNode | null {
   }
   const disabled = v.disabled === true
   const baseClass =
-    'rounded-md border border-obsidianBorder bg-obsidianHighlight/30 px-2 py-1 text-sm text-obsidianText placeholder:text-obsidianSecondaryText focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-50'
+    'rounded-md border border-obsidianBorder bg-obsidianHighlight/30 px-2 py-1 text-sm text-obsidianText placeholder:text-obsidianSecondaryText focus:outline-hidden focus:ring-2 focus:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-50'
 
   if (v.type === 'select') {
     const options = Array.isArray(v.options) ? v.options : []

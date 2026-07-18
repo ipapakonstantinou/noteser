@@ -1,51 +1,289 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
 
-/* Theme tokens (th3m). Tailwind colors reference these via var()
+@plugin '@tailwindcss/typography';
+
+@theme {
+  --color-obsidianBlack: var(--obsidian-black, #1b1b1b);
+  --color-obsidianGray: var(--obsidian-gray, #242424);
+  --color-obsidianDarkGray: var(--obsidian-dark-gray, #333333);
+  --color-obsidianAccent: var(--obsidian-accent, #3a3a3a);
+  --color-obsidianHighlight: var(--obsidian-highlight, #4d4d4d);
+  --color-obsidianSelection: var(--obsidian-selection, #2b5a9b);
+  --color-obsidianBorder: var(--obsidian-border, #444444);
+  --color-obsidianText: var(--obsidian-text, #dadada);
+  --color-obsidianSecondaryText: var(--obsidian-secondary-text, #bababa);
+  --color-obsidianAccentPurple: var(
+    --obsidian-accent-purple,
+    hsl(217, 88%, 50%)
+  );
+  --color-noteserAccent: var(--obsidian-accent-purple, hsl(217, 88%, 50%));
+
+  --shadow-obsidian: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+/* Components */
+
+@utility obsidian-sidebar {
+  /* User feedback 2026-06-04 (round 2): "I need a soft white line
+       to separate notes from activity panel". Soft #2e2e2e border on
+       the right edge — visible enough to bound the sidebar but quiet
+       against the dark surfaces on either side. */
+  @apply bg-obsidianBlack border-r border-obsidianBorder h-full overflow-y-auto;
+}
+
+@utility obsidian-button {
+  @apply p-1.5 rounded-sm hover:bg-obsidianHighlight text-obsidianSecondaryText hover:text-obsidianText transition-colors focus:outline-hidden focus:ring-2 focus:ring-obsidianAccentPurple focus:ring-offset-1 focus:ring-offset-obsidianBlack;
+}
+
+@utility obsidian-icon {
+  @apply w-5 h-5;
+}
+
+@utility obsidian-file-item {
+  @apply px-3 py-1.5 text-sm text-obsidianText hover:bg-obsidianHighlight cursor-pointer rounded-sm transition-colors flex items-center;
+}
+
+@utility obsidian-folder-item {
+  @apply px-2 py-1.5 text-sm text-obsidianSecondaryText hover:bg-obsidianHighlight cursor-pointer rounded-sm transition-colors flex items-center;
+}
+
+@utility prose {
+  /* Prose styles for markdown preview */
+  @apply text-obsidianText max-w-none;
+  /* Match the editor (CodeMirror live preview) so reading mode and edit
+       mode feel identical: same font (default monospace), 14px, 1.7
+       line-height. Driven by --font-text so a chosen Text font applies
+       to reading mode live (fnt1). */
+  font-family: var(--font-text);
+  font-size: 14px;
+  line-height: 1.7;
+
+  & h1 {
+    @apply text-obsidianText font-semibold;
+  }
+
+  & h2 {
+    @apply text-obsidianText font-semibold;
+  }
+
+  & h3 {
+    @apply text-obsidianText font-semibold;
+  }
+
+  & h4 {
+    @apply text-obsidianText font-semibold;
+  }
+
+  & h5 {
+    @apply text-obsidianText font-semibold;
+  }
+
+  & h6 {
+    @apply text-obsidianText font-semibold;
+  }
+
+  /* Heading sizes mirror the live-preview (.cm-lp-h*) so both modes match. */
+  & h1 {
+    font-size: 1.75em;
+    font-weight: 700;
+    line-height: 1.3;
+    @apply mt-6 mb-4;
+  }
+
+  & h2 {
+    font-size: 1.4em;
+    font-weight: 700;
+    line-height: 1.35;
+    @apply mt-5 mb-3;
+  }
+
+  & h3 {
+    font-size: 1.2em;
+    font-weight: 600;
+    line-height: 1.4;
+    @apply mt-4 mb-2;
+  }
+
+  & h4 {
+    font-size: 1.05em;
+    font-weight: 600;
+    @apply mt-3 mb-2;
+  }
+
+  & p {
+    /* inherits the 1.7 line-height from .prose to match the editor */
+    @apply text-obsidianText mb-4;
+  }
+
+  & a {
+    @apply text-obsidianAccentPurple hover:underline;
+  }
+
+  & strong {
+    @apply text-obsidianText font-semibold;
+  }
+
+  & em {
+    @apply italic;
+  }
+
+  & code {
+    @apply text-obsidianText bg-obsidianDarkGray px-1.5 py-0.5 rounded-sm text-sm;
+    /* Code font slot (fnt1) — overrides Tailwind's font-mono so a chosen
+       Monospace / code font applies to inline code + code blocks. */
+    font-family: var(--font-mono);
+  }
+
+  & pre {
+    @apply bg-obsidianDarkGray border border-obsidianBorder rounded-lg p-4 overflow-x-auto my-4;
+  }
+
+  & pre code {
+    @apply bg-transparent p-0;
+  }
+
+  /* Blockquote: bar removed per user feedback (2026-06-04, option 2γ).
+     The italic + secondary-text colour still differentiates quoted
+     content from regular prose; the previous 4px blue accent read as
+     visual noise. */
+  & blockquote {
+    @apply pl-4 italic text-obsidianSecondaryText my-4;
+  }
+
+  & ul {
+    @apply pl-6 mb-4;
+  }
+
+  & ol {
+    @apply pl-6 mb-4;
+  }
+
+  & ul {
+    @apply list-disc;
+  }
+
+  & ol {
+    @apply list-decimal;
+  }
+
+  & li {
+    @apply mb-1;
+  }
+
+  & hr {
+    @apply border-obsidianBorder my-6;
+  }
+
+  & table {
+    @apply w-full border-collapse my-4;
+  }
+
+  & th {
+    @apply border border-obsidianBorder px-3 py-2 text-left;
+  }
+
+  & td {
+    @apply border border-obsidianBorder px-3 py-2 text-left;
+  }
+
+  & th {
+    @apply bg-obsidianDarkGray font-semibold;
+  }
+
+  & img {
+    @apply rounded-lg max-w-full my-4;
+  }
+
+  /* Task list styling */
+  & input[type='checkbox'] {
+    @apply mr-2 accent-obsidianAccentPurple;
+  }
+}
+
+@utility shadow-obsidian {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+@utility cursor-blink {
+  /* Animation for collaborator cursors */
+  animation: blink 1s infinite;
+}
+
+@utility animate-fade-in {
+  /* Fade in animation */
+  animation: fadeIn 0.2s ease-out;
+}
+
+@utility animate-slide-in-right {
+  /* Slide in from right */
+  animation: slideInRight 0.2s ease-out;
+}
+
+@layer utilities {
+  /* Theme tokens (th3m). Tailwind colors reference these via var()
  * so user overrides in settingsStore.themeOverrides flow through to
  * every Tailwind utility (`bg-obsidianBlack`, `text-obsidianText`,
  * etc.) without a rebuild. The fallback hex keeps the app rendered
  * before the override-applying hook mounts. */
-:root {
-  --obsidian-black: #1b1b1b;
-  --obsidian-gray: #242424;
-  --obsidian-dark-gray: #333333;
-  --obsidian-accent: #3a3a3a;
-  --obsidian-highlight: #4d4d4d;
-  /* Editor selection background — painted into `.cm-selectionBackground`
+  :root {
+    --obsidian-black: #1b1b1b;
+    --obsidian-gray: #242424;
+    --obsidian-dark-gray: #333333;
+    --obsidian-accent: #3a3a3a;
+    --obsidian-highlight: #4d4d4d;
+    /* Editor selection background — painted into `.cm-selectionBackground`
      by drawSelection() and reused for the global `::selection`. Kept
      SEPARATE from --obsidian-highlight (the hover surface) so a
      selection-visible value can't tint every sidebar hover state.
      Picked to clear ≥ 2:1 against --obsidian-black and ≥ 4.5:1
      against --obsidian-text, in family with the noteser blue accent. */
-  --obsidian-selection: #2b5a9b;
-  /* Softer divider lines per user feedback (2026-06-04). Was
+    --obsidian-selection: #2b5a9b;
+    /* Softer divider lines per user feedback (2026-06-04). Was
      #444444 against the #1b1b1b background — too high contrast for
      a calm UI. Dropped to #2e2e2e for a more Obsidian-like subtlety
      across every `border-obsidianBorder` usage (sidebar boundaries,
      mini-strip border-b, group border-t, modal divider, etc.). */
-  --obsidian-border: #2e2e2e;
-  --obsidian-text: #dadada;
-  --obsidian-secondary-text: #bababa;
-  /* Historical name (--obsidian-accent-purple) kept so existing
+    --obsidian-border: #2e2e2e;
+    --obsidian-text: #dadada;
+    --obsidian-secondary-text: #bababa;
+    /* Historical name (--obsidian-accent-purple) kept so existing
    * Settings → Appearance overrides continue to apply, but the
    * default value is now noteser blue, not Obsidian purple. */
-  --obsidian-accent-purple: hsl(217, 88%, 50%);
+    --obsidian-accent-purple: hsl(217, 88%, 50%);
 
-  /* Font slots (fnt1). User overrides from settingsStore (fontText /
+    /* Font slots (fnt1). User overrides from settingsStore (fontText /
    * fontMono / fontInterface) are written to these variables at runtime
    * by useApplyFonts. The defaults below match the historical hard-coded
    * stacks so an unset choice reproduces today's appearance exactly.
    *   --font-text       editor content + reading-mode body
    *   --font-mono       code blocks, inline code, editor/preview mono
    *   --font-interface  app chrome (sidebar, modals, buttons) */
-  --font-text: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, monospace;
-  --font-mono: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, monospace;
-  --font-interface: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
+    --font-text: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, monospace;
+    --font-mono: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, monospace;
+    --font-interface:
+      'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
 
-/* Base styles */
+  /* Base styles */
+}
 @layer base {
   * {
     @apply border-obsidianBorder;
@@ -60,7 +298,7 @@
      hover. */
   * {
     scrollbar-width: thin;
-    scrollbar-color: theme('colors.obsidianBorder') transparent;
+    scrollbar-color: var(--color-obsidianBorder) transparent;
   }
 
   ::-webkit-scrollbar {
@@ -78,12 +316,12 @@
      blends in until you actually need it. Hover keeps a more visible
      highlight so the thumb is still findable. */
   ::-webkit-scrollbar-thumb {
-    background-color: theme('colors.obsidianBorder');
+    background-color: var(--color-obsidianBorder);
     border-radius: 3px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background-color: theme('colors.obsidianHighlight');
+    background-color: var(--color-obsidianHighlight);
   }
 
   /* Selection — paint with the dedicated --obsidian-selection token (the
@@ -104,173 +342,18 @@
   }
 }
 
-/* Components */
-@layer components {
-  .obsidian-sidebar {
-    /* User feedback 2026-06-04 (round 2): "I need a soft white line
-       to separate notes from activity panel". Soft #2e2e2e border on
-       the right edge — visible enough to bound the sidebar but quiet
-       against the dark surfaces on either side. */
-    @apply bg-obsidianBlack border-r border-obsidianBorder h-full overflow-y-auto;
-  }
-
-  .obsidian-button {
-    @apply p-1.5 rounded hover:bg-obsidianHighlight text-obsidianSecondaryText hover:text-obsidianText transition-colors focus:outline-none focus:ring-2 focus:ring-obsidianAccentPurple focus:ring-offset-1 focus:ring-offset-obsidianBlack;
-  }
-
-  .obsidian-icon {
-    @apply w-5 h-5;
-  }
-
-  .obsidian-file-item {
-    @apply px-3 py-1.5 text-sm text-obsidianText hover:bg-obsidianHighlight cursor-pointer rounded transition-colors flex items-center;
-  }
-
-  .obsidian-folder-item {
-    @apply px-2 py-1.5 text-sm text-obsidianSecondaryText hover:bg-obsidianHighlight cursor-pointer rounded transition-colors flex items-center;
-  }
-
-  /* Prose styles for markdown preview */
-  .prose {
-    @apply text-obsidianText max-w-none;
-    /* Match the editor (CodeMirror live preview) so reading mode and edit
-       mode feel identical: same font (default monospace), 14px, 1.7
-       line-height. Driven by --font-text so a chosen Text font applies
-       to reading mode live (fnt1). */
-    font-family: var(--font-text);
-    font-size: 14px;
-    line-height: 1.7;
-  }
-
-  .prose h1,
-  .prose h2,
-  .prose h3,
-  .prose h4,
-  .prose h5,
-  .prose h6 {
-    @apply text-obsidianText font-semibold;
-  }
-
-  /* Heading sizes mirror the live-preview (.cm-lp-h*) so both modes match. */
-  .prose h1 {
-    font-size: 1.75em;
-    font-weight: 700;
-    line-height: 1.3;
-    @apply mt-6 mb-4;
-  }
-
-  .prose h2 {
-    font-size: 1.4em;
-    font-weight: 700;
-    line-height: 1.35;
-    @apply mt-5 mb-3;
-  }
-
-  .prose h3 {
-    font-size: 1.2em;
-    font-weight: 600;
-    line-height: 1.4;
-    @apply mt-4 mb-2;
-  }
-
-  .prose h4 {
-    font-size: 1.05em;
-    font-weight: 600;
-    @apply mt-3 mb-2;
-  }
-
-  .prose p {
-    /* inherits the 1.7 line-height from .prose to match the editor */
-    @apply text-obsidianText mb-4;
-  }
-
-  .prose a {
-    @apply text-obsidianAccentPurple hover:underline;
-  }
-
-  .prose strong {
-    @apply text-obsidianText font-semibold;
-  }
-
-  .prose em {
-    @apply italic;
-  }
-
-  .prose code {
-    @apply text-obsidianText bg-obsidianDarkGray px-1.5 py-0.5 rounded text-sm;
-    /* Code font slot (fnt1) — overrides Tailwind's font-mono so a chosen
-       Monospace / code font applies to inline code + code blocks. */
-    font-family: var(--font-mono);
-  }
-
-  .prose pre {
-    @apply bg-obsidianDarkGray border border-obsidianBorder rounded-lg p-4 overflow-x-auto my-4;
-  }
-
-  .prose pre code {
-    @apply bg-transparent p-0;
-  }
-
-  /* Blockquote: bar removed per user feedback (2026-06-04, option 2γ).
-     The italic + secondary-text colour still differentiates quoted
-     content from regular prose; the previous 4px blue accent read as
-     visual noise. */
-  .prose blockquote {
-    @apply pl-4 italic text-obsidianSecondaryText my-4;
-  }
-
-  .prose ul,
-  .prose ol {
-    @apply pl-6 mb-4;
-  }
-
-  .prose ul {
-    @apply list-disc;
-  }
-
-  .prose ol {
-    @apply list-decimal;
-  }
-
-  .prose li {
-    @apply mb-1;
-  }
-
-  .prose hr {
-    @apply border-obsidianBorder my-6;
-  }
-
-  .prose table {
-    @apply w-full border-collapse my-4;
-  }
-
-  .prose th,
-  .prose td {
-    @apply border border-obsidianBorder px-3 py-2 text-left;
-  }
-
-  .prose th {
-    @apply bg-obsidianDarkGray font-semibold;
-  }
-
-  .prose img {
-    @apply rounded-lg max-w-full my-4;
-  }
-
-  /* Task list styling */
-  .prose input[type='checkbox'] {
-    @apply mr-2 accent-obsidianAccentPurple;
-  }
-}
-
-/* Preview mode used to paint a vertical bar + blinking caret on the
+@layer utilities {
+  /* Preview mode used to paint a vertical bar + blinking caret on the
    active line. Jon (2026-06-06): the two lines around the active heading
    are unwanted in preview. Classes still applied by EditorContent so the
    click-to-edit positioning logic keeps working, but neither paints. */
-.preview-cursor-block {}
-.preview-cursor-marker { display: none; }
+  .preview-cursor-block {
+  }
+  .preview-cursor-marker {
+    display: none;
+  }
 
-/* Completed task (`- [x]`) — strike through the item's own content (links,
+  /* Completed task (`- [x]`) — strike through the item's own content (links,
    bold, text inside a wrapping <p>) at any nesting depth, WITHOUT bleeding the
    strike onto its nested sub-tasks.
    ListItem in EditorContent.tsx wraps the done item's own (non-list) children
@@ -282,83 +365,63 @@
    `text-decoration: none`, so an UN-done child under a done parent looked
    completed. The span sibling boundary is the only reliable fix. The checkbox
    input is kept readable. */
-.preview-task-done-line {
-  text-decoration: line-through;
-  opacity: 0.55;
-}
-.preview-task-done-line input[type='checkbox'] {
-  text-decoration: none;
-  opacity: 1;
-}
+  .preview-task-done-line {
+    text-decoration: line-through;
+    opacity: 0.55;
+  }
+  .preview-task-done-line input[type='checkbox'] {
+    text-decoration: none;
+    opacity: 1;
+  }
 
-/* Inline #tag rendering in preview */
-.preview-tag {
-  color: theme('colors.obsidianAccentPurple');
-  background: hsla(217, 88%, 50%, 0.1);
-  border-radius: 3px;
-  padding: 0 4px;
-  font-weight: 500;
-  font-size: 0.92em;
-}
+  /* Inline #tag rendering in preview */
+  .preview-tag {
+    color: var(--color-obsidianAccentPurple);
+    background: hsla(217, 88%, 50%, 0.1);
+    border-radius: 3px;
+    padding: 0 4px;
+    font-weight: 500;
+    font-size: 0.92em;
+  }
 
-/* CodeMirror container — force dark background regardless of default
+  /* CodeMirror container — force dark background regardless of default
    theme. Includes `.cm-gutters` (where the diff gutter mounts) so the
    default light-mode bg + 1px border-right don't paint a visible
    vertical band between the sidebar and the editor (user feedback
    2026-06-04). The diff markers themselves still render via their own
    absolute-positioned `.cm-diff-marker` spans. */
-.cm-editor,
-.cm-editor .cm-scroller,
-.cm-editor .cm-content,
-.cm-editor .cm-line,
-.cm-editor .cm-gutters,
-.cm-editor .cm-gutterElement,
-.cm-editor .cm-activeLineGutter {
-  background-color: transparent !important;
-  color: inherit;
-  border-right: none !important;
-}
-
-/* Utilities */
-@layer utilities {
-  .shadow-obsidian {
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  .cm-editor,
+  .cm-editor .cm-scroller,
+  .cm-editor .cm-content,
+  .cm-editor .cm-line,
+  .cm-editor .cm-gutters,
+  .cm-editor .cm-gutterElement,
+  .cm-editor .cm-activeLineGutter {
+    background-color: transparent !important;
+    color: inherit;
+    border-right: none !important;
   }
 
-  /* Animation for collaborator cursors */
+  /* Utilities */
+}
+@layer utilities {
   @keyframes blink {
     0%, 50% { opacity: 1; }
     51%, 100% { opacity: 0; }
   }
-
-  .cursor-blink {
-    animation: blink 1s infinite;
-  }
-
-  /* Fade in animation */
   @keyframes fadeIn {
     from { opacity: 0; transform: translateY(-10px); }
     to { opacity: 1; transform: translateY(0); }
   }
-
-  .animate-fade-in {
-    animation: fadeIn 0.2s ease-out;
-  }
-
-  /* Slide in from right */
   @keyframes slideInRight {
     from { opacity: 0; transform: translateX(20px); }
     to { opacity: 1; transform: translateX(0); }
-  }
-
-  .animate-slide-in-right {
-    animation: slideInRight 0.2s ease-out;
   }
 }
 
 /* Focus visible for accessibility */
 :focus-visible {
-  @apply outline-none ring-2 ring-obsidianAccentPurple ring-offset-2 ring-offset-obsidianBlack;
+  @apply outline-hidden ring-2 ring-obsidianAccentPurple ring-offset-2 ring-offset-obsidianBlack;
 }
 
 /* /help typography (hp1)

@@ -160,7 +160,7 @@ export const TabBar = ({ pane }: Props) => {
               aria-selected={active}
               aria-controls={`editor-tabpanel-${pane.id}`}
               tabIndex={active ? 0 : -1}
-              className={`flex items-center gap-1.5 px-3 py-2 text-sm border-r border-obsidianBorder cursor-pointer max-w-[200px] flex-shrink-0 select-none min-h-[44px] ${
+              className={`flex items-center gap-1.5 px-3 py-2 text-sm border-r border-obsidianBorder cursor-pointer max-w-[200px] shrink-0 select-none min-h-[44px] ${
                 active
                   ? 'bg-obsidianBlack text-obsidianText border-t-2 border-t-obsidianAccentPurple'
                   : 'text-obsidianSecondaryText hover:bg-obsidianHighlight'
@@ -168,16 +168,16 @@ export const TabBar = ({ pane }: Props) => {
               title={title.tooltip}
             >
               {tab.kind === 'merge-conflict' || tab.kind === 'merge-batch'
-                ? <ExclamationTriangleIcon className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                ? <ExclamationTriangleIcon className="w-4 h-4 text-amber-400 shrink-0" />
                 : tab.kind === 'welcome'
-                  ? <SparklesIcon className="w-4 h-4 text-obsidianAccentPurple flex-shrink-0" />
+                  ? <SparklesIcon className="w-4 h-4 text-obsidianAccentPurple shrink-0" />
                   : tab.kind === 'compare'
-                    ? <DocumentDuplicateIcon className="w-4 h-4 text-obsidianAccentPurple flex-shrink-0" />
-                    : <DocumentTextIcon className="w-4 h-4 flex-shrink-0" />}
+                    ? <DocumentDuplicateIcon className="w-4 h-4 text-obsidianAccentPurple shrink-0" />
+                    : <DocumentTextIcon className="w-4 h-4 shrink-0" />}
               <span className={`truncate flex-1 min-w-0 ${title.italic ? 'italic' : ''}`}>{title.text}</span>
               <button
                 onClick={(e) => { e.stopPropagation(); closeTab(tab.id) }}
-                className="flex-shrink-0 p-0.5 max-md:p-2 rounded hover:bg-obsidianHighlight text-obsidianSecondaryText inline-flex items-center justify-center max-md:min-w-[36px] max-md:min-h-[36px]"
+                className="shrink-0 p-0.5 max-md:p-2 rounded-sm hover:bg-obsidianHighlight text-obsidianSecondaryText inline-flex items-center justify-center max-md:min-w-[36px] max-md:min-h-[36px]"
                 title="Close tab"
                 aria-label="Close tab"
               >
@@ -281,7 +281,7 @@ const DropGap = ({ idx, showLine, onDragOver, onDrop }: {
   <div
     onDragOver={(e) => onDragOver(e, idx)}
     onDrop={(e) => onDrop(e, idx)}
-    className="relative w-1 flex-shrink-0"
+    className="relative w-1 shrink-0"
   >
     {showLine && (
       <div className="absolute inset-y-0 left-0 w-0.5 bg-obsidianAccentPurple" />

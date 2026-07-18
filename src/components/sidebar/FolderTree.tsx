@@ -637,7 +637,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
       aria-level={depth + 1}
       aria-selected={false}
     >
-      <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
+      <DocumentTextIcon className="w-4 h-4 mr-2 shrink-0" />
       <span className="flex-1 truncate">{attachmentDisplayName(m.path)}</span>
     </div>
   )
@@ -724,7 +724,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
         <div
           className={`obsidian-folder-item ${
             isActive ? 'bg-obsidianHighlight' : ''
-          } ${isDropTarget ? 'outline outline-2 outline-obsidianAccentPurple bg-obsidianAccentPurple/10' : ''} ${
+          } ${isDropTarget ? 'outline-solid outline-2 outline-obsidianAccentPurple bg-obsidianAccentPurple/10' : ''} ${
             kbFocused ? 'ring-1 ring-inset ring-obsidianAccentPurple' : ''
           }`}
           style={{ paddingLeft: depth > 0 ? `${depth * 12 + 8}px` : undefined }}
@@ -743,7 +743,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
           data-kb-focused={kbFocused ? 'true' : undefined}
         >
           <button
-            className="mr-1 focus:outline-none"
+            className="mr-1 focus:outline-hidden"
             onClick={e => {
               e.stopPropagation()
               toggleFolderExpanded(folder.id)
@@ -825,7 +825,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
               aria-level={1}
               aria-selected={selectedNoteId === note.id}
             >
-              <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
+              <DocumentTextIcon className="w-4 h-4 mr-2 shrink-0" />
               <span className="flex-1 truncate">{note.title}</span>
               <div className="flex gap-1">
                 <button
@@ -893,7 +893,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
             {sortedTags.map(([name, count]) => (
               <div
                 key={name}
-                className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-obsidianDarkGray cursor-default"
+                className="flex items-center gap-2 px-2 py-1.5 rounded-sm hover:bg-obsidianDarkGray cursor-default"
               >
                 <span className="text-sm text-obsidianAccentPurple font-medium">#{name}</span>
                 <span className="ml-auto text-xs text-obsidianSecondaryText">{count}</span>
@@ -929,8 +929,8 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
         tabIndex={0}
         role="tree"
         aria-label="Folder tree"
-        className={`text-center py-8 text-obsidianSecondaryText min-h-full outline-none ${
-          dragOverTarget === '__root__' ? 'outline outline-2 outline-obsidianAccentPurple' : ''
+        className={`text-center py-8 text-obsidianSecondaryText min-h-full outline-hidden ${
+          dragOverTarget === '__root__' ? 'outline-solid outline-2 outline-obsidianAccentPurple' : ''
         }`}
         onDragOver={onRootDragOver}
         onDragLeave={onRootDragLeave}
@@ -961,7 +961,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
       tabIndex={0}
       role="tree"
       aria-label="Folder tree"
-      className={`min-h-full outline-none ${rootHighlighted ? 'outline outline-2 outline-obsidianAccentPurple rounded' : ''}`}
+      className={`min-h-full outline-hidden ${rootHighlighted ? 'outline-solid outline-2 outline-obsidianAccentPurple rounded-sm' : ''}`}
       onDragOver={onRootDragOver}
       onDragLeave={onRootDragLeave}
       onDrop={onRootDrop}
@@ -979,7 +979,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
       )}
       {selectedIds.size > 0 && (
         <div
-          className="sticky top-0 z-10 mb-1 flex items-center gap-2 px-2 py-1.5 bg-obsidianAccentPurple/15 border border-obsidianAccentPurple/40 rounded text-xs"
+          className="sticky top-0 z-10 mb-1 flex items-center gap-2 px-2 py-1.5 bg-obsidianAccentPurple/15 border border-obsidianAccentPurple/40 rounded-sm text-xs"
           data-testid="multiselect-bar"
         >
           <span className="text-obsidianAccentPurple font-medium">
@@ -988,7 +988,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
           <button
             type="button"
             onClick={() => deleteSelected()}
-            className="ml-auto px-2 py-0.5 rounded bg-red-500/15 text-red-400 hover:bg-red-500/25"
+            className="ml-auto px-2 py-0.5 rounded-sm bg-red-500/15 text-red-400 hover:bg-red-500/25"
             data-testid="multiselect-delete"
             title="Delete selected (Del / Backspace)"
           >
@@ -997,7 +997,7 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
           <button
             type="button"
             onClick={clearSelection}
-            className="px-2 py-0.5 rounded text-obsidianSecondaryText hover:text-obsidianText"
+            className="px-2 py-0.5 rounded-sm text-obsidianSecondaryText hover:text-obsidianText"
           >
             Clear
           </button>
@@ -1114,7 +1114,7 @@ const NoteRow = memo(function NoteRow({
         aria-selected={false}
         aria-disabled="true"
       >
-        <DocumentMagnifyingGlassIcon className="w-4 h-4 mr-2 flex-shrink-0" />
+        <DocumentMagnifyingGlassIcon className="w-4 h-4 mr-2 shrink-0" />
         <span className="flex-1 truncate">{note.title}</span>
       </div>
     )
@@ -1127,10 +1127,10 @@ const NoteRow = memo(function NoteRow({
     >
       <div
         className={`obsidian-file-item ${
-          multiSelected ? 'bg-obsidianAccentPurple/25 border-l-2 border-obsidianAccentPurple -ml-[2px] pl-[10px]' :
+          multiSelected ? 'bg-obsidianAccentPurple/25 border-l-2 border-obsidianAccentPurple ml-[-2px] pl-[10px]' :
             isActive ? 'bg-obsidianHighlight' : ''
         } ${kbFocused ? 'ring-1 ring-inset ring-obsidianAccentPurple' : ''} ${
-          isCompareSource ? 'italic border-l-2 border-obsidianAccentPurple -ml-[2px] pl-[10px] ring-1 ring-inset ring-obsidianAccentPurple/60' : ''
+          isCompareSource ? 'italic border-l-2 border-obsidianAccentPurple ml-[-2px] pl-[10px] ring-1 ring-inset ring-obsidianAccentPurple/60' : ''
         } ${className}`}
         data-compare-source={isCompareSource ? 'true' : undefined}
         draggable={!isTrashView && !multiSelected && !note.isDeleted}
@@ -1148,11 +1148,11 @@ const NoteRow = memo(function NoteRow({
         aria-selected={isActive}
         aria-current={kbFocused ? 'true' : undefined}
       >
-        <DocumentTextIcon className="w-4 h-4 mr-2 flex-shrink-0" />
+        <DocumentTextIcon className="w-4 h-4 mr-2 shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1">
             {note.isPinned && (
-              <StarIconSolid className="w-3 h-3 text-yellow-500 flex-shrink-0" />
+              <StarIconSolid className="w-3 h-3 text-yellow-500 shrink-0" />
             )}
             {isTrashView ? (
               <span className="truncate">{note.title}</span>
@@ -1211,7 +1211,7 @@ const TrashFolderRow = ({
       >
         <button
           type="button"
-          className="mr-1 focus:outline-none"
+          className="mr-1 focus:outline-hidden"
           onClick={e => { e.stopPropagation(); toggleFolderExpanded(node.folder.id) }}
           aria-label={expanded ? `Collapse ${node.folder.name}` : `Expand ${node.folder.name}`}
         >
@@ -1221,7 +1221,7 @@ const TrashFolderRow = ({
             <ChevronRightIcon className="w-3.5 h-3.5" />
           )}
         </button>
-        <FolderIcon className="w-4 h-4 mr-1.5 flex-shrink-0 text-obsidianSecondaryText" />
+        <FolderIcon className="w-4 h-4 mr-1.5 shrink-0 text-obsidianSecondaryText" />
         <span className="flex-1 truncate">{node.folder.name}</span>
         {childCount > 0 && (
           <span className="text-[10px] text-obsidianSecondaryText ml-1">{childCount}</span>
@@ -1299,7 +1299,7 @@ const TrashSyntheticFolder = ({
       >
         <button
           type="button"
-          className="mr-1 focus:outline-none"
+          className="mr-1 focus:outline-hidden"
           onClick={e => { e.stopPropagation(); onToggle() }}
           aria-label={expanded ? `Collapse ${name}` : `Expand ${name}`}
         >
@@ -1309,7 +1309,7 @@ const TrashSyntheticFolder = ({
             <ChevronRightIcon className="w-3.5 h-3.5" />
           )}
         </button>
-        <FolderIcon className="w-4 h-4 mr-1.5 flex-shrink-0" />
+        <FolderIcon className="w-4 h-4 mr-1.5 shrink-0" />
         <span className="flex-1 truncate">{name}</span>
         <span className="text-[10px] text-obsidianSecondaryText ml-1">
           {deletedCount}

@@ -123,7 +123,7 @@ export const SidebarRelatedPanel = () => {
         <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-obsidianSecondaryText">
           <LinkIcon className="w-3.5 h-3.5" />
           Related to
-          <span className="text-obsidianText normal-case truncate max-w-[8rem]" title={activeNote.title}>
+          <span className="text-obsidianText normal-case truncate max-w-32" title={activeNote.title}>
             {activeNote.title || 'Untitled'}
           </span>
         </div>
@@ -131,7 +131,7 @@ export const SidebarRelatedPanel = () => {
           type="button"
           onClick={() => void refresh()}
           title="Refresh"
-          className="p-1 rounded text-obsidianSecondaryText hover:text-obsidianText hover:bg-obsidianHighlight/40"
+          className="p-1 rounded-sm text-obsidianSecondaryText hover:text-obsidianText hover:bg-obsidianHighlight/40"
         >
           <ArrowPathIcon className="w-3.5 h-3.5" />
         </button>
@@ -147,7 +147,7 @@ export const SidebarRelatedPanel = () => {
               type="button"
               onClick={handleIndexThis}
               disabled={indexing}
-              className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-obsidianAccentPurple text-white hover:opacity-90 disabled:opacity-60"
+              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-sm bg-obsidianAccentPurple text-white hover:opacity-90 disabled:opacity-60"
               data-testid="related-index-this"
             >
               <SparklesIcon className="w-3.5 h-3.5" />

@@ -240,7 +240,7 @@ const CommitRow = ({ commit }: { commit: FileCommitEntry }) => {
   const openModal = useUIStore(s => s.openModal)
   return (
     <div
-      className="flex items-center gap-1 px-1 py-0.5 text-xs hover:bg-obsidianHighlight/40 rounded"
+      className="flex items-center gap-1 px-1 py-0.5 text-xs hover:bg-obsidianHighlight/40 rounded-sm"
       title={`${commit.shortSha} · ${commit.authorName} · ${commit.message || '(no message)'}`}
       data-testid="recent-commit-row"
     >
@@ -270,7 +270,7 @@ const CommitRow = ({ commit }: { commit: FileCommitEntry }) => {
           })
         }}
         title="Revert vault to this commit"
-        className="p-0.5 rounded text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText transition-colors flex-none"
+        className="p-0.5 rounded-sm text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText transition-colors flex-none"
         data-testid="recent-commit-revert"
       >
         <ArrowUturnLeftIcon className="w-3 h-3" />
@@ -320,7 +320,7 @@ const Folder = ({
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center gap-1 px-1 py-0.5 text-xs text-obsidianSecondaryText hover:bg-obsidianHighlight/30 rounded"
+        className="w-full flex items-center gap-1 px-1 py-0.5 text-xs text-obsidianSecondaryText hover:bg-obsidianHighlight/30 rounded-sm"
         style={{ paddingLeft: `${depth * 10 + 4}px` }}
       >
         {open ? (
@@ -347,7 +347,7 @@ const Leaf = ({
   <button
     type="button"
     onClick={() => onOpen(leaf.noteId)}
-    className="w-full flex items-center gap-1.5 px-1 py-0.5 text-xs text-left rounded hover:bg-obsidianHighlight/40 group"
+    className="w-full flex items-center gap-1.5 px-1 py-0.5 text-xs text-left rounded-sm hover:bg-obsidianHighlight/40 group"
     title={leaf.gitPath ?? leaf.title}
     style={{ paddingLeft: `${depth * 10 + 16}px` }}
     data-testid={`source-control-row-${leaf.noteId}`}

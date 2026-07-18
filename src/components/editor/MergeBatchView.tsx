@@ -101,8 +101,8 @@ export const MergeBatchView = ({ tabId, conflicts }: Props) => {
   return (
     <div className="flex-1 h-full flex flex-col overflow-hidden bg-obsidianBlack">
       <div className="px-4 py-2 border-b border-obsidianBorder space-y-2">
-        <div className="flex items-start gap-2 px-3 py-2 bg-amber-900/20 border border-amber-900/40 rounded text-sm text-amber-200">
-          <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+        <div className="flex items-start gap-2 px-3 py-2 bg-amber-900/20 border border-amber-900/40 rounded-sm text-sm text-amber-200">
+          <ExclamationTriangleIcon className="w-5 h-5 shrink-0 mt-0.5" />
           <span>
             A pull brought back changes that conflict with your local edits. Pick a side per file, drill in for a line-by-line merge, or resolve them all at once.
           </span>
@@ -112,7 +112,7 @@ export const MergeBatchView = ({ tabId, conflicts }: Props) => {
             <div className="text-sm text-obsidianText font-medium">{headerCopy}</div>
             <div className="text-xs text-obsidianSecondaryText">{conflicts.length} file{conflicts.length === 1 ? '' : 's'} drifted since your last sync</div>
           </div>
-          <div className="flex-shrink-0 flex items-center gap-2 pl-2 border-l border-obsidianBorder">
+          <div className="shrink-0 flex items-center gap-2 pl-2 border-l border-obsidianBorder">
             {!allResolved && (
               <>
                 <Button
@@ -163,7 +163,7 @@ export const MergeBatchView = ({ tabId, conflicts }: Props) => {
             const resolved = decision !== 'pending'
             return (
               <li key={key} className={`px-4 py-3 flex items-center gap-3 ${resolved ? 'opacity-60' : ''}`} data-testid="merge-batch-row">
-                <DocumentTextIcon className="w-5 h-5 flex-shrink-0 text-obsidianSecondaryText" />
+                <DocumentTextIcon className="w-5 h-5 shrink-0 text-obsidianSecondaryText" />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm text-obsidianText truncate" title={c.path}>{c.path}</div>
                   <div className="text-xs text-obsidianSecondaryText">
@@ -171,7 +171,7 @@ export const MergeBatchView = ({ tabId, conflicts }: Props) => {
                     {resolved && <> · resolved → {decision === 'local' ? 'kept mine' : 'took theirs'}</>}
                   </div>
                 </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
+                <div className="flex items-center gap-1 shrink-0">
                   {resolved ? (
                     <CheckCircleIcon className="w-5 h-5 text-green-500" />
                   ) : (

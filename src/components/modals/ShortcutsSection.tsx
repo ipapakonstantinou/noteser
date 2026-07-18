@@ -66,7 +66,7 @@ export const ShortcutsSection = () => {
               setCapturingId(null)
             }
           }}
-          className="text-xs px-2 py-1 rounded border border-obsidianBorder text-obsidianSecondaryText hover:text-obsidianText hover:bg-obsidianDarkGray"
+          className="text-xs px-2 py-1 rounded-sm border border-obsidianBorder text-obsidianSecondaryText hover:text-obsidianText hover:bg-obsidianDarkGray"
         >
           Reset all shortcuts
         </button>
@@ -138,7 +138,7 @@ function ShortcutRow({
           <div className="text-obsidianSecondaryText text-xs mt-0.5">{description}</div>
         )}
       </div>
-      <div className="flex-shrink-0 flex items-center gap-2">
+      <div className="shrink-0 flex items-center gap-2">
         {isOverridden && !isCapturing && (
           <button
             type="button"
@@ -157,7 +157,7 @@ function ShortcutRow({
             else onStartCapture()
           }}
           className={
-            'text-xs font-mono px-2 py-1 rounded border min-w-[7rem] text-center ' +
+            'text-xs font-mono px-2 py-1 rounded-sm border min-w-28 text-center ' +
             (isCapturing
               ? 'border-obsidianAccentPurple text-obsidianAccentPurple bg-obsidianDarkGray'
               : 'border-obsidianBorder text-obsidianText hover:bg-obsidianDarkGray')

@@ -18,20 +18,20 @@ export const SettingsFooter = ({
       onClick={() => {
         if (confirm(resetConfirm)) onReset()
       }}
-      className="text-sm px-3 py-1.5 rounded border border-obsidianBorder text-obsidianSecondaryText hover:text-obsidianText hover:bg-obsidianDarkGray"
+      className="text-sm px-3 py-1.5 rounded-sm border border-obsidianBorder text-obsidianSecondaryText hover:text-obsidianText hover:bg-obsidianDarkGray"
     >
       Reset to defaults
     </button>
     <div className="flex items-center gap-2">
       <button
         onClick={onApply}
-        className="text-sm px-3 py-1.5 rounded border border-obsidianBorder text-obsidianSecondaryText hover:text-obsidianText hover:bg-obsidianDarkGray"
+        className="text-sm px-3 py-1.5 rounded-sm border border-obsidianBorder text-obsidianSecondaryText hover:text-obsidianText hover:bg-obsidianDarkGray"
       >
         Apply
       </button>
       <button
         onClick={onSaveAndClose}
-        className="text-sm px-3 py-1.5 rounded bg-obsidianAccentPurple text-white hover:opacity-90"
+        className="text-sm px-3 py-1.5 rounded-sm bg-obsidianAccentPurple text-white hover:opacity-90"
         data-testid="settings-save-and-close"
       >
         Save and close

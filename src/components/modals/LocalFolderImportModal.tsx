@@ -144,8 +144,8 @@ export const LocalFolderImportModal = () => {
         </div>
       )}
       {scanError && (
-        <div className="flex items-start gap-2 p-3 rounded bg-red-900/20 border border-red-900/40 text-xs text-red-300">
-          <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+        <div className="flex items-start gap-2 p-3 rounded-sm bg-red-900/20 border border-red-900/40 text-xs text-red-300">
+          <ExclamationTriangleIcon className="w-4 h-4 shrink-0 mt-0.5" />
           <span>{scanError}</span>
         </div>
       )}
@@ -160,8 +160,8 @@ export const LocalFolderImportModal = () => {
             <SummaryRow label="Updated (content changed)" value={rows.filter(r => r.matchedNoteId && r.changed).length} />
             <SummaryRow label="Unchanged" value={rows.filter(r => r.matchedNoteId && !r.changed).length} />
           </dl>
-          <div className="flex items-start gap-2 p-3 rounded bg-amber-900/20 border border-amber-900/40 text-amber-200 text-xs">
-            <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2 p-3 rounded-sm bg-amber-900/20 border border-amber-900/40 text-amber-200 text-xs">
+            <ExclamationTriangleIcon className="w-4 h-4 shrink-0 mt-0.5" />
             <span>
               Importing overwrites the matching local notes&apos; content with whatever is in the
               folder. Local notes that aren&apos;t in the folder are left alone.
@@ -183,8 +183,8 @@ export const LocalFolderImportModal = () => {
       )}
       {done && (
         <div className="space-y-4 text-sm">
-          <div className="flex items-start gap-2 p-3 rounded bg-emerald-900/20 border border-emerald-900/40 text-emerald-200 text-xs">
-            <CheckCircleIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2 p-3 rounded-sm bg-emerald-900/20 border border-emerald-900/40 text-emerald-200 text-xs">
+            <CheckCircleIcon className="w-5 h-5 shrink-0 mt-0.5" />
             <span>Imported. The vault now matches the folder for every file that was present.</span>
           </div>
           <div className="flex justify-end pt-2 border-t border-obsidianBorder">

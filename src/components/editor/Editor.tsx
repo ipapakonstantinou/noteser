@@ -125,12 +125,12 @@ const Split = ({ node, paneById }: SplitProps) => {
     ? { width: `${(1 - node.ratio) * 100}%` }
     : { height: `${(1 - node.ratio) * 100}%` }
   const dividerClass = isHorizontal
-    ? 'w-1 cursor-col-resize bg-obsidianBorder hover:bg-obsidianAccentPurple/60 flex-shrink-0 transition-colors'
-    : 'h-1 cursor-row-resize bg-obsidianBorder hover:bg-obsidianAccentPurple/60 flex-shrink-0 transition-colors'
+    ? 'w-1 cursor-col-resize bg-obsidianBorder hover:bg-obsidianAccentPurple/60 shrink-0 transition-colors'
+    : 'h-1 cursor-row-resize bg-obsidianBorder hover:bg-obsidianAccentPurple/60 shrink-0 transition-colors'
 
   return (
     <div ref={containerRef} className={containerClass}>
-      <div style={firstStyle} className={`${isHorizontal ? 'flex' : 'flex flex-col'} min-w-0 min-h-0 flex-shrink-0`}>
+      <div style={firstStyle} className={`${isHorizontal ? 'flex' : 'flex flex-col'} min-w-0 min-h-0 shrink-0`}>
         <LayoutRenderer node={node.children[0]} paneById={paneById} />
       </div>
       <div
@@ -140,7 +140,7 @@ const Split = ({ node, paneById }: SplitProps) => {
         data-testid="editor-resize-handle"
         data-direction={node.direction}
       />
-      <div style={secondStyle} className={`${isHorizontal ? 'flex' : 'flex flex-col'} min-w-0 min-h-0 flex-shrink-0`}>
+      <div style={secondStyle} className={`${isHorizontal ? 'flex' : 'flex flex-col'} min-w-0 min-h-0 shrink-0`}>
         <LayoutRenderer node={node.children[1]} paneById={paneById} />
       </div>
     </div>

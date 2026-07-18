@@ -110,7 +110,7 @@ export const BugReportModal = () => {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Short summary of the bug"
-              className="w-full px-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:ring-2 focus:ring-obsidianAccentPurple focus:border-transparent"
+              className="w-full px-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden focus:ring-2 focus:ring-obsidianAccentPurple focus:border-transparent"
               autoFocus
             />
           </FormRow>
@@ -120,7 +120,7 @@ export const BugReportModal = () => {
               onChange={(e) => setDescription(e.target.value)}
               rows={4}
               placeholder="Describe the bug…"
-              className="w-full px-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:ring-2 focus:ring-obsidianAccentPurple focus:border-transparent"
+              className="w-full px-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden focus:ring-2 focus:ring-obsidianAccentPurple focus:border-transparent"
             />
           </FormRow>
           <FormRow label="Steps to reproduce">
@@ -129,7 +129,7 @@ export const BugReportModal = () => {
               onChange={(e) => setSteps(e.target.value)}
               rows={3}
               placeholder="1. … 2. … 3. … (optional)"
-              className="w-full px-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:ring-2 focus:ring-obsidianAccentPurple focus:border-transparent"
+              className="w-full px-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden focus:ring-2 focus:ring-obsidianAccentPurple focus:border-transparent"
             />
           </FormRow>
 
@@ -152,13 +152,13 @@ export const BugReportModal = () => {
             {showPreview ? 'Hide preview' : 'Preview report body'}
           </button>
           {showPreview && (
-            <pre className="text-xs bg-obsidianDarkGray border border-obsidianBorder rounded p-3 overflow-auto max-h-64 whitespace-pre-wrap text-obsidianSecondaryText">
+            <pre className="text-xs bg-obsidianDarkGray border border-obsidianBorder rounded-sm p-3 overflow-auto max-h-64 whitespace-pre-wrap text-obsidianSecondaryText">
               {previewBody}
             </pre>
           )}
 
           {status.kind === 'err' && (
-            <div className="text-sm text-red-400 border border-red-500/40 bg-red-500/5 rounded p-2">
+            <div className="text-sm text-red-400 border border-red-500/40 bg-red-500/5 rounded-sm p-2">
               {status.message}
             </div>
           )}

@@ -132,7 +132,7 @@ export const AISection = () => {
                 type="button"
                 onClick={handleIndexAll}
                 disabled={indexing || aiProvider !== 'openai'}
-                className="px-3 py-1.5 text-sm rounded bg-obsidianAccentPurple text-white hover:opacity-90 disabled:opacity-50"
+                className="px-3 py-1.5 text-sm rounded-sm bg-obsidianAccentPurple text-white hover:opacity-90 disabled:opacity-50"
                 data-testid="ai-index-all"
               >
                 {indexing ? 'Indexing…' : 'Index all notes'}
@@ -141,7 +141,7 @@ export const AISection = () => {
                 type="button"
                 onClick={handleClearEmbeddings}
                 disabled={indexing}
-                className="px-3 py-1.5 text-sm rounded border border-obsidianBorder text-obsidianText hover:bg-obsidianDarkGray disabled:opacity-50"
+                className="px-3 py-1.5 text-sm rounded-sm border border-obsidianBorder text-obsidianText hover:bg-obsidianDarkGray disabled:opacity-50"
               >
                 Clear embeddings
               </button>

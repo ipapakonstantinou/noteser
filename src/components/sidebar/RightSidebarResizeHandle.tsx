@@ -105,7 +105,7 @@ export const RightSidebarResizeHandle = () => {
       onDoubleClick={onDoubleClick}
       onKeyDown={onKeyDown}
       data-testid="right-sidebar-resize-handle"
-      className={`group relative z-10 -mr-[3px] w-[6px] flex-none cursor-col-resize self-stretch outline-none ${
+      className={`group relative z-10 mr-[-3px] w-[6px] flex-none cursor-col-resize self-stretch outline-hidden ${
         dragging ? 'bg-obsidianHighlight/40' : 'hover:bg-obsidianHighlight/20'
       } transition-colors focus-visible:bg-obsidianHighlight/30`}
     >

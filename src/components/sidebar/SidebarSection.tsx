@@ -104,7 +104,7 @@ export const SidebarSection = ({
 
   return (
     <div
-      className="flex-shrink-0 border-t border-obsidianBorder flex flex-col"
+      className="shrink-0 border-t border-obsidianBorder flex flex-col"
       style={collapsed ? undefined : { height: effectiveHeight }}
       data-section-id={id}
     >
@@ -175,7 +175,7 @@ export const SidebarSection = ({
           aria-orientation="horizontal"
           aria-label={`Resize ${title}`}
           onMouseDown={onResizeStart}
-          className={`group h-2 cursor-row-resize flex-shrink-0 flex items-center justify-center ${
+          className={`group h-2 cursor-row-resize shrink-0 flex items-center justify-center ${
             dragging ? 'bg-obsidianAccentPurple' : 'hover:bg-obsidianAccentPurple/30'
           } transition-colors`}
         >

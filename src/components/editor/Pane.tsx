@@ -81,7 +81,7 @@ export const Pane = ({ pane }: Props) => {
   // highlight was invisible. The transition morphs the region as the
   // pointer crosses zones.
   const highlightClassFor = (region: PaneDropRegion): string => {
-    const base = 'absolute pane-drop-highlight rounded-sm pointer-events-none transition-all duration-150 ease-out'
+    const base = 'absolute pane-drop-highlight rounded-xs pointer-events-none transition-all duration-150 ease-out'
     switch (region) {
       case 'left': return `${base} inset-y-0 left-0 w-1/2`
       case 'right': return `${base} inset-y-0 right-0 w-1/2`

@@ -121,7 +121,7 @@ export const AttachmentsSection = () => {
           <button
             onClick={handleCleanupOrphans}
             disabled={busy || loading || orphans.length === 0}
-            className="text-xs px-2 py-1 rounded border border-obsidianBorder text-obsidianText hover:bg-obsidianDarkGray disabled:opacity-50 disabled:hover:bg-transparent"
+            className="text-xs px-2 py-1 rounded-sm border border-obsidianBorder text-obsidianText hover:bg-obsidianDarkGray disabled:opacity-50 disabled:hover:bg-transparent"
           >
             Clean up orphans
           </button>

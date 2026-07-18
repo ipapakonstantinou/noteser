@@ -133,7 +133,7 @@ export const Sidebar = () => {
             <>
               <button
                 onClick={() => openModal({ type: 'github-repo' })}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-obsidianSecondaryText hover:bg-obsidianDarkGray transition-colors"
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm text-sm text-obsidianSecondaryText hover:bg-obsidianDarkGray transition-colors"
                 title={
                   githubSyncRepo
                     ? `Vault: ${githubSyncRepo.owner}/${githubSyncRepo.name} — click to change`
@@ -145,7 +145,7 @@ export const Sidebar = () => {
                   <img
                     src={githubUser.avatar_url}
                     alt={githubUser.login}
-                    className="w-4 h-4 rounded-full flex-shrink-0"
+                    className="w-4 h-4 rounded-full shrink-0"
                   />
                 )}
                 <span className="truncate">
@@ -158,7 +158,7 @@ export const Sidebar = () => {
                 <button
                   onClick={() => runSync()}
                   disabled={syncRunning}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-obsidianSecondaryText hover:bg-obsidianDarkGray transition-colors disabled:opacity-60"
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm text-sm text-obsidianSecondaryText hover:bg-obsidianDarkGray transition-colors disabled:opacity-60"
                   title={syncState.kind === 'err' ? syncState.message : 'Commit and push current notes'}
                 >
                   {syncRunning ? (
@@ -186,7 +186,7 @@ export const Sidebar = () => {
           ) : (
             <button
               onClick={() => openModal({ type: 'github-auth' })}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-obsidianSecondaryText hover:bg-obsidianDarkGray transition-colors"
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm text-sm text-obsidianSecondaryText hover:bg-obsidianDarkGray transition-colors"
               title="Connect to GitHub"
             >
               <CodeBracketIcon className="w-4 h-4" />

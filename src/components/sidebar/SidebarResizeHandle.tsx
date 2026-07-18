@@ -117,7 +117,7 @@ export const SidebarResizeHandle = () => {
       // Pulled 2px into the editor track (negative margin) so the
       // 6px-wide grab zone straddles the visual border without adding
       // layout width. self-stretch keeps it full-height.
-      className={`group relative z-10 -ml-[3px] w-[6px] flex-none cursor-col-resize self-stretch outline-none ${
+      className={`group relative z-10 ml-[-3px] w-[6px] flex-none cursor-col-resize self-stretch outline-hidden ${
         dragging ? 'bg-obsidianHighlight/40' : 'hover:bg-obsidianHighlight/20'
       } transition-colors focus-visible:bg-obsidianHighlight/30`}
     >

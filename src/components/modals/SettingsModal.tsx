@@ -192,7 +192,7 @@ export const SettingsModal = () => {
               placeholder="Search settings"
               aria-label="Search settings"
               data-testid="settings-search-input"
-              className="w-full pl-8 pr-8 py-1.5 text-sm bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple"
+              className="w-full pl-8 pr-8 py-1.5 text-sm bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden focus:border-obsidianAccentPurple"
             />
             {query.length > 0 && (
               <button
@@ -203,7 +203,7 @@ export const SettingsModal = () => {
                 }}
                 aria-label="Clear search"
                 data-testid="settings-search-clear"
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-obsidianSecondaryText hover:text-obsidianText hover:bg-obsidianHighlight"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded-sm text-obsidianSecondaryText hover:text-obsidianText hover:bg-obsidianHighlight"
               >
                 <XMarkIcon className="w-3.5 h-3.5" />
               </button>
@@ -235,7 +235,7 @@ export const SettingsModal = () => {
                     className={[
                       // Mobile: rounded chip; desktop: full-width row.
                       'flex items-center gap-2 text-sm text-left transition-colors flex-none',
-                      'px-3 py-1.5 rounded md:rounded-none md:w-full md:px-3 md:py-1.5',
+                      'px-3 py-1.5 rounded-sm md:rounded-none md:w-full md:px-3 md:py-1.5',
                       isActive
                         ? 'bg-obsidianAccentPurple/15 text-obsidianText md:border-l-2 md:border-obsidianAccentPurple md:pl-[10px]'
                         : 'text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText md:border-l-2 md:border-transparent md:pl-[10px]',
@@ -300,7 +300,7 @@ function SettingsSearchResults({
           <div className="text-xs uppercase tracking-wide text-obsidianSecondaryText">
             {group.categoryLabel}
           </div>
-          <ul className="divide-y divide-obsidianBorder border border-obsidianBorder rounded">
+          <ul className="divide-y divide-obsidianBorder border border-obsidianBorder rounded-sm">
             {group.items.map(item => (
               <li
                 key={item.id}
@@ -316,7 +316,7 @@ function SettingsSearchResults({
                 <button
                   type="button"
                   onClick={() => onJump(item.categoryId as CategoryId)}
-                  className="flex-none px-2 py-1 text-xs rounded border border-obsidianBorder text-obsidianText hover:border-obsidianAccentPurple hover:bg-obsidianHighlight/40 transition-colors"
+                  className="flex-none px-2 py-1 text-xs rounded-sm border border-obsidianBorder text-obsidianText hover:border-obsidianAccentPurple hover:bg-obsidianHighlight/40 transition-colors"
                 >
                   Go to setting
                 </button>

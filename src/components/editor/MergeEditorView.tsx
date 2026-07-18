@@ -69,8 +69,8 @@ export const MergeEditorView = ({ tabId, conflict }: Props) => {
     <div className="flex-1 h-full flex flex-col overflow-hidden bg-obsidianBlack">
       {/* Header */}
       <div className="px-4 py-2 border-b border-obsidianBorder space-y-2">
-        <div className="flex items-start gap-2 px-3 py-2 bg-amber-900/20 border border-amber-900/40 rounded text-sm text-amber-200">
-          <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+        <div className="flex items-start gap-2 px-3 py-2 bg-amber-900/20 border border-amber-900/40 rounded-sm text-sm text-amber-200">
+          <ExclamationTriangleIcon className="w-5 h-5 shrink-0 mt-0.5" />
           <span>
             Use the action links above each conflict region to pick a side. Resolved regions
             collapse; hover them to revert.
@@ -81,7 +81,7 @@ export const MergeEditorView = ({ tabId, conflict }: Props) => {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <code className="text-sm text-obsidianText truncate">{conflict.path}</code>
-              {resolved && <CheckCircleIcon className="w-4 h-4 text-green-500 flex-shrink-0" />}
+              {resolved && <CheckCircleIcon className="w-4 h-4 text-green-500 shrink-0" />}
             </div>
             <div className="text-xs text-obsidianSecondaryText">
               {conflict.kind === 'conflict'
@@ -89,7 +89,7 @@ export const MergeEditorView = ({ tabId, conflict }: Props) => {
                 : <>Remote deleted · local has unsynced edits</>}
             </div>
           </div>
-          <div className="flex-shrink-0 flex items-center gap-2 pl-2 border-l border-obsidianBorder">
+          <div className="shrink-0 flex items-center gap-2 pl-2 border-l border-obsidianBorder">
             <Button variant="ghost" onClick={() => closeTab(tabId)}>Cancel</Button>
             <Button variant="primary" onClick={applyAndClose} disabled={!resolved}>
               Apply
@@ -179,7 +179,7 @@ const MergeView = ({
   const rows = useMemo(() => buildRows(hunks, choices), [hunks, choices])
   let lineNo = 0
   return (
-    <div className="font-mono text-xs border border-obsidianBorder rounded overflow-hidden">
+    <div className="font-mono text-xs border border-obsidianBorder rounded-sm overflow-hidden">
       {rows.map((row, idx) => {
         if (row.kind === 'actions' && row.hunkIdx != null) {
           const i = row.hunkIdx
@@ -215,10 +215,10 @@ const MergeView = ({
           ''
         return (
           <div key={idx} className={`flex group ${bg}`}>
-            <div className="select-none w-10 text-right pr-2 py-0.5 text-obsidianSecondaryText/60 flex-shrink-0">
+            <div className="select-none w-10 text-right pr-2 py-0.5 text-obsidianSecondaryText/60 shrink-0">
               {lineNo}
             </div>
-            <pre className="flex-1 py-0.5 px-2 text-obsidianText whitespace-pre-wrap break-words min-w-0">
+            <pre className="flex-1 py-0.5 px-2 text-obsidianText whitespace-pre-wrap wrap-break-word min-w-0">
               {row.text ?? ''}
             </pre>
             {isResolved && row.hunkIdx != null && (
@@ -238,7 +238,7 @@ const MergeView = ({
 }
 
 const ActionLink = ({ children, onClick }: { children: React.ReactNode; onClick: () => void }) => (
-  <button onClick={onClick} className="text-obsidianAccentPurple hover:underline focus:outline-none">
+  <button onClick={onClick} className="text-obsidianAccentPurple hover:underline focus:outline-hidden">
     {children}
   </button>
 )
@@ -251,13 +251,13 @@ const DeletedConflictView = ({
   onChoose: (c: 'local' | 'remote') => void
 }) => (
   <div className="space-y-3 max-w-3xl">
-    <div className="px-3 py-2 bg-amber-900/20 border border-amber-900/40 rounded text-sm text-amber-200">
+    <div className="px-3 py-2 bg-amber-900/20 border border-amber-900/40 rounded-sm text-sm text-amber-200">
       The remote file was deleted, but you have unsynced local edits. Keep your local copy (it
       will be re-created on next sync) or accept the deletion (the note will be moved to trash).
     </div>
     <div>
       <div className="text-xs text-obsidianSecondaryText mb-1 font-mono">Local content</div>
-      <pre className="text-xs text-obsidianText bg-obsidianDarkGray border border-obsidianBorder rounded p-2 whitespace-pre-wrap max-h-72 overflow-auto font-mono">
+      <pre className="text-xs text-obsidianText bg-obsidianDarkGray border border-obsidianBorder rounded-sm p-2 whitespace-pre-wrap max-h-72 overflow-auto font-mono">
         {localContent}
       </pre>
     </div>

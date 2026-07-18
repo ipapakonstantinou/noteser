@@ -119,7 +119,7 @@ export function LocalFolderPanel() {
       </p>
 
       {status === 'unsupported' && (
-        <div className="flex items-start gap-2 p-3 rounded bg-amber-900/20 border border-amber-900/40 text-amber-200 text-xs">
+        <div className="flex items-start gap-2 p-3 rounded-sm bg-amber-900/20 border border-amber-900/40 text-amber-200 text-xs">
           <ExclamationTriangleIconUnsupported />
           <span>
             Your browser doesn&apos;t support the File System Access API. Use Chrome / Edge / Brave /
@@ -132,7 +132,7 @@ export function LocalFolderPanel() {
         <button
           type="button"
           onClick={handleConnect}
-          className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors"
+          className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded-sm hover:bg-obsidianAccentPurple/25 transition-colors"
           data-testid="local-folder-connect"
         >
           Connect a folder…
@@ -149,7 +149,7 @@ export function LocalFolderPanel() {
             <button
               type="button"
               onClick={handleReconnect}
-              className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors"
+              className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded-sm hover:bg-obsidianAccentPurple/25 transition-colors"
               data-testid="local-folder-reconnect"
             >
               Reconnect
@@ -157,7 +157,7 @@ export function LocalFolderPanel() {
             <button
               type="button"
               onClick={handleDisconnect}
-              className="px-3 py-1.5 text-sm border border-obsidianBorder text-obsidianSecondaryText rounded hover:text-obsidianText hover:bg-obsidianHighlight transition-colors"
+              className="px-3 py-1.5 text-sm border border-obsidianBorder text-obsidianSecondaryText rounded-sm hover:text-obsidianText hover:bg-obsidianHighlight transition-colors"
             >
               Forget folder
             </button>
@@ -178,7 +178,7 @@ export function LocalFolderPanel() {
               type="button"
               onClick={handlePushToFolder}
               disabled={busy}
-              className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors disabled:opacity-50"
+              className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded-sm hover:bg-obsidianAccentPurple/25 transition-colors disabled:opacity-50"
               data-testid="local-folder-push"
             >
               {busy ? 'Working…' : 'Push vault to folder'}
@@ -187,7 +187,7 @@ export function LocalFolderPanel() {
               type="button"
               onClick={handleImport}
               disabled={busy}
-              className="px-3 py-1.5 text-sm border border-obsidianBorder text-obsidianText rounded hover:bg-obsidianHighlight transition-colors disabled:opacity-50"
+              className="px-3 py-1.5 text-sm border border-obsidianBorder text-obsidianText rounded-sm hover:bg-obsidianHighlight transition-colors disabled:opacity-50"
               data-testid="local-folder-import-open"
             >
               Sync from folder…
@@ -196,7 +196,7 @@ export function LocalFolderPanel() {
               type="button"
               onClick={handleDisconnect}
               disabled={busy}
-              className="px-3 py-1.5 text-sm border border-red-900/40 text-red-300 rounded hover:bg-red-900/20 transition-colors disabled:opacity-50"
+              className="px-3 py-1.5 text-sm border border-red-900/40 text-red-300 rounded-sm hover:bg-red-900/20 transition-colors disabled:opacity-50"
             >
               Disconnect
             </button>
@@ -205,7 +205,7 @@ export function LocalFolderPanel() {
       )}
 
       {lastError && (
-        <div className="text-xs text-red-300 p-2 rounded border border-red-900/40 bg-red-900/20">
+        <div className="text-xs text-red-300 p-2 rounded-sm border border-red-900/40 bg-red-900/20">
           {lastError}
         </div>
       )}
@@ -363,7 +363,7 @@ function InFolderGitSection() {
             type="button"
             onClick={handleInit}
             disabled={busy}
-            className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors disabled:opacity-50"
+            className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded-sm hover:bg-obsidianAccentPurple/25 transition-colors disabled:opacity-50"
             data-testid="in-folder-git-init"
           >
             {busyStep === 'init' ? 'Initialising…' : 'Initialise git repo'}
@@ -389,14 +389,14 @@ function InFolderGitSection() {
                 value={remoteDraft}
                 onChange={e => setRemoteDraft(e.target.value)}
                 placeholder="https://github.com/owner/repo.git"
-                className="flex-1 px-2 py-1 text-xs font-mono bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple"
+                className="flex-1 px-2 py-1 text-xs font-mono bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden focus:border-obsidianAccentPurple"
                 data-testid="in-folder-git-remote-input"
               />
               <button
                 type="button"
                 onClick={handleSetRemote}
                 disabled={busy || remoteDraft.trim() === (remote ?? '')}
-                className="px-3 py-1 text-xs border border-obsidianBorder text-obsidianText rounded hover:bg-obsidianHighlight transition-colors disabled:opacity-50"
+                className="px-3 py-1 text-xs border border-obsidianBorder text-obsidianText rounded-sm hover:bg-obsidianHighlight transition-colors disabled:opacity-50"
                 data-testid="in-folder-git-set-remote"
               >
                 {busyStep === 'remote' ? 'Setting…' : 'Set'}
@@ -413,7 +413,7 @@ function InFolderGitSection() {
               onChange={e => setCommitMsg(e.target.value)}
               placeholder="Describe what changed…"
               rows={2}
-              className="w-full px-2 py-1 text-xs font-mono bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:border-obsidianAccentPurple resize-none"
+              className="w-full px-2 py-1 text-xs font-mono bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden focus:border-obsidianAccentPurple resize-none"
               data-testid="in-folder-git-commit-message"
             />
           </div>
@@ -423,7 +423,7 @@ function InFolderGitSection() {
               type="button"
               onClick={handleCommit}
               disabled={busy || !commitMsg.trim()}
-              className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded hover:bg-obsidianAccentPurple/25 transition-colors disabled:opacity-50"
+              className="px-3 py-1.5 text-sm bg-obsidianAccentPurple/15 text-obsidianAccentPurple border border-obsidianAccentPurple/40 rounded-sm hover:bg-obsidianAccentPurple/25 transition-colors disabled:opacity-50"
               data-testid="in-folder-git-commit"
             >
               {busyStep === 'commit' ? 'Committing…' : 'Commit'}
@@ -432,7 +432,7 @@ function InFolderGitSection() {
               type="button"
               onClick={handlePush}
               disabled={busy || !remote}
-              className="px-3 py-1.5 text-sm border border-obsidianBorder text-obsidianText rounded hover:bg-obsidianHighlight transition-colors disabled:opacity-50"
+              className="px-3 py-1.5 text-sm border border-obsidianBorder text-obsidianText rounded-sm hover:bg-obsidianHighlight transition-colors disabled:opacity-50"
               title={remote ? '' : 'Set a remote first'}
               data-testid="in-folder-git-push"
             >
@@ -443,7 +443,7 @@ function InFolderGitSection() {
       )}
 
       {error && (
-        <div className="text-xs text-red-300 p-2 rounded border border-red-900/40 bg-red-900/20">
+        <div className="text-xs text-red-300 p-2 rounded-sm border border-red-900/40 bg-red-900/20">
           {error}
         </div>
       )}
@@ -452,7 +452,7 @@ function InFolderGitSection() {
 }
 
 const ExclamationTriangleIconUnsupported = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-4 h-4 flex-shrink-0 mt-0.5">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-4 h-4 shrink-0 mt-0.5">
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
   </svg>
 )

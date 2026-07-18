@@ -208,16 +208,16 @@ export const PluginFullscreenView = () => {
       style={{ zIndex: 9999 }}
       data-testid="plugin-fullscreen-view"
     >
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-xs" />
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="plugin-fullscreen-title"
         tabIndex={-1}
-        className="relative w-[min(96vw,1200px)] h-[min(96dvh,900px)] bg-obsidianGray rounded-lg shadow-obsidian border border-obsidianBorder flex flex-col focus:outline-none"
+        className="relative w-[min(96vw,1200px)] h-[min(96dvh,900px)] bg-obsidianGray rounded-lg shadow-obsidian border border-obsidianBorder flex flex-col focus:outline-hidden"
       >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-obsidianBorder flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-obsidianBorder shrink-0">
           <div className="flex flex-col">
             <h2
               id="plugin-fullscreen-title"
@@ -231,7 +231,7 @@ export const PluginFullscreenView = () => {
           </div>
           <button
             onClick={() => dismissActiveFullscreen()}
-            className="p-1 rounded hover:bg-obsidianHighlight transition-colors"
+            className="p-1 rounded-sm hover:bg-obsidianHighlight transition-colors"
             aria-label="Close fullscreen view"
             data-testid="plugin-fullscreen-close"
           >

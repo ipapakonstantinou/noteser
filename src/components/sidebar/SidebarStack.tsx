@@ -95,7 +95,7 @@ export const SidebarStack = ({ onRightClick }: Props) => {
       window.removeEventListener('dragend', onEnd)
       window.removeEventListener('drop', onEnd)
       window.removeEventListener('mouseup', onEnd)
-      window.removeEventListener('blur', onEnd)
+      window.removeEventListener('blur-sm', onEnd)
     }
   }, [])
 
@@ -196,7 +196,7 @@ export const SidebarStack = ({ onRightClick }: Props) => {
         // flex-1 too so it stretches inside the SidebarStack flexbox.
         const wrapperClass = layoutMode === 'fill'
           ? 'flex-1 min-h-0 flex flex-col'
-          : 'flex-shrink-0 flex flex-col'
+          : 'shrink-0 flex flex-col'
         return (
           <div key={g.id} ref={setGroupRef(g.id)} className={wrapperClass}>
             <InterGroupDropZone

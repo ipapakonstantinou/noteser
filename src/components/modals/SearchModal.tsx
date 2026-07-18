@@ -204,7 +204,7 @@ export const SearchModal = () => {
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[20dvh]">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/60 backdrop-blur-xs"
         onClick={closeSearch}
       />
 
@@ -223,11 +223,11 @@ export const SearchModal = () => {
             onChange={e => setSearchQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={mode === 'semantic' ? 'Describe what you’re looking for…' : 'Search notes…'}
-            className="flex-1 bg-transparent text-obsidianText placeholder-obsidianSecondaryText focus:outline-none"
+            className="flex-1 bg-transparent text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden"
             autoComplete="off"
             data-testid="search-input"
           />
-          <span className="text-xs text-obsidianSecondaryText px-2 py-1 bg-obsidianDarkGray rounded">
+          <span className="text-xs text-obsidianSecondaryText px-2 py-1 bg-obsidianDarkGray rounded-sm">
             ESC
           </span>
         </div>
@@ -309,7 +309,7 @@ export const SearchModal = () => {
                     : 'hover:bg-obsidianDarkGray'
                 }`}
               >
-                <DocumentTextIcon className="w-5 h-5 text-obsidianSecondaryText flex-shrink-0 mt-0.5" />
+                <DocumentTextIcon className="w-5 h-5 text-obsidianSecondaryText shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-obsidianText truncate">
@@ -343,9 +343,9 @@ export const SearchModal = () => {
               <p>No recent notes yet</p>
               <p className="text-xs mt-2">
                 Type to search your notes. Use{' '}
-                <kbd className="px-1 py-0.5 bg-obsidianDarkGray rounded text-xs">↑</kbd>{' '}
-                <kbd className="px-1 py-0.5 bg-obsidianDarkGray rounded text-xs">↓</kbd> to navigate,{' '}
-                <kbd className="px-1 py-0.5 bg-obsidianDarkGray rounded text-xs">Enter</kbd> to select
+                <kbd className="px-1 py-0.5 bg-obsidianDarkGray rounded-sm text-xs">↑</kbd>{' '}
+                <kbd className="px-1 py-0.5 bg-obsidianDarkGray rounded-sm text-xs">↓</kbd> to navigate,{' '}
+                <kbd className="px-1 py-0.5 bg-obsidianDarkGray rounded-sm text-xs">Enter</kbd> to select
               </p>
             </div>
           )}

@@ -125,7 +125,7 @@ export const PluginsPanel = () => {
               ref={(el) => {
                 sectionRefs.current.set(key, el)
               }}
-              className="px-3 py-2 text-sm text-obsidianText whitespace-pre-wrap break-words"
+              className="px-3 py-2 text-sm text-obsidianText whitespace-pre-wrap wrap-break-word"
             >
               {node === undefined ? (
                 <span className="text-obsidianSecondaryText">(awaiting first render…)</span>

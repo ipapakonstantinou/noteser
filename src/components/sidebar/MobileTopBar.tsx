@@ -109,7 +109,7 @@ export const MobileTopBar = () => {
         onClick={toggleSidebar}
         title="Open sidebar"
         aria-label="Open sidebar"
-        className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText transition-colors"
+        className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded-sm text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText transition-colors"
         data-testid="mobile-top-bar-menu"
       >
         <Bars3Icon className="w-5 h-5" />
@@ -121,7 +121,7 @@ export const MobileTopBar = () => {
         disabled={!canBack}
         title="Back"
         aria-label="Back"
-        className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-default transition-colors"
+        className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded-sm text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-default transition-colors"
         data-testid="mobile-top-bar-back"
       >
         <ChevronLeftIcon className="w-5 h-5" />
@@ -133,7 +133,7 @@ export const MobileTopBar = () => {
         disabled={!canForward}
         title="Forward"
         aria-label="Forward"
-        className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-default transition-colors"
+        className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded-sm text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-default transition-colors"
         data-testid="mobile-top-bar-forward"
       >
         <ChevronRightIcon className="w-5 h-5" />
@@ -149,7 +149,7 @@ export const MobileTopBar = () => {
         onClick={openSearch}
         title="Search (Ctrl+K)"
         aria-label="Search"
-        className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText transition-colors"
+        className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded-sm text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText transition-colors"
         data-testid="mobile-top-bar-search"
       >
         <MagnifyingGlassIcon className="w-5 h-5" />
@@ -160,7 +160,7 @@ export const MobileTopBar = () => {
         onClick={togglePreview}
         title={isPreviewMode ? 'Edit mode' : 'Preview mode'}
         aria-label={isPreviewMode ? 'Switch to edit mode' : 'Switch to preview mode'}
-        className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText transition-colors"
+        className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded-sm text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText transition-colors"
         data-testid="mobile-top-bar-preview-toggle"
       >
         {isPreviewMode ? <PencilIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
@@ -173,7 +173,7 @@ export const MobileTopBar = () => {
           title="More"
           aria-label="More"
           aria-expanded={menuOpen}
-          className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText transition-colors"
+          className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded-sm text-obsidianSecondaryText hover:bg-obsidianHighlight hover:text-obsidianText transition-colors"
           data-testid="mobile-top-bar-overflow"
         >
           <EllipsisVerticalIcon className="w-5 h-5" />
@@ -182,7 +182,7 @@ export const MobileTopBar = () => {
         {menuOpen && (
           <div
             role="menu"
-            className="absolute right-0 top-full mt-1 w-52 z-50 bg-obsidianGray border border-obsidianBorder rounded shadow-obsidian py-1"
+            className="absolute right-0 top-full mt-1 w-52 z-50 bg-obsidianGray border border-obsidianBorder rounded-sm shadow-obsidian py-1"
             data-testid="mobile-top-bar-overflow-menu"
           >
             {activeNote && (

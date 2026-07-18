@@ -20,7 +20,7 @@ export const ExportSection = () => {
       <div className="flex items-center">
         <button
           onClick={() => openModal({ type: 'export' })}
-          className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded bg-obsidianAccentPurple text-white hover:opacity-90"
+          className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-sm bg-obsidianAccentPurple text-white hover:opacity-90"
         >
           <ArrowDownTrayIcon className="w-4 h-4" />
           Export notes

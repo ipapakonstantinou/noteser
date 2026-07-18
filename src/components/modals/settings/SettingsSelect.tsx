@@ -25,7 +25,7 @@ export const SettingsSelect = <T extends string | number>({
       if (matched) onChange(matched.value)
     }}
     data-testid={dataTestid}
-    className="bg-obsidianDarkGray border border-obsidianBorder rounded px-2 py-1 text-sm text-obsidianText focus:outline-none focus:border-obsidianAccentPurple"
+    className="bg-obsidianDarkGray border border-obsidianBorder rounded-sm px-2 py-1 text-sm text-obsidianText focus:outline-hidden focus:border-obsidianAccentPurple"
   >
     {options.map((opt) => (
       <option key={String(opt.value)} value={String(opt.value)}>

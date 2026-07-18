@@ -3,13 +3,14 @@
  *
  * Verifies the persist `migrate` function on useSettingsStore — the
  * full ladder runs every step from `version` up to the current schema,
- * so a v0 input ends up as v3 (Obsidian leaf model).
+ * so a v0 input ends up at the current version.
  *
  * Ladders today:
  *   v0→v1 — strip pinnedPanels=['calendar'] default
  *   v1→v2 — wrap flat string[] into string[][] groups
  *   v2→v3 — fold pinnedPanels + collapsedPinnedGroups into sidebarGroups
  *           and wipe the legacy fields.
+ *   v3→v4 — retitle weekly notes 'YYYY-WW' -> 'YYYY-[W]WW'.
  *
  * For granular tests of the v3 step itself (and the legacyToSidebarGroups
  * helper) see sidebarGroupsMigration.test.ts.
@@ -106,4 +107,27 @@ test('handles missing pinnedPanels gracefully across all versions', () => {
   expect(run({}, 0).sidebarGroups![0].tabs).toEqual(['calendar'])
   expect(run({}, 1).sidebarGroups![0].tabs).toEqual(['calendar'])
   expect(run({}, 2).sidebarGroups![0].tabs).toEqual(['calendar'])
+})
+
+describe('v3→v4: weekly note title format', () => {
+  test('rewrites the old default so weekly notes stop being named "2026-30"', () => {
+    const out = migrate({ weeklyNoteDateFormat: 'YYYY-WW' }, 3) as {
+      weeklyNoteDateFormat: string
+    }
+    expect(out.weeklyNoteDateFormat).toBe('YYYY-[W]WW')
+  })
+
+  test('leaves a deliberately customised format alone', () => {
+    const out = migrate({ weeklyNoteDateFormat: 'GGGG/[week]-W' }, 3) as {
+      weeklyNoteDateFormat: string
+    }
+    expect(out.weeklyNoteDateFormat).toBe('GGGG/[week]-W')
+  })
+
+  test('does not touch an already-migrated install', () => {
+    const out = migrate({ weeklyNoteDateFormat: 'YYYY-WW' }, 4) as {
+      weeklyNoteDateFormat: string
+    }
+    expect(out.weeklyNoteDateFormat).toBe('YYYY-WW')
+  })
 })

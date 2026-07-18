@@ -101,7 +101,7 @@ export const RightMiniStrip = ({
       role="tablist"
       aria-label="Right sidebar panels"
       className={`relative flex items-center gap-0.5 px-1 py-1 border-b border-obsidianBorder ${
-        dropActive ? 'outline outline-2 outline-obsidianAccentPurple/60' : ''
+        dropActive ? 'outline-solid outline-2 outline-obsidianAccentPurple/60' : ''
       }`}
       onDragOver={onStripDragOver}
       onDragLeave={onDragLeave}
@@ -147,9 +147,9 @@ export const RightMiniStrip = ({
             aria-label={def.title}
             data-testid={`right-sidebar-pinned-tab-${id}`}
             className={[
-              'relative flex items-center justify-center py-1.5 max-md:py-2.5 px-3 rounded cursor-default active:cursor-grabbing transition-colors',
-              showInsertBefore ? 'border-l-2 border-obsidianAccentPurple -ml-[2px]' : '',
-              showInsertAfter ? 'border-r-2 border-obsidianAccentPurple -mr-[2px]' : '',
+              'relative flex items-center justify-center py-1.5 max-md:py-2.5 px-3 rounded-sm cursor-default active:cursor-grabbing transition-colors',
+              showInsertBefore ? 'border-l-2 border-obsidianAccentPurple ml-[-2px]' : '',
+              showInsertAfter ? 'border-r-2 border-obsidianAccentPurple mr-[-2px]' : '',
               active
                 ? 'bg-obsidianHighlight text-obsidianText'
                 : 'text-obsidianSecondaryText hover:bg-obsidianHighlight/40 hover:text-obsidianText',

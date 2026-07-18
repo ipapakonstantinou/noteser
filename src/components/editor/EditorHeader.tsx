@@ -107,7 +107,7 @@ export const EditorHeader = ({ note, paneId, onTitleChange }: EditorHeaderProps)
       <button
         onClick={() => goBack(paneId)}
         disabled={!canBack}
-        className="p-1.5 rounded transition-colors inline-flex items-center justify-center text-obsidianSecondaryText enabled:hover:bg-obsidianHighlight disabled:opacity-30 disabled:cursor-default"
+        className="p-1.5 rounded-sm transition-colors inline-flex items-center justify-center text-obsidianSecondaryText enabled:hover:bg-obsidianHighlight disabled:opacity-30 disabled:cursor-default"
         title="Back (Alt+←)"
         aria-label="Navigate back"
         data-testid="nav-back"
@@ -117,7 +117,7 @@ export const EditorHeader = ({ note, paneId, onTitleChange }: EditorHeaderProps)
       <button
         onClick={() => goForward(paneId)}
         disabled={!canForward}
-        className="p-1.5 rounded transition-colors inline-flex items-center justify-center text-obsidianSecondaryText enabled:hover:bg-obsidianHighlight disabled:opacity-30 disabled:cursor-default"
+        className="p-1.5 rounded-sm transition-colors inline-flex items-center justify-center text-obsidianSecondaryText enabled:hover:bg-obsidianHighlight disabled:opacity-30 disabled:cursor-default"
         title="Forward (Alt+→)"
         aria-label="Navigate forward"
         data-testid="nav-forward"
@@ -147,7 +147,7 @@ export const EditorHeader = ({ note, paneId, onTitleChange }: EditorHeaderProps)
         // Strip filesystem-unsafe chars at the keystroke so the title can be
         // round-tripped to a .md filename without surprises.
         onChange={e => onTitleChange(sanitizeTitleInput(e.target.value))}
-        className="flex-1 bg-transparent text-xl font-medium text-obsidianText focus:outline-none"
+        className="flex-1 bg-transparent text-xl font-medium text-obsidianText focus:outline-hidden"
         placeholder="Note title..."
         title="Title may only contain letters, digits, spaces, and - _ . ( )"
       />

@@ -154,7 +154,7 @@ export const CommandPalette = () => {
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[20dvh]">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/60 backdrop-blur-xs"
         onClick={closeModal}
       />
 
@@ -174,11 +174,11 @@ export const CommandPalette = () => {
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Type a command or note title…"
-            className="flex-1 bg-transparent text-obsidianText placeholder-obsidianSecondaryText focus:outline-none"
+            className="flex-1 bg-transparent text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden"
             autoComplete="off"
             data-testid="command-palette-input"
           />
-          <span className="text-xs text-obsidianSecondaryText px-2 py-1 bg-obsidianDarkGray rounded">
+          <span className="text-xs text-obsidianSecondaryText px-2 py-1 bg-obsidianDarkGray rounded-sm">
             ESC
           </span>
         </div>
@@ -224,7 +224,7 @@ export const CommandPalette = () => {
                     )}
                   </div>
                   {cmd.combo && (
-                    <span className="text-xs text-obsidianSecondaryText px-2 py-1 bg-obsidianDarkGray rounded flex-shrink-0">
+                    <span className="text-xs text-obsidianSecondaryText px-2 py-1 bg-obsidianDarkGray rounded-sm shrink-0">
                       {cmd.combo}
                     </span>
                   )}

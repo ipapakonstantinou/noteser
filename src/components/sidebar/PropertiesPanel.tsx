@@ -72,7 +72,7 @@ export const PropertiesPanel = () => {
             {tags.map(tag => (
               <span
                 key={tag}
-                className="px-2 py-0.5 rounded text-xs bg-obsidianAccentPurple/15 text-obsidianAccentPurple"
+                className="px-2 py-0.5 rounded-sm text-xs bg-obsidianAccentPurple/15 text-obsidianAccentPurple"
                 data-testid={`properties-tag-${tag}`}
               >
                 #{tag}

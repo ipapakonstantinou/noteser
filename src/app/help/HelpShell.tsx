@@ -162,7 +162,7 @@ export function HelpShell({ activeSlug, children }: HelpShellProps) {
       className="min-h-dvh bg-[#16181c] text-[#e5e7eb]"
       style={{ fontFamily: 'var(--font-interface)' }}
     >
-      <header className="sticky top-0 z-20 border-b border-[#23262d] bg-[#16181c]/90 backdrop-blur supports-[backdrop-filter]:bg-opacity-80">
+      <header className="sticky top-0 z-20 border-b border-[#23262d] bg-[#16181c]/90 backdrop-blur-sm supports-[backdrop-filter]:bg-opacity-80">
         <div className="mx-auto max-w-[1400px] flex items-center justify-between px-6 py-3">
           <Link
             href="/"
@@ -185,7 +185,7 @@ export function HelpShell({ activeSlug, children }: HelpShellProps) {
             <button
               type="button"
               onClick={toggleAll}
-              className="block px-3 py-1 text-[12px] text-[#9ca3af] hover:text-[#e5e7eb] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3a86ff] rounded"
+              className="block px-3 py-1 text-[12px] text-[#9ca3af] hover:text-[#e5e7eb] transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-[#3a86ff] rounded-sm"
             >
               {allExpanded ? 'Collapse all' : 'Expand all'}
             </button>
@@ -212,7 +212,7 @@ export function HelpShell({ activeSlug, children }: HelpShellProps) {
                           data-help-nav-item="true"
                           data-help-topic-slug={p.slug}
                           onClick={() => toggle(p.slug)}
-                          className="flex items-center justify-center w-7 flex-none text-[#6b7280] hover:text-[#e5e7eb] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3a86ff] rounded-l-md"
+                          className="flex items-center justify-center w-7 flex-none text-[#6b7280] hover:text-[#e5e7eb] transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-[#3a86ff] rounded-l-md"
                         >
                           <ChevronRightIcon
                             className={`w-3.5 h-3.5 transition-transform ${isOpen ? 'rotate-90' : ''}`}
@@ -225,7 +225,7 @@ export function HelpShell({ activeSlug, children }: HelpShellProps) {
                       <Link
                         href={`/help/${p.slug}`}
                         data-help-nav-item="true"
-                        className="flex-1 min-w-0 pr-3 py-2 text-[14px] leading-[1.45] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3a86ff] rounded-r-md"
+                        className="flex-1 min-w-0 pr-3 py-2 text-[14px] leading-[1.45] focus:outline-hidden focus-visible:ring-2 focus-visible:ring-[#3a86ff] rounded-r-md"
                       >
                         {p.title}
                       </Link>
@@ -237,7 +237,7 @@ export function HelpShell({ activeSlug, children }: HelpShellProps) {
                             <Link
                               href={`/help/${p.slug}#${section.slug}`}
                               data-help-nav-item="true"
-                              className="block px-2 py-1 text-[13px] leading-[1.4] text-[#9ca3af] hover:text-[#e5e7eb] hover:bg-[#1e2126] rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3a86ff]"
+                              className="block px-2 py-1 text-[13px] leading-[1.4] text-[#9ca3af] hover:text-[#e5e7eb] hover:bg-[#1e2126] rounded-sm transition-colors focus:outline-hidden focus-visible:ring-2 focus-visible:ring-[#3a86ff]"
                             >
                               {section.heading}
                             </Link>

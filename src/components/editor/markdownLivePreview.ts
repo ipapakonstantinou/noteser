@@ -8,6 +8,7 @@ import type { EditorState } from '@codemirror/state'
 import type { SyntaxNode } from '@lezer/common'
 import { toggleTaskLineText } from '@/utils/tasks'
 import { matchCalloutType, CALLOUT_LABELS, CALLOUT_ICON_SHAPES, type CalloutType } from '@/utils/callouts'
+import { findCellRanges } from '@/utils/markdownTable'
 
 /**
  * Live-preview markdown decorations.
@@ -78,6 +79,112 @@ class CalloutLabelWidget extends WidgetType {
   }
 }
 
+type CellAlign = 'left' | 'center' | 'right' | null
+
+function alignForDividerCell(text: string): CellAlign {
+  const t = text.trim()
+  const left = t.startsWith(':')
+  const right = t.endsWith(':')
+  if (left && right) return 'center'
+  if (right) return 'right'
+  if (left) return 'left'
+  return null
+}
+
+// Renders a GFM table (header + divider + body rows, raw source lines
+// already validated by the caller) as a real `<table>` — swapped in for
+// the whole block while the cursor is elsewhere. `lineStarts[i]` is the
+// absolute doc offset of `lines[i]`, so each rendered cell can carry the
+// exact source range of its content — clicking a cell selects that
+// range (empty cells collapse to a caret) so typing immediately edits
+// that cell instead of dumping the cursor at the top of the table.
+class TableWidget extends WidgetType {
+  constructor(readonly lines: readonly string[], readonly lineStarts: readonly number[]) {
+    super()
+  }
+
+  eq(other: TableWidget): boolean {
+    return other.lines.length === this.lines.length &&
+      other.lines.every((l, i) => l === this.lines[i])
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const wrap = document.createElement('div')
+    wrap.className = 'cm-lp-table-wrap'
+
+    const cellPos = new WeakMap<HTMLElement, { from: number; to: number }>()
+    const makeCell = (tag: 'th' | 'td', lineIdx: number, contentStart: number, contentEnd: number, text: string, align: CellAlign) => {
+      const el = document.createElement(tag)
+      el.textContent = text
+      if (align) el.style.textAlign = align
+      const base = this.lineStarts[lineIdx]
+      cellPos.set(el, { from: base + contentStart, to: base + contentEnd })
+      return el
+    }
+
+    const headerRanges = findCellRanges(this.lines[0])
+    const aligns: CellAlign[] = findCellRanges(this.lines[1])
+      .map(r => alignForDividerCell(this.lines[1].slice(r.contentStart, r.contentEnd)))
+
+    const table = document.createElement('table')
+    table.className = 'cm-lp-table'
+
+    const thead = document.createElement('thead')
+    const headRow = document.createElement('tr')
+    headerRanges.forEach((r, i) => {
+      const text = this.lines[0].slice(r.contentStart, r.contentEnd)
+      headRow.appendChild(makeCell('th', 0, r.contentStart, r.contentEnd, text, aligns[i] ?? null))
+    })
+    thead.appendChild(headRow)
+    table.appendChild(thead)
+
+    const tbody = document.createElement('tbody')
+    for (let i = 2; i < this.lines.length; i++) {
+      const ranges = findCellRanges(this.lines[i])
+      if (ranges.length === 0) continue
+      const tr = document.createElement('tr')
+      ranges.forEach((r, ci) => {
+        const text = this.lines[i].slice(r.contentStart, r.contentEnd)
+        tr.appendChild(makeCell('td', i, r.contentStart, r.contentEnd, text, aligns[ci] ?? null))
+      })
+      tbody.appendChild(tr)
+    }
+    table.appendChild(tbody)
+    wrap.appendChild(table)
+
+    // A cell holding nothing or just "x" reads as a checkbox-style mark
+    // (e.g. a habit scoreboard) — click toggles it in place with no
+    // selection change, so the table stays rendered instead of dropping
+    // to raw source. A cell with real content (a row label, a header)
+    // still needs free-text editing, so that falls back to the old
+    // behavior: select the cell's source range, which puts the cursor
+    // on that line and reveals the raw markdown to type into.
+    wrap.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      const cell = (e.target as HTMLElement)?.closest?.('td, th') as HTMLElement | null
+      const range = cell ? cellPos.get(cell) : undefined
+      if (!range) {
+        view.dispatch({ selection: { anchor: view.posAtDOM(wrap) }, scrollIntoView: true })
+        view.focus()
+        return
+      }
+      const current = view.state.doc.sliceString(range.from, range.to).trim()
+      if (current === '' || current.toLowerCase() === 'x') {
+        view.dispatch({ changes: { from: range.from, to: range.to, insert: current === '' ? 'x' : '' } })
+        return
+      }
+      view.dispatch({ selection: { anchor: range.from, head: range.to }, scrollIntoView: true })
+      view.focus()
+    })
+
+    return wrap
+  }
+
+  ignoreEvent(): boolean {
+    return true
+  }
+}
+
 const bold       = Decoration.mark({ class: 'cm-lp-bold' })
 const italic     = Decoration.mark({ class: 'cm-lp-italic' })
 const inlineCode = Decoration.mark({ class: 'cm-lp-code' })
@@ -87,6 +194,7 @@ const listMark   = Decoration.mark({ class: 'cm-lp-list-mark' })
 const taskUnchecked = Decoration.mark({ class: 'cm-lp-task-unchecked' })
 const taskChecked   = Decoration.mark({ class: 'cm-lp-task-checked' })
 const inlineTag  = Decoration.mark({ class: 'cm-lp-tag' })
+const tableDelim = Decoration.mark({ class: 'cm-lp-table-delim' })
 
 // Match Obsidian-style #tags: hash + [A-Za-z0-9_/-]+, NOT preceded by a word
 // character (so we don't accidentally style `foo#bar`). We run this in a
@@ -205,6 +313,35 @@ function buildDecorations(state: EditorState): DecorationSet {
 
         if (node.name === 'ListMark') {
           specs.push([node.from, node.to, listMark])
+          return false
+        }
+
+        // ── GFM tables ───────────────────────────────────────────────────────
+        // Whole-block replace with a rendered `<table>` when the cursor is
+        // outside the table (column alignment can't be faked with inline
+        // marks on plain text); dim the `|` delimiters instead while the
+        // cursor is inside so the raw source stays fully editable.
+        if (node.name === 'Table') {
+          const startLine = doc.lineAt(node.from)
+          const endLine = doc.lineAt(node.to)
+          const withinCursor = cursorLine >= startLine.number && cursorLine <= endLine.number
+          if (withinCursor) {
+            for (let n = startLine.number; n <= endLine.number; n++) {
+              const line = doc.line(n)
+              for (let i = 0; i < line.text.length; i++) {
+                if (line.text[i] === '|') specs.push([line.from + i, line.from + i + 1, tableDelim])
+              }
+            }
+          } else {
+            const lines: string[] = []
+            const lineStarts: number[] = []
+            for (let n = startLine.number; n <= endLine.number; n++) {
+              const line = doc.line(n)
+              lines.push(line.text)
+              lineStarts.push(line.from)
+            }
+            specs.push([node.from, node.to, Decoration.replace({ widget: new TableWidget(lines, lineStarts), block: true })])
+          }
           return false
         }
 
@@ -374,6 +511,25 @@ const livePreviewTheme = EditorView.baseTheme({
   '.cm-lp-callout-label-warning': { color: '#eab308' },
   '.cm-lp-callout-label-caution': { color: '#ef4444' },
   '.cm-lp-callout-icon': { flex: 'none' },
+  '.cm-lp-table-delim': { color: '#6b7280', opacity: '0.6' },
+  '.cm-lp-table-wrap': { display: 'block', margin: '4px 0', overflowX: 'auto', cursor: 'text' },
+  '.cm-lp-table': {
+    borderCollapse: 'collapse',
+    fontSize: '0.92em',
+    minWidth: '100%',
+  },
+  '.cm-lp-table th, .cm-lp-table td': {
+    border: '1px solid #3a3a3a',
+    padding: '4px 10px',
+    textAlign: 'left',
+  },
+  '.cm-lp-table th': {
+    background: 'rgba(255, 255, 255, 0.06)',
+    fontWeight: '600',
+  },
+  '.cm-lp-table tbody tr:nth-child(even)': {
+    background: 'rgba(255, 255, 255, 0.025)',
+  },
 })
 
 // Click on a `[ ]` / `[x]` marker in the editor → toggle the task and stamp/

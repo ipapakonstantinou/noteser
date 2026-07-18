@@ -51,7 +51,7 @@ const ToolbarButton = ({
   <button
     onClick={onClick}
     title={title}
-    className="p-1.5 rounded text-obsidianSecondaryText hover:bg-obsidianDarkGray hover:text-obsidianText transition-colors"
+    className="p-1.5 rounded-sm text-obsidianSecondaryText hover:bg-obsidianDarkGray hover:text-obsidianText transition-colors"
   >
     {children}
   </button>

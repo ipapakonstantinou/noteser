@@ -186,7 +186,7 @@ export const GroupResizeHandle = ({
       onDoubleClick={onReset}
       onKeyDown={onKeyDown}
       data-testid="sidebar-group-resize-handle"
-      className={`group relative h-2 touch-none cursor-row-resize flex-shrink-0 flex items-center justify-center outline-none ${
+      className={`group relative h-2 touch-none cursor-row-resize shrink-0 flex items-center justify-center outline-hidden ${
         dragging
           ? 'bg-obsidianAccentPurple'
           : 'hover:bg-obsidianAccentPurple/30 focus-visible:bg-obsidianAccentPurple/30'

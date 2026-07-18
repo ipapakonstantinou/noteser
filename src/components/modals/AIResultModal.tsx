@@ -89,14 +89,14 @@ export const AIResultModal = () => {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <div className="text-[11px] uppercase tracking-wide text-obsidianSecondaryText mb-1">Original</div>
-              <pre className="text-xs text-obsidianText bg-obsidianDarkGray border border-obsidianBorder rounded p-3 max-h-[60dvh] overflow-auto whitespace-pre-wrap font-sans">
+              <pre className="text-xs text-obsidianText bg-obsidianDarkGray border border-obsidianBorder rounded-sm p-3 max-h-[60dvh] overflow-auto whitespace-pre-wrap font-sans">
                 {data.originalContent || <span className="italic text-obsidianSecondaryText">(empty)</span>}
               </pre>
             </div>
             <div>
               <div className="text-[11px] uppercase tracking-wide text-obsidianAccentPurple mb-1">AI result</div>
               <pre
-                className="text-xs text-obsidianText bg-obsidianDarkGray border border-obsidianAccentPurple/40 rounded p-3 max-h-[60dvh] overflow-auto whitespace-pre-wrap font-sans"
+                className="text-xs text-obsidianText bg-obsidianDarkGray border border-obsidianAccentPurple/40 rounded-sm p-3 max-h-[60dvh] overflow-auto whitespace-pre-wrap font-sans"
                 data-testid="ai-result-text"
               >
                 {data.resultText}
@@ -107,7 +107,7 @@ export const AIResultModal = () => {
           <div>
             <div className="text-[11px] uppercase tracking-wide text-obsidianSecondaryText mb-1">AI result</div>
             <pre
-              className="text-xs text-obsidianText bg-obsidianDarkGray border border-obsidianBorder rounded p-3 max-h-[60dvh] overflow-auto whitespace-pre-wrap font-sans"
+              className="text-xs text-obsidianText bg-obsidianDarkGray border border-obsidianBorder rounded-sm p-3 max-h-[60dvh] overflow-auto whitespace-pre-wrap font-sans"
               data-testid="ai-result-text"
             >
               {data.resultText}

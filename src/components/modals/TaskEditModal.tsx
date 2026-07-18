@@ -164,7 +164,7 @@ export const TaskEditModal = () => {
             type="text"
             value={form.text}
             onChange={e => update('text', e.target.value)}
-            className="w-full px-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:ring-2 focus:ring-obsidianAccentPurple focus:border-transparent"
+            className="w-full px-3 py-2 bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden focus:ring-2 focus:ring-obsidianAccentPurple focus:border-transparent"
             placeholder="What needs doing?"
             aria-label="Task description"
             autoFocus
@@ -222,7 +222,7 @@ export const TaskEditModal = () => {
             value={form.priority}
             onChange={e => update('priority', e.target.value as TaskPriority)}
             aria-label="Priority"
-            className="bg-obsidianDarkGray border border-obsidianBorder rounded px-2 py-1 text-sm text-obsidianText focus:outline-none focus:border-obsidianAccentPurple"
+            className="bg-obsidianDarkGray border border-obsidianBorder rounded-sm px-2 py-1 text-sm text-obsidianText focus:outline-hidden focus:border-obsidianAccentPurple"
           >
             {PRIORITY_OPTIONS.map(opt => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -238,7 +238,7 @@ export const TaskEditModal = () => {
               onChange={e => update('recurrence', e.target.value)}
               placeholder="e.g. every week, every month on the 1st"
               aria-label="Recurrence rule"
-              className={`w-full px-3 py-2 bg-obsidianDarkGray border rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-none focus:ring-2 focus:ring-obsidianAccentPurple focus:border-transparent ${
+              className={`w-full px-3 py-2 bg-obsidianDarkGray border rounded text-obsidianText placeholder-obsidianSecondaryText focus:outline-hidden focus:ring-2 focus:ring-obsidianAccentPurple focus:border-transparent ${
                 form.recurrence.trim() && !isValidRecurrence(form.recurrence)
                   ? 'border-red-500'
                   : 'border-obsidianBorder'
@@ -287,7 +287,7 @@ const DateInput = ({
       value={value}
       onChange={e => onChange(e.target.value)}
       aria-label={ariaLabel}
-      className="px-2 py-1 bg-obsidianDarkGray border border-obsidianBorder rounded text-sm text-obsidianText focus:outline-none focus:ring-2 focus:ring-obsidianAccentPurple focus:border-transparent"
+      className="px-2 py-1 bg-obsidianDarkGray border border-obsidianBorder rounded-sm text-sm text-obsidianText focus:outline-hidden focus:ring-2 focus:ring-obsidianAccentPurple focus:border-transparent"
     />
     {value && (
       <button

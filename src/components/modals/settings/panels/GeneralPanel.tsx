@@ -236,7 +236,7 @@ function ShowWelcomeButton() {
           })
         }}
         data-testid="settings-show-welcome"
-        className="px-3 py-1.5 text-sm rounded border border-obsidianBorder bg-obsidianDarkGray text-obsidianText hover:border-obsidianAccentPurple hover:bg-obsidianHighlight/40 transition-colors"
+        className="px-3 py-1.5 text-sm rounded-sm border border-obsidianBorder bg-obsidianDarkGray text-obsidianText hover:border-obsidianAccentPurple hover:bg-obsidianHighlight/40 transition-colors"
       >
         Show welcome tab
       </button>
