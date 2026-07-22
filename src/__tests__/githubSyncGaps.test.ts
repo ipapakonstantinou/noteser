@@ -67,6 +67,7 @@ import {
   pullFromGitHub,
   syncToGitHub,
 } from '../utils/githubSync'
+import { GitHubProvider } from '../utils/gitHost/githubProvider'
 import type { Note, Folder, SyncRepo } from '@/types'
 
 const REPO: SyncRepo = { owner: 'me', name: 'vault', branch: 'main', isPrivate: false }
@@ -337,7 +338,7 @@ describe('pullFromGitHub — isFirstClone shell classification', () => {
     ]))
 
     const { classifications } = await pullFromGitHub({
-      token: 't', repo: REPO, notes: [], folders: [],
+      provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [],
       isFirstClone: true,
     })
 
@@ -362,7 +363,7 @@ describe('pullFromGitHub — isFirstClone shell classification', () => {
     mockGetBlobContent.mockResolvedValue('real content')
 
     const { classifications } = await pullFromGitHub({
-      token: 't', repo: REPO, notes: [], folders: [],
+      provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [],
       isFirstClone: false,
     })
 
@@ -393,7 +394,7 @@ describe('pullFromGitHub — contentLoaded=false safety guard', () => {
     })
 
     const { classifications } = await pullFromGitHub({
-      token: 't', repo: REPO,
+      provider: new GitHubProvider('t'), repo: REPO,
       notes: [shellNote],
       folders: [],
     })
@@ -419,7 +420,7 @@ describe('pullFromGitHub — remoteDeleted edge cases', () => {
       note({ id: '1', title: 'Gone', content: 'body', gitPath: 'Gone.md', gitLastPushedSha: null }),
     ]
     const { classifications } = await pullFromGitHub({
-      token: 't', repo: REPO, notes: local, folders: [],
+      provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [],
     })
 
     expect(classifications).toHaveLength(1)
@@ -435,7 +436,7 @@ describe('pullFromGitHub — remoteDeleted edge cases', () => {
       note({ id: '1', title: 'Gone', content: 'body', gitPath: 'Gone.md', gitLastPushedSha: 'sha-last-push' }),
     ]
     const { classifications } = await pullFromGitHub({
-      token: 't', repo: REPO, notes: local, folders: [],
+      provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [],
     })
 
     expect(classifications).toHaveLength(1)
@@ -457,7 +458,7 @@ describe('pullFromGitHub — special-character filenames round-trip as unchanged
       note({ id: '1', title: 'R&D Work', content: 'content', gitPath: path, gitLastPushedSha: 'sha-rd' }),
     ]
     const { classifications } = await pullFromGitHub({
-      token: 't', repo: REPO, notes: local, folders: [],
+      provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [],
     })
 
     expect(classifications).toHaveLength(1)
@@ -474,7 +475,7 @@ describe('pullFromGitHub — special-character filenames round-trip as unchanged
       note({ id: '1', title: "Jake's project", content: 'notes', gitPath: path, gitLastPushedSha: 'sha-j' }),
     ]
     const { classifications } = await pullFromGitHub({
-      token: 't', repo: REPO, notes: local, folders: [],
+      provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [],
     })
 
     expect(classifications).toHaveLength(1)
@@ -490,7 +491,7 @@ describe('pullFromGitHub — special-character filenames round-trip as unchanged
       note({ id: '1', title: 'My Daily Note', gitPath: path, gitLastPushedSha: 'sha-daily' }),
     ]
     const { classifications } = await pullFromGitHub({
-      token: 't', repo: REPO, notes: local, folders: [],
+      provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [],
     })
 
     expect(classifications[0]).toMatchObject({ kind: 'unchanged' })
@@ -506,7 +507,7 @@ describe('pullFromGitHub — special-character filenames round-trip as unchanged
       note({ id: '1', title: 'config', folderId: 'f1', gitPath: path, gitLastPushedSha: 'sha-obs' }),
     ]
     const { classifications } = await pullFromGitHub({
-      token: 't', repo: REPO, notes: local, folders,
+      provider: new GitHubProvider('t'), repo: REPO, notes: local, folders,
     })
 
     expect(classifications[0]).toMatchObject({ kind: 'unchanged' })
@@ -522,7 +523,7 @@ describe('pullFromGitHub — special-character filenames round-trip as unchanged
       note({ id: '1', title: 'deleted', folderId: 'f1', gitPath: path, gitLastPushedSha: 'sha-trash' }),
     ]
     const { classifications } = await pullFromGitHub({
-      token: 't', repo: REPO, notes: local, folders,
+      provider: new GitHubProvider('t'), repo: REPO, notes: local, folders,
     })
 
     expect(classifications[0]).toMatchObject({ kind: 'unchanged' })
@@ -549,7 +550,7 @@ describe('syncToGitHub — special character filename handling', () => {
     mockGitBlobSha.mockResolvedValue('sha-local')
 
     const local = [note({ id: '1', title: 'R&D Work', content: 'body' })]
-    await syncToGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+    await syncToGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
     expect(mockCreateBlob).toHaveBeenCalledTimes(1)
     expect(mockCreateTree).toHaveBeenCalledTimes(1)
@@ -573,7 +574,7 @@ describe('syncToGitHub — special character filename handling', () => {
         gitRemoteBaseSha: 'sha-existing',
       }),
     ]
-    const result = await syncToGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+    const result = await syncToGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
     expect(result.result.unchanged).toBe(true)
     expect(mockCreateBlob).not.toHaveBeenCalled()
@@ -603,7 +604,7 @@ describe('pullFromGitHub — remoteUpdated vs unchanged with dual-SHA tracking',
       }),
     ]
     const { classifications } = await pullFromGitHub({
-      token: 't', repo: REPO, notes: local, folders: [],
+      provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [],
     })
 
     expect(classifications).toHaveLength(1)
@@ -629,7 +630,7 @@ describe('pullFromGitHub — remoteUpdated vs unchanged with dual-SHA tracking',
       }),
     ]
     const { classifications } = await pullFromGitHub({
-      token: 't', repo: REPO, notes: local, folders: [],
+      provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [],
     })
 
     expect(classifications).toHaveLength(1)

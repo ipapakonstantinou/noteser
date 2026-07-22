@@ -51,6 +51,7 @@ jest.mock('../utils/githubFetch', () => ({
 
 import JSZip from 'jszip'
 import { pullFromZipball, takeZipballAttachmentBytes } from '../utils/githubSync'
+import { GitHubProvider } from '../utils/gitHost/githubProvider'
 import type { SyncRepo } from '@/types'
 
 const REPO: SyncRepo = { owner: 'me', name: 'vault', branch: 'main', isPrivate: false }
@@ -129,7 +130,7 @@ test('pullFromZipball loads jszip via dynamic import and classifies .md files as
   })
   wireFetch(zipBuffer)
 
-  const { classifications, latestCommitSha } = await pullFromZipball({ token: 't', repo: REPO })
+  const { classifications, latestCommitSha } = await pullFromZipball({ provider: new GitHubProvider('t'), repo: REPO })
 
   expect(latestCommitSha).toBe(HEAD_SHA)
 
@@ -158,7 +159,7 @@ test('pullFromZipball classifies files under the attachments folder as attachmen
   })
   wireFetch(zipBuffer)
 
-  const { classifications } = await pullFromZipball({ token: 't', repo: REPO })
+  const { classifications } = await pullFromZipball({ provider: new GitHubProvider('t'), repo: REPO })
 
   const attach = classifications.find(c => c.kind === 'attachmentCreated') as {
     path: string; mime: string; remoteSha: string
@@ -181,5 +182,5 @@ test('pullFromZipball does not throw on an empty repo (only ignored root files)'
   })
   wireFetch(zipBuffer)
 
-  await expect(pullFromZipball({ token: 't', repo: REPO })).resolves.toBeDefined()
+  await expect(pullFromZipball({ provider: new GitHubProvider('t'), repo: REPO })).resolves.toBeDefined()
 })

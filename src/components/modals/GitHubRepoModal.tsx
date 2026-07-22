@@ -13,12 +13,13 @@ import {
 } from '@heroicons/react/24/outline'
 import { Modal, Button } from '@/components/ui'
 import { useUIStore, useGitHubStore, useWorkspaceStore, useNoteStore, useFolderStore } from '@/stores'
-import { listUserRepos, createRepo } from '@/utils/github'
 import { withTokenRefresh } from '@/utils/tokenRefresh'
+import { makeGitHostProvider } from '@/utils/gitHost'
+import type { HostRepo } from '@/utils/gitHost'
 import { switchVault } from '@/utils/switchVault'
 import { getUnpushedChangeCount, discardUnpushedChanges } from '@/utils/dirtyState'
 import { useGitHubSync } from '@/hooks/useGitHubSync'
-import type { GitHubRepo, SyncRepo } from '@/types'
+import type { SyncRepo } from '@/types'
 
 // True when the active stores hold no real content — used to decide whether
 // to fire an automatic sync right after switching vaults.
@@ -38,6 +39,8 @@ export const GitHubRepoModal = () => {
   const modal = useUIStore(s => s.modal)
   const closeModal = useUIStore(s => s.closeModal)
   const token = useGitHubStore((s) => s.token)
+  const host = useGitHubStore((s) => s.host)
+  const baseUrl = useGitHubStore((s) => s.baseUrl)
   const syncRepo = useGitHubStore((s) => s.syncRepo)
   const setSyncRepo = useGitHubStore((s) => s.setSyncRepo)
   const disconnect = useGitHubStore((s) => s.disconnect)
@@ -46,7 +49,7 @@ export const GitHubRepoModal = () => {
   const isOpen = modal.type === 'github-repo'
 
   const [view, setView] = useState<View>({ kind: 'list' })
-  const [repos, setRepos] = useState<GitHubRepo[] | null>(null)
+  const [repos, setRepos] = useState<HostRepo[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [switching, setSwitching] = useState(false)
@@ -59,13 +62,15 @@ export const GitHubRepoModal = () => {
   // Fetch repo list when the modal opens. Wrapped in withTokenRefresh so an
   // expired OAuth token auto-renews instead of 401-ing the list (matches how
   // the sync pull/push are wrapped); a ReconnectRequiredError message lands
-  // in the error view like any other failure.
+  // in the error view like any other failure. Routed through the active
+  // host's provider — host-blind, so this works identically for GitHub and
+  // Forgejo/Codeberg connections.
   useEffect(() => {
     if (!isOpen || !token) return
     setView({ kind: 'list' })
     setSearch('')
     setLoading(true)
-    withTokenRefresh(tok => listUserRepos(tok))
+    withTokenRefresh(tok => makeGitHostProvider({ host, token: tok, baseUrl }).listRepos())
       .then((rs) => {
         setRepos(rs)
         setLoading(false)
@@ -74,13 +79,13 @@ export const GitHubRepoModal = () => {
         setLoading(false)
         setView({ kind: 'error', message: err instanceof Error ? err.message : 'Failed to load repos' })
       })
-  }, [isOpen, token])
+  }, [isOpen, token, host, baseUrl])
 
   const filtered = useMemo(() => {
     if (!repos) return []
     const q = search.trim().toLowerCase()
     if (!q) return repos
-    return repos.filter((r) => r.full_name.toLowerCase().includes(q))
+    return repos.filter((r) => `${r.owner}/${r.name}`.toLowerCase().includes(q))
   }, [repos, search])
 
   // Carry-over makes sense when we're attaching a vault that didn't have a
@@ -113,12 +118,12 @@ export const GitHubRepoModal = () => {
     }
   }
 
-  const handlePick = async (repo: GitHubRepo) => {
+  const handlePick = async (repo: HostRepo) => {
     const target: SyncRepo = {
-      owner: repo.owner.login,
+      owner: repo.owner,
       name: repo.name,
-      branch: repo.default_branch,
-      isPrivate: repo.private,
+      branch: repo.defaultBranch,
+      isPrivate: repo.isPrivate,
     }
 
     // Same repo — nothing to switch.
@@ -146,12 +151,14 @@ export const GitHubRepoModal = () => {
     if (!token || !newName.trim()) return
     setCreating(true)
     try {
-      const created = await withTokenRefresh(tok => createRepo(tok, newName.trim(), newPrivate))
+      const created = await withTokenRefresh(tok =>
+        makeGitHostProvider({ host, token: tok, baseUrl }).createRepo(newName.trim(), newPrivate),
+      )
       const target: SyncRepo = {
-        owner: created.owner.login,
+        owner: created.owner,
         name: created.name,
-        branch: created.default_branch,
-        isPrivate: created.private,
+        branch: created.defaultBranch,
+        isPrivate: created.isPrivate,
       }
       // New repo can't conflict with anything — but if the user already had
       // a repo connected we still avoid carrying the previous vault over.
@@ -214,8 +221,10 @@ export const GitHubRepoModal = () => {
     closeModal()
   }
 
+  const modalTitle = host === 'github' ? 'GitHub vault' : 'Codeberg/Forgejo vault'
+
   return (
-    <Modal isOpen={isOpen} onClose={closeModal} title="GitHub vault" size="lg">
+    <Modal isOpen={isOpen} onClose={closeModal} title={modalTitle} size="lg">
       {view.kind === 'list' && (
         <div className="space-y-3">
           {syncRepo && (
@@ -261,9 +270,10 @@ export const GitHubRepoModal = () => {
             ) : (
               <ul className="space-y-1">
                 {filtered.map((repo) => {
-                  const isCurrent = syncRepo?.owner === repo.owner.login && syncRepo?.name === repo.name
+                  const key = `${repo.owner}/${repo.name}`
+                  const isCurrent = syncRepo?.owner === repo.owner && syncRepo?.name === repo.name
                   return (
-                    <li key={repo.id}>
+                    <li key={key}>
                       <button
                         onClick={() => handlePick(repo)}
                         disabled={switching}
@@ -273,13 +283,13 @@ export const GitHubRepoModal = () => {
                             : 'hover:bg-obsidianDarkGray border border-transparent'
                         }`}
                       >
-                        {repo.private ? (
+                        {repo.isPrivate ? (
                           <LockClosedIcon className="w-4 h-4 text-obsidianSecondaryText shrink-0" />
                         ) : (
                           <GlobeAltIcon className="w-4 h-4 text-obsidianSecondaryText shrink-0" />
                         )}
-                        <span className="flex-1 truncate text-obsidianText">{repo.full_name}</span>
-                        <span className="text-xs text-obsidianSecondaryText shrink-0">{repo.default_branch}</span>
+                        <span className="flex-1 truncate text-obsidianText">{key}</span>
+                        <span className="text-xs text-obsidianSecondaryText shrink-0">{repo.defaultBranch}</span>
                       </button>
                     </li>
                   )
@@ -293,7 +303,7 @@ export const GitHubRepoModal = () => {
               onClick={handleDisconnect}
               className="text-xs text-red-400 hover:text-red-300 transition-colors"
             >
-              Disconnect GitHub
+              Disconnect
             </button>
             <Button variant="ghost" onClick={closeModal}>Close</Button>
           </div>

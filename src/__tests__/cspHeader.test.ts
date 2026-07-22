@@ -16,7 +16,7 @@
  *     'unsafe-eval' only in dev/test, dropped in production.
  *   - style-src: KEEPS 'unsafe-inline' (Tailwind / styled-jsx / CodeMirror).
  */
-import { buildCsp, deriveCollabWsOrigin } from '@/utils/csp'
+import { buildCsp, deriveCollabWsOrigin, deriveGitHostOrigin } from '@/utils/csp'
 
 function getDirective(csp: string, name: string): string {
   const directive = csp
@@ -64,6 +64,34 @@ describe('deriveCollabWsOrigin', () => {
   })
 })
 
+describe('deriveGitHostOrigin', () => {
+  it('returns null for unset/empty input', () => {
+    expect(deriveGitHostOrigin(undefined)).toBeNull()
+    expect(deriveGitHostOrigin('')).toBeNull()
+  })
+
+  it('returns the origin for a valid https:// URL (path stripped)', () => {
+    expect(deriveGitHostOrigin('https://git.example.com/some/path')).toBe(
+      'https://git.example.com'
+    )
+  })
+
+  it('keeps an explicit port', () => {
+    expect(deriveGitHostOrigin('http://192.168.1.10:3000')).toBe('http://192.168.1.10:3000')
+  })
+
+  it('rejects non-http(s) schemes', () => {
+    expect(deriveGitHostOrigin('wss://git.example.com')).toBeNull()
+    expect(deriveGitHostOrigin('javascript:alert(1)')).toBeNull()
+    expect(deriveGitHostOrigin('data:text/plain,foo')).toBeNull()
+  })
+
+  it('rejects malformed URLs', () => {
+    expect(deriveGitHostOrigin('not a url')).toBeNull()
+    expect(deriveGitHostOrigin('git.example.com')).toBeNull()
+  })
+})
+
 describe('connect-src CSP directive (no ws origin)', () => {
   const csp = buildCsp(NONCE, { isDev: false, wsOrigin: null })
 
@@ -80,6 +108,31 @@ describe('connect-src CSP directive (no ws origin)', () => {
     expect(directive).toContain('https://github.com')
     expect(directive).toContain('https://api.anthropic.com')
     expect(directive).toContain('https://api.openai.com')
+  })
+
+  it('allows codeberg.org (the built-in Forgejo preset) by default', () => {
+    const directive = getDirective(csp, 'connect-src')
+    expect(directive).toContain('https://codeberg.org')
+  })
+})
+
+describe('connect-src CSP directive (with a derived git-host origin)', () => {
+  it('adds exactly the derived origin and no wildcard', () => {
+    const origin = deriveGitHostOrigin('https://git.example.com/api/v1')
+    expect(origin).toBe('https://git.example.com')
+    const csp = buildCsp(NONCE, { isDev: false, wsOrigin: null, gitHostOrigin: origin })
+    const directive = getDirective(csp, 'connect-src')
+    expect(directive).toContain('https://git.example.com')
+    expect(directive).not.toContain('*')
+    // No bare scheme wildcard slipped in alongside the scoped origin.
+    expect(directive.split(/\s+/)).not.toContain('https:')
+    expect(directive.split(/\s+/)).not.toContain('http:')
+  })
+
+  it('omits the origin entirely when not configured', () => {
+    const csp = buildCsp(NONCE, { isDev: false, wsOrigin: null })
+    const directive = getDirective(csp, 'connect-src')
+    expect(directive).not.toContain('git.example.com')
   })
 })
 

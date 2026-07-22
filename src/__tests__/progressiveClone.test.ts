@@ -86,6 +86,7 @@ jest.mock('../utils/github', () => {
 })
 
 import { pullFromGitHub, syncToGitHub, serializeNote } from '../utils/githubSync'
+import { GitHubProvider } from '../utils/gitHost/githubProvider'
 import { gitBlobSha as realGitBlobSha } from '../utils/github'
 import { applyNonConflicts } from '../utils/syncApply'
 import { fillShellsInBackground, ensureNoteBodyLoaded, _resetFillInFlight } from '../utils/backgroundFill'
@@ -197,7 +198,7 @@ describe('classifier guard: a shell classifies unchanged WITHOUT fetching its bl
     })
 
     const { classifications } = await pullFromGitHub({
-      token: 'tok', repo: REPO, notes: [shell], folders: [],
+      provider: new GitHubProvider('tok'), repo: REPO, notes: [shell], folders: [],
     })
 
     const mine = classifications.filter(c => 'noteId' in c && (c as { noteId: string }).noteId === 's1')
@@ -222,7 +223,7 @@ describe('classifier guard: a shell classifies unchanged WITHOUT fetching its bl
       content: '', contentLoaded: false,
       gitLastPushedSha: SHELL_SHA, gitRemoteBaseSha: SHELL_SHA,
     })
-    const { classifications } = await pullFromGitHub({ token: 'tok', repo: REPO, notes: [shell], folders: [] })
+    const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('tok'), repo: REPO, notes: [shell], folders: [] })
     const mine = classifications.filter(c => 'noteId' in c && (c as { noteId: string }).noteId === 's2')
     expect(mine).toHaveLength(1)
     expect(mine[0].kind).toBe('unchanged')
@@ -392,7 +393,7 @@ describe('syncToGitHub never pushes an unfilled shell', () => {
       gitLastPushedSha: REMOTE_SHA, gitRemoteBaseSha: REMOTE_SHA,
     })
 
-    const outcome = await syncToGitHub({ token: 'tok', repo: REPO, notes: [shell], folders: [] })
+    const outcome = await syncToGitHub({ provider: new GitHubProvider('tok'), repo: REPO, notes: [shell], folders: [] })
 
     // No blob upload, no tree, no commit, no ref update.
     expect(mockCreateBlob).not.toHaveBeenCalled()
@@ -421,7 +422,7 @@ describe('syncToGitHub never pushes an unfilled shell', () => {
       content: 'Edited body now\n', contentLoaded: true,
       gitLastPushedSha: 'oldcanonical', gitRemoteBaseSha: REMOTE_SHA,
     })
-    const outcome = await syncToGitHub({ token: 'tok', repo: REPO, notes: [filled], folders: [] })
+    const outcome = await syncToGitHub({ provider: new GitHubProvider('tok'), repo: REPO, notes: [filled], folders: [] })
     expect(mockCreateBlob).toHaveBeenCalled()
     expect(mockCreateCommit).toHaveBeenCalled()
     expect(outcome.result.unchanged).toBe(false)

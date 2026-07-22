@@ -72,6 +72,7 @@ jest.mock('../utils/github', () => {
 })
 
 import { syncToGitHub, serializeNote, _resetUploadedShaCache } from '../utils/githubSync'
+import { GitHubProvider } from '../utils/gitHost/githubProvider'
 import { gitBlobSha } from '../utils/github'
 import type { Note, SyncRepo } from '@/types'
 
@@ -125,7 +126,7 @@ test('safety net: soft-deleted note does NOT delete a path an active note curren
   // Remote tree has Doc.md at the live note's content sha → no real change.
   mockGetTreeMap.mockResolvedValue(new Map([['Doc.md', sha]]))
 
-  const out = await syncToGitHub({ token: 't', repo: REPO, notes: [live, ghost], folders: [] })
+  const out = await syncToGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [live, ghost], folders: [] })
 
   // No deletion emitted, and no sha:null entry for Doc.md.
   expect(out.result.deleted).toBe(0)
@@ -158,7 +159,7 @@ test('safety net: soft-deleted note does NOT delete a path a live note represent
     ['my-note.md', sha],
   ]))
 
-  const out = await syncToGitHub({ token: 't', repo: REPO, notes: [live, ghost], folders: [] })
+  const out = await syncToGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [live, ghost], folders: [] })
 
   // The dash-form path is protected by the live note's CONTENT hash → no delete.
   expect(lastTreeEntries.find(e => e.path === 'my-note.md' && e.sha === null)).toBeUndefined()
@@ -187,7 +188,7 @@ test('control: a genuinely orphaned soft-deleted note IS still deleted', async (
     ['Gone.md', goneSha],
   ]))
 
-  const out = await syncToGitHub({ token: 't', repo: REPO, notes: [live, ghost], folders: [] })
+  const out = await syncToGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [live, ghost], folders: [] })
 
   // Gone.md is not represented by any live note → it IS deleted.
   expect(lastTreeEntries.find(e => e.path === 'Gone.md' && e.sha === null)).toBeDefined()
