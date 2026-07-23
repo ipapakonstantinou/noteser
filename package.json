@@ -27,7 +27,7 @@
     "e2e:sync:codeberg": "node scripts/run-e2e-sync-codeberg.js"
   },
   "dependencies": {
-    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/lang-markdown": "^6.5.1",
     "@codemirror/language": "^6.12.4",
     "@codemirror/search": "^6.7.0",
     "@dnd-kit/core": "^6.1.0",
