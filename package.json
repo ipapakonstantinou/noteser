@@ -23,7 +23,8 @@
     "e2e:debug": "playwright test --debug",
     "e2e:ui": "playwright test --ui",
     "e2e:report": "playwright show-report",
-    "e2e:sync": "node scripts/run-e2e-sync.js"
+    "e2e:sync": "node scripts/run-e2e-sync.js",
+    "e2e:sync:codeberg": "node scripts/run-e2e-sync-codeberg.js"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.5.0",
@@ -87,6 +88,7 @@
     },
     "prismjs": "^1.30.0",
     "js-yaml": "^4.2.0",
-    "@babel/core": "^7.29.6"
+    "@babel/core": "^7.29.6",
+    "sharp": "^0.35.0"
   }
 }

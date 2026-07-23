@@ -34,7 +34,7 @@ jest.mock('../utils/github', () => {
 
 import React from 'react'
 import '@testing-library/jest-dom'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { GitHubAuthModal } from '../components/modals/GitHubAuthModal'
@@ -54,8 +54,8 @@ beforeEach(() => {
   mockPollForToken.mockReset()
   useUIStore.setState({ modal: { type: null } })
   useGitHubStore.setState({ token: null, user: null, tokenScopes: null, syncRepo: null })
-  // Keep the device flow "pending" by default so the auto-started poll in the
-  // modal's open effect never resolves during PAT-path tests.
+  // Keep the device flow pending by default so the poll never resolves during
+  // PAT-path tests (they pick GitHub then toggle to the PAT sub-form).
   mockStartDeviceFlow.mockResolvedValue({
     device_code: 'dc', user_code: 'WXYZ-1234', verification_uri: 'https://github.com/login/device',
     expires_in: 900, interval: 5,
@@ -70,9 +70,9 @@ describe('GitHubAuthModal — PAT sign-in path', () => {
     const user = userEvent.setup()
     render(<GitHubAuthModal />)
 
-    // Let the auto-started device flow settle into its "waiting" view first,
-    // then switch to the PAT sub-form (mirrors real usage and avoids racing
-    // the toggle click against the device-code response).
+    // The modal now opens to the host picker. Pick GitHub to start the device
+    // flow, then wait for the "waiting" view before switching to the PAT form.
+    await user.click(screen.getByTestId('host-pick-github'))
     await screen.findByText('WXYZ-1234')
     await user.click(screen.getByTestId('github-pat-toggle'))
     await user.type(screen.getByTestId('github-pat-input'), PAT)
@@ -92,9 +92,9 @@ describe('GitHubAuthModal — PAT sign-in path', () => {
     const user = userEvent.setup()
     render(<GitHubAuthModal />)
 
-    // Let the auto-started device flow settle into its "waiting" view first,
-    // then switch to the PAT sub-form (mirrors real usage and avoids racing
-    // the toggle click against the device-code response).
+    // The modal now opens to the host picker. Pick GitHub to start the device
+    // flow, then wait for the "waiting" view before switching to the PAT form.
+    await user.click(screen.getByTestId('host-pick-github'))
     await screen.findByText('WXYZ-1234')
     await user.click(screen.getByTestId('github-pat-toggle'))
     await user.type(screen.getByTestId('github-pat-input'), 'bad-token')
@@ -121,6 +121,8 @@ describe('GitHubAuthModal — PAT sign-in path', () => {
     openAuthModal()
     render(<GitHubAuthModal />)
 
+    // The modal now opens to the host picker — pick GitHub to start the flow.
+    fireEvent.click(screen.getByTestId('host-pick-github'))
     await waitFor(() => expect(mockFetchUserAndScopes).toHaveBeenCalledWith('oauth_token_abc'))
     await waitFor(() => {
       const state = useGitHubStore.getState()

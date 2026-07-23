@@ -47,6 +47,7 @@ jest.mock('../utils/github', () => ({
 }))
 
 import { pullFromGitHub } from '../utils/githubSync'
+import { GitHubProvider } from '../utils/gitHost/githubProvider'
 import { VAULT_CACHE_KEY_PREFIX } from '../utils/vaultSnapshotCache'
 import type { Note, SyncRepo } from '@/types'
 
@@ -105,7 +106,7 @@ test('records a vault snapshot under noteser-vault-cache:<owner>/<name>', async 
     note({ id: '1', title: 'Foo', content: 'body', gitPath: 'Foo.md', gitLastPushedSha: 'sha-foo' }),
   ]
 
-  await pullFromGitHub({ token: 't', repo: REPO, notes: local, folders: [] })
+  await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: local, folders: [] })
 
   const key = `${VAULT_CACHE_KEY_PREFIX}${REPO.owner}/${REPO.name}`
   const snap = (await awaitWrite(key)) as { commitSha: string; treeMap: Array<[string, string]>; syncedAt: number }
@@ -127,7 +128,7 @@ test('subsequent pulls overwrite the snapshot (SHA-driven invalidation)', async 
   mockGetTreeMap.mockResolvedValue(new Map([['Foo.md', 'sha-foo']]))
   mockGitBlobSha.mockResolvedValue('sha-foo')
   await pullFromGitHub({
-    token: 't', repo: REPO,
+    provider: new GitHubProvider('t'), repo: REPO,
     notes: [note({ id: '1', title: 'Foo', content: 'body', gitPath: 'Foo.md', gitLastPushedSha: 'sha-foo' })],
     folders: [],
   })
@@ -143,7 +144,7 @@ test('subsequent pulls overwrite the snapshot (SHA-driven invalidation)', async 
   // pull writes the snapshot at the end.
   mockGitBlobSha.mockResolvedValue('sha-foo')
   await pullFromGitHub({
-    token: 't', repo: REPO,
+    provider: new GitHubProvider('t'), repo: REPO,
     notes: [note({ id: '1', title: 'Foo', content: 'body', gitPath: 'Foo.md', gitLastPushedSha: 'sha-foo' })],
     folders: [],
   })

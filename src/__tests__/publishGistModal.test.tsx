@@ -76,7 +76,7 @@ function seedToken(token: string | null = GITHUB_TOKEN) {
   // Seed with `repo gist` so the publish button renders by default.
   // Individual tests that need the "needs scope upgrade" flow can
   // override tokenScopes afterwards.
-  useGitHubStore.setState({ token, user: null, tokenScopes: token ? ['repo', 'gist'] : null })
+  useGitHubStore.setState({ token, user: null, tokenScopes: token ? ['repo', 'gist'] : null, host: 'github' })
 }
 
 beforeEach(() => {

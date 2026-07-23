@@ -100,6 +100,7 @@ jest.mock('../utils/github', () => {
 })
 
 import { pullFromGitHub, syncToGitHub, _resetUploadedShaCache } from '../utils/githubSync'
+import { GitHubProvider } from '../utils/gitHost/githubProvider'
 import type { Note, SyncRepo } from '@/types'
 import type { GitTreeEntry } from '../utils/github'
 
@@ -156,7 +157,7 @@ describe('syncToGitHub — doNotSync notes never enter the push tree', () => {
   test('a flagged note is never serialized: no blob, no tree, no commit', async () => {
     const tour = note({ id: 't1', title: 'Feature tour', content: 'demo body\n', doNotSync: true })
 
-    const outcome = await syncToGitHub({ token: 'tok', repo: REPO, notes: [tour], folders: [] })
+    const outcome = await syncToGitHub({ provider: new GitHubProvider('tok'), repo: REPO, notes: [tour], folders: [] })
 
     expect(mockCreateBlob).not.toHaveBeenCalled()
     expect(mockCreateTree).not.toHaveBeenCalled()
@@ -171,7 +172,7 @@ describe('syncToGitHub — doNotSync notes never enter the push tree', () => {
     const tour = note({ id: 't1', title: 'Feature tour', content: 'demo body\n', doNotSync: true })
     const real = note({ id: 'n1', title: 'Real note', content: 'hello\n' })
 
-    const outcome = await syncToGitHub({ token: 'tok', repo: REPO, notes: [tour, real], folders: [] })
+    const outcome = await syncToGitHub({ provider: new GitHubProvider('tok'), repo: REPO, notes: [tour, real], folders: [] })
 
     const paths = postedTreeEntries().map(e => e.path)
     expect(paths).toEqual(['Real note.md'])
@@ -194,7 +195,7 @@ describe('syncToGitHub — doNotSync notes never enter the push tree', () => {
     })
     mockGetTreeMap.mockResolvedValue(new Map([['Feature tour.md', 'legacy-sha']]))
 
-    const outcome = await syncToGitHub({ token: 'tok', repo: REPO, notes: [tour], folders: [] })
+    const outcome = await syncToGitHub({ provider: new GitHubProvider('tok'), repo: REPO, notes: [tour], folders: [] })
 
     expect(mockCreateTree).not.toHaveBeenCalled()
     expect(mockCreateCommit).not.toHaveBeenCalled()
@@ -221,7 +222,7 @@ describe('syncToGitHub — doNotSync notes never enter the push tree', () => {
     })
     mockGetTreeMap.mockResolvedValue(new Map([['Feature tour.md', 'legacy-sha']]))
 
-    const outcome = await syncToGitHub({ token: 'tok', repo: REPO, notes: [live, dup], folders: [] })
+    const outcome = await syncToGitHub({ provider: new GitHubProvider('tok'), repo: REPO, notes: [live, dup], folders: [] })
 
     // No delete entry — no tree change at all.
     expect(mockCreateTree).not.toHaveBeenCalled()
@@ -241,7 +242,7 @@ describe('syncToGitHub — doNotSync notes never enter the push tree', () => {
     mockAttachmentState.blobByPath.set('Files/feature-tour/00-welcome.png', new Blob([new Uint8Array([1])], { type: 'image/png' }))
     mockAttachmentState.blobByPath.set('Files/mine.png', new Blob([new Uint8Array([2])], { type: 'image/png' }))
 
-    const outcome = await syncToGitHub({ token: 'tok', repo: REPO, notes: [], folders: [] })
+    const outcome = await syncToGitHub({ provider: new GitHubProvider('tok'), repo: REPO, notes: [], folders: [] })
 
     // Exactly one binary upload — the user's own attachment.
     expect(mockCreateBlobBinary).toHaveBeenCalledTimes(1)
@@ -263,7 +264,7 @@ describe('pullFromGitHub — doNotSync notes are invisible to the classifier', (
       gitLastPushedSha: 'old-sha', gitRemoteBaseSha: 'old-sha',
     })
 
-    const { classifications } = await pullFromGitHub({ token: 'tok', repo: REPO, notes: [tour], folders: [] })
+    const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('tok'), repo: REPO, notes: [tour], folders: [] })
 
     expect(classifications).toEqual([{ kind: 'unchanged', noteId: 't1' }])
     expect(mockGetBlobContent).not.toHaveBeenCalled()
@@ -279,7 +280,7 @@ describe('pullFromGitHub — doNotSync notes are invisible to the classifier', (
       gitLastPushedSha: 'legacy-sha', gitRemoteBaseSha: 'legacy-sha',
     })
 
-    const { classifications } = await pullFromGitHub({ token: 'tok', repo: REPO, notes: [tour], folders: [] })
+    const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('tok'), repo: REPO, notes: [tour], folders: [] })
 
     expect(classifications).toEqual([])
   })
@@ -293,7 +294,7 @@ describe('pullFromGitHub — doNotSync notes are invisible to the classifier', (
     mockGetBlobContent.mockResolvedValue('my own tour notes\n')
     const tour = note({ id: 't1', title: 'Feature tour', content: 'demo body\n', doNotSync: true })
 
-    const { classifications } = await pullFromGitHub({ token: 'tok', repo: REPO, notes: [tour], folders: [] })
+    const { classifications } = await pullFromGitHub({ provider: new GitHubProvider('tok'), repo: REPO, notes: [tour], folders: [] })
 
     expect(classifications).toHaveLength(1)
     expect(classifications[0]).toMatchObject({

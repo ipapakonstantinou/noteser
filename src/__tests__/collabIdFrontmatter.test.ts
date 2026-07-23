@@ -54,6 +54,7 @@ jest.mock('../utils/github', () => {
 })
 
 import { pullFromGitHub, serializeNote, parseNote } from '../utils/githubSync'
+import { GitHubProvider } from '../utils/gitHost/githubProvider'
 import { applyNonConflicts } from '../utils/syncApply'
 import { gitBlobSha } from '../utils/github'
 import { useNoteStore } from '../stores/noteStore'
@@ -119,7 +120,7 @@ test('a note that differs ONLY by gaining a collabId classifies as remoteUpdated
   const originalSha = await gitBlobSha(rawOriginal)
   mockGetTreeMap.mockResolvedValue(new Map([['Note.md', originalSha]]))
   mockGetBlobContent.mockResolvedValue(rawOriginal)
-  const first = await pullFromGitHub({ token: 't', repo: REPO, notes: [], folders: [] })
+  const first = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [] })
   await applyNonConflicts(first.classifications)
   const noteId = useNoteStore.getState().notes[0].id
   expect(useNoteStore.getState().notes[0].collabId).toBeUndefined()
@@ -133,7 +134,7 @@ test('a note that differs ONLY by gaining a collabId classifies as remoteUpdated
   )
 
   const second = await pullFromGitHub({
-    token: 't', repo: REPO, notes: useNoteStore.getState().notes, folders: [],
+    provider: new GitHubProvider('t'), repo: REPO, notes: useNoteStore.getState().notes, folders: [],
   })
   expect(second.classifications).toHaveLength(1)
   expect(second.classifications[0]).toMatchObject({
@@ -150,7 +151,7 @@ test('a note that differs ONLY by gaining a collabId classifies as remoteUpdated
   mockGetTreeMap.mockResolvedValue(new Map([['Note.md', collabSha]]))
   mockGetBlobContent.mockResolvedValue(rawWithCollab)
   const third = await pullFromGitHub({
-    token: 't', repo: REPO, notes: useNoteStore.getState().notes, folders: [],
+    provider: new GitHubProvider('t'), repo: REPO, notes: useNoteStore.getState().notes, folders: [],
   })
   expect(third.classifications).toEqual([{ kind: 'unchanged', noteId }])
 })
@@ -164,7 +165,7 @@ test('when local and remote hold DIFFERENT collabIds but identical bodies, the r
   const originalSha = await gitBlobSha(rawOriginal)
   mockGetTreeMap.mockResolvedValue(new Map([['Note.md', originalSha]]))
   mockGetBlobContent.mockResolvedValue(rawOriginal)
-  const first = await pullFromGitHub({ token: 't', repo: REPO, notes: [], folders: [] })
+  const first = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [] })
   await applyNonConflicts(first.classifications)
   const noteId = useNoteStore.getState().notes[0].id
   const localRoom = useNoteStore.getState().ensureCollabId(noteId)
@@ -179,7 +180,7 @@ test('when local and remote hold DIFFERENT collabIds but identical bodies, the r
   )
 
   const second = await pullFromGitHub({
-    token: 't', repo: REPO, notes: useNoteStore.getState().notes, folders: [],
+    provider: new GitHubProvider('t'), repo: REPO, notes: useNoteStore.getState().notes, folders: [],
   })
   // Bodies match, only the metadata differs → clean remoteUpdated, NOT conflict.
   expect(second.classifications).toHaveLength(1)

@@ -74,6 +74,8 @@ function setGitHub(syncRepo: SyncRepo | null) {
     lastCommitSha: null,
     repoSyncStates: {},
     isSyncing: false,
+    host: 'github',
+    baseUrl: null,
   })
 }
 

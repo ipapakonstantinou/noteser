@@ -8,19 +8,9 @@
 // from `@/utils/githubSync`.
 
 import type { Note, SyncRepo } from '@/types'
-import {
-  getBranchRefSha,
-  getCommitTreeSha,
-  getTreeMap,
-  createBlob,
-  createBlobBinary,
-  createTree,
-  createCommit,
-  updateBranchRef,
-  getBlobContent,
-  gitBlobSha,
-  type GitTreeEntry,
-} from '../github'
+import { gitBlobSha } from '../github'
+import type { GitHostProvider, FileChange, CommitProgress } from '../gitHost/types'
+import { _resetUploadedShaCache } from '../gitHost/githubProvider'
 import {
   listAttachmentPathsTracked,
   getAttachmentBlob,
@@ -49,7 +39,10 @@ export type PushProgress =
   | { phase: 'done' }
 
 export interface SyncInput {
-  token: string
+  // Host abstraction for the final write. syncToGitHub builds a host-neutral
+  // FileChange[] and hands it to provider.commitChanges; the provider turns it
+  // into commits its host's way (GitHub: blob/tree/commit/ref).
+  provider: GitHostProvider
   repo: SyncRepo
   notes: Note[]
   folders: import('@/types').Folder[]
@@ -79,32 +72,10 @@ export interface SyncInput {
   onProgress?: (event: PushProgress) => void
 }
 
-// In-memory cache of blob SHAs we've already uploaded to GitHub in this
-// tab session. Git blob SHAs are content-addressable, so a hit here
-// means GitHub already has that content — skip the redundant network
-// round-trip. Survives across syncToGitHub calls within the tab but is
-// cleared when the user reloads. Indexed per-repo so two different
-// vaults don't share state.
-const uploadedBlobShaCache = new Map<string, Set<string>>()
-
-function repoCacheKey(repo: SyncRepo): string {
-  return `${repo.owner}/${repo.name}#${repo.branch}`
-}
-
-function getUploadedShas(repo: SyncRepo): Set<string> {
-  const key = repoCacheKey(repo)
-  let set = uploadedBlobShaCache.get(key)
-  if (!set) {
-    set = new Set()
-    uploadedBlobShaCache.set(key, set)
-  }
-  return set
-}
-
-/** Test hook. Drops the in-memory upload cache. */
-export function _resetUploadedShaCache(): void {
-  uploadedBlobShaCache.clear()
-}
+// The blob upload-cache now lives in GitHubProvider (it is a GitHub-blob
+// optimization). Re-exported here so the public test hook keeps its import
+// path (`@/utils/githubSync`).
+export { _resetUploadedShaCache }
 
 export type GitPathUpdate = {
   noteId: string
@@ -137,9 +108,8 @@ export interface SyncOutcome {
 }
 
 export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
-  const { token, repo, notes, folders, commitMessage, vaultSettings, vaultGitignoreDraft, onProgress } = input
-  const { owner, name, branch } = repo
-  const uploadedShas = getUploadedShas(repo)
+  const { provider, repo, notes, folders, commitMessage, vaultSettings, vaultGitignoreDraft, onProgress } = input
+  const { branch } = repo
   onProgress?.({ phase: 'computing' })
 
   // 1. Compute desired files for every active note.
@@ -184,10 +154,12 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     desired.set(path, { content, note })
   }
 
-  // 2. Fetch the current branch state.
-  const parentCommitSha = await getBranchRefSha(token, owner, name, branch)
-  const baseTreeSha = await getCommitTreeSha(token, owner, name, parentCommitSha)
-  const remoteTree = await getTreeMap(token, owner, name, baseTreeSha)
+  // 2. Fetch the current branch state. PLAIN reads (not the pull path's
+  // ETag-conditional variants) — a stale tree here risks a non-fast-forward
+  // commit, so push always talks to the live remote state.
+  const parentCommitSha = await provider.getBranchHeadSha(repo)
+  const baseTreeSha = await provider.getCommitTreeSha(repo, parentCommitSha)
+  const remoteTree = await provider.getTreeMap(repo, baseTreeSha)
 
   // Layered gitignore matcher for push (gi9n): defaults + remote +
   // local overlay. Same composition as the pull side so push and pull
@@ -198,7 +170,7 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   let pushRemoteRaw = ''
   if (remoteGitignoreSha) {
     try {
-      pushRemoteRaw = await getBlobContent(token, owner, name, remoteGitignoreSha)
+      pushRemoteRaw = await provider.getBlobContent(repo, remoteGitignoreSha)
     } catch {
       pushRemoteRaw = ''
     }
@@ -216,12 +188,23 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     // Defaults already applied above.
   }
 
-  // 3. Build tree entries for changes only.
-  const entries: GitTreeEntry[] = []
+  // 3. Build the host-neutral change set for CHANGED files only. Unchanged
+  // files are NOT listed — the host carries them forward from the parent
+  // tree, so a no-churn sync produces an empty `changes` and never touches
+  // the host (see the early return below).
+  const changes: FileChange[] = []
   const pathUpdates: GitPathUpdate[] = []
   let created = 0
   let updated = 0
   let deleted = 0
+
+  // Path-metadata updates for genuinely-changed notes are recorded as
+  // candidates here and committed AFTER the push, gated on whether the host
+  // actually transmitted that path's content this attempt (CommitResult
+  // .uploadedPaths). This mirrors the old behavior where a note whose blob
+  // was served from the same-session upload cache got a tree entry but NO
+  // pathUpdate.
+  const uploadedNotePathUpdate = new Map<string, GitPathUpdate>()
 
   // We snapshot per-note pushed content so the editor's gutter diff
   // (109) can compare against it. The IDB write is fire-and-forget
@@ -229,10 +212,10 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   // avoid serial awaits per note.
   const lastPushedToSnapshot: Array<{ noteId: string; content: string }> = []
 
-  // Pre-pass: classify every desired path into "skip" (remote already
-  // has this SHA, or our in-tab cache says we uploaded it) vs "needs
-  // upload". Keeping the pre-pass separate lets us emit a stable
-  // `total` to the progress callback.
+  // Pre-pass: classify every desired path into "skip" (remote already has
+  // this SHA, or the note wasn't genuinely edited) vs "push". Keeping this
+  // separate from the host write lets the genuine-edit / normalization-churn
+  // logic stay here while the provider owns the actual blob upload + dedupe.
   //
   // push-only-real-edits: the upload decision must reflect a GENUINE local
   // edit, not just a wire-form mismatch against the remote blob. The remote
@@ -248,8 +231,8 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   // canonical SHA as of the last sync). When they match the body is byte-equal
   // to what we last synced → NO genuine edit. A null baseline means a
   // new/never-synced note → MUST push. We use `plainSha` (NOT the wire/encrypted
-  // sha) ONLY for this change decision; `localSha` (wire) is still what we
-  // hash, upload and dedupe against `uploadedShas`/`remoteSha`.
+  // sha) ONLY for this change decision; `localSha` (wire) is the git content sha
+  // we compare against `remoteSha` to decide whether the file actually changed.
   interface NoteBlobPlan { path: string; content: string; note: Note; localSha: string; remoteSha: string | undefined; locallyChanged: boolean }
   const noteBlobPlan: NoteBlobPlan[] = []
   for (const [path, { content, note }] of desired) {
@@ -287,7 +270,7 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     if (locallyChanged && baseline !== null && remoteSha !== undefined && baseline === remoteSha) {
       try {
         const remoteRawBody = await maybeDecryptFromPull(
-          await getBlobContent(token, owner, name, remoteSha),
+          await provider.getBlobContent(repo, remoteSha),
         )
         if (isUnchangedModuloNormalization(content, remoteRawBody)) {
           locallyChanged = false
@@ -300,47 +283,53 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
 
     noteBlobPlan.push({ path, content: wireContent, note, localSha, remoteSha, locallyChanged })
   }
-  // push-only-real-edits: SUPPRESS the upload for a note that is NOT locally
-  // changed AND already has a remote blob at this path. We emit NO tree entry
-  // for it, so the base tree's existing (user's original, possibly
-  // non-canonical) blob is preserved untouched — zero rewrite. We STILL push
-  // when the note is locally changed (a real edit) OR has no remote blob yet
-  // (`remoteSha === undefined`: a brand-new note, or a note moved to a new path
-  // — the move's old-path deletion is handled by the deletion loop in step 4).
+  // push-only-real-edits: SUPPRESS the push for a note that is NOT locally
+  // changed AND already has a remote blob at this path. We emit NO change for
+  // it, so the base tree's existing (user's original, possibly non-canonical)
+  // blob is preserved untouched — zero rewrite. We STILL push when the note is
+  // locally changed (a real edit) OR has no remote blob yet (`remoteSha ===
+  // undefined`: a brand-new note, or a note moved to a new path — the move's
+  // old-path deletion is handled by the deletion loop in step 4).
   const noteBlobsSuppressed = noteBlobPlan.filter(p => !p.locallyChanged && p.remoteSha !== undefined && p.remoteSha !== p.localSha)
   const suppressedNoteIds = new Set(noteBlobsSuppressed.map(p => p.note.id))
-  const noteBlobsToUpload = noteBlobPlan.filter(p => !suppressedNoteIds.has(p.note.id) && p.remoteSha !== p.localSha && !uploadedShas.has(p.localSha))
-  const noteBlobsCached   = noteBlobPlan.filter(p => !suppressedNoteIds.has(p.note.id) && p.remoteSha !== p.localSha &&  uploadedShas.has(p.localSha))
 
-  let blobsUploaded = 0
-  let blobsSkipped = noteBlobsCached.length
-  // Use a single running `total` that we refine after the attachment
-  // pre-pass below. For now: just notes.
-  let blobsTotal = noteBlobsToUpload.length
-
-  const emitBlobProgress = () => {
-    onProgress?.({ phase: 'uploading-blobs', uploaded: blobsUploaded, total: blobsTotal, skipped: blobsSkipped })
-  }
-
-  // Apply the cached-skip entries first — no network, just emit tree entries
-  // and bookkeeping.
-  for (const plan of noteBlobsCached) {
-    entries.push({ path: plan.path, mode: '100644', type: 'blob', sha: plan.localSha })
+  // Genuinely-changed notes (remoteSha differs from what we'd push, and not
+  // suppressed) become create/update FileChanges. The provider owns the blob
+  // upload + same-session content cache; here we just describe WHAT changed.
+  for (const plan of noteBlobPlan) {
+    if (suppressedNoteIds.has(plan.note.id)) continue
+    if (plan.remoteSha === plan.localSha) continue
+    changes.push({
+      op: plan.remoteSha ? 'update' : 'create',
+      path: plan.path,
+      content: plan.content,
+      // Forgejo's ChangeFiles requires the current blob sha when updating an
+      // existing file; GitHub ignores it. Undefined for a create (no remote
+      // file yet), matching the delete path which also carries remoteSha.
+      sha: plan.remoteSha,
+    })
     if (plan.remoteSha) updated++; else created++
+    // Candidate pathUpdate — committed after the push only if the provider
+    // actually transmitted this path's content this attempt (uploadedPaths).
+    // After a push the pushed blob IS the remote file, so the local baseline
+    // and the remote merge base coincide — set both to localSha (== the git
+    // content sha the host stores).
+    if (plan.note.gitPath !== plan.path || plan.note.gitLastPushedSha !== plan.localSha || plan.note.gitRemoteBaseSha !== plan.localSha) {
+      uploadedNotePathUpdate.set(plan.path, { noteId: plan.note.id, gitPath: plan.path, gitLastPushedSha: plan.localSha, gitRemoteBaseSha: plan.localSha })
+    }
   }
-  // Pure-skip entries (remote has this SHA): no entry, no upload, but the
-  // note's path metadata may still need an update. The lastPushedSnapshot
-  // gets the PLAINTEXT body (gutter compares against unencrypted text).
+  // Pure-skip notes (remote already has this SHA): no change, but the note's
+  // path metadata may still need an update. The lastPushedSnapshot gets the
+  // PLAINTEXT body (gutter compares against unencrypted text).
   //
   // push-only-real-edits: a SUPPRESSED note (unchanged but its canonical wire
   // SHA differs from the non-canonical remote blob) is left ENTIRELY untouched:
-  // no tree entry (handled by the filters above) AND no pathUpdate. Emitting a
-  // pathUpdate here would rewrite gitLastPushedSha to `finalSha` (the wire SHA),
-  // overwriting the canonical baseline syncApply pinned — which would make the
-  // NEXT pull misclassify the note (localChanged would flip on every sync). The
-  // note did not change, so we leave gitPath / gitLastPushedSha / gitRemoteBaseSha
-  // exactly as they are. We still take a gutter snapshot (body is unchanged, so
-  // the plaintext is correct).
+  // no change AND no pathUpdate. Emitting a pathUpdate here would rewrite
+  // gitLastPushedSha to the wire SHA, overwriting the canonical baseline
+  // syncApply pinned — which would make the NEXT pull misclassify the note
+  // (localChanged would flip on every sync). The note did not change, so we
+  // leave gitPath / gitLastPushedSha / gitRemoteBaseSha exactly as they are. We
+  // still take a gutter snapshot (body is unchanged, so the plaintext is correct).
   for (const plan of noteBlobPlan) {
     const suppressed = suppressedNoteIds.has(plan.note.id)
     const skipped = plan.remoteSha === plan.localSha
@@ -360,25 +349,6 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     }
   }
 
-  // Upload the genuinely-changed blobs.
-  if (blobsTotal > 0) emitBlobProgress()
-  for (const plan of noteBlobsToUpload) {
-    const finalSha = await createBlob(token, owner, name, plan.content)
-    // Cache by LOCAL SHA — that's what the next iteration computes from
-    // the same content. (In production localSha === serverSha because
-    // both follow git's content-addressing, but the local key is what
-    // gates the next cache lookup.)
-    uploadedShas.add(plan.localSha)
-    entries.push({ path: plan.path, mode: '100644', type: 'blob', sha: finalSha })
-    if (plan.remoteSha) updated++; else created++
-    if (plan.note.gitPath !== plan.path || plan.note.gitLastPushedSha !== finalSha || plan.note.gitRemoteBaseSha !== finalSha) {
-      // Pushed blob == remote file → both SHAs coincide.
-      pathUpdates.push({ noteId: plan.note.id, gitPath: plan.path, gitLastPushedSha: finalSha, gitRemoteBaseSha: finalSha })
-    }
-    blobsUploaded++
-    emitBlobProgress()
-  }
-
   // Fire-and-forget the per-note snapshot writes. The gutter will pick
   // them up on the next render — we don't await because a slow IDB
   // flush shouldn't block the push completing.
@@ -389,10 +359,10 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     }
   })()
 
-  // 3b. Local attachments → binary blob entries. Push uploads any local
-  // attachment whose SHA differs from the remote. Files only present
-  // locally get created remotely; files present in both get updated when
-  // their content drifts. Same upload-cache + progress treatment as notes.
+  // 3b. Local attachments → binary FileChanges. Push uploads any local
+  // attachment whose SHA differs from the remote. Files only present locally
+  // get created remotely; files present in both get updated when their content
+  // drifts. The provider handles the binary blob upload + content cache.
   //
   // attachment-timeout-retry: a stalled IDB read (mobile Safari) must not
   // silently look like "zero local attachments" — that would push a commit
@@ -400,10 +370,10 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   // nothing would ever retry it (the attachment was already durably saved
   // locally, just never uploaded). So the *Tracked reads report `timedOut`
   // and, the moment any one of them fires, we abort the ENTIRE attachment
-  // section for this cycle: no partial plan, no tree entries, no
-  // `uploadedShas` writes. Because nothing gets marked as pushed, the next
-  // sync's 3b runs exactly as if this one never attempted it — that's what
-  // makes the retry automatic without a dedicated retry-queue.
+  // section for this cycle: no partial plan, no FileChanges, no bookkeeping.
+  // Because nothing gets marked as pushed, the next sync's 3b runs exactly as
+  // if this one never attempted it — that's what makes the retry automatic
+  // without a dedicated retry-queue.
   let attachmentSyncSkipped = false
   const { value: localAttachmentPaths, timedOut: listTimedOut } = await listAttachmentPathsTracked()
   if (listTimedOut) attachmentSyncSkipped = true
@@ -427,30 +397,16 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     attachmentPlan.push({ path, localSha, remoteSha })
   }
   const effectiveAttachmentPlan = attachmentSyncSkipped ? [] : attachmentPlan
-  const attachmentsToUpload = effectiveAttachmentPlan.filter(p => p.remoteSha !== p.localSha && !uploadedShas.has(p.localSha))
-  const attachmentsCached   = effectiveAttachmentPlan.filter(p => p.remoteSha !== p.localSha &&  uploadedShas.has(p.localSha))
-  blobsTotal += attachmentsToUpload.length
-  blobsSkipped += attachmentsCached.length
-  if (blobsTotal > 0 || blobsSkipped > 0) emitBlobProgress()
   if (attachmentSyncSkipped) {
     console.warn('[syncPush] attachment sync skipped this cycle (IndexedDB stalled) — will retry next sync.')
   }
-
-  for (const plan of attachmentsCached) {
-    entries.push({ path: plan.path, mode: '100644', type: 'blob', sha: plan.localSha })
-    if (plan.remoteSha) updated++; else created++
-  }
-  for (const plan of attachmentsToUpload) {
+  for (const plan of effectiveAttachmentPlan) {
+    if (plan.remoteSha === plan.localSha) continue
     const blob = await getAttachmentBlob(plan.path)
     if (!blob) continue
-    const uploadedSha = await createBlobBinary(token, owner, name, blob)
-    // See the note loop above: cache the LOCAL sha for the next-pass
-    // lookup, which uses local-side hashing.
-    uploadedShas.add(plan.localSha)
-    entries.push({ path: plan.path, mode: '100644', type: 'blob', sha: uploadedSha })
+    const contentBytes = new Uint8Array(await blob.arrayBuffer())
+    changes.push({ op: plan.remoteSha ? 'update' : 'create', path: plan.path, contentBytes, sha: plan.remoteSha })
     if (plan.remoteSha) updated++; else created++
-    blobsUploaded++
-    emitBlobProgress()
   }
 
   // 3c. Apply attachment tombstones — paths the user explicitly deleted
@@ -466,8 +422,9 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   const tombstones = attachmentSyncSkipped ? [] : await getAttachmentTombstones()
   const consumedTombstones: string[] = []
   for (const path of tombstones) {
-    if (remoteTree.has(path)) {
-      entries.push({ path, mode: '100644', type: 'blob', sha: null })
+    const remoteSha = remoteTree.get(path)
+    if (remoteSha !== undefined) {
+      changes.push({ op: 'delete', path, sha: remoteSha })
       deleted++
     }
     consumedTombstones.push(path)
@@ -479,8 +436,7 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   // the no-change case keeps idle syncs commit-free.
   let vaultGitignorePushed = false
   if (vaultGitignoreDraft != null && vaultGitignoreDraft !== pushRemoteRaw) {
-    const blobSha = await createBlob(token, owner, name, vaultGitignoreDraft)
-    entries.push({ path: GITIGNORE_PATH, mode: '100644', type: 'blob', sha: blobSha })
+    changes.push({ op: remoteGitignoreSha ? 'update' : 'create', path: GITIGNORE_PATH, content: vaultGitignoreDraft, sha: remoteGitignoreSha })
     if (remoteGitignoreSha) updated++; else created++
     vaultGitignorePushed = true
   }
@@ -496,8 +452,7 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     const remoteHasFile = remoteTree.has(path)
     const localChanged = contentHash !== lastPushedHash
     if (localChanged || !remoteHasFile) {
-      const blobSha = await createBlob(token, owner, name, content)
-      entries.push({ path, mode: '100644', type: 'blob', sha: blobSha })
+      changes.push({ op: remoteHasFile ? 'update' : 'create', path, content, sha: remoteTree.get(path) })
       if (remoteHasFile) updated++; else created++
       vaultSettingsHashPushed = contentHash
     } else {
@@ -513,10 +468,10 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
   const seenGitPaths = new Set<string>()
 
   // rename-not-delete HARD PUSH-SIDE SAFETY NET (the critical data-loss
-  // preventer). Before we emit ANY `sha:null` delete, build the set of remote
-  // paths that a LIVE (non-deleted) note still represents. A remote file at
-  // such a path MUST NOT be deleted, even if some upstream classification was
-  // wrong (e.g. a rename misread as a delete that soft-deleted the note).
+  // preventer). Before we emit ANY delete, build the set of remote paths
+  // that a LIVE (non-deleted) note still represents. A remote file at such a
+  // path MUST NOT be deleted, even if some upstream classification was wrong
+  // (e.g. a rename misread as a delete that soft-deleted the note).
   //
   // A path is protected when EITHER:
   //   (a) it is in `desired` — an active note's CURRENT computed path maps to
@@ -567,7 +522,7 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
       // Safety net: never delete a path a live note still represents (by
       // content), even though this note's CURRENT path moved away from it.
       if (protectedRemotePaths.has(note.gitPath)) continue
-      entries.push({ path: note.gitPath, mode: '100644', type: 'blob', sha: null })
+      changes.push({ op: 'delete', path: note.gitPath, sha: remoteTree.get(note.gitPath) })
       deleted++
     }
   }
@@ -578,7 +533,7 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     if (note.kind === 'foreign') continue
     // do-not-sync (#179): a flagged note never touches the remote, deletes
     // included. Soft-deleting the seeded tour note locally must not emit a
-    // sha:null for a legacy user's remote copy — remote cleanup is manual.
+    // delete for a legacy user's remote copy — remote cleanup is manual.
     // Skipping also leaves its git fields intact in case it is restored.
     if (note.doNotSync) continue
     if (note.isDeleted && note.gitPath && remoteTree.has(note.gitPath)) {
@@ -592,15 +547,17 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
         !seenGitPaths.has(note.gitPath) &&
         !protectedRemotePaths.has(note.gitPath)
       ) {
-        entries.push({ path: note.gitPath, mode: '100644', type: 'blob', sha: null })
+        changes.push({ op: 'delete', path: note.gitPath, sha: remoteTree.get(note.gitPath) })
         deleted++
       }
       pathUpdates.push({ noteId: note.id, gitPath: null, gitLastPushedSha: null, gitRemoteBaseSha: null })
     }
   }
 
-  if (entries.length === 0) {
-    // Even with no tree changes, clear stale tombstones (files already gone
+  if (changes.length === 0) {
+    // No changed files → nothing to commit. The host carries the whole tree
+    // forward unchanged, so we never touch it (the no-churn invariant: 0
+    // network calls). Even so, clear stale tombstones (files already gone
     // remotely) so they don't re-attempt every sync.
     if (consumedTombstones.length > 0) await clearAttachmentTombstones(consumedTombstones)
     return {
@@ -611,46 +568,67 @@ export async function syncToGitHub(input: SyncInput): Promise<SyncOutcome> {
     }
   }
 
-  // 5. Create new tree → commit → fast-forward branch. Each step gets
-  // its own progress event so the UI (and any error) can pinpoint where
-  // a failure happened.
-  onProgress?.({ phase: 'creating-tree' })
-  const newTreeSha = await createTree(token, owner, name, baseTreeSha, entries)
-  // Some "changed" entries can resolve to a blob byte-identical to what the
-  // base tree already holds (e.g. a freshly-cloned note that round-trips to
-  // the same bytes on the first sync). GitHub then returns a tree equal to the
-  // base, so committing it would create an EMPTY "Sync from Noteser (1 change)"
-  // commit — "No files changed" — cluttering the history on every initial sync
-  // (and, with discard-on-switch re-cloning, on every repo switch). Skip the
-  // commit entirely when the tree did not actually change.
-  if (newTreeSha === baseTreeSha) {
-    if (consumedTombstones.length > 0) await clearAttachmentTombstones(consumedTombstones)
-    uploadedShas.clear()
-    onProgress?.({ phase: 'done' })
+  // 5. Hand the change set to the host. provider.commitChanges turns it into
+  // a commit its host's way (GitHub: blob/tree/commit/ref). We translate its
+  // host-agnostic progress back into the external PushProgress stream so the
+  // UI sequence is unchanged.
+  const total = created + updated + deleted
+  const autoMessage = `Sync from Noteser (${total} change${total === 1 ? '' : 's'})`
+  const message = commitMessage && commitMessage.length > 0 ? commitMessage : autoMessage
+
+  const translateCommitProgress = (e: CommitProgress) => {
+    switch (e.phase) {
+      case 'uploading-blobs':
+        onProgress?.({ phase: 'uploading-blobs', uploaded: e.uploaded, total: e.total, skipped: e.skipped })
+        break
+      case 'building-tree':
+        onProgress?.({ phase: 'creating-tree' })
+        break
+      case 'committing':
+        onProgress?.({ phase: 'creating-commit' })
+        break
+      case 'updating-ref':
+        onProgress?.({ phase: 'updating-ref' })
+        break
+    }
+  }
+
+  const commit = await provider.commitChanges(repo, {
+    branch,
+    parentSha: parentCommitSha,
+    message,
+    changes,
+    onProgress: translateCommitProgress,
+  })
+
+  // Record path-metadata updates only for note paths the host actually
+  // transmitted this attempt (see uploadedNotePathUpdate's note). A path
+  // served from the host's same-session content cache keeps its prior
+  // metadata, matching the old cached-blob behavior.
+  for (const path of commit.uploadedPaths) {
+    const upd = uploadedNotePathUpdate.get(path)
+    if (upd) pathUpdates.push(upd)
+  }
+
+  // Push reached the host (whether or not it produced a commit) — drop
+  // tombstones whose deletes are now applied so they don't re-attempt.
+  if (consumedTombstones.length > 0) await clearAttachmentTombstones(consumedTombstones)
+  onProgress?.({ phase: 'done' })
+
+  // committed:false means the host found the change set was a no-op (e.g. the
+  // built tree was byte-identical to the parent's). Report it as unchanged,
+  // exactly like the old empty-tree skip did.
+  if (!commit.committed) {
     return {
-      result: { unchanged: true, created: 0, updated: 0, deleted: 0, commitSha: parentCommitSha, commitUrl: null, attachmentSyncSkipped },
+      result: { unchanged: true, created: 0, updated: 0, deleted: 0, commitSha: commit.commitSha, commitUrl: commit.commitUrl, attachmentSyncSkipped },
       pathUpdates,
       vaultSettingsHashPushed,
       vaultGitignorePushed,
     }
   }
-  const total = created + updated + deleted
-  const autoMessage = `Sync from Noteser (${total} change${total === 1 ? '' : 's'})`
-  const message = commitMessage && commitMessage.length > 0 ? commitMessage : autoMessage
-  onProgress?.({ phase: 'creating-commit' })
-  const { sha: commitSha, html_url } = await createCommit(token, owner, name, message, newTreeSha, parentCommitSha)
-  onProgress?.({ phase: 'updating-ref' })
-  await updateBranchRef(token, owner, name, branch, commitSha)
-
-  // Push succeeded — drop tombstones whose deletes are now in the commit
-  // AND clear the upload cache for this repo. The next push will start
-  // from scratch (which is fine — remote tree will be consulted again).
-  if (consumedTombstones.length > 0) await clearAttachmentTombstones(consumedTombstones)
-  uploadedShas.clear()
-  onProgress?.({ phase: 'done' })
 
   return {
-    result: { unchanged: false, created, updated, deleted, commitSha, commitUrl: html_url, attachmentSyncSkipped },
+    result: { unchanged: false, created, updated, deleted, commitSha: commit.commitSha, commitUrl: commit.commitUrl, attachmentSyncSkipped },
     pathUpdates,
     vaultSettingsHashPushed,
     vaultGitignorePushed,

@@ -101,6 +101,7 @@ jest.mock('../utils/github', () => {
 })
 
 import { syncToGitHub, _resetUploadedShaCache } from '../utils/githubSync'
+import { GitHubProvider } from '../utils/gitHost/githubProvider'
 import type { Note, SyncRepo } from '@/types'
 import type { GitTreeEntry } from '../utils/github'
 
@@ -155,7 +156,7 @@ describe('syncToGitHub — attachment push survives a stalled IndexedDB read', (
     mockAttachmentState.listTimesOut = true
     const real = note({ id: 'n1', title: 'Real note', content: 'hello\n' })
 
-    const outcome = await syncToGitHub({ token: 'tok', repo: REPO, notes: [real], folders: [] })
+    const outcome = await syncToGitHub({ provider: new GitHubProvider('tok'), repo: REPO, notes: [real], folders: [] })
 
     const paths = postedTreeEntries().map(e => e.path)
     expect(paths).toEqual(['Real note.md'])
@@ -174,7 +175,7 @@ describe('syncToGitHub — attachment push survives a stalled IndexedDB read', (
     mockAttachmentState.listTimesOut = true
     const real = note({ id: 'n1', title: 'Real note', content: 'hello\n' })
 
-    const outcome = await syncToGitHub({ token: 'tok', repo: REPO, notes: [real], folders: [] })
+    const outcome = await syncToGitHub({ provider: new GitHubProvider('tok'), repo: REPO, notes: [real], folders: [] })
 
     expect(mockCreateBlobBinary).not.toHaveBeenCalled()
     const paths = postedTreeEntries().map(e => e.path)
@@ -191,7 +192,7 @@ describe('syncToGitHub — attachment push survives a stalled IndexedDB read', (
     // Cycle 1: times out, skips the attachment (also give it a real note edit
     // so the push doesn't short-circuit before reaching a real commit).
     const real1 = note({ id: 'n1', title: 'Real note', content: 'v1\n' })
-    const outcome1 = await syncToGitHub({ token: 'tok', repo: REPO, notes: [real1], folders: [] })
+    const outcome1 = await syncToGitHub({ provider: new GitHubProvider('tok'), repo: REPO, notes: [real1], folders: [] })
     expect(outcome1.result.attachmentSyncSkipped).toBe(true)
     expect(mockCreateBlobBinary).not.toHaveBeenCalled()
 
@@ -204,7 +205,7 @@ describe('syncToGitHub — attachment push survives a stalled IndexedDB read', (
       gitPath: 'Real note.md', gitLastPushedSha: outcome1.pathUpdates[0]?.gitLastPushedSha ?? null,
       gitRemoteBaseSha: outcome1.pathUpdates[0]?.gitRemoteBaseSha ?? null,
     })
-    const outcome2 = await syncToGitHub({ token: 'tok', repo: REPO, notes: [real2], folders: [] })
+    const outcome2 = await syncToGitHub({ provider: new GitHubProvider('tok'), repo: REPO, notes: [real2], folders: [] })
 
     expect(mockCreateBlobBinary).toHaveBeenCalledTimes(1)
     const paths = postedTreeEntries().map(e => e.path)
@@ -216,7 +217,7 @@ describe('syncToGitHub — attachment push survives a stalled IndexedDB read', (
     mockAttachmentState.listTimesOut = true
     const real = note({ id: 'n1', title: 'Real note', content: 'hello\n' })
 
-    await syncToGitHub({ token: 'tok', repo: REPO, notes: [real], folders: [] })
+    await syncToGitHub({ provider: new GitHubProvider('tok'), repo: REPO, notes: [real], folders: [] })
 
     // clearAttachmentTombstones is mocked as a no-op jest.fn-less async —
     // the meaningful assertion is that the tombstone path never appears as

@@ -30,7 +30,7 @@ import type { ContextMenuState } from '@/types'
 
 const NOTE_ID = 'ctx-note-1'
 
-function seedNote(overrides: Partial<{ isDeleted: boolean }> = {}) {
+function seedNote(overrides: Partial<{ isDeleted: boolean; gitPath: string }> = {}) {
   useNoteStore.setState({
     notes: [
       {
@@ -44,6 +44,7 @@ function seedNote(overrides: Partial<{ isDeleted: boolean }> = {}) {
         deletedAt: overrides.isDeleted ? 1000 : null,
         isPinned: false,
         templateId: null,
+        gitPath: overrides.gitPath ?? null,
       },
     ],
     selectedNoteId: null,
@@ -65,7 +66,7 @@ function renderMenu(onClose = jest.fn()) {
 
 beforeEach(() => {
   useNoteStore.setState({ notes: [], selectedNoteId: null })
-  useGitHubStore.setState({ token: null, user: null })
+  useGitHubStore.setState({ token: null, user: null, host: 'github' })
   useUIStore.setState({ modal: { type: null } })
   useSettingsStore.setState({ aiProvider: 'off' })
 })
@@ -107,5 +108,28 @@ describe('ContextMenu — "Publish as gist" visibility', () => {
     expect(modal.type).toBe('publish-gist')
     expect((modal.data as { noteId: string }).noteId).toBe(NOTE_ID)
     expect(onClose).toHaveBeenCalled()
+  })
+
+  test('is NOT rendered when host is not GitHub', () => {
+    seedNote()
+    useGitHubStore.setState({ token: 'ghp_tok', user: null, host: 'forgejo' })
+    renderMenu()
+    expect(screen.queryByText('Publish as gist')).not.toBeInTheDocument()
+  })
+})
+
+describe('ContextMenu — "View history" visibility', () => {
+  test('IS rendered when the note has a gitPath and host is GitHub', () => {
+    seedNote({ gitPath: 'notes/test.md' })
+    useGitHubStore.setState({ token: 'ghp_tok', user: null, host: 'github' })
+    renderMenu()
+    expect(screen.getByText('View history')).toBeInTheDocument()
+  })
+
+  test('is NOT rendered when host is not GitHub', () => {
+    seedNote({ gitPath: 'notes/test.md' })
+    useGitHubStore.setState({ token: 'ghp_tok', user: null, host: 'forgejo' })
+    renderMenu()
+    expect(screen.queryByText('View history')).not.toBeInTheDocument()
   })
 })
