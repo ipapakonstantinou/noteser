@@ -773,6 +773,12 @@ const DEFAULTS = {
 // `sidebarTabId` (the old "active unpinned panel") so it survives as a
 // trailing group. We skip it when it already lives in some pinned
 // group or in the hidden list to avoid duplicates.
+// Persist version of this slice. Exported so E2E specs that seed
+// `noteser-settings` can stamp the CURRENT version instead of a literal:
+// seeding a stale one silently replays the migration ladder below, and
+// v2→v3 rewrites sidebarGroups down to a calendar-only group.
+export const SETTINGS_PERSIST_VERSION = 4
+
 export function legacyToSidebarGroups(
   pinnedPanels: string[][] | undefined,
   collapsedPinnedGroups: string[] | undefined,
@@ -1021,7 +1027,7 @@ export const useSettingsStore = create<SettingsState>()(
       // keeps SSR / node-env Jest suites free of "storage is currently
       // unavailable" persist warnings (issue #131).
       storage: localStorageJSON,
-      version: 4,
+      version: SETTINGS_PERSIST_VERSION,
       // Migration ladder:
       //   v0→v1 (2026-05-20): pinnedPanels used to default to
       //     ['calendar'] so Calendar showed as a header-less pinned
