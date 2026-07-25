@@ -96,6 +96,12 @@ export const Modal = ({
     const id = requestAnimationFrame(() => {
       const root = dialogRef.current
       if (!root) return
+      // Focus already landed inside the dialog (an `autoFocus` field, or the
+      // user clicked/typed into one before this frame ran) — leave it alone.
+      // Without this we steal focus onto getFocusable()[0], which is the
+      // header's X button, so the next Space keypress clicks it and closes
+      // the modal out from under the user.
+      if (root.contains(document.activeElement)) return
       const focusables = getFocusable(root)
       const first = focusables[0]
       if (first) first.focus()
