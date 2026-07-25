@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { THEME_PRESETS } from '../src/utils/theme'
+import { SETTINGS_PERSIST_VERSION } from '../src/stores/settingsStore'
 
 // Visual regression for `--obsidian-selection` across every built-in theme.
 //
@@ -41,7 +42,7 @@ const TARGET_LINE = 'The quick brown fox jumps over the lazy dog. Pack my box wi
 
 async function seedSettings(page: Page, themeId: string, overrides: Record<string, string>): Promise<void> {
   await page.addInitScript(
-    ({ themeId, overrides }) => {
+    ({ themeId, overrides, settingsVersion }) => {
       try { window.localStorage.clear() } catch { /* ignore */ }
       try {
         for (const name of ['noteser', 'keyval-store']) indexedDB.deleteDatabase(name)
@@ -55,7 +56,11 @@ async function seedSettings(page: Page, themeId: string, overrides: Record<strin
               themeOverrides: overrides,
               notesOpenInPreviewMode: false,
             },
-            version: 2,
+            // Must be the store's CURRENT version. A stale one replays the
+            // migration ladder, and v2→v3 rewrites sidebarGroups to a single
+            // calendar group — the Files panel (and `folder-tree` with it)
+            // then disappears the moment persist rehydrates.
+            version: settingsVersion,
           }),
         )
       } catch { /* ignore */ }
@@ -75,7 +80,7 @@ async function seedSettings(page: Page, themeId: string, overrides: Record<strin
       if (document.head) install()
       else document.addEventListener('DOMContentLoaded', install, { once: true })
     },
-    { themeId, overrides },
+    { themeId, overrides, settingsVersion: SETTINGS_PERSIST_VERSION },
   )
 }
 
