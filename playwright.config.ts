@@ -25,6 +25,8 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   // 30s per test is generous for a single-page app of this size.
   timeout: 30_000,
+  // Match the CI gate: 5s is too tight for the dev-server boot assert.
+  expect: { timeout: 15_000 },
   reporter: process.env.CI ? 'github' : 'list',
 
   use: {

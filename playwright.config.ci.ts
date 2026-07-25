@@ -23,7 +23,15 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   timeout: 30_000,
-  reporter: process.env.CI ? 'github' : 'list',
+  // The boot assert every spec opens with (`folder-tree` visible) waits on a
+  // Next *dev* server on a 2-core runner. The 5s Playwright default flaked
+  // twice on 2026-07-25 (runs 30157702324, 30158105758) with the page simply
+  // not painted yet. 15s covers a loaded runner without hiding a real hang —
+  // the per-test timeout stays 30s.
+  expect: { timeout: 15_000 },
+  // `github` alone writes no report, so the workflow's playwright-report
+  // upload was always empty and every CI flake lost its trace/screenshot.
+  reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
 
   use: {
     baseURL: 'http://localhost:3001',
