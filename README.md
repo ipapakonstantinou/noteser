@@ -159,3 +159,8 @@ PR, so read the badge before merging. Full workflow is in
 - The GitHub access token lives in `localStorage`. An XSS would expose it. This is the same trust model the Obsidian Git plugin uses: acceptable for a personal vault, NOT for a hosted multi-user app.
 - The two `/api/github/*` proxy routes are unauthenticated. Per-IP rate limiting is in place, but if you self-host on public infrastructure, consider tightening further.
 - Real-time collaboration (`useCollaboration`) is opt-in via `NEXT_PUBLIC_YJS_WS_URL`. The previous default was the public `wss://demos.yjs.dev`, removed because anyone with a note id could read or write.
+
+### Trademarks
+
+Obsidian is a trademark of its owners. Noteser is an independent project with no affiliation
+with, endorsement by, or sponsorship from them.

@@ -112,7 +112,7 @@ Tailwind with an Obsidian-inspired dark palette in `tailwind.config.js` (`obsidi
 
 The full testing process and the rules every tester follows (unit + E2E) live in `docs/testing.md`. The two test-running subagents defer to it: `.claude/agents/tester.md` (Jest unit) and `.claude/agents/qa-tester.md` (Playwright E2E).
 
-The `qa-tester` subagent (`.claude/agents/qa-tester.md`) drives Playwright through user-style flows defined in `e2e/obsidian-parity.md`. Invoke it after UI changes when you want a sanity sweep without driving the browser yourself. The agent writes specs into `e2e/parity/`, captures screenshots + traces on failure (already configured in `playwright.config.ts`), and reports in plain language. Graduating a parity spec into the main `e2e/` suite is a manual decision.
+The `qa-tester` subagent (`.claude/agents/qa-tester.md`) drives Playwright through user-style flows defined in `e2e/editor-parity.md`. Invoke it after UI changes when you want a sanity sweep without driving the browser yourself. The agent writes specs into `e2e/parity/`, captures screenshots + traces on failure (already configured in `playwright.config.ts`), and reports in plain language. Graduating a parity spec into the main `e2e/` suite is a manual decision.
 
 ### Security notes
 

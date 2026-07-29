@@ -212,6 +212,12 @@ Tailwind with an Obsidian-inspired dark palette in `tailwind.config.js`
 (`obsidianBlack`, `obsidianGray`, `obsidianText`, `obsidianAccentPurple`,
 etc.). `@tailwindcss/typography` for rendered markdown (`.prose`).
 
+**The `obsidian*` token names stay.** Renaming them is a 150+ file mechanical
+diff across internal identifiers that no user ever sees, for no functional or
+legal gain — user-visible copy is already free of the name, and README carries a
+trademark disclaimer. Decided 2026-07-29; revisit only if the tokens are ever
+surfaced to users (a theme editor, exported CSS variables).
+
 Live-preview CSS is bundled in the CodeMirror extension via
 `EditorView.baseTheme` — see `markdownLivePreview.ts`. This keeps the
 extension self-contained and avoids globals.css load-order issues.

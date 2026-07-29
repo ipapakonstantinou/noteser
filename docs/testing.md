@@ -142,7 +142,7 @@ actions. For hydration-specific tests, control it with
 
 ### Two directories
 
-- **`e2e/parity/`** — exploratory, one spec per scenario from `e2e/obsidian-parity.md`.
+- **`e2e/parity/`** — exploratory, one spec per scenario from `e2e/editor-parity.md`.
   Written/owned by the `qa-tester` subagent. May be flaky while iterating. Slug-cased
   filenames matching the scenario heading (`create-note-via-button.spec.ts`).
 - **`e2e/`** (root) — graduated, stable specs that run as the real suite. Moving a spec
@@ -247,7 +247,7 @@ await expect(async () => {
 
 - Don't delete a failing parity spec to make the suite green — a red parity spec is a
   *finding*. `.skip` with a comment only if the user has accepted it.
-- Don't write into `e2e/` root or edit `e2e/obsidian-parity.md` unless the user asks —
+- Don't write into `e2e/` root or edit `e2e/editor-parity.md` unless the user asks —
   graduation and the scenario doc are human decisions.
 - Don't add dependencies; Playwright is enough.
 - Don't `git commit`/`git push` from the qa-tester subagent.

@@ -351,4 +351,4 @@ promotion.
   UI, sidebar interactions, editor, sync, templates).
 - Custom **qa-tester subagent** (`.claude/agents/qa-tester.md`) drives
   Playwright through Obsidian-parity scenarios defined in
-  `e2e/obsidian-parity.md`.
+  `e2e/editor-parity.md`.

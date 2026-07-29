@@ -26,7 +26,7 @@ history. The test strategy is built around that.
 There are ~174 Jest suites (2000+ tests) and a growing Playwright suite
 in `e2e/`. The `qa-tester` subagent (`.claude/agents/qa-tester.md`)
 drives Playwright through the user-style flows in
-`e2e/obsidian-parity.md` and writes specs into `e2e/parity/`.
+`e2e/editor-parity.md` and writes specs into `e2e/parity/`.
 
 **Default order when validating a change:** typecheck → lint → unit →
 (e2e or sync harness if the change touches those surfaces) → build. The
