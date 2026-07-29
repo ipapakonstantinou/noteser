@@ -31,7 +31,7 @@ When the same note changed in two places, you see every conflict line
 by line and pick yours, theirs, or both. The merge UX from VS Code,
 in the browser, on your repo.
 
-![A note open in live preview: Markdown headings, tasks, tags, and a wikilink](/screenshots/help/editor-live-preview.png)
+![Typing a note in noteser: live-preview Markdown with wikilinks, tags, and tasks](/demo/noteser-demo.gif)
 
 *Live-preview editing with wikilinks, tags, and tasks.*
 
@@ -89,7 +89,7 @@ Noteser can sync your vault with a GitHub repo. One commit per sync,
 clean three-way merge, no plugins or extensions required — it talks
 to the GitHub Git Data API directly from the browser.
 
-![Source control panel: pending changes, Commit and Sync, recent commit history](/screenshots/help/source-control-panel.png)
+![Source control panel: pending changes, Commit and Sync, recent commit history](/demo/noteser-git-demo.gif)
 
 *Commit and sync, view pending changes, scroll through history.*
 

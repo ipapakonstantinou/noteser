@@ -271,57 +271,6 @@ test('search-quick-switcher', async ({ page }) => {
   })
 })
 
-// Source-control panel with a connected vault. The repo identity is
-// fake on purpose — this shot is served publicly from the welcome pane
-// and the help page, so it must never carry a real account's repo name.
-test('source-control-panel', async ({ page }) => {
-  // The Recent commits section fetches api.github.com; stub it so the
-  // shot shows a history instead of a stuck "Loading…".
-  await page.route('**://api.github.com/repos/acme/notes-vault/commits*', route =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify([
-        { sha: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678', html_url: 'https://github.com/acme/notes-vault/commit/a1b2c3d', commit: { message: 'Sync from Noteser (2026-06-08)', author: { name: 'Acme', date: '2026-06-08T09:12:00Z' } } },
-        { sha: 'b2c3d4e5f60718293a4b5c6d7e8f90123456789a', html_url: 'https://github.com/acme/notes-vault/commit/b2c3d4e', commit: { message: 'Add the project plan', author: { name: 'Acme', date: '2026-06-07T18:40:00Z' } } },
-      ]),
-    }),
-  )
-  await seed(page)
-  await page.evaluate(() => {
-    const t = window.__noteser_test!
-    // Auto-sync would fire real network calls against the fake token and
-    // clear the session mid-shot.
-    t.stores.settingsStore.getState().setAutoSyncOnStart(false)
-    // GitHubView only mounts the SCM body for a logged-in user.
-    t.stores.githubStore.getState().setSession('fake-token', {
-      id: 1, login: 'acme', name: 'Acme', avatar_url: '',
-    })
-    t.stores.githubStore.getState().setSyncRepo({
-      owner: 'acme', name: 'notes-vault', branch: 'main', isPrivate: false,
-    })
-    // Give the seeded notes vault paths so they list as pending changes
-    // (adding separate notes would duplicate the titles in the panel).
-    const ns = t.stores.noteStore.getState()
-    const pathFor: Record<string, string> = {
-      n1: 'My first note.md',
-      n2: 'Projects/Project plan.md',
-      n3: 'Notes/Daily/Daily 2026-06-08.md',
-    }
-    for (const [id, gitPath] of Object.entries(pathFor)) ns.updateNote(id, { gitPath })
-    t.stores.settingsStore.getState().setSidebarGroups([
-      { id: 'g-scm', tabs: ['source-control'], activeTab: 'source-control', collapsed: false },
-    ])
-  })
-  await expect(page.getByTestId('source-control-panel')).toBeVisible()
-  await hideDevChrome(page)
-  await page.waitForTimeout(300)
-  await page.screenshot({
-    path: path.join(OUT, 'source-control-panel.png'),
-    fullPage: false,
-  })
-})
-
 test('github-sync-settings', async ({ page }) => {
   await seed(page)
   await page.evaluate(() => {
