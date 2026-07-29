@@ -85,3 +85,6 @@ next-env.d.ts
 
 # Vercel
 .vercel/
+
+# Local-only: the orchestrator queue is this machine's working state, not shared config
+.claude/orchestrator/queue.json

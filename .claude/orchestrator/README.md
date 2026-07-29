@@ -1,10 +1,16 @@
 # Orchestrator state
 
-Working state for the agent orchestrator. Git-tracked so the queue survives
-machine swaps and is visible in PR diffs.
+Working state for the agent orchestrator.
 
 - `queue.json` — task queue. Schema below. Managed by the `/queue` slash
   command (`.claude/skills/queue/SKILL.md`) and the orchestrator session.
+  **Local-only and gitignored** — it is one machine's in-flight work, it
+  publishes the whole dev workflow of a public repo, and it churned the diff on
+  every session. It was tracked until 2026-07-29; nothing recreates it, so a
+  fresh clone simply starts with an empty queue.
+
+Everything else under `.claude/` (agents, skills, settings) stays tracked: that
+is shared configuration worth having in a clone.
 
 ## Queue schema (v1)
 

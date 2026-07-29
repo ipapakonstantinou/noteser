@@ -4,6 +4,10 @@
 You manage the orchestrator's task queue stored at
 `.claude/orchestrator/queue.json` (relative to the repo root).
 
+The file is **local-only and gitignored** — never `git add` it, and do not treat
+a missing queue as an error: on a fresh clone there simply isn't one yet, and
+step 1 below already covers that case.
+
 ## Subcommands
 
 The argument string after `/queue` determines the action.
