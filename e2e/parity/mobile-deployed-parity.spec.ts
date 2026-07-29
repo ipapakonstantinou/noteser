@@ -8,13 +8,13 @@
 //   5. Editor on mobile (EditorHeader hidden, preview-toggle in MobileTopBar)
 //
 // Run with:
-//   PLAYWRIGHT_BASE_URL=https://noteser.thetechjon.com \
+//   PLAYWRIGHT_BASE_URL=https://noteser.app \
 //     npx playwright test --config playwright.config.deployed.ts \
 //     e2e/parity/mobile-deployed-parity.spec.ts
 
 import { test, expect, type Page } from '@playwright/test'
 
-const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'https://noteser.thetechjon.com'
+const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'https://noteser.app'
 
 const VIEWPORTS = [
   { width: 375, height: 667, label: 'iphone-se' },

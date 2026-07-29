@@ -23,7 +23,7 @@ import http from 'isomorphic-git/http/web'
 import { createFsaFs } from './fsaFs'
 
 // The proxy origin. Runtime-resolved so the same code works in dev
-// (localhost:3001), prod (noteser.thetechjon.com), and per-branch
+// (localhost:3001), prod (noteser.app), and per-branch
 // previews. The `/api/git-proxy` route handles every git Smart HTTP
 // sub-path under it.
 function corsProxy(): string {

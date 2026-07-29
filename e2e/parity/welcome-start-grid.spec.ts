@@ -7,12 +7,12 @@
  *   - Connect to GitHub: GitHubAuthModal opens
  *   - Open settings:     SettingsModal opens
  *
- * Runs against the deployed app at https://noteser.thetechjon.com.
+ * Runs against the deployed app at https://noteser.app.
  */
 
 import { test, expect } from '@playwright/test'
 
-const DEPLOYED = 'https://noteser.thetechjon.com'
+const DEPLOYED = 'https://noteser.app'
 
 function freshVault(page: import('@playwright/test').Page) {
   return page.addInitScript(() => {

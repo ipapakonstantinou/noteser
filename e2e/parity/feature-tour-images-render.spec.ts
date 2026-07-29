@@ -8,13 +8,13 @@ import { test, expect } from '@playwright/test'
 //      (Each image path `Files/feature-tour/X.png` gets resolved by
 //       AttachmentImage → IndexedDB → object URL.)
 //
-// Target: https://noteser.thetechjon.com (deployed app, absolute URLs)
+// Target: https://noteser.app (deployed app, absolute URLs)
 //
 // Note: seedFeatureTourNote is NOT on window.__noteser_test — it's a utility
 // exported from featureTourNote.ts and called by WelcomePane. We drive the
 // Welcome tab button instead, which is the actual user path.
 
-const APP_URL = 'https://noteser.thetechjon.com'
+const APP_URL = 'https://noteser.app'
 
 async function waitForHooks(page: import('@playwright/test').Page, timeout = 20_000) {
   await page.waitForFunction(

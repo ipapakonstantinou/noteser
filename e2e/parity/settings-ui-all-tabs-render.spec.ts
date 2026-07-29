@@ -9,9 +9,9 @@ import { setupCleanVault, waitForTestHooks } from './_helpers'
 // (Attachments, AI, DailyNotes, Templates, Shortcuts, Export) don't use
 // PanelHeading, so only the outer panel div visibility is asserted for them.
 //
-// Target: https://noteser.thetechjon.com (deployed build — no dev indicator).
+// Target: https://noteser.app (deployed build — no dev indicator).
 
-const BASE_URL = 'https://noteser.thetechjon.com'
+const BASE_URL = 'https://noteser.app'
 
 // `headingText` is set only for inline panels that use PanelHeading (<h3>).
 // Delegated section components don't render an <h3> — skip heading assertion.

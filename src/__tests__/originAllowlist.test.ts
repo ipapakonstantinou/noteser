@@ -26,15 +26,15 @@ afterEach(() => {
 })
 
 test('same-origin passes', () => {
-  const r = req('https://noteser.thetechjon.com/api/github/access-token', {
-    origin: 'https://noteser.thetechjon.com',
+  const r = req('https://noteser.app/api/github/access-token', {
+    origin: 'https://noteser.app',
   })
-  expect(isOriginAllowed(r)).toEqual({ ok: true, origin: 'https://noteser.thetechjon.com' })
+  expect(isOriginAllowed(r)).toEqual({ ok: true, origin: 'https://noteser.app' })
 })
 
 test('referer fallback when origin header is missing', () => {
-  const r = req('https://noteser.thetechjon.com/api/github/access-token', {
-    referer: 'https://noteser.thetechjon.com/some/page',
+  const r = req('https://noteser.app/api/github/access-token', {
+    referer: 'https://noteser.app/some/page',
   })
   const res = isOriginAllowed(r)
   expect(res.ok).toBe(true)
@@ -86,7 +86,7 @@ test('a cross-origin preview host needs an explicit extras entry', () => {
 })
 
 test('a hostile cross-origin request is rejected', () => {
-  const r = req('https://noteser.thetechjon.com/api/github/access-token', {
+  const r = req('https://noteser.app/api/github/access-token', {
     origin: 'https://evil.example.com',
   })
   const res = isOriginAllowed(r)
@@ -94,14 +94,14 @@ test('a hostile cross-origin request is rejected', () => {
 })
 
 test('missing Origin AND Referer headers is rejected', () => {
-  const r = req('https://noteser.thetechjon.com/api/github/access-token', {})
+  const r = req('https://noteser.app/api/github/access-token', {})
   const res = isOriginAllowed(r)
   expect(res.ok).toBe(false)
 })
 
 test('NEXT_PUBLIC_EXTRA_ORIGINS allowlist is honored', () => {
   process.env.NEXT_PUBLIC_EXTRA_ORIGINS = 'https://example.com,https://my-noteser.org'
-  const r = req('https://noteser.thetechjon.com/api/github/access-token', {
+  const r = req('https://noteser.app/api/github/access-token', {
     origin: 'https://example.com',
   })
   expect(isOriginAllowed(r).ok).toBe(true)
