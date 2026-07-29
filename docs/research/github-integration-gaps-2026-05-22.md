@@ -77,4 +77,5 @@ Rounds out the source-control sidebar: pending above, recent commits below.
 - [GitHub REST — Commits](https://docs.github.com/en/rest/commits/commits)
 - [GitHub REST — CORS](https://docs.github.com/en/rest/using-the-rest-api/using-cors-and-jsonp-to-make-cross-origin-requests)
 - [Version History Diff plugin (kometenstaub)](https://github.com/kometenstaub/obsidian-version-history-diff)
-- noteser internal: `docs/research/obsidian-reddit-insights.md`, `docs/sync.md`, `docs/roadmap.md`
+- noteser internal: `docs/sync.md`, `docs/roadmap.md` (the Reddit-insights research moved to the
+  Obsidian vault under `Personal/Noteser/strategy/`)
