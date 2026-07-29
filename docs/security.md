@@ -92,6 +92,7 @@ model reflects that:
 
 | Date | Change | Notes |
 |---|---|---|
+| 2026-07-29 | Status pass over `docs/research/security-audit-2026-05-21.md`: each of the 8 findings re-verified against current code. 1, 4, 5, 6, 8 FIXED; 2 and 3 marked OPEN, ACCEPTED with rationale; 7 OPEN by design. No code changed | doc was reading as a live vuln list against production |
 | 2026-07-06 | collab-server: size/rate/connection-cap limits + first test suite; `/share` img-src drops the `https:` wildcard; `.github/dependabot.yml` added (covers root + collab-server); collab-server wired into CI | 2026-07-06 deep security review |
 | 2026-05-20 | Initial security audit doc written | sh3d |
 | 2026-05-20 | `crypto.subtle` secure-context check + clear error | (LAN-over-HTTP regression) |
