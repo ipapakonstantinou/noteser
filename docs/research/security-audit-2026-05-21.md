@@ -4,9 +4,31 @@
 
 The app's XSS defences on the in-app preview and `/share` page are strong: no `rehype-raw`, no `dangerouslySetInnerHTML`, locked wikilink hrefs, and static guard tests that would catch regressions. One high-severity gap exists in the HTML export-to-ZIP path — raw note content is interpolated directly into an HTML template without escaping, so a crafted note produces a self-contained XSS payload in the exported file. The CSP is well-structured but `script-src 'unsafe-inline' 'unsafe-eval'` means it cannot stop script injection if one were ever reached in-app; all weight falls on the render-layer controls, which currently hold.
 
+## Status (verified against the code on 2026-07-29)
+
+This document is an audit snapshot from 2026-05-21, not a list of live vulnerabilities. Five of
+the eight findings have since been fixed; the table below was produced by re-reading the current
+code for each one, and the technical detail underneath is kept verbatim so the reasoning stays
+auditable.
+
+| # | Finding | Severity | Status |
+|---|---|---|---|
+| 1 | XSS in ZIP HTML export | high | **FIXED** — `escapeHTML` at `src/utils/export.ts:274`, locked by `src/__tests__/exportXssGuard.test.ts` |
+| 2 | GitHub OAuth token in localStorage with full `repo` scope | medium | **OPEN, ACCEPTED** — scope allow-list added, `repo` still the default |
+| 3 | In-memory rate limiter resets on cold start | medium | **OPEN, ACCEPTED** — throughput concern only |
+| 4 | `X-Forwarded-For` caller-controlled | medium | **FIXED** — `TRUSTED_PROXY_COUNT` in `src/utils/rateLimit.ts` |
+| 5 | `connect-src wss: ws:` wildcard | medium | **FIXED** — ws origin derived and scoped in `src/utils/csp.ts` |
+| 6 | `script-src 'unsafe-inline' 'unsafe-eval'` | low | **FIXED** — nonce + `strict-dynamic` (`src/utils/csp.ts`, `src/middleware.ts`), locked by `src/__tests__/cspHeader.test.ts`; `unsafe-eval` remains in non-production only |
+| 7 | OAuth Client ID is public | low | **OPEN, BY DESIGN** — inherent to device flow; no fix exists within that model |
+| 8 | Share-link burn key uses 32-bit FNV-1a | low | **FIXED** — SHA-256 via `crypto.subtle` at `src/utils/shareLink.ts:116` |
+
 ## Findings
 
 ### 1. XSS in ZIP HTML export — unescaped note content [severity: high]
+
+**Status: FIXED.** `src/utils/export.ts:274` now reads `convertMarkdownToHTML(escapeHTML(note.content))`,
+matching `buildPrintableHtml` at line 162. `src/__tests__/exportXssGuard.test.ts` scans the source
+statically, so a regression fails the suite rather than waiting to be noticed in an exported file.
 
 **Where:** `src/utils/export.ts:269`
 
@@ -31,6 +53,19 @@ Change line 269 from `convertMarkdownToHTML(note.content)` to `convertMarkdownTo
 
 ### 2. GitHub OAuth token in localStorage with full `repo` scope [severity: medium]
 
+**Status: OPEN, ACCEPTED.** `repo` is still the default scope requested at sign-in
+(`src/utils/github.ts:88` → `src/app/api/github/device-code/route.ts`). Accepted because Noteser
+is a single-user personal vault tool and the vault repo is usually private, which `public_repo`
+cannot reach at all — narrowing the scope would break the product's main use case rather than
+harden it. The residual risk is bounded by the render-layer XSS controls that finding 1 and
+findings 5/6 have since tightened, and an attacker needs script execution on the origin before
+the token is reachable at all.
+
+Partially mitigated since the audit: the proxy now enforces an `ALLOWED_SCOPES` allow-list
+(`{'repo', 'repo gist'}`) so a caller cannot coax it into requesting `admin:org` or
+`delete_repo`, and `gist` is requested on demand the first time a user publishes a gist rather
+than granted to everyone at sign-in.
+
 **Where:** `src/stores/githubStore.ts:94-102` (persist partializer), `src/app/api/github/device-code/route.ts:41`
 
 **What:**
@@ -45,6 +80,17 @@ For users syncing only a public repo, request `public_repo` instead of `repo`. F
 ---
 
 ### 3. In-memory rate limiter resets on every serverless cold start [severity: medium]
+
+**Status: OPEN, ACCEPTED.** `BUCKETS` is still a module-level `Map` at `src/utils/rateLimit.ts:13`.
+Accepted because this is a throughput control, not a confidentiality one: a bypassed limit lets a
+caller poll `/api/github/access-token` faster, but it still cannot read a token without already
+knowing the `device_code`, which is only ever shown to the user who started the flow. For a
+single-user personal vault the fleet never scales past a handful of instances, so the effective
+limit stays in the same order of magnitude as the intended one.
+
+Adding Vercel KV or Upstash to fix it properly means a new paid dependency and a new failure mode
+in the OAuth path, which is a poor trade against a DoS-throughput concern on a single-user app.
+Revisit if Noteser ever becomes multi-tenant.
 
 **Where:** `src/utils/rateLimit.ts:13`
 
@@ -61,6 +107,11 @@ Replace the in-memory `BUCKETS` Map with Vercel KV or Upstash Redis for producti
 
 ### 4. `X-Forwarded-For` is caller-controlled in non-Vercel deployments [severity: medium]
 
+**Status: FIXED.** `getClientIp` now honours a `TRUSTED_PROXY_COUNT` env var and strips that
+many right-hand hops before trusting an `x-forwarded-for` value, falling back to `x-real-ip`
+and then an unknown sentinel (`src/utils/rateLimit.ts:50-102`). The Vercel trust assumption is
+documented in the rate-limiter comment, as the finding asked.
+
 **Where:** `src/utils/rateLimit.ts:52-53`
 
 **What:**
@@ -75,6 +126,11 @@ Add a `TRUSTED_PROXY_COUNT` env var and strip that many left-hand XFF values bef
 ---
 
 ### 5. `connect-src wss: ws:` allows WebSocket exfiltration to any host [severity: medium]
+
+**Status: FIXED.** The bare `wss: ws:` wildcards are gone. The CSP moved out of
+`next.config.mjs` into `src/utils/csp.ts`, which derives a single ws(s) origin from the
+configured collaboration endpoint and adds only that to `connect-src`; with no endpoint
+configured, no WebSocket origin is permitted at all.
 
 **Where:** `next.config.mjs:25`
 
@@ -92,6 +148,12 @@ Remove `wss: ws:` from the default CSP. If Yjs is re-enabled, scope the directiv
 ---
 
 ### 6. `script-src 'unsafe-inline' 'unsafe-eval'` renders CSP script control inert [severity: low]
+
+**Status: FIXED.** `script-src` is now `'self' 'nonce-<random>' 'strict-dynamic'` from a
+per-request nonce in `src/middleware.ts` (logic in `src/utils/csp.ts`), so `'unsafe-inline'`
+is gone from production. `'unsafe-eval'` is added only in non-production for dev HMR.
+`src/__tests__/cspHeader.test.ts` locks it. The 2026-05-22 investigation log below records the
+first attempt, which failed — it is kept because the failure mode is worth remembering.
 
 **Where:** `next.config.mjs:15`
 
@@ -115,6 +177,12 @@ Tracked as a follow-up needing a deeper Next.js investigation (or a version bump
 
 ### 7. GitHub OAuth Client ID is public; device-flow can be initiated by third parties [severity: low]
 
+**Status: OPEN, BY DESIGN.** Unchanged and unfixable within the device-flow model, exactly as
+the finding itself concluded: the flow is specified for public clients and the Client ID is
+necessarily in the bundle. Both proxy routes do enforce an origin allow-list
+(`src/utils/originAllowlist.ts`), which stops abuse *through Noteser*; it cannot stop direct
+calls to `github.com/login/device/code`.
+
 **Where:** `src/app/api/github/device-code/route.ts:30`, `.env.local:1`
 
 **What:**
@@ -129,6 +197,11 @@ No complete fix exists within the device-flow model, which is designed for publi
 ---
 
 ### 8. Share-link burn key uses 32-bit FNV-1a (collision risk) [severity: low]
+
+**Status: FIXED.** `shareLinkBurnKey` is now async and derives the key from
+`crypto.subtle.digest('SHA-256', …)` (`src/utils/shareLink.ts:116-126`), with a documented
+non-hashed fallback to the fragment prefix where `crypto.subtle` is unavailable (insecure
+context). FNV-1a is gone.
 
 **Where:** `src/utils/shareLink.ts:113-119`
 
@@ -161,9 +234,25 @@ Use the first 64 characters of the URL-safe base64 fragment itself as the localS
 
 ## Suggested follow-up branches
 
-- `feat/security-html-export-escape` — one-line fix for Finding 1 (`convertToHTML` line 269); high priority.
-- `feat/security-csp-websocket-scope` — narrow `wss: ws:` to a specific host or remove when Yjs is not configured (Finding 5).
-- `feat/security-rate-limit-redis` — replace in-memory `BUCKETS` with Vercel KV / Upstash for multi-instance correctness (Finding 3).
-- `feat/security-csp-nonce` — investigate nonce-based `script-src` to retire `'unsafe-inline'`/`'unsafe-eval'` in production (Finding 6).
-- `feat/security-oauth-scope` — request `public_repo` or guide users to a fine-grained PAT scoped to the vault repo only (Finding 2).
-- `feat/security-share-burn-hash` — replace FNV-1a burn key with raw fragment prefix or SHA-256 (Finding 8; low priority).
+Reviewed 2026-07-29. Nothing here is outstanding work any more — the four security fixes shipped,
+and the two remaining findings were decided rather than deferred.
+
+**Shipped:**
+
+- ~~`feat/security-html-export-escape` — Finding 1~~ — shipped; `escapeHTML` at `src/utils/export.ts:274`.
+- ~~`feat/security-csp-websocket-scope` — Finding 5~~ — shipped; ws origin derived in `src/utils/csp.ts`.
+- ~~`feat/security-csp-nonce` — Finding 6~~ — shipped; nonce + `strict-dynamic`, `'unsafe-inline'` gone from production.
+- ~~`feat/security-share-burn-hash` — Finding 8~~ — shipped; SHA-256 via `crypto.subtle`.
+- ~~Finding 4 (`X-Forwarded-For`)~~ — shipped as `TRUSTED_PROXY_COUNT`; it never had a branch listed here.
+
+**Not planned (decided, not deferred):**
+
+- `feat/security-oauth-scope` (Finding 2) — **not planned.** `public_repo` cannot reach a private
+  vault repo, which is the normal case, so narrowing the scope removes the feature rather than the
+  risk. See the finding's status note.
+- `feat/security-rate-limit-redis` (Finding 3) — **not planned.** A throughput control on a
+  single-user app does not justify a paid dependency in the OAuth path. Revisit if Noteser ever
+  becomes multi-tenant.
+
+Finding 7 has no branch because none is possible: a public Client ID is inherent to the OAuth
+device flow.

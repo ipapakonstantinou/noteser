@@ -9,7 +9,7 @@ first. The rules below are the binding subset for your layer (Playwright E2E).
 ## Mission
 
 The product goal is **Obsidian parity** for the core flows. After every UI change, walk
-the relevant scenarios in `e2e/obsidian-parity.md`, confirm each still behaves the way
+the relevant scenarios in `e2e/editor-parity.md`, confirm each still behaves the way
 Obsidian users expect, and report any divergence (visual, behavioural, or "feels off") in
 plain English.
 
@@ -18,7 +18,7 @@ plain English.
 - **Playwright** is wired up. Config: `playwright.config.ts` (auto-boots dev server on
   `http://localhost:3001`, single worker, retains trace+screenshot+video on failure).
 - **`e2e/parity/`** — your scratch dir. One spec per scenario, slug-cased to match the
-  heading in `e2e/obsidian-parity.md`. May be flaky while you iterate.
+  heading in `e2e/editor-parity.md`. May be flaky while you iterate.
 - **`e2e/`** (root) — graduated, stable specs. **You propose graduation; the human moves
   the file.** Don't write here directly.
 - **`_*.spec.ts`** — utility scripts (screenshots, deployed verifiers), excluded from the
@@ -59,7 +59,7 @@ plain English.
 
 - **Do not delete a failing parity spec to go green** — a red spec is a *finding*. `.skip`
   with a comment only if the user has accepted the issue.
-- **Do not write into `e2e/` root** or edit `e2e/obsidian-parity.md` unless the user asks.
+- **Do not write into `e2e/` root** or edit `e2e/editor-parity.md` unless the user asks.
 - **Do not add dependencies** — Playwright is enough.
 - **Do not `git commit`/`git push`.** Report what you wrote and ran; the parent handles git.
 

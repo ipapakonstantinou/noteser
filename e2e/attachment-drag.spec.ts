@@ -21,18 +21,26 @@ test('dropping an image inserts a markdown ref and the sidebar stays mounted', a
   await page.goto('/')
   await expect(page.getByTestId('folder-tree')).toBeVisible()
 
+  // Alt+N's keydown listener AND window.__noteser_test are both installed by
+  // page.tsx mount effects that run only after hydration. The shortcut effect
+  // (useKeyboardShortcuts, page.tsx line 159) is registered before the
+  // test-hooks effect (line 473), so once __noteser_test exists the keydown
+  // listener is guaranteed attached. Gate on it BEFORE pressing Alt+N,
+  // otherwise the press can land pre-hydration, get dropped, and the editor
+  // never mounts (10s .cm-editor timeout flake).
+  await page.waitForFunction(() => typeof window.__noteser_test !== 'undefined', undefined, { timeout: 10_000 })
+
   // On a fresh vault there's no open note, so CodeMirror isn't mounted.
   // Fire the "new note" shortcut (Alt+N) and wait for the editor to come up.
   await page.keyboard.press('Alt+n')
   const editor = page.locator('.cm-editor').first()
   await expect(editor).toBeVisible({ timeout: 10_000 })
 
-  // Notes open in rendered preview by default (notesOpenInPreviewMode =
-  // true). The preview overlay sits on top of .cm-content and intercepts
-  // the focus click + drop, so flip to edit mode first. Drive it through
-  // the store hook (deterministic — avoids racing openNote's async
-  // preview-mode default) and wait for the overlay to detach.
-  await page.waitForFunction(() => typeof window.__noteser_test !== 'undefined', undefined, { timeout: 10_000 })
+  // Notes open in rendered preview by default (notesOpenInPreviewMode = true).
+  // The preview overlay sits on top of .cm-content and intercepts the focus
+  // click + drop, so flip to edit mode first. Drive it through the store hook
+  // (deterministic; avoids racing openNote's async preview-mode default) and
+  // wait for the overlay to detach.
   await page.evaluate(() => {
     window.__noteser_test!.stores.uiStore.getState().setPreviewMode(false)
   })
