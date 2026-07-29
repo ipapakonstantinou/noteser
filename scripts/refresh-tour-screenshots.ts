@@ -132,12 +132,12 @@ See also: [[Project plan]], [[Daily 2026-05-21]]
     content: `# Meeting notes — review
 
 ## Attendees
-- Monica
-- Tassilo
-- Ioannis
+- Alex
+- Sam
+- Riley
 
 ## Agenda
-1. Pilot proposal
+1. Roadmap review
 2. Tooling
 
 #work
