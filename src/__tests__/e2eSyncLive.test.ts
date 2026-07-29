@@ -8,9 +8,13 @@
  *
  * Unlike githubSyncRoundtrip.test.ts (which mocks the github.ts network
  * surface and serves canned blobs), this test makes REAL calls to
- * api.github.com. It only runs when `GITHUB_TEST_TOKEN` is present in the
- * environment — otherwise every test self-skips, so the normal `npm test`
- * suite is unaffected and stays green.
+ * api.github.com. It only runs when `GITHUB_TEST_TOKEN`, `GITHUB_TEST_OWNER`
+ * and `GITHUB_TEST_REPO` are all present in the environment — otherwise every
+ * test self-skips, so the normal `npm test` suite is unaffected and stays green.
+ *
+ * The target is deliberately NOT defaulted. This harness creates branches,
+ * commits and force-deletes refs, so a hardcoded owner would mean anyone who
+ * ran it with their own token wrote into someone else's account.
  *
  * Run it with the token loaded:
  *   npm run e2e:sync
@@ -157,8 +161,11 @@ import { githubFetch } from '../utils/githubFetch'
 import type { Note, SyncRepo } from '@/types'
 
 const TOKEN = process.env.GITHUB_TEST_TOKEN
-const OWNER = 'ipapakonstantinou'
-const REPO_NAME = 'noteser-vault'
+// No defaults: this harness writes to the target (creates branches, commits,
+// deletes refs), so it must never guess an account. Unset → the suites skip.
+const OWNER = process.env.GITHUB_TEST_OWNER ?? ''
+const REPO_NAME = process.env.GITHUB_TEST_REPO ?? ''
+const LIVE = Boolean(TOKEN && OWNER && REPO_NAME)
 const BASE_BRANCH = 'main'
 const HARNESS_BRANCH = 'claude-harness'
 
@@ -293,7 +300,7 @@ function canonicalLocalSha(content: string): Promise<string> {
 
 const log = (msg: string) => console.log(`  ${msg}`)
 
-const maybe = TOKEN ? describe : describe.skip
+const maybe = LIVE ? describe : describe.skip
 
 maybe('e2e GitHub sync (live)', () => {
   // Live API calls + retries — give the whole suite a generous bound. Each
@@ -311,7 +318,7 @@ maybe('e2e GitHub sync (live)', () => {
 
   afterAll(async () => {
     // Scenario 6: cleanup — best-effort delete of the harness branch.
-    if (!TOKEN) return
+    if (!LIVE) return
     try {
       await deleteRef(HARNESS_BRANCH)
       log(`[cleanup] deleted branch ${HARNESS_BRANCH}`)
@@ -822,7 +829,7 @@ const rvhRepo: SyncRepo = { owner: OWNER, name: REPO_NAME, branch: RVH_BRANCH, i
 // settings sync ACTIVE for the realistic vault (vaultSettingsRepoPath !== null).
 const RVH_SETTINGS_FOLDER = '.noteser'
 
-const rvhMaybe = TOKEN ? describe : describe.skip
+const rvhMaybe = LIVE ? describe : describe.skip
 
 rvhMaybe('e2e GitHub sync — REALISTIC VAULT (live)', () => {
   jest.setTimeout(180_000)
@@ -985,7 +992,7 @@ rvhMaybe('e2e GitHub sync — REALISTIC VAULT (live)', () => {
   }
 
   beforeAll(async () => {
-    if (!TOKEN) return
+    if (!LIVE) return
     // Seed the settings.json content from noteser's OWN serializer over a
     // realistic vault slice — i.e. exactly the bytes the app writes. We override
     // a couple of vault keys to non-default values so the file is non-trivial.
@@ -1038,7 +1045,7 @@ rvhMaybe('e2e GitHub sync — REALISTIC VAULT (live)', () => {
   })
 
   afterAll(async () => {
-    if (!TOKEN) return
+    if (!LIVE) return
     try {
       await deleteRvhRef()
       log(`[rvh cleanup] deleted branch ${RVH_BRANCH}`)

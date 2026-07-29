@@ -6,9 +6,9 @@ import { test, expect } from '@playwright/test'
 // When a fresh note is opened via workspaceStore.openNote(), the dynamic
 // import inside openNote should call uiStore.setPreviewMode(true).
 //
-// Target: https://noteser.thetechjon.com (deployed app, absolute URLs)
+// Target: https://noteser.app (deployed app, absolute URLs)
 
-const APP_URL = 'https://noteser.thetechjon.com'
+const APP_URL = 'https://noteser.app'
 
 /** Wait for `window.__noteser_test` to be available (post-hydration). */
 async function waitForHooks(page: import('@playwright/test').Page, timeout = 15_000) {

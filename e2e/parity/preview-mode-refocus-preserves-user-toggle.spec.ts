@@ -11,9 +11,9 @@ import { test, expect } from '@playwright/test'
 // that would call setPreviewMode(). So isPreviewMode stays wherever the user
 // left it.
 //
-// Target: https://noteser.thetechjon.com (deployed app, absolute URLs)
+// Target: https://noteser.app (deployed app, absolute URLs)
 
-const APP_URL = 'https://noteser.thetechjon.com'
+const APP_URL = 'https://noteser.app'
 
 async function waitForHooks(page: import('@playwright/test').Page, timeout = 15_000) {
   await page.waitForFunction(

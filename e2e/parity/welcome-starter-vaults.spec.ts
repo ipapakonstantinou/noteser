@@ -9,12 +9,12 @@
  *
  * Vault IDs under test: zettelkasten, daily-system, project-tracker, research
  *
- * Runs against the deployed app at https://noteser.thetechjon.com.
+ * Runs against the deployed app at https://noteser.app.
  */
 
 import { test, expect } from '@playwright/test'
 
-const DEPLOYED = 'https://noteser.thetechjon.com'
+const DEPLOYED = 'https://noteser.app'
 
 // Expected note counts per vault (based on starterVaults.ts definitions).
 const VAULT_EXPECTATIONS = {

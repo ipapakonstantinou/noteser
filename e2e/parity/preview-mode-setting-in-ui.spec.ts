@@ -5,9 +5,9 @@ import { test, expect } from '@playwright/test'
 // Settings → Editor contains an "Open notes in preview mode" checkbox.
 // The checkbox reflects the store value, and toggling it updates the store.
 //
-// Target: https://noteser.thetechjon.com (deployed app, absolute URLs)
+// Target: https://noteser.app (deployed app, absolute URLs)
 
-const APP_URL = 'https://noteser.thetechjon.com'
+const APP_URL = 'https://noteser.app'
 
 async function waitForHooks(page: import('@playwright/test').Page, timeout = 15_000) {
   await page.waitForFunction(

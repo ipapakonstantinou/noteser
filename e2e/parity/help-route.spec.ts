@@ -147,7 +147,7 @@ test('6: "Back to noteser" link returns to /', async ({ page }) => {
 
   if (backCount === 0) {
     // Try by href pointing to root.
-    const rootLink = page.locator('a[href="/"], a[href="https://noteser.thetechjon.com"]').first()
+    const rootLink = page.locator('a[href="/"], a[href="https://noteser.app"]').first()
     const rootCount = await rootLink.count()
     if (rootCount === 0) {
       await page.screenshot({ path: 'playwright-report/notes/help-no-back-link.png' })

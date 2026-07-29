@@ -17,7 +17,7 @@
 import { test, expect } from '@playwright/test'
 import path from 'path'
 
-const PROD = 'https://noteser.thetechjon.com'
+const PROD = 'https://noteser.app'
 const OUT = path.resolve(__dirname, '..', 'docs', 'images', 'verify')
 
 test.use({ viewport: { width: 1440, height: 900 } })

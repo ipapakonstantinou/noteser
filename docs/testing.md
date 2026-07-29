@@ -258,10 +258,24 @@ await expect(async () => {
 
 `src/__tests__/e2eSyncLive.test.ts`, run with `npm run e2e:sync`
 (`scripts/run-e2e-sync.js`). It does a real clone/push/pull round-trip against a test
-repo, so it needs `GITHUB_TEST_TOKEN` in `~/.config/noteser/test-token.env` (the runner
-reads it from the file and passes it via env — the token is never printed or put on the
-command line). **Touch this only when you change sync logic.** It is excluded from the
-default `npm test` loop and never runs in CI.
+repo, so it needs three variables in `~/.config/noteser/test-token.env`:
+
+| Variable | Meaning |
+|---|---|
+| `GITHUB_TEST_TOKEN` | PAT with write access to the target repo |
+| `GITHUB_TEST_OWNER` | account or org that owns the throwaway test repo |
+| `GITHUB_TEST_REPO` | repo name, e.g. `noteser-vault-test` |
+
+The runner reads the token from the file and passes it via env — it is never printed or
+put on the command line. **None of the three has a default.** The harness creates
+branches, commits, and deletes refs on the target, so a hardcoded owner would mean
+anyone running it with their own token wrote into someone else's account. With any of
+them missing the suites self-skip. Point them at a repo you own and do not care about.
+The Codeberg equivalent uses `CODEBERG_TEST_TOKEN` / `CODEBERG_TEST_OWNER` /
+`CODEBERG_TEST_REPO` the same way.
+
+**Touch this only when you change sync logic.** It is excluded from the default
+`npm test` loop and never runs in CI.
 
 ---
 

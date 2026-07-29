@@ -16,7 +16,7 @@
 
 import { test, expect, type Page } from '@playwright/test'
 
-const BASE = 'https://noteser.thetechjon.com'
+const BASE = 'https://noteser.app'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

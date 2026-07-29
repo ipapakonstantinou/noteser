@@ -9,12 +9,12 @@
  *   5. Clicking the card again (after a re-open of welcome) focuses the
  *      existing note rather than duplicating it.
  *
- * Runs against the deployed app at https://noteser.thetechjon.com.
+ * Runs against the deployed app at https://noteser.app.
  */
 
 import { test, expect } from '@playwright/test'
 
-const DEPLOYED = 'https://noteser.thetechjon.com'
+const DEPLOYED = 'https://noteser.app'
 
 // Clean vault — but WITHOUT onboardingShown=true so the welcome tab appears.
 async function freshVault(page: import('@playwright/test').Page) {

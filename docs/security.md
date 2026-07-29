@@ -31,6 +31,12 @@ model reflects that:
   the third-party-cookie federation experiment.
 - **`/api/github/*` proxy routes** rate-limited per-IP via
   `src/utils/rateLimit.ts`.
+- **Origin allow-list** (`src/utils/originAllowlist.ts`) on every proxy
+  route: same-origin, `localhost`/`127.0.0.1`, RFC1918 LAN IPs, plus
+  exact origins from `NEXT_PUBLIC_EXTRA_ORIGINS`. No wildcard hostnames —
+  in particular NOT `*.vercel.app`, which is a shared namespace anyone can
+  get a subdomain on. Vercel preview deploys pass as same-origin, since
+  the app calls its own `/api/*` with relative URLs.
 
 ### Token storage
 
@@ -92,6 +98,7 @@ model reflects that:
 
 | Date | Change | Notes |
 |---|---|---|
+| 2026-07-29 | `isOriginAllowed` no longer trusts the whole `*.vercel.app` namespace — blanket suffix branch removed, exact-match `NEXT_PUBLIC_EXTRA_ORIGINS` is the only non-same-origin path; 2 new rejection tests | shared namespace: a stranger's free subdomain cleared the check. Real grant was on `/api/git-proxy` (echoes the origin in `Access-Control-Allow-Origin`) |
 | 2026-07-29 | Status pass over `docs/research/security-audit-2026-05-21.md`: each of the 8 findings re-verified against current code. 1, 4, 5, 6, 8 FIXED; 2 and 3 marked OPEN, ACCEPTED with rationale; 7 OPEN by design. No code changed | doc was reading as a live vuln list against production |
 | 2026-07-06 | collab-server: size/rate/connection-cap limits + first test suite; `/share` img-src drops the `https:` wildcard; `.github/dependabot.yml` added (covers root + collab-server); collab-server wired into CI | 2026-07-06 deep security review |
 | 2026-05-20 | Initial security audit doc written | sh3d |

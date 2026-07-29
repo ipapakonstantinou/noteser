@@ -14,6 +14,11 @@ const { spawnSync } = require('child_process')
 
 const TOKEN_FILE = path.join(os.homedir(), '.config', 'noteser', 'test-token.env')
 const TOKEN_KEY = 'GITHUB_TEST_TOKEN'
+// The harness has no default target on purpose (it writes to whatever it points
+// at), so owner and repo are as required as the token. Checked here because a
+// missing one makes the suites self-skip, and a skipped run still exits green —
+// which reads as "the live harness passed".
+const REQUIRED_KEYS = [TOKEN_KEY, 'GITHUB_TEST_OWNER', 'GITHUB_TEST_REPO']
 
 function loadTokenEnv() {
   let raw
@@ -21,7 +26,7 @@ function loadTokenEnv() {
     raw = fs.readFileSync(TOKEN_FILE, 'utf8')
   } catch {
     console.error(`[e2e:sync] Token file not found at ${TOKEN_FILE}.`)
-    console.error('[e2e:sync] The live harness needs GITHUB_TEST_TOKEN to run.')
+    console.error(`[e2e:sync] The live harness needs ${REQUIRED_KEYS.join(', ')} to run.`)
     process.exit(1)
   }
   for (const line of raw.split('\n')) {
@@ -37,8 +42,11 @@ function loadTokenEnv() {
     }
     if (key) process.env[key] = val
   }
-  if (!process.env[TOKEN_KEY]) {
-    console.error(`[e2e:sync] ${TOKEN_KEY} not present in ${TOKEN_FILE}.`)
+  const missing = REQUIRED_KEYS.filter(k => !process.env[k])
+  if (missing.length > 0) {
+    console.error(`[e2e:sync] Not present in ${TOKEN_FILE}: ${missing.join(', ')}.`)
+    console.error('[e2e:sync] Point GITHUB_TEST_OWNER / GITHUB_TEST_REPO at a throwaway')
+    console.error('[e2e:sync] repo you own — the harness creates and deletes branches on it.')
     process.exit(1)
   }
 }

@@ -2,10 +2,11 @@
  * originAllowlist.test.ts
  *
  * Locks in the Origin / Referer check used by the GitHub OAuth proxy
- * routes. Same-origin always passes; localhost / loopback / RFC1918
- * LAN IPs pass for `next dev`; *.vercel.app passes for preview
- * deploys; NEXT_PUBLIC_EXTRA_ORIGINS is honored for opt-in extras.
- * Anything else is rejected.
+ * routes. Same-origin always passes (which is how Vercel preview
+ * deploys pass — the app calls its own `/api/*`); localhost / loopback
+ * / RFC1918 LAN IPs pass for `next dev`; NEXT_PUBLIC_EXTRA_ORIGINS is
+ * honored for opt-in extras. Anything else is rejected, *.vercel.app
+ * included — it is a shared namespace, not ours.
  */
 
 import { isOriginAllowed } from '../utils/originAllowlist'
@@ -25,15 +26,15 @@ afterEach(() => {
 })
 
 test('same-origin passes', () => {
-  const r = req('https://noteser.thetechjon.com/api/github/access-token', {
-    origin: 'https://noteser.thetechjon.com',
+  const r = req('https://noteser.app/api/github/access-token', {
+    origin: 'https://noteser.app',
   })
-  expect(isOriginAllowed(r)).toEqual({ ok: true, origin: 'https://noteser.thetechjon.com' })
+  expect(isOriginAllowed(r)).toEqual({ ok: true, origin: 'https://noteser.app' })
 })
 
 test('referer fallback when origin header is missing', () => {
-  const r = req('https://noteser.thetechjon.com/api/github/access-token', {
-    referer: 'https://noteser.thetechjon.com/some/page',
+  const r = req('https://noteser.app/api/github/access-token', {
+    referer: 'https://noteser.app/some/page',
   })
   const res = isOriginAllowed(r)
   expect(res.ok).toBe(true)
@@ -61,15 +62,31 @@ test('RFC1918 LAN IPs pass (dev binding 0.0.0.0)', () => {
   expect(isOriginAllowed(r2).ok).toBe(true)
 })
 
-test('Vercel preview hostnames pass over https', () => {
+test('a preview deploy calling its own API passes (same-origin)', () => {
   const r = req('https://noteser-abc.vercel.app/api/github/access-token', {
     origin: 'https://noteser-abc.vercel.app',
   })
   expect(isOriginAllowed(r).ok).toBe(true)
 })
 
+test('a stranger *.vercel.app origin is rejected', () => {
+  const r = req('https://noteser.app/api/github/access-token', {
+    origin: 'https://evil.vercel.app',
+  })
+  expect(isOriginAllowed(r).ok).toBe(false)
+})
+
+test('a cross-origin preview host needs an explicit extras entry', () => {
+  const r = req('https://noteser.app/api/github/access-token', {
+    origin: 'https://noteser-abc.vercel.app',
+  })
+  expect(isOriginAllowed(r).ok).toBe(false)
+  process.env.NEXT_PUBLIC_EXTRA_ORIGINS = 'https://noteser-abc.vercel.app'
+  expect(isOriginAllowed(r).ok).toBe(true)
+})
+
 test('a hostile cross-origin request is rejected', () => {
-  const r = req('https://noteser.thetechjon.com/api/github/access-token', {
+  const r = req('https://noteser.app/api/github/access-token', {
     origin: 'https://evil.example.com',
   })
   const res = isOriginAllowed(r)
@@ -77,14 +94,14 @@ test('a hostile cross-origin request is rejected', () => {
 })
 
 test('missing Origin AND Referer headers is rejected', () => {
-  const r = req('https://noteser.thetechjon.com/api/github/access-token', {})
+  const r = req('https://noteser.app/api/github/access-token', {})
   const res = isOriginAllowed(r)
   expect(res.ok).toBe(false)
 })
 
 test('NEXT_PUBLIC_EXTRA_ORIGINS allowlist is honored', () => {
   process.env.NEXT_PUBLIC_EXTRA_ORIGINS = 'https://example.com,https://my-noteser.org'
-  const r = req('https://noteser.thetechjon.com/api/github/access-token', {
+  const r = req('https://noteser.app/api/github/access-token', {
     origin: 'https://example.com',
   })
   expect(isOriginAllowed(r).ok).toBe(true)

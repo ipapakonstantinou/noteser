@@ -6,7 +6,7 @@ bottom for the prior direct-to-main mode.)
 
 ## Branch model
 
-  main      ── production. Auto-deploys to noteser.thetechjon.com.
+  main      ── production. Auto-deploys to noteser.app.
               Treat as immutable: only landed via PR merge from dev
               or feature branches once the preview has been verified.
 
@@ -41,7 +41,7 @@ bottom for the prior direct-to-main mode.)
    `dev`'s URL.
 7. **Promote to prod.** When `dev` looks right after batching one or
    more features, open a `dev → main` PR. Merge → Vercel deploys to
-   `noteser.thetechjon.com`.
+   `noteser.app`.
 8. **If prod breaks**, revert the merge commit on main (creates a
    new "Revert" commit). Preview branches stay alive for diagnostics.
 
@@ -96,7 +96,7 @@ archaeology only:
 
 > 1. Land changes directly on `main`.
 > 2. Run `npm run typecheck && npm test && npm run build` before pushing.
-> 3. Push. Vercel auto-deploys `main` → noteser.thetechjon.com.
+> 3. Push. Vercel auto-deploys `main` → noteser.app.
 > 4. If the deploy fails, fix-forward — push another commit.
 
 ## LAN access from another PC
@@ -112,7 +112,7 @@ context* — HTTPS, or `http://localhost` on the same machine. Hitting the
 LAN IP over plain HTTP from another PC means `crypto.subtle` is
 undefined, and the first sync call throws. Three ways to fix:
 
-1. **Use the production HTTPS URL.** `https://noteser.thetechjon.com` is
+1. **Use the production HTTPS URL.** `https://noteser.app` is
    the simplest path — sync works because the browser sees a secure
    context.
 2. **SSH tunnel.** From the secondary PC:
@@ -128,7 +128,7 @@ symptom is obvious instead of the cryptic
 
 ## Vercel-specific notes
 
-- **Custom domain.** `noteser.thetechjon.com` points at the
+- **Custom domain.** `noteser.app` points at the
   `main` production deploy.
 - **Preview URLs.** Auto-generated per non-main branch.
 - **Build command.** `next build` (default).

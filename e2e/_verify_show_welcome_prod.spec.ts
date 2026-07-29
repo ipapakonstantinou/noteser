@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-const PROD = 'https://noteser.thetechjon.com'
+const PROD = 'https://noteser.app'
 
 test.use({ viewport: { width: 1440, height: 900 } })
 

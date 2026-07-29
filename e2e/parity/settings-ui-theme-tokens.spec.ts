@@ -19,9 +19,9 @@ import { setupCleanVault, waitForTestHooks } from './_helpers'
 //   getComputedStyle().getPropertyValue() — Tailwind uses the fallback.
 //   After reset, the inline style is removed, so getPropertyValue returns ''.
 //
-// Target: https://noteser.thetechjon.com (deployed build).
+// Target: https://noteser.app (deployed build).
 
-const BASE_URL = 'https://noteser.thetechjon.com'
+const BASE_URL = 'https://noteser.app'
 
 async function openAppearancePanel(page: import('@playwright/test').Page) {
   await page.waitForFunction(() => !!window.__noteser_test, null, { timeout: 10_000 })

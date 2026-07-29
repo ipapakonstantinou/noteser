@@ -14,9 +14,9 @@ import { setupCleanVault, waitForTestHooks } from './_helpers'
 //      the "Will push on next sync" badge appears / disappears as expected.
 //      (No real GitHub creds required.)
 //
-// Target: https://noteser.thetechjon.com (deployed build).
+// Target: https://noteser.app (deployed build).
 
-const BASE_URL = 'https://noteser.thetechjon.com'
+const BASE_URL = 'https://noteser.app'
 
 async function openGitHubPanel(page: import('@playwright/test').Page) {
   await page.waitForFunction(() => !!window.__noteser_test, null, { timeout: 10_000 })

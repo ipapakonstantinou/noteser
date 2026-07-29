@@ -183,6 +183,16 @@ necessarily in the bundle. Both proxy routes do enforce an origin allow-list
 (`src/utils/originAllowlist.ts`), which stops abuse *through Noteser*; it cannot stop direct
 calls to `github.com/login/device/code`.
 
+**Cross-reference added 2026-07-29:** this finding was right that the origin allow-list is what
+contains proxy-route abuse — but the allow-list it leaned on was itself bypassable until today.
+`isOriginAllowed` trusted any `https://*.vercel.app` origin, a shared multi-tenant namespace, so
+a page on a stranger's free Vercel subdomain cleared the check. Removed on branch
+`chore/public-repo-hygiene-2`. Practical impact was bounded: on these OAuth routes no CORS
+headers are emitted, so a browser blocks the cross-origin read anyway and a scripted caller can
+spoof `Origin:` regardless — it was a weakened defence-in-depth control, not an exploitable path
+to a victim's token. The real grant was on `/api/git-proxy`, which echoes the passing origin in
+`Access-Control-Allow-Origin`.
+
 **Where:** `src/app/api/github/device-code/route.ts:30`, `.env.local:1`
 
 **What:**

@@ -5,7 +5,7 @@
 > with **zero hand-written lines of code** — every feature shaped through
 > natural-language conversation with Claude Code.
 
-Live at **[noteser.thetechjon.com](https://noteser.thetechjon.com)** ·
+Live at **[noteser.app](https://noteser.app)** ·
 source on **[GitHub](https://github.com/ipapakonstantinou/noteser)**.
 
 ---

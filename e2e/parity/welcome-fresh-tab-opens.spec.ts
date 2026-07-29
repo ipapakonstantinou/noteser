@@ -9,12 +9,12 @@
  *   - [data-testid="welcome-pane"] is visible
  *   - A tab labelled "Welcome" appears in the tab bar
  *
- * Runs against the deployed app at https://noteser.thetechjon.com.
+ * Runs against the deployed app at https://noteser.app.
  */
 
 import { test, expect } from '@playwright/test'
 
-const DEPLOYED = 'https://noteser.thetechjon.com'
+const DEPLOYED = 'https://noteser.app'
 
 test.beforeEach(async ({ page }) => {
   // Wipe ALL persisted state so the app treats this as a brand-new user.

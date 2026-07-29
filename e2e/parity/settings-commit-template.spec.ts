@@ -19,7 +19,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { setupCleanVault, waitForTestHooks } from './_helpers'
 
-const BASE = 'https://noteser.thetechjon.com'
+const BASE = 'https://noteser.app'
 
 const DEFAULT_TEMPLATE = 'Sync from Noteser ({{date}})'
 
