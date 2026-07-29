@@ -82,11 +82,18 @@ Both routes refuse requests whose Origin / Referer header isn't one of:
 - `http://localhost:*` and `http://127.0.0.1:*` (dev)
 - RFC1918 LAN IPs (`10.x`, `172.16-31.x`, `192.168.x`) — covers
   `next dev -H 0.0.0.0` for second-device testing
-- `https://*.vercel.app` (preview deploys)
 - anything in `NEXT_PUBLIC_EXTRA_ORIGINS` (comma-sep, opt-in)
 
-Anything else → `403 forbidden`. Locked in by 8 cases in
+Anything else → `403 forbidden`. Locked in by 10 cases in
 `src/__tests__/originAllowlist.test.ts`.
+
+**Tightened 2026-07-29:** the list used to include a blanket
+`https://*.vercel.app`. That is a shared multi-tenant namespace — anyone
+can park a page on a free subdomain and clear the check — so it was
+removed. Preview deploys are unaffected: the app only ever calls its own
+`/api/*` with relative URLs, so preview traffic passes as same-origin. A
+genuinely cross-origin preview needs an explicit
+`NEXT_PUBLIC_EXTRA_ORIGINS` entry.
 
 ## Content-Security-Policy
 

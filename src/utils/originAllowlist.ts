@@ -12,8 +12,6 @@
 // deploys, local dev) closes that hole without breaking the legitimate
 // flow.
 
-const VERCEL_PREVIEW_HOST_SUFFIX = '.vercel.app'
-
 /**
  * Return true when the request's Origin/Referer header is one of the
  * origins we trust. We accept:
@@ -21,8 +19,13 @@ const VERCEL_PREVIEW_HOST_SUFFIX = '.vercel.app'
  *   - `http://localhost:*`        (any port, for `next dev`)
  *   - `http://127.0.0.1:*`        (same idea over loopback)
  *   - `http://<lan-ip>:*`         (Linux dev binding to 0.0.0.0)
- *   - `https://*.vercel.app`      (preview deploys)
  *   - anything in NEXT_PUBLIC_EXTRA_ORIGINS (comma-sep list)
+ *
+ * NOT accepted: `https://*.vercel.app` as a wildcard. That is a shared
+ * multi-tenant namespace — any stranger's free subdomain would have
+ * cleared the check. Preview deploys still work because the app only
+ * ever calls its own `/api/*` with relative URLs, which is same-origin;
+ * a genuinely cross-origin preview needs an explicit extras entry.
  *
  * Returns the resolved origin used for the decision so callers can log
  * it; null when no allowed origin is present.
@@ -47,9 +50,6 @@ export function isOriginAllowed(request: Request): { ok: true; origin: string } 
     const c = new URL(claim)
     if (c.hostname === 'localhost' || c.hostname === '127.0.0.1') return { ok: true, origin: claim }
     if (isPrivateLanHost(c.hostname)) return { ok: true, origin: claim }
-    if (c.protocol === 'https:' && c.hostname.endsWith(VERCEL_PREVIEW_HOST_SUFFIX)) {
-      return { ok: true, origin: claim }
-    }
   } catch {
     return { ok: false, reason: 'malformed Origin/Referer' }
   }
