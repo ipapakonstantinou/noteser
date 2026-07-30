@@ -26,48 +26,48 @@ beforeEach(() => {
 
 describe('buildCollabShareLink', () => {
   test('encodes origin + collabId + url-encoded title', () => {
-    const link = buildCollabShareLink('https://noteser.app', 'room-abc', 'My Note: Draft')
+    const link = buildCollabShareLink('https://noteser.app', '55555555-5555-4555-8555-555555555555', 'My Note: Draft')
     const url = new URL(link)
     expect(url.origin).toBe('https://noteser.app')
     expect(url.pathname).toBe('/')
-    expect(url.searchParams.get('collab')).toBe('room-abc')
+    expect(url.searchParams.get('collab')).toBe('55555555-5555-4555-8555-555555555555')
     expect(url.searchParams.get('title')).toBe('My Note: Draft')
   })
 
   test('omits the title param entirely when blank', () => {
-    expect(buildCollabShareLink('https://noteser.app', 'room-abc')).toBe(
-      'https://noteser.app/?collab=room-abc',
+    expect(buildCollabShareLink('https://noteser.app', '55555555-5555-4555-8555-555555555555')).toBe(
+      'https://noteser.app/?collab=55555555-5555-4555-8555-555555555555',
     )
-    expect(buildCollabShareLink('https://noteser.app', 'room-abc', '   ')).toBe(
-      'https://noteser.app/?collab=room-abc',
+    expect(buildCollabShareLink('https://noteser.app', '55555555-5555-4555-8555-555555555555', '   ')).toBe(
+      'https://noteser.app/?collab=55555555-5555-4555-8555-555555555555',
     )
   })
 
   test('tolerates a trailing slash on the origin', () => {
-    expect(buildCollabShareLink('https://noteser.app/', 'r1')).toBe(
-      'https://noteser.app/?collab=r1',
+    expect(buildCollabShareLink('https://noteser.app/', '66666666-6666-4666-8666-666666666666')).toBe(
+      'https://noteser.app/?collab=66666666-6666-4666-8666-666666666666',
     )
   })
 
   test('collab comes before title in the query string', () => {
-    const link = buildCollabShareLink('https://x.dev', 'r1', 'Hello')
-    expect(link).toBe('https://x.dev/?collab=r1&title=Hello')
+    const link = buildCollabShareLink('https://x.dev', '66666666-6666-4666-8666-666666666666', 'Hello')
+    expect(link).toBe('https://x.dev/?collab=66666666-6666-4666-8666-666666666666&title=Hello')
   })
 })
 
 describe('parseCollabParam', () => {
   test('parses collab + title', () => {
-    expect(parseCollabParam('?collab=room-1&title=Hello%20World')).toEqual({
-      collabId: 'room-1', title: 'Hello World',
+    expect(parseCollabParam('?collab=11111111-1111-4111-8111-111111111111&title=Hello%20World')).toEqual({
+      collabId: '11111111-1111-4111-8111-111111111111', title: 'Hello World',
     })
   })
 
   test('parses collab with no title', () => {
-    expect(parseCollabParam('?collab=room-1')).toEqual({ collabId: 'room-1', title: null })
+    expect(parseCollabParam('?collab=11111111-1111-4111-8111-111111111111')).toEqual({ collabId: '11111111-1111-4111-8111-111111111111', title: null })
   })
 
   test('blank title becomes null', () => {
-    expect(parseCollabParam('?collab=room-1&title=')).toEqual({ collabId: 'room-1', title: null })
+    expect(parseCollabParam('?collab=11111111-1111-4111-8111-111111111111&title=')).toEqual({ collabId: '11111111-1111-4111-8111-111111111111', title: null })
   })
 
   test('returns null when no collab param is present', () => {
@@ -76,9 +76,9 @@ describe('parseCollabParam', () => {
   })
 
   test('round-trips a built link', () => {
-    const link = buildCollabShareLink('https://noteser.app', 'room-xyz', 'A Title')
+    const link = buildCollabShareLink('https://noteser.app', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'A Title')
     const search = new URL(link).search
-    expect(parseCollabParam(search)).toEqual({ collabId: 'room-xyz', title: 'A Title' })
+    expect(parseCollabParam(search)).toEqual({ collabId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', title: 'A Title' })
   })
 })
 
@@ -101,10 +101,10 @@ describe('join-collab create-or-open decision', () => {
   }
 
   test('creates an EMPTY note seeded with the collabId + title (joiner does NOT seed content)', () => {
-    const id = join('?collab=room-join&title=Team%20Doc')
+    const id = join('?collab=77777777-7777-4777-8777-777777777777&title=Team%20Doc')
     const note = useNoteStore.getState().notes.find(n => n.id === id)
     expect(note).toBeDefined()
-    expect(note!.collabId).toBe('room-join')
+    expect(note!.collabId).toBe('77777777-7777-4777-8777-777777777777')
     expect(note!.title).toBe('Team Doc')
     // EMPTY body: the joiner receives the room's content over the CRDT wire, so
     // createCollabBinding's seed-on-empty (which only fires for non-empty local
@@ -114,18 +114,18 @@ describe('join-collab create-or-open decision', () => {
 
   test('opens the existing note when one already carries that collabId (no duplicate)', () => {
     const created = useNoteStore.getState().addNote({
-      title: 'Existing', content: 'keep me', collabId: 'room-dup',
+      title: 'Existing', content: 'keep me', collabId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
     })
-    const id = join('?collab=room-dup')
+    const id = join('?collab=cccccccc-cccc-4ccc-8ccc-cccccccccccc')
     expect(id).toBe(created.id)
     // No second note was created.
-    expect(useNoteStore.getState().notes.filter(n => n.collabId === 'room-dup')).toHaveLength(1)
+    expect(useNoteStore.getState().notes.filter(n => n.collabId === 'cccccccc-cccc-4ccc-8ccc-cccccccccccc')).toHaveLength(1)
     // Its content is untouched.
     expect(useNoteStore.getState().notes.find(n => n.id === id)!.content).toBe('keep me')
   })
 
   test('falls back to a default title when the link carries none', () => {
-    const id = join('?collab=room-untitled')
+    const id = join('?collab=dddddddd-dddd-4ddd-8ddd-dddddddddddd')
     expect(useNoteStore.getState().notes.find(n => n.id === id)!.title).toBe('Shared note')
   })
 })

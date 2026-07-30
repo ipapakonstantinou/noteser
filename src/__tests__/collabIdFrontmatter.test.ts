@@ -81,33 +81,33 @@ describe('serializeNote / parseNote collabId round-trip', () => {
   })
 
   test('a note WITH a collabId emits a collabId frontmatter block (no blank line)', () => {
-    const out = serializeNote({ content: 'Hello world', collabId: 'room-1' } as Note)
-    expect(out).toBe('---\ncollabId: room-1\n---\nHello world\n')
+    const out = serializeNote({ content: 'Hello world', collabId: '11111111-1111-4111-8111-111111111111' } as Note)
+    expect(out).toBe('---\ncollabId: 11111111-1111-4111-8111-111111111111\n---\nHello world\n')
     const parsed = parseNote(out)
-    expect(parsed.collabId).toBe('room-1')
+    expect(parsed.collabId).toBe('11111111-1111-4111-8111-111111111111')
     expect(parsed.body).toBe('Hello world\n')
     expect(parsed.tags).toEqual([])
   })
 
   test('round-trip is lossless: re-serializing the parsed body reproduces identical bytes', () => {
-    const original = serializeNote({ content: 'A\nB\nC', collabId: 'abc-123' } as Note)
+    const original = serializeNote({ content: 'A\nB\nC', collabId: '22222222-2222-4222-8222-222222222222' } as Note)
     const parsed = parseNote(original)
     const reserialized = serializeNote({ content: parsed.body, collabId: parsed.collabId } as Note)
     expect(reserialized).toBe(original)
   })
 
   test('collabId coexists with a tags frontmatter line (Obsidian-authored file)', () => {
-    const raw = '---\ncollabId: room-7\ntags: [alpha, "beta gamma"]\n---\nBody text\n'
+    const raw = '---\ncollabId: 33333333-3333-4333-8333-333333333333\ntags: [alpha, "beta gamma"]\n---\nBody text\n'
     const parsed = parseNote(raw)
-    expect(parsed.collabId).toBe('room-7')
+    expect(parsed.collabId).toBe('33333333-3333-4333-8333-333333333333')
     expect(parsed.tags).toEqual(['alpha', 'beta gamma'])
     expect(parsed.body).toBe('Body text\n')
   })
 
   test('an empty-body collab note round-trips', () => {
-    const out = serializeNote({ content: '', collabId: 'room-9' } as Note)
-    expect(out).toBe('---\ncollabId: room-9\n---\n')
-    expect(parseNote(out).collabId).toBe('room-9')
+    const out = serializeNote({ content: '', collabId: '44444444-4444-4444-8444-444444444444' } as Note)
+    expect(out).toBe('---\ncollabId: 44444444-4444-4444-8444-444444444444\n---\n')
+    expect(parseNote(out).collabId).toBe('44444444-4444-4444-8444-444444444444')
     expect(parseNote(out).body).toBe('')
   })
 })
@@ -126,7 +126,7 @@ test('a note that differs ONLY by gaining a collabId classifies as remoteUpdated
   expect(useNoteStore.getState().notes[0].collabId).toBeUndefined()
 
   // Remote gains a collabId frontmatter (a collaborator shared + pushed it).
-  const rawWithCollab = '---\ncollabId: shared-room\n---\nHello\n'
+  const rawWithCollab = '---\ncollabId: eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee\n---\nHello\n'
   const collabSha = await gitBlobSha(rawWithCollab)
   mockGetTreeMap.mockResolvedValue(new Map([['Note.md', collabSha]]))
   mockGetBlobContent.mockImplementation(async (_t, _o, _n, sha: string) =>
@@ -138,13 +138,13 @@ test('a note that differs ONLY by gaining a collabId classifies as remoteUpdated
   })
   expect(second.classifications).toHaveLength(1)
   expect(second.classifications[0]).toMatchObject({
-    kind: 'remoteUpdated', noteId, collabId: 'shared-room',
+    kind: 'remoteUpdated', noteId, collabId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
   })
 
   // Apply → the note adopts the room id, body stays clean (no frontmatter leak).
   await applyNonConflicts(second.classifications)
   const after = useNoteStore.getState().notes[0]
-  expect(after.collabId).toBe('shared-room')
+  expect(after.collabId).toBe('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee')
   expect(after.content).toBe('Hello\n')
 
   // Third pull: nothing changed → unchanged (round-trip lossless, no churn).
@@ -172,7 +172,7 @@ test('when local and remote hold DIFFERENT collabIds but identical bodies, the r
   expect(localRoom).toBeTruthy()
 
   // Remote independently gained a DIFFERENT collabId (same body).
-  const rawRemote = '---\ncollabId: remote-room\n---\nSame body\n'
+  const rawRemote = '---\ncollabId: ffffffff-ffff-4fff-8fff-ffffffffffff\n---\nSame body\n'
   const remoteSha = await gitBlobSha(rawRemote)
   mockGetTreeMap.mockResolvedValue(new Map([['Note.md', remoteSha]]))
   mockGetBlobContent.mockImplementation(async (_t, _o, _n, sha: string) =>
@@ -185,11 +185,11 @@ test('when local and remote hold DIFFERENT collabIds but identical bodies, the r
   // Bodies match, only the metadata differs → clean remoteUpdated, NOT conflict.
   expect(second.classifications).toHaveLength(1)
   expect(second.classifications[0]).toMatchObject({
-    kind: 'remoteUpdated', noteId, collabId: 'remote-room',
+    kind: 'remoteUpdated', noteId, collabId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
   })
 
   await applyNonConflicts(second.classifications)
   // Repo's id wins so collaborators converge.
-  expect(useNoteStore.getState().notes[0].collabId).toBe('remote-room')
+  expect(useNoteStore.getState().notes[0].collabId).toBe('ffffffff-ffff-4fff-8fff-ffffffffffff')
   expect(useNoteStore.getState().notes[0].content).toBe('Same body\n')
 })
