@@ -223,6 +223,35 @@ function makePendingState(): WorkerEntry['vaultDebounce'] {
   }
 }
 
+/**
+ * Compare what the user approved at install time against what the worker
+ * declares at boot, on the two things that decide what the plugin may do:
+ * its permission set and which surface kinds it registers. Returns a short
+ * human description of the difference, or null when they agree.
+ *
+ * manifest.json and main.js are separate artifacts: a plugin can publish a
+ * modest manifest for the install dialog and declare a greedier one from its
+ * bundle at runtime. Only the grant-bearing fields are compared — cosmetic
+ * drift (name, version, description, the contents of a surface) can't widen
+ * what the plugin is allowed to do, and the approved copy is used regardless.
+ */
+function manifestGrantDrift(approved: PluginManifest, declared: PluginManifest): string | null {
+  const perms = (m: PluginManifest) => [...(m.permissions ?? [])].sort().join(',')
+  if (perms(approved) !== perms(declared)) {
+    return `permissions "${perms(declared) || 'none'}" vs approved "${perms(approved) || 'none'}"`
+  }
+  // An empty array and an absent key both mean "registers nothing of that
+  // kind" — treating them as different would refuse a boot over formatting.
+  const kinds = (m: PluginManifest) => {
+    const s = (m.surfaces ?? {}) as Record<string, unknown[] | undefined>
+    return Object.keys(s).filter(k => (s[k]?.length ?? 0) > 0).sort().join(',')
+  }
+  if (kinds(approved) !== kinds(declared)) {
+    return `surfaces "${kinds(declared) || 'none'}" vs approved "${kinds(approved) || 'none'}"`
+  }
+  return null
+}
+
 export class PluginHost {
   private readonly workers = new Map<string, WorkerEntry>()
   private readonly listeners = new Set<PluginHostListener>()
@@ -281,6 +310,14 @@ export class PluginHost {
      *  capability call from `onActivate` cannot slip through the window
      *  between `worker:ready` and a post-load revokePermission() loop. */
     initialRevokedPermissions?: Iterable<PluginPermission>
+    /** The manifest the USER approved at install time (the install
+     *  record's copy of manifest.json). Every production caller passes
+     *  it — see pluginHostSingleton. When present it is the authority:
+     *  the worker's own boot-time manifest is only checked against it
+     *  and then discarded, so a bundle cannot grant itself a permission
+     *  or a surface the install dialog never showed. Optional so the
+     *  host's own unit tests can boot a bare worker. */
+    approvedManifest?: PluginManifest
   }): Promise<PluginManifest> {
     const { pluginId, pluginSource } = args
     const timeoutMs = args.timeoutMs ?? 5000
@@ -321,11 +358,27 @@ export class PluginHost {
 
       worker.onmessage = (ev) => this.handleWorkerMessage(pluginId, ev, {
         onReady: (manifest) => {
+          const approved = args.approvedManifest
+          const drift = approved ? manifestGrantDrift(approved, manifest) : null
+          if (drift) {
+            clearTimeout(timer)
+            this.unload(pluginId)
+            const message =
+              `Plugin "${pluginId}" asked for more at boot than the install approved (${drift}). ` +
+              'It was not started — reinstall it to review what it wants.'
+            this.emit({ type: 'bootError', pluginId, message })
+            reject(new Error(message))
+            return
+          }
           clearTimeout(timer)
-          plugin.manifest = manifest
+          // The approved copy wins outright, not just for the two fields
+          // compared above: nothing the worker declares should be able to
+          // steer the host.
+          const effective = approved ?? manifest
+          plugin.manifest = effective
           plugin.ready = true
-          this.emit({ type: 'ready', pluginId, manifest })
-          resolve(manifest)
+          this.emit({ type: 'ready', pluginId, manifest: effective })
+          resolve(effective)
         },
         onBootError: (message) => {
           clearTimeout(timer)

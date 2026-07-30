@@ -149,6 +149,9 @@ export async function confirmAndInstallPlugin(record: InstalledPluginRecord): Pr
     pluginId: record.manifest.id,
     pluginSource: record.mainSource,
     initialRevokedPermissions: record.revokedPermissions,
+    // The manifest the user just approved in the modal — the host checks the
+    // worker's boot-time copy against it and then uses this one.
+    approvedManifest: record.manifest,
   })
 }
 
@@ -213,6 +216,9 @@ export async function bootstrapInstalledPlugins(): Promise<void> {
         pluginId: record.manifest.id,
         pluginSource: record.mainSource,
         initialRevokedPermissions: record.revokedPermissions,
+        // Persisted copy of the manifest the user approved at install
+        // time; the worker's own copy never becomes authoritative.
+        approvedManifest: record.manifest,
       })
     } catch (err) {
       // The host emits bootError separately, which lands in the toast
