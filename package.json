@@ -24,7 +24,8 @@
     "e2e:ui": "playwright test --ui",
     "e2e:report": "playwright show-report",
     "e2e:sync": "node scripts/run-e2e-sync.js",
-    "e2e:sync:codeberg": "node scripts/run-e2e-sync-codeberg.js"
+    "e2e:sync:codeberg": "node scripts/run-e2e-sync-codeberg.js",
+    "e2e:verify": "playwright test --config=playwright.config.verify.ts"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.5.1",
