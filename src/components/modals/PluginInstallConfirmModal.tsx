@@ -250,8 +250,8 @@ const PreviewBody = ({ record, busy, installError, onCancel, onInstall }: Previe
         </div>
         {surfaceRows.length === 0 && permissions.length === 0 ? (
           <p className="text-sm text-obsidianText">
-            None. This plugin runs in a sandboxed Web Worker with no DOM, no GitHub token, and no
-            access to other notes&apos; bodies.
+            None declared. The plugin runs in a Web Worker with no DOM and no access to your GitHub
+            token or AI key.
           </p>
         ) : (
           <ul className="space-y-2" data-testid="plugin-preview-capabilities">
@@ -293,6 +293,19 @@ const PreviewBody = ({ record, busy, installError, onCancel, onInstall }: Previe
             ))}
           </ul>
         )}
+        {/* Stated on every install, with or without declared permissions: the
+            worker runs on this app's origin, so plugin code can open the
+            vault's IndexedDB itself. The list above is what the plugin says it
+            needs and what the official API enforces — it is not a wall. */}
+        <p
+          className="text-xs text-obsidianSecondaryText mt-3 pt-2 border-t border-obsidianBorder"
+          data-testid="plugin-preview-vault-access-notice"
+        >
+          Whatever it declares, an installed plugin runs on this app&apos;s origin and can read and
+          change every note in this vault directly. The list above is what the plugin says it needs
+          and what the official plugin API enforces, not a sandbox around it. Install plugins you
+          trust.
+        </p>
       </section>
 
       {destructivePerms.length > 0 && (

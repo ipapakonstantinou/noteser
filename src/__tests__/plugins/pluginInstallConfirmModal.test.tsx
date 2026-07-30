@@ -322,3 +322,50 @@ describe('PluginInstallConfirmModal — destructive permissions (v1.2 PR D)', ()
     expect(typeof SURFACE_DESCRIPTIONS.commands).toBe('string')
   })
 })
+
+// The permission list is not a sandbox: the plugin worker is spawned from a
+// same-origin URL, so plugin code can open the vault's IndexedDB itself. The
+// dialog used to claim the opposite ("no access to other notes' bodies"), which
+// is the part these tests pin down.
+describe('PluginInstallConfirmModal — vault access disclosure', () => {
+  test('says an installed plugin can read and change every note', async () => {
+    mockFetchPluginForInstall.mockResolvedValueOnce(makeRecord())
+    openWithUrl()
+    render(<PluginInstallConfirmModal />)
+    await screen.findByTestId('plugin-preview-body')
+
+    const notice = screen.getByTestId('plugin-preview-vault-access-notice')
+    expect(notice).toHaveTextContent(/read and change every note/i)
+    expect(notice).toHaveTextContent(/not a sandbox/i)
+  })
+
+  test('the disclosure shows even for a manifest that declares nothing', async () => {
+    mockFetchPluginForInstall.mockResolvedValueOnce(
+      makeRecord({
+        manifest: { id: 'inert', name: 'Inert', version: '1.0.0', surfaces: {} },
+      }),
+    )
+    openWithUrl()
+    render(<PluginInstallConfirmModal />)
+    await screen.findByTestId('plugin-preview-body')
+
+    expect(screen.getByTestId('plugin-preview-vault-access-notice')).toBeInTheDocument()
+    // The empty-capabilities line keeps only the claims that are true of a
+    // worker: no DOM, and no reach into localStorage where the tokens live.
+    expect(screen.getByText(/None declared/i)).toBeInTheDocument()
+  })
+
+  test('no longer claims the plugin cannot see other notes', async () => {
+    mockFetchPluginForInstall.mockResolvedValueOnce(
+      makeRecord({
+        manifest: { id: 'inert', name: 'Inert', version: '1.0.0', surfaces: {} },
+      }),
+    )
+    openWithUrl()
+    render(<PluginInstallConfirmModal />)
+    await screen.findByTestId('plugin-preview-body')
+
+    expect(screen.queryByText(/no access to other notes/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/sandboxed Web Worker/i)).not.toBeInTheDocument()
+  })
+})
