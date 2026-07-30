@@ -120,10 +120,31 @@ model reflects that:
     vault access through `postMessage`. That is a design change, not a patch;
     it needs its own plan.
 
+### The plugin worker's CSP
+
+The worker chunk is served from `/_next/static/…`, which `src/middleware.ts`
+deliberately excludes from the per-request nonce CSP — so until 2026-07-30 the
+worker ran with **no** policy at all, while every plugin is handed the active
+note's body and the plugin API has no network permission. A worker takes its
+policy from its OWN response headers, so the fix is a static
+`Content-Security-Policy` for that path in `next.config.mjs`
+(`PLUGIN_WORKER_CSP`): `default-src 'none'`, `connect-src 'none'`, and
+`script-src 'self' blob:` because the worker dynamic-imports the plugin module
+from a Blob URL. Nested workers fall back to `default-src 'none'`.
+
+Do NOT add a policy for `/_next/static` to the middleware as well — browsers
+intersect multiple policies, and the document's nonce CSP is the one that must
+stay authoritative for pages. Verified in a real Chromium against
+`next start`: the header lands on the worker chunk, a plugin still reaches
+`worker:ready`, `fetch()` from inside the worker fails, and `indexedDB.open()`
+still succeeds — the last one being why the section above says permissions are
+not a sandbox.
+
 ## Audit log
 
 | Date | Change | Notes |
 |---|---|---|
+| 2026-07-30 | `PLUGIN_WORKER_CSP` in next.config.mjs puts a CSP on `/_next/static/:path*` — the plugin worker was running with no policy, so plugin code could POST note bodies anywhere | verified in Chromium: worker boots, `fetch()` blocked, `indexedDB` still open |
 | 2026-07-30 | Plugins: the install record's manifest is authoritative — the host compares the worker's boot-time permissions + surface kinds against it, refuses the boot on drift, and uses the approved copy; install dialog now states plainly that a plugin can reach the whole vault | manifest.json and main.js are separate artifacts, and the old copy claimed a sandbox the same-origin worker does not provide |
 | 2026-07-29 | `isOriginAllowed` no longer trusts the whole `*.vercel.app` namespace — blanket suffix branch removed, exact-match `NEXT_PUBLIC_EXTRA_ORIGINS` is the only non-same-origin path; 2 new rejection tests | shared namespace: a stranger's free subdomain cleared the check. Real grant was on `/api/git-proxy` (echoes the origin in `Access-Control-Allow-Origin`) |
 | 2026-07-29 | Status pass over `docs/research/security-audit-2026-05-21.md`: each of the 8 findings re-verified against current code. 1, 4, 5, 6, 8 FIXED; 2 and 3 marked OPEN, ACCEPTED with rationale; 7 OPEN by design. No code changed | doc was reading as a live vuln list against production |

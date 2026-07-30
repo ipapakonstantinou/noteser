@@ -40,6 +40,33 @@ const securityHeaders = [
   },
 ]
 
+// CSP for `/_next/static/*`, which exists for exactly one response there: the
+// plugin worker chunk (`src/plugins/workerEntry.ts`, emitted as
+// `_next/static/chunks/src_plugins_workerEntry_ts_*.js`).
+//
+// A dedicated worker takes its policy from its OWN response headers — the
+// document's CSP does not reach into it. `src/middleware.ts` deliberately skips
+// `_next/static`, so the worker was running with no policy at all while every
+// plugin receives the active note's body and there is no network permission in
+// the plugin API. `connect-src 'none'` is the point of this header: plugin code
+// cannot POST a vault anywhere. `script-src` needs `blob:` because the worker
+// dynamic-imports the plugin module from a Blob URL, and nested workers stay
+// blocked via the `default-src 'none'` fallback.
+//
+// This does NOT re-introduce the double-CSP mistake described above: the
+// middleware does not emit a policy for these paths, so there is nothing to
+// intersect with. On any other static asset (CSS, fonts, images) a CSP response
+// header is ignored by the browser — only documents and workers consume it.
+//
+// Dev keeps `'unsafe-eval'` and a socket open for HMR, matching what
+// `buildCsp` does in src/utils/csp.ts for the document.
+const isDevBuild = process.env.NODE_ENV !== 'production'
+export const PLUGIN_WORKER_CSP = [
+  "default-src 'none'",
+  `script-src 'self' blob:${isDevBuild ? " 'unsafe-eval'" : ''}`,
+  `connect-src ${isDevBuild ? "'self' ws: wss:" : "'none'"}`,
+].join('; ')
+
 // Per-build identifier exposed to the client. The service worker is
 // registered as `/sw.js?v=<BUILD_ID>` so that the registration URL changes
 // on every deploy — that is what makes the browser detect a new SW and
@@ -62,6 +89,11 @@ const nextConfig = {
       {
         source: '/:path*',
         headers: securityHeaders,
+      },
+      {
+        // Carries the plugin worker — see PLUGIN_WORKER_CSP above.
+        source: '/_next/static/:path*',
+        headers: [{ key: 'Content-Security-Policy', value: PLUGIN_WORKER_CSP }],
       },
     ]
   },
