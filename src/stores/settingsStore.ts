@@ -1012,11 +1012,28 @@ export const useSettingsStore = create<SettingsState>()(
         setFontMono: (fontMono) => setVault({ fontMono }),
         setFontInterface: (fontInterface) => setVault({ fontInterface }),
         applyRemoteVaultSettings: (fields, remoteUpdatedAt, remoteHash) => {
-          set({
-            ...fields,
-            vaultSettingsUpdatedAt: remoteUpdatedAt,
-            vaultSettingsLastPushedHash: remoteHash,
-          } as Partial<SettingsState>)
+          set((state) => {
+            const next = { ...fields } as Record<string, unknown>
+            // A synced file may switch encryption ON — that is how a fresh
+            // device learns the vault is encrypted and prompts for the
+            // passphrase. It may never switch it OFF: pushes would silently go
+            // out in plaintext, and anyone able to write the repo could ask for
+            // that. Turning encryption off stays an explicit local action
+            // (Settings → setVaultEncryption). The salt and canary are dropped
+            // with the flag so a downgrade attempt can't swap key material on
+            // the way past.
+            if (state.vaultEncryptionEnabled && next.vaultEncryptionEnabled === false) {
+              delete next.vaultEncryptionEnabled
+              delete next.vaultEncryptionSalt
+              delete next.vaultEncryptionCanary
+              console.warn('[vault settings] ignored a remote attempt to disable vault encryption')
+            }
+            return {
+              ...next,
+              vaultSettingsUpdatedAt: remoteUpdatedAt,
+              vaultSettingsLastPushedHash: remoteHash,
+            } as Partial<SettingsState>
+          })
         },
         reset: () => set(DEFAULTS),
       }
