@@ -27,7 +27,7 @@ import {
 } from '@/utils/treeNav'
 import {
   listAttachmentMeta,
-  getAttachmentUrl,
+  getAttachmentOpenTarget,
   type AttachmentMeta,
 } from '@/utils/attachments'
 import { ATTACHMENTS_CHANGED_EVENT } from '@/utils/events'
@@ -282,8 +282,23 @@ export const FolderTree = ({ onRightClick }: FolderTreeProps) => {
   // render the matching attachments alongside the folder's notes.
 
   const openAttachment = async (path: string) => {
-    const url = await getAttachmentUrl(path)
-    if (url) window.open(url, '_blank', 'noopener')
+    // Type comes from getAttachmentOpenTarget, not from the stored blob — a
+    // collab peer or the repo controls that. Anything script-capable (.svg) or
+    // unrecognised downloads instead of opening: a `blob:` tab is a
+    // same-origin document, and this origin's localStorage holds the token.
+    const target = await getAttachmentOpenTarget(path)
+    if (!target) return
+    if (target.mode === 'view') {
+      window.open(target.url, '_blank', 'noopener')
+    } else {
+      const a = document.createElement('a')
+      a.href = target.url
+      a.download = target.filename
+      a.click()
+    }
+    // Minted per open (the type override means it cannot share the cached
+    // URL), so it is ours to release once the tab / download has taken it.
+    setTimeout(() => URL.revokeObjectURL(target.url), 60_000)
   }
 
   // Strip the leading directory + the timestamp prefix our saver adds so

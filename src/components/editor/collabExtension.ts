@@ -20,7 +20,7 @@ import { yCollab } from 'y-codemirror.next'
 import type { Extension } from '@codemirror/state'
 import type { GitHubUser } from '@/types'
 import { blobToBase64, base64ToBytes } from '@/utils/github'
-import { getAttachmentBlob, putAttachmentAtPath } from '@/utils/attachments'
+import { getAttachmentBlob, isAttachmentPath, isSafeAttachmentPath, putAttachmentAtPath } from '@/utils/attachments'
 
 // Shape of the awareness object we need — a minimal structural type so the
 // binding can be unit-tested with a mock without dragging in the full
@@ -277,6 +277,17 @@ export function createCollabBinding(
   // GitHub-sync pull path uses, so it survives after the collab session ends.
   const receiveAttachment = async (path: string, entry: AttachmentEntry): Promise<void> => {
     if (destroyed) return
+    // The key comes from a peer's Y.Map — untrusted. An unchecked path is a
+    // write anywhere in the vault that the next push then commits, so it is
+    // checked before the blob is decoded, let alone stored. Dropped with a
+    // warning rather than thrown: this runs from an observer via `void`.
+    // Shape AND folder: a peer has no business writing outside the attachments
+    // folder, and the shape check is what stops `attachments/../../…` from
+    // satisfying the folder check's startsWith.
+    if (!isSafeAttachmentPath(path) || !isAttachmentPath(path)) {
+      console.warn(`[collab] ignoring relayed attachment at an unsafe path: ${path}`)
+      return
+    }
     // Idempotency guard doubles as the OTHER half of loop-prevention: even if
     // a transaction's `local` flag were ever wrong, an attachment already on
     // disk is never re-written, so at worst this is a no-op re-check.

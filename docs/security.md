@@ -93,6 +93,36 @@ model reflects that:
   message size, connections per room, and messages per second (2026-07-06)
   to bound DoS/storage-bloat from a client that *does* have a room id, but
   none of that is confidentiality — treat a room id like a `/share` link.
+- **A committed `collabId` is a bearer credential in plaintext, and cannot be
+  rotated.** `serializeNote` writes `collabId: <uuid>` into the note's
+  frontmatter and the pull adopts the remote value ("repo wins", so
+  collaborators converge on one room). Consequences, none of them fixed:
+  anyone who can read the repo — including anyone the vault is ever shared
+  with, a fork, or a later collaborator who should have lost access — holds
+  read/write on that room forever; there is no rotation path, because changing
+  the id means every device must agree on the new one through the same file;
+  and the Durable Object keeps server-side state keyed on the id, so a leaked
+  id also names durable server state.
+  - Shipped 2026-07-30 (the cheap half): ids are shape-checked as v4 UUIDs at
+    every entry point — `parseNote` drops a non-conforming frontmatter value,
+    `parseCollabParam` refuses a bogus `?collab=` link, and `serializeNote`
+    will not re-publish an invalid id. That stops an arbitrary string becoming
+    a room name; it does NOT make the id less of a credential.
+  - **Proposal, not implemented** (deliberately out of scope for the
+    2026-07-30 branch): stop treating the committed id as the credential. Keep
+    the frontmatter id as a room *name* and derive the joining secret from
+    material that is never committed — e.g. a per-room key held only in the
+    share link fragment (like `/share` already does) with the server
+    accepting a proof derived from it, so repo read access alone grants
+    nothing. This changes the wire protocol and the collab-server, needs its
+    own plan, and should land before real-time collab is ever default-on.
+  - Also NOT implemented: requiring an explicit user action before joining a
+    room whose id arrived from the repo. In `per-note` mode (and via a share
+    link) an explicit action is already required; only `collaborationMode:
+    'repo'` auto-joins every note, and telling a repo-supplied id apart from
+    one this device minted needs provenance the store does not keep today.
+    Given collab is default-off and `'repo'` is an explicit opt-in, this was
+    parked rather than half-built.
 
 - **Plugin permissions are not a sandbox.** Each plugin runs in a dedicated
   Web Worker, but that worker is spawned from a same-origin URL
