@@ -334,6 +334,66 @@ export async function getAttachmentUrl(path: string): Promise<string | null> {
   return url
 }
 
+// Extensions we are willing to hand a browser TAB, with the MIME to hand it.
+// A `blob:` URL opened top-level is a SAME-ORIGIN document, so this list is a
+// list of "types that cannot script": raster images and PDF (Chrome/Firefox
+// render it in the sandboxed viewer, not as a document script context).
+//
+// `svg` is deliberately absent even though it stays in the sync layer's
+// MIME_BY_EXT: an SVG in an `<img>` cannot run script or fetch, which is how
+// AttachmentImage renders it, but the same bytes opened as a top-level
+// document CAN — including reading this origin's localStorage, where the
+// GitHub token lives. So SVG (and anything unrecognised) downloads instead.
+const VIEWABLE_MIME_BY_EXT: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+  avif: 'image/avif',
+  pdf: 'application/pdf',
+}
+
+export interface AttachmentOpenTarget {
+  url: string
+  /** 'view' → safe to navigate a tab to. 'download' → must be saved, never
+   *  navigated: the type is either script-capable or unknown. */
+  mode: 'view' | 'download'
+  filename: string
+}
+
+/**
+ * Build a URL for opening an attachment outside the editor, with the type
+ * decided HERE rather than by whoever wrote the file.
+ *
+ * The stored blob's `type` is not trustworthy: a collab peer sets it verbatim
+ * (`AttachmentEntry.mime`), and the sync path takes it from the repo. Handing
+ * that to `window.open` lets a peer choose `text/html` — or ship an `.svg` —
+ * and get a same-origin document in the victim's tab.
+ *
+ * So the MIME comes from the file extension, the bytes are re-wrapped with it,
+ * and anything not on the viewable list is marked for download. Callers must
+ * honour `mode`.
+ */
+export async function getAttachmentOpenTarget(path: string): Promise<AttachmentOpenTarget | null> {
+  const blob = await getAttachmentBlob(path)
+  if (!blob) return null
+
+  const dotIdx = path.lastIndexOf('.')
+  const ext = dotIdx === -1 ? '' : path.slice(dotIdx + 1).toLowerCase()
+  const viewableMime = VIEWABLE_MIME_BY_EXT[ext]
+  // `slice`'s third argument re-types the blob without copying its bytes, so
+  // the URL carries OUR type instead of the stored one.
+  const typed = blob.slice(0, blob.size, viewableMime ?? 'application/octet-stream')
+
+  return {
+    url: URL.createObjectURL(typed),
+    mode: viewableMime ? 'view' : 'download',
+    filename: path.split('/').pop() || 'attachment',
+  }
+}
+
 export async function deleteAttachment(path: string): Promise<void> {
   await del(PREFIX + path)
   unindexPath(path)
