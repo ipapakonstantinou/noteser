@@ -63,17 +63,30 @@ export function encodeWikilinkHref(title: string, fragment: string | null): stri
     : base
 }
 
+// `decodeURIComponent` throws a URIError on a malformed escape (`%`, `%zz`),
+// and note content can contain a hand-written `[x](wikilink://%)` — our own
+// encoder never emits one, but a user, a synced repo or a shared note can. A
+// throw here happens during render, so it takes the whole reading view with it.
+// Same fallback-to-raw shape as decodeAttachmentSrc in AttachmentImage.
+function decodeOrRaw(s: string): string {
+  try {
+    return decodeURIComponent(s)
+  } catch {
+    return s
+  }
+}
+
 // Decode the inverse — accept either the new query-param form OR the bare
-// form. Returns null when the href isn't a wikilink.
+// form. Returns null when the href isn't a wikilink. Total: never throws.
 export function decodeWikilinkHref(href: string): ParsedWikilinkTarget | null {
   if (!href.startsWith('wikilink://')) return null
   const rest = href.slice('wikilink://'.length)
   const qIdx = rest.indexOf('?')
   if (qIdx === -1) {
-    return { title: decodeURIComponent(rest), fragment: null }
+    return { title: decodeOrRaw(rest), fragment: null }
   }
-  const titlePart = decodeURIComponent(rest.slice(0, qIdx))
+  const titlePart = decodeOrRaw(rest.slice(0, qIdx))
   const params = new URLSearchParams(rest.slice(qIdx + 1))
   const frag = params.get('frag')
-  return { title: titlePart, fragment: frag ? decodeURIComponent(frag) : null }
+  return { title: titlePart, fragment: frag ? decodeOrRaw(frag) : null }
 }

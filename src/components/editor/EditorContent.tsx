@@ -22,6 +22,7 @@ import { useUIStore, useNoteStore, useWorkspaceStore } from '@/stores'
 import { useEnsureNoteLoaded } from '@/hooks/useEnsureNoteLoaded'
 import { renderWikilinks } from '@/utils/wikilinks'
 import { decodeWikilinkHref, findFragmentLine } from '@/utils/wikilinkTarget'
+import { RenderErrorBoundary } from '@/components/shared/RenderErrorBoundary'
 import { expandEmbeds } from '@/utils/embeds'
 import { resolveAttachmentPath } from '@/utils/attachments'
 import { findNoteByTitleOrAlias } from '@/utils/aliases'
@@ -467,8 +468,8 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
 
   // Link renderer that handles wikilink:// hrefs
   const WikilinkAnchor = ({ href, children }: { href?: string; children?: React.ReactNode }) => {
-    if (href?.startsWith('wikilink://')) {
-      const decoded = decodeWikilinkHref(href)!
+    const decoded = href ? decodeWikilinkHref(href) : null
+    if (decoded) {
       const target = findNoteByTitleOrAlias(activeNotes, decoded.title)
       return (
         <span
@@ -626,6 +627,9 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
           className="absolute inset-0 overflow-auto p-4 bg-obsidianBlack z-10"
         >
           <div className="prose prose-invert max-w-none">
+            {/* A throw in here used to unmount the whole app, and the note that
+                caused it survives a reload — so the app stayed broken. */}
+            <RenderErrorBoundary resetKey={note.id} fallbackContent={previewContent}>
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkCallouts]}
               components={components}
@@ -641,6 +645,7 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
             >
               {renderWikilinks(expandEmbeds(previewContent, getActiveNotes(), { resolveAttachment: resolveAttachmentPath })) || '*Start writing...*'}
             </ReactMarkdown>
+            </RenderErrorBoundary>
           </div>
         </div>
       )}
