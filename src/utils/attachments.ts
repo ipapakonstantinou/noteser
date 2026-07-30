@@ -214,6 +214,75 @@ export function isAttachmentPath(path: string): boolean {
   return attachmentsFolder.matchesPath(path)
 }
 
+/** Thrown by putAttachmentAtPath rather than writing a path that a peer or a
+ *  repo could have aimed anywhere in the vault. */
+export class UnsafeAttachmentPathError extends Error {
+  constructor(path: string) {
+    super(`Refusing to store an attachment at an unsafe path: ${path}`)
+    this.name = 'UnsafeAttachmentPathError'
+  }
+}
+
+// Maximum length of a stored attachment path. Well past any real vault layout,
+// short of anything that would be a storage-abuse vector on its own.
+const MAX_ATTACHMENT_PATH_LEN = 400
+
+/**
+ * Is this path a well-formed relative vault path — no traversal, no absolute
+ * root, no empty or control-character segments?
+ *
+ * SHAPE only, deliberately: it does NOT require the attachments folder.
+ * `isAttachmentPath` is a `startsWith` over the CURRENT folder prefixes, so
+ * folder membership cannot be enforced on a write — a vault whose attachments
+ * folder was renamed twice still holds legitimate attachments under the older
+ * name, and re-writing one (sync apply refreshing a drifted file) must not be
+ * refused. Callers taking a path from an untrusted source combine the two:
+ * see collabExtension's receiveAttachment.
+ *
+ * Why shape matters at all: every stored path is pushed verbatim as a tree
+ * entry (syncPush step 3b), so `attachments/../../.github/workflows/pwn.yml`
+ * is a file the victim's next sync commits for them.
+ *
+ * Both the raw and the percent-decoded form must pass, so `..%2f` and
+ * `%2e%2e/` are rejected exactly like `../`.
+ */
+export function isSafeAttachmentPath(path: string): boolean {
+  if (typeof path !== 'string') return false
+  if (path.length === 0 || path.length > MAX_ATTACHMENT_PATH_LEN) return false
+
+  // Decode per SEGMENT, and tolerate a segment that is not valid encoding: a
+  // literal `%` is legal in a filename ("100% done.png"), and a malformed
+  // escape cannot spell a traversal. Decoding the whole string at once would
+  // either reject that name or, worse, let `%2e%2e/…%zz` skip the decode
+  // entirely because one bad segment threw. Repeat until stable so
+  // double-encoding (`%252e%252e`) unwinds too.
+  const decodeSegments = (s: string) =>
+    s.split('/').map(seg => {
+      try {
+        return decodeURIComponent(seg)
+      } catch {
+        return seg
+      }
+    }).join('/')
+  let decoded = path
+  for (let i = 0; i < 3; i++) {
+    const next = decodeSegments(decoded)
+    if (next === decoded) break
+    decoded = next
+  }
+
+  for (const form of [path, decoded]) {
+    if (form.startsWith('/')) return false          // absolute
+    if (form.includes('\\')) return false           // backslash separator
+    // Control characters, including a NUL a truncating consumer might act on.
+    if (/[\u0000-\u001f\u007f]/.test(form)) return false
+    const segments = form.split('/')
+    if (segments.some(s => s === '' || s === '.' || s === '..')) return false
+  }
+
+  return true
+}
+
 // Save a blob under a filename generated from the configured attachment
 // filename pattern (#124) — see utils/attachmentFilename.ts for the token
 // grammar and collision policy. New saves land under the currently-configured
@@ -537,6 +606,10 @@ export async function putAttachmentAtPath(
   originalName: string = path.split('/').pop() ?? path,
   options?: { doNotSync?: boolean },
 ): Promise<void> {
+  // Every write lands here — the collab relay, the sync apply step and the
+  // feature-tour heal — and two of those carry a path from outside this
+  // device. Reject before the write rather than at each caller.
+  if (!isSafeAttachmentPath(path)) throw new UnsafeAttachmentPathError(path)
   // Preserve an existing record's doNotSync flag on overwrite (sync apply
   // re-writes a drifted attachment through this path and must not silently
   // strip the flag) unless the caller states it explicitly.
