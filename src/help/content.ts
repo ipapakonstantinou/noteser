@@ -484,11 +484,12 @@ Noteser fetches the manifest, validates the v1 schema, fetches the bundle, SHA-2
 
 ## Writing a plugin
 
-Install the SDK:
-
-\`\`\`bash
-npm install @noteser/plugin-sdk
-\`\`\`
+The SDK is **not on npm yet**, so do not run \`npm install @noteser/plugin-sdk\` — that
+package does not exist, and installing a name nobody has claimed is how you end up
+running someone else's code. Copy \`packages/noteser-plugin-sdk/src/sdk.ts\` out of the
+[repo](https://github.com/ipapakonstantinou/noteser/tree/main/packages/noteser-plugin-sdk)
+and import from your local copy. The import path below is what it will become once the
+package is published.
 
 Minimum plugin:
 

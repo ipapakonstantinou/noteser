@@ -4,7 +4,13 @@ TypeScript SDK for writing [Noteser](https://noteser.app) plugins.
 
 ## Install
 
+Not published yet. `@noteser/plugin-sdk` does not exist on npm, and the `@noteser`
+scope is unclaimed, so `npm install @noteser/plugin-sdk` would either fail or one day
+fetch a package we do not control. Until it is published, copy `src/sdk.ts` from this
+directory into your plugin and import from the local copy.
+
 ```bash
+# once published — not yet
 npm install @noteser/plugin-sdk
 ```
 
