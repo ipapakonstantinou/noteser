@@ -53,7 +53,7 @@ describe('RenderErrorBoundary', () => {
 
   test('contains a throw and keeps the note readable as raw text', () => {
     render(
-      <RenderErrorBoundary resetKey="note-1" fallbackContent="- [ ] my raw body">
+      <RenderErrorBoundary key="note-1" fallbackContent="- [ ] my raw body">
         <Boom />
       </RenderErrorBoundary>,
     )
@@ -65,7 +65,7 @@ describe('RenderErrorBoundary', () => {
 
   test('renders children normally when nothing throws', () => {
     render(
-      <RenderErrorBoundary resetKey="note-1">
+      <RenderErrorBoundary key="note-1">
         <p>fine</p>
       </RenderErrorBoundary>,
     )
@@ -75,13 +75,15 @@ describe('RenderErrorBoundary', () => {
   })
 
   test('switching notes clears a caught error instead of latching it', () => {
+    // The reset IS the key: React remounts on a changed key and the caught error
+    // goes with the old instance. EditorContent passes the note id.
     const { rerender } = render(
-      <RenderErrorBoundary resetKey="bad-note"><Boom /></RenderErrorBoundary>,
+      <RenderErrorBoundary key="bad-note"><Boom /></RenderErrorBoundary>,
     )
     expect(screen.getByTestId('render-error-fallback')).toBeInTheDocument()
 
     rerender(
-      <RenderErrorBoundary resetKey="good-note"><p>fine</p></RenderErrorBoundary>,
+      <RenderErrorBoundary key="good-note"><p>fine</p></RenderErrorBoundary>,
     )
 
     expect(screen.queryByTestId('render-error-fallback')).not.toBeInTheDocument()

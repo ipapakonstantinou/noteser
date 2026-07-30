@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 import { v4 as uuidv4 } from 'uuid'
 import type { Note, Template, DEFAULT_TEMPLATES } from '@/types'
 import { idbStorage } from '@/utils/idbStorage'
+import { isValidCollabId } from '@/utils/collabId'
 import {
   softDelete,
   permanentlyDelete,
@@ -287,7 +288,13 @@ export const useNoteStore = create<NoteState>()(
       ensureCollabId: (id) => {
         const note = get().notes.find(n => n.id === id)
         if (!note) return null
-        if (note.collabId) return note.collabId
+        // Shape-checked here, not just at the edges. parseNote / parseCollabParam /
+        // serializeNote refuse a junk id now, but a note CREATED by an older build
+        // from a hostile `?collab=` link still carries one — and this is the single
+        // funnel both room readers use (CodeMirrorEditor's binding and the share
+        // link in EditorFooter). An id no client could have minted is replaced with
+        // one we did, which also stops the victim rejoining the attacker's room.
+        if (isValidCollabId(note.collabId)) return note.collabId
         const collabId = uuidv4()
         set(state => ({
           notes: state.notes.map(n =>

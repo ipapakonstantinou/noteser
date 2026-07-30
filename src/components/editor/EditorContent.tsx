@@ -629,7 +629,7 @@ export const EditorContent = ({ note, isPreviewMode, onContentChange }: EditorCo
           <div className="prose prose-invert max-w-none">
             {/* A throw in here used to unmount the whole app, and the note that
                 caused it survives a reload — so the app stayed broken. */}
-            <RenderErrorBoundary resetKey={note.id} fallbackContent={previewContent}>
+            <RenderErrorBoundary key={note.id} fallbackContent={previewContent}>
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkCallouts]}
               components={components}

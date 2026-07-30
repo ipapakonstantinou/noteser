@@ -76,3 +76,34 @@ describe('share link', () => {
     expect(parseCollabParam('?collab=')).toBeNull()
   })
 })
+
+// A note created by a pre-fix build (or a pre-fix share link) can still carry a junk
+// collabId in the store, and the room name is read from there — so the funnel both
+// readers use has to refuse it too, not just the parsers at the edges.
+describe('ensureCollabId', () => {
+  test('replaces a junk stored id instead of joining that room', async () => {
+    const { useNoteStore } = await import('../stores/noteStore')
+    const note = useNoteStore.getState().addNote({ title: 'From a hostile link', content: '' })
+    useNoteStore.setState({
+      notes: useNoteStore.getState().notes.map(n =>
+        n.id === note.id ? { ...n, collabId: 'attacker-room' } : n),
+    })
+
+    const room = useNoteStore.getState().ensureCollabId(note.id)
+
+    expect(room).not.toBe('attacker-room')
+    expect(isValidCollabId(room)).toBe(true)
+    expect(useNoteStore.getState().getNoteById(note.id)?.collabId).toBe(room)
+  })
+
+  test('keeps a valid stored id', async () => {
+    const { useNoteStore } = await import('../stores/noteStore')
+    const note = useNoteStore.getState().addNote({ title: 'Already shared', content: '' })
+    useNoteStore.setState({
+      notes: useNoteStore.getState().notes.map(n =>
+        n.id === note.id ? { ...n, collabId: VALID } : n),
+    })
+
+    expect(useNoteStore.getState().ensureCollabId(note.id)).toBe(VALID)
+  })
+})

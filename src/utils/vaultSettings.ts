@@ -8,7 +8,10 @@
 // The file is intentionally simple — no encryption, no per-field
 // merging. If two devices conflict, the newer `updatedAt` wins.
 
-import { VAULT_SETTING_KEYS, type SettingsState, type VaultSettingKey } from '@/stores/settingsStore'
+import {
+  FOLDER_SORT_MODES, TASK_LIST_DENSITIES, TRASH_MODES,
+  VAULT_SETTING_KEYS, type SettingsState, type VaultSettingKey,
+} from '@/stores/settingsStore'
 
 export const VAULT_SETTINGS_FILE = 'settings.json'
 
@@ -72,8 +75,8 @@ const isRecordOf = (check: (v: unknown) => boolean) => (v: unknown): boolean => 
 // Typed on VaultSettingKey so adding a vault-synced key without a check here
 // fails the build instead of shipping an unvalidated field.
 const VALUE_CHECKS: Record<VaultSettingKey, (v: unknown) => boolean> = {
-  folderSortMode: isOneOf('alphabetical', 'modified', 'created', 'manual'),
-  taskListDensity: isOneOf('compact', 'comfortable'),
+  folderSortMode: isOneOf(...FOLDER_SORT_MODES),
+  taskListDensity: isOneOf(...TASK_LIST_DENSITIES),
   showHiddenFolders: isBool,
   attachmentsFolder: isStr,
   attachmentFilenamePattern: isStr,
@@ -88,7 +91,7 @@ const VALUE_CHECKS: Record<VaultSettingKey, (v: unknown) => boolean> = {
   weeklyNoteTemplatePath: isStrOrNull,
   dailyNoteTemplateId: isStrOrNull,
   weeklyNoteTemplateId: isStrOrNull,
-  trashMode: isOneOf('trash', 'hardDelete'),
+  trashMode: isOneOf(...TRASH_MODES),
   trashFolderName: isStr,
   confirmBulkDelete: isBool,
   betaEnabled: isBool,

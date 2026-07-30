@@ -13,7 +13,10 @@ import { join } from 'node:path'
 // build on disk, and the header's dev variant is deliberately looser). Run:
 //
 //   npm run build && npx next start -p 3999        (separate shell)
-//   CSP_BASE_URL=http://127.0.0.1:3999 npx playwright test e2e/_verify_worker_csp.spec.ts
+//   CSP_BASE_URL=http://127.0.0.1:3999 npm run e2e:verify -- e2e/_verify_worker_csp.spec.ts
+//
+// It must go through `e2e:verify` (playwright.config.verify.ts): the main config's
+// `testIgnore: '**/_*.spec.ts'` drops this file even when it is named on the command line.
 //
 // Checks, in order of what actually matters:
 //   1. the worker chunk's response carries a CSP at all;
@@ -91,7 +94,7 @@ test('the plugin worker runs under a CSP that blocks its network but not its boo
   const result = await page.evaluate(
     async ([workerUrl, source]) => {
       const w = new Worker(workerUrl, { type: 'module' })
-      const seen: Record<string, string> = {}
+      const seen: Record<string, string | undefined> = {}
       let booted = false
       const done = new Promise<void>((resolve) => {
         w.onmessage = (e: MessageEvent) => {
@@ -105,7 +108,7 @@ test('the plugin worker runs under a CSP that blocks its network but not its boo
       w.postMessage({ type: 'host:boot', seq: 1, pluginId: 'csp-probe', source })
       await done
       w.terminate()
-      return { booted, ...seen }
+      return { booted, fetch: seen.fetch, idb: seen.idb }
     },
     [chunk as string, PROBE_PLUGIN] as const,
   )

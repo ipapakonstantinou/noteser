@@ -243,45 +243,27 @@ const MAX_ATTACHMENT_PATH_LEN = 400
  * entry (syncPush step 3b), so `attachments/../../.github/workflows/pwn.yml`
  * is a file the victim's next sync commits for them.
  *
- * Both the raw and the percent-decoded form must pass, so `..%2f` and
- * `%2e%2e/` are rejected exactly like `../`.
+ * Percent-encoding is REJECTED rather than decoded. Nothing downstream decodes
+ * a stored path — the IDB key, the git tree entry and `createObjectURL` all
+ * take it literally — so `%2e%2e/` cannot become `../` on its own; the only
+ * decoder in the app (`decodeAttachmentSrc`, for a markdown src) hands its
+ * result back through this same check. Refusing the escapes outright is
+ * therefore stricter than decoding them, and four lines instead of thirty.
+ * `%25` is in the set so a re-encoded `%252e` cannot slip past either.
  */
 export function isSafeAttachmentPath(path: string): boolean {
+  // Runtime type check kept despite the TS signature: one caller is a Y.Map key
+  // from a collab peer, i.e. a trust boundary, not a value the compiler saw.
   if (typeof path !== 'string') return false
-  if (path.length === 0 || path.length > MAX_ATTACHMENT_PATH_LEN) return false
-
-  // Decode per SEGMENT, and tolerate a segment that is not valid encoding: a
-  // literal `%` is legal in a filename ("100% done.png"), and a malformed
-  // escape cannot spell a traversal. Decoding the whole string at once would
-  // either reject that name or, worse, let `%2e%2e/…%zz` skip the decode
-  // entirely because one bad segment threw. Repeat until stable so
-  // double-encoding (`%252e%252e`) unwinds too.
-  const decodeSegments = (s: string) =>
-    s.split('/').map(seg => {
-      try {
-        return decodeURIComponent(seg)
-      } catch {
-        return seg
-      }
-    }).join('/')
-  let decoded = path
-  for (let i = 0; i < 3; i++) {
-    const next = decodeSegments(decoded)
-    if (next === decoded) break
-    decoded = next
-  }
-
-  for (const form of [path, decoded]) {
-    if (form.startsWith('/')) return false          // absolute
-    if (form.includes('\\')) return false           // backslash separator
-    // Control characters, including a NUL a truncating consumer might act on.
-    if (/[\u0000-\u001f\u007f]/.test(form)) return false
-    const segments = form.split('/')
-    if (segments.some(s => s === '' || s === '.' || s === '..')) return false
-  }
-
-  return true
+  if (path.length > MAX_ATTACHMENT_PATH_LEN) return false
+  if (/%(2e|2f|5c|25|00)/i.test(path)) return false          // encoded dot, separator or percent
+  if (path.includes('\\')) return false                      // backslash separator
+  if (/[\u0000-\u001f\u007f]/.test(path)) return false      // control chars, NUL included
+  // Covers the empty string, a leading "/", a trailing "/" and "//" too: each of
+  // those produces an empty segment.
+  return path.split('/').every(seg => seg !== '' && seg !== '.' && seg !== '..')
 }
+
 
 // Save a blob under a filename generated from the configured attachment
 // filename pattern (#124) — see utils/attachmentFilename.ts for the token

@@ -7,15 +7,16 @@ import { Component, type ErrorInfo, type ReactNode } from 'react'
 // still there after a reload, the app stayed broken. One malformed
 // `[x](wikilink://%)` was enough (see decodeWikilinkHref).
 //
-// Deliberately narrow: it wraps the reading-mode renderer, shows the note's
-// content as plain text so the user can still read and fix it, and resets when
-// `resetKey` changes (the note id) so switching notes clears the error rather
-// than latching it. Not an app-wide boundary — a crash elsewhere should still
-// be loud in development.
+// Deliberately narrow: it wraps the reading-mode renderer and shows the note's
+// content as plain text so the user can still read and fix it. Not an app-wide
+// boundary — a crash elsewhere should still be loud in development.
+//
+// Resetting when the user switches notes is the caller's job, via a `key` on
+// this component (EditorContent passes the note id). React remounts a component
+// whose key changed, which drops the caught error with it — no reset prop and no
+// getDerivedStateFromProps bookkeeping to keep in sync.
 interface Props {
   children: ReactNode
-  /** Changing this clears a caught error (pass the note id). */
-  resetKey?: string
   /** Rendered under the message — the raw note body, so the note is readable
    *  even while it cannot be rendered. */
   fallbackContent?: string
@@ -23,7 +24,6 @@ interface Props {
 
 interface State {
   message: string | null
-  seenKey?: string
 }
 
 export class RenderErrorBoundary extends Component<Props, State> {
@@ -31,13 +31,6 @@ export class RenderErrorBoundary extends Component<Props, State> {
 
   static getDerivedStateFromError(error: unknown): State {
     return { message: error instanceof Error ? error.message : String(error) }
-  }
-
-  static getDerivedStateFromProps(props: Props, state: State): State | null {
-    if (state.seenKey !== props.resetKey) {
-      return { message: null, seenKey: props.resetKey }
-    }
-    return null
   }
 
   componentDidCatch(error: unknown, info: ErrorInfo): void {
