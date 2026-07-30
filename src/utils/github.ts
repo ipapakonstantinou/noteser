@@ -411,6 +411,16 @@ export async function getCommitTreeSha(token: string, owner: string, repo: strin
   return data.tree.sha
 }
 
+// A recursive tree read that came back incomplete. Never classify against a
+// partial tree: every missing note reads as remoteDeleted → soft-delete →
+// real deletion on the next push.
+export class TreeTruncatedError extends Error {
+  constructor() {
+    super('Vault too large to sync safely — GitHub returned an incomplete file list, so the sync was stopped before anything changed.')
+    this.name = 'TreeTruncatedError'
+  }
+}
+
 // Map of repo path → existing blob SHA (only blob entries, not subtrees).
 export async function getTreeMap(token: string, owner: string, repo: string, treeSha: string): Promise<Map<string, string>> {
   const res = await githubFetch(
@@ -423,6 +433,8 @@ export async function getTreeMap(token: string, owner: string, repo: string, tre
   )
   await ensureOk(res, 'Read tree')
   const data = await res.json()
+  // GitHub caps the recursive tree and flags it instead of paginating.
+  if (data.truncated) throw new TreeTruncatedError()
   const out = new Map<string, string>()
   for (const entry of data.tree as Array<{ path: string; type: string; sha: string }>) {
     if (entry.type === 'blob') out.set(entry.path, entry.sha)

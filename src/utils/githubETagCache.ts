@@ -31,6 +31,7 @@ import {
   getTreeMap as rawGetTreeMap,
   ensureOk,
   GitHubAPIError,
+  TreeTruncatedError,
 } from './github'
 import { githubFetch } from './githubFetch'
 
@@ -49,7 +50,9 @@ const memTreeCache = new Map<string, TreeCacheEntry>()
 // wipe noteser-prefixed IDB keys also drop the ETag cache — no stale
 // content survives a "Wipe vault" or a future reset path.
 const IDB_BLOB_PREFIX = 'noteser:gh-etag:blob:'
-const IDB_TREE_PREFIX = 'noteser:gh-etag:tree:'
+// tree2: builds before the truncation check could cache a partial tree, and a
+// cached partial is served on every later 304. The bump orphans those entries.
+const IDB_TREE_PREFIX = 'noteser:gh-etag:tree2:'
 
 function keyFor(owner: string, name: string, sha: string): string {
   return `${owner}/${name}:${sha}`
@@ -250,6 +253,9 @@ export async function getTreeMapConditional(
   }
 
   const data = await res.json()
+  // Before the Map is built or cached: a truncated tree must never be stored,
+  // or the next 304 would serve the partial picture back forever.
+  if (data.truncated) throw new TreeTruncatedError()
   const out = new Map<string, string>()
   for (const entry of data.tree as Array<{ path: string; type: string; sha: string }>) {
     if (entry.type === 'blob') out.set(entry.path, entry.sha)
