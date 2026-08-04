@@ -43,7 +43,7 @@
     "idb-keyval": "^6.2.6",
     "isomorphic-git": "^1.40.0",
     "jszip": "^3.10.1",
-    "next": "^15.5.18",
+    "next": "^16.2.12",
     "react": "^19.1.0",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",
