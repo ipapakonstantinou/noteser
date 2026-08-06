@@ -155,10 +155,10 @@ export async function applyNonConflicts(classifications: PullClassification[]): 
     }
 
     if (c.kind === 'vaultSettingsUpdated') {
-      // The store's applyRemoteVaultSettings handles whitelisting (only
-      // VAULT_SETTING_KEYS are accepted) so we can pass the parsed
-      // payload through directly. Hash + remoteUpdatedAt go in too so
-      // the next push knows we already have this version.
+      // parseVaultSettings already whitelisted the keys and type-checked the
+      // values, and applyRemoteVaultSettings refuses a remote encryption
+      // downgrade, so the parsed payload can go through directly. Hash +
+      // remoteUpdatedAt go in too so the next push knows we have this version.
       useSettingsStore.getState().applyRemoteVaultSettings(
         c.remoteVault as Partial<ReturnType<typeof useSettingsStore.getState>>,
         c.remoteUpdatedAt,

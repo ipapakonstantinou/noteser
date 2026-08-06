@@ -4,8 +4,13 @@ import { STORAGE_KEYS } from '@/utils/storageKeys'
 import { localStorageJSON } from '@/utils/persistStorage'
 import { DEFAULT_ATTACHMENT_FILENAME_PATTERN } from '@/utils/attachmentFilename'
 
-export type FolderSortMode = 'alphabetical' | 'modified' | 'created' | 'manual'
-export type TaskListDensity = 'compact' | 'comfortable'
+// Arrays, not bare unions: `vaultSettings.ts` has to VALIDATE a synced value against the
+// members, and a type-only union cannot be read at runtime — so the members were being retyped
+// there, free to drift. Same shape as VAULT_SETTING_KEYS below.
+export const FOLDER_SORT_MODES = ['alphabetical', 'modified', 'created', 'manual'] as const
+export type FolderSortMode = (typeof FOLDER_SORT_MODES)[number]
+export const TASK_LIST_DENSITIES = ['compact', 'comfortable'] as const
+export type TaskListDensity = (typeof TASK_LIST_DENSITIES)[number]
 
 // Real-time collaboration scope. Replaces the old NEXT_PUBLIC_COLLAB_DISABLED
 // env kill-switch as the PRIMARY control over when the editor opens a yjs
@@ -33,7 +38,8 @@ export type CollaborationMode = 'off' | 'per-note' | 'repo'
 //   'hardDelete' → no Trash. Deletions are immediate and irreversible
 //                  locally (sync still gets to push a tree-delete on the
 //                  next round-trip).
-export type TrashMode = 'trash' | 'hardDelete'
+export const TRASH_MODES = ['trash', 'hardDelete'] as const
+export type TrashMode = (typeof TRASH_MODES)[number]
 
 // First day of the week shown in the sidebar Calendar. 0 = Sunday
 // (default, US/legacy), 1 = Monday (ISO / most of Europe). Device-only
@@ -1012,11 +1018,28 @@ export const useSettingsStore = create<SettingsState>()(
         setFontMono: (fontMono) => setVault({ fontMono }),
         setFontInterface: (fontInterface) => setVault({ fontInterface }),
         applyRemoteVaultSettings: (fields, remoteUpdatedAt, remoteHash) => {
-          set({
-            ...fields,
-            vaultSettingsUpdatedAt: remoteUpdatedAt,
-            vaultSettingsLastPushedHash: remoteHash,
-          } as Partial<SettingsState>)
+          set((state) => {
+            const next = { ...fields } as Record<string, unknown>
+            // A synced file may switch encryption ON — that is how a fresh
+            // device learns the vault is encrypted and prompts for the
+            // passphrase. It may never switch it OFF: pushes would silently go
+            // out in plaintext, and anyone able to write the repo could ask for
+            // that. Turning encryption off stays an explicit local action
+            // (Settings → setVaultEncryption). The salt and canary are dropped
+            // with the flag so a downgrade attempt can't swap key material on
+            // the way past.
+            if (state.vaultEncryptionEnabled && next.vaultEncryptionEnabled === false) {
+              delete next.vaultEncryptionEnabled
+              delete next.vaultEncryptionSalt
+              delete next.vaultEncryptionCanary
+              console.warn('[vault settings] ignored a remote attempt to disable vault encryption')
+            }
+            return {
+              ...next,
+              vaultSettingsUpdatedAt: remoteUpdatedAt,
+              vaultSettingsLastPushedHash: remoteHash,
+            } as Partial<SettingsState>
+          })
         },
         reset: () => set(DEFAULTS),
       }

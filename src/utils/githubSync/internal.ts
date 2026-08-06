@@ -9,6 +9,7 @@
 // from here directly.
 
 import type { Note, Folder } from '@/types'
+import { isValidCollabId } from '../collabId'
 // Import from the dedicated sanitiser module, NOT from '../export'. The
 // latter statically imports jszip + file-saver at module scope, and
 // githubSync sits on the app-init path (useGitHubSync → useAutoSync), so
@@ -205,7 +206,9 @@ export function guessMimeFromPath(path: string): string {
 // phantom leading-blank-line drift that would re-churn the blob.
 export function serializeNote(note: Note): string {
   const body = normalizeForPush(note.content ?? '')
-  const cid = note.collabId
+  // Shape-checked on the way out too: a note that picked up a junk id from an
+  // older build must not keep re-publishing it to the repo.
+  const cid = isValidCollabId(note.collabId) ? note.collabId : undefined
   if (!cid) return body
   const fm = `---\ncollabId: ${cid}\n---\n`
   return body === '' ? fm : `${fm}${body}`
@@ -321,7 +324,11 @@ export function parseNote(raw: string): ParsedNote {
 
   const tags = parseInlineArrayField(fmBlock, 'tags')
   const aliases = parseInlineArrayField(fmBlock, 'aliases')
-  const collabId = parseScalarField(fmBlock, 'collabId')
+  // The repo is not the authority on room ids — anything that is not a v4
+  // UUID never became a room name on any noteser client, so drop it here
+  // rather than letting it flow into the store and the editor's room.
+  const rawCollabId = parseScalarField(fmBlock, 'collabId')
+  const collabId = isValidCollabId(rawCollabId) ? rawCollabId : undefined
   return { tags, aliases, body, collabId }
 }
 

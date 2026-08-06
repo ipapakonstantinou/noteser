@@ -376,7 +376,9 @@ export type WorkerToHost =
 
 /** Sent in reply to host:boot once the plugin module loaded and
  *  `definePlugin` ran. Includes the validated manifest, which the host
- *  cross-checks against the manifest fetched from the plugin URL. */
+ *  cross-checks against the manifest the user approved at install time
+ *  (permissions + surface kinds) and then discards in favour of that one —
+ *  see PluginHost.load / manifestGrantDrift. */
 export interface WorkerReady {
   type: 'worker:ready'
   seq: number

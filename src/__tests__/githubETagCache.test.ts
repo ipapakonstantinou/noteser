@@ -350,7 +350,7 @@ describe('getBlobContentConditional — 304 short-circuit', () => {
 
 describe('getTreeMapConditional — 304 short-circuit', () => {
   test('with a pre-seeded ETag entry, 304 returns cached tree map and skips the bare helper', async () => {
-    const cacheKey = `noteser:gh-etag:tree:${REPO.owner}/${REPO.name}:tree-1`
+    const cacheKey = `noteser:gh-etag:tree2:${REPO.owner}/${REPO.name}:tree-1`
     idbBackingStore.set(cacheKey, {
       etag: 'W/"tree-abc"',
       tree: [['a.md', 'sha-a'], ['nested/b.md', 'sha-b']],
@@ -368,7 +368,7 @@ describe('getTreeMapConditional — 304 short-circuit', () => {
   })
 
   test('with a pre-seeded ETag entry, a 200 reply refreshes the cache and returns the new tree', async () => {
-    const cacheKey = `noteser:gh-etag:tree:${REPO.owner}/${REPO.name}:tree-1`
+    const cacheKey = `noteser:gh-etag:tree2:${REPO.owner}/${REPO.name}:tree-1`
     idbBackingStore.set(cacheKey, {
       etag: 'W/"tree-old"',
       tree: [['a.md', 'sha-a-old']],

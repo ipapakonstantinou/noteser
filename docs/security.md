@@ -93,11 +93,89 @@ model reflects that:
   message size, connections per room, and messages per second (2026-07-06)
   to bound DoS/storage-bloat from a client that *does* have a room id, but
   none of that is confidentiality — treat a room id like a `/share` link.
+- **A committed `collabId` is a bearer credential in plaintext, and cannot be
+  rotated.** `serializeNote` writes `collabId: <uuid>` into the note's
+  frontmatter and the pull adopts the remote value ("repo wins", so
+  collaborators converge on one room). Consequences, none of them fixed:
+  anyone who can read the repo — including anyone the vault is ever shared
+  with, a fork, or a later collaborator who should have lost access — holds
+  read/write on that room forever; there is no rotation path, because changing
+  the id means every device must agree on the new one through the same file;
+  and the Durable Object keeps server-side state keyed on the id, so a leaked
+  id also names durable server state.
+  - Shipped 2026-07-30 (the cheap half): ids are shape-checked as v4 UUIDs at
+    every entry point — `parseNote` drops a non-conforming frontmatter value,
+    `parseCollabParam` refuses a bogus `?collab=` link, and `serializeNote`
+    will not re-publish an invalid id. That stops an arbitrary string becoming
+    a room name; it does NOT make the id less of a credential.
+  - **Proposal, not implemented** (deliberately out of scope for the
+    2026-07-30 branch): stop treating the committed id as the credential. Keep
+    the frontmatter id as a room *name* and derive the joining secret from
+    material that is never committed — e.g. a per-room key held only in the
+    share link fragment (like `/share` already does) with the server
+    accepting a proof derived from it, so repo read access alone grants
+    nothing. This changes the wire protocol and the collab-server, needs its
+    own plan, and should land before real-time collab is ever default-on.
+  - Also NOT implemented: requiring an explicit user action before joining a
+    room whose id arrived from the repo. In `per-note` mode (and via a share
+    link) an explicit action is already required; only `collaborationMode:
+    'repo'` auto-joins every note, and telling a repo-supplied id apart from
+    one this device minted needs provenance the store does not keep today.
+    Given collab is default-off and `'repo'` is an explicit opt-in, this was
+    parked rather than half-built.
+
+- **Plugin permissions are not a sandbox.** Each plugin runs in a dedicated
+  Web Worker, but that worker is spawned from a same-origin URL
+  (`new URL('./workerEntry', import.meta.url)`), so plugin code has raw
+  `indexedDB` access on the app's origin. The vault lives there —
+  `src/utils/idbStorage.ts` persists the note store through `idb-keyval`, and
+  attachments sit under `noteser-attachment:` keys in the same database — so a
+  plugin can read and write every note without ever asking for
+  `vault.read.all` or `vault.write`. What the permission model DOES give:
+  it gates the official SDK surface, it drives per-install revocation
+  (`revokedPermissions`), it makes the destructive capabilities an explicit
+  opt-in in the install dialog, and (since 2026-07-30) the manifest the user
+  approved is authoritative, so a bundle cannot widen its own grant at boot.
+  What it does NOT give: any barrier against a plugin that goes straight to
+  IndexedDB. The install dialog says this in plain language rather than
+  implying a guarantee. What is genuinely out of reach from a worker: the
+  GitHub token and AI key, which live in `localStorage` (no `localStorage`
+  in workers) — and the DOM.
+  - Decision (2026-07-30): keep the permission prompts and label them
+    honestly, rather than dropping them. They still enforce the sanctioned
+    API path and back revocation; the defect was the copy claiming a boundary
+    the runtime doesn't provide.
+  - Tracked follow-up for a real boundary: move plugin execution off the app's
+    origin — a null-origin `<iframe>` or a separate origin — and route every
+    vault access through `postMessage`. That is a design change, not a patch;
+    it needs its own plan.
+
+### The plugin worker's CSP
+
+The worker chunk is served from `/_next/static/…`, which `src/middleware.ts`
+deliberately excludes from the per-request nonce CSP — so until 2026-07-30 the
+worker ran with **no** policy at all, while every plugin is handed the active
+note's body and the plugin API has no network permission. A worker takes its
+policy from its OWN response headers, so the fix is a static
+`Content-Security-Policy` for that path in `next.config.mjs`
+(`PLUGIN_WORKER_CSP`): `default-src 'none'`, `connect-src 'none'`, and
+`script-src 'self' blob:` because the worker dynamic-imports the plugin module
+from a Blob URL. Nested workers fall back to `default-src 'none'`.
+
+Do NOT add a policy for `/_next/static` to the middleware as well — browsers
+intersect multiple policies, and the document's nonce CSP is the one that must
+stay authoritative for pages. Verified in a real Chromium against
+`next start`: the header lands on the worker chunk, a plugin still reaches
+`worker:ready`, `fetch()` from inside the worker fails, and `indexedDB.open()`
+still succeeds — the last one being why the section above says permissions are
+not a sandbox.
 
 ## Audit log
 
 | Date | Change | Notes |
 |---|---|---|
+| 2026-07-30 | `PLUGIN_WORKER_CSP` in next.config.mjs puts a CSP on `/_next/static/:path*` — the plugin worker was running with no policy, so plugin code could POST note bodies anywhere | verified in Chromium: worker boots, `fetch()` blocked, `indexedDB` still open |
+| 2026-07-30 | Plugins: the install record's manifest is authoritative — the host compares the worker's boot-time permissions + surface kinds against it, refuses the boot on drift, and uses the approved copy; install dialog now states plainly that a plugin can reach the whole vault | manifest.json and main.js are separate artifacts, and the old copy claimed a sandbox the same-origin worker does not provide |
 | 2026-07-29 | `isOriginAllowed` no longer trusts the whole `*.vercel.app` namespace — blanket suffix branch removed, exact-match `NEXT_PUBLIC_EXTRA_ORIGINS` is the only non-same-origin path; 2 new rejection tests | shared namespace: a stranger's free subdomain cleared the check. Real grant was on `/api/git-proxy` (echoes the origin in `Access-Control-Allow-Origin`) |
 | 2026-07-29 | Status pass over `docs/research/security-audit-2026-05-21.md`: each of the 8 findings re-verified against current code. 1, 4, 5, 6, 8 FIXED; 2 and 3 marked OPEN, ACCEPTED with rationale; 7 OPEN by design. No code changed | doc was reading as a live vuln list against production |
 | 2026-07-06 | collab-server: size/rate/connection-cap limits + first test suite; `/share` img-src drops the `https:` wildcard; `.github/dependabot.yml` added (covers root + collab-server); collab-server wired into CI | 2026-07-06 deep security review |

@@ -8,7 +8,10 @@
 // The file is intentionally simple — no encryption, no per-field
 // merging. If two devices conflict, the newer `updatedAt` wins.
 
-import { VAULT_SETTING_KEYS, type SettingsState, type VaultSettingKey } from '@/stores/settingsStore'
+import {
+  FOLDER_SORT_MODES, TASK_LIST_DENSITIES, TRASH_MODES,
+  VAULT_SETTING_KEYS, type SettingsState, type VaultSettingKey,
+} from '@/stores/settingsStore'
 
 export const VAULT_SETTINGS_FILE = 'settings.json'
 
@@ -49,6 +52,60 @@ export function serializeVaultSettings(slice: Partial<Pick<SettingsState, VaultS
   return JSON.stringify(payload, null, 2) + '\n'
 }
 
+// Per-key value checks for a file that arrives from the repo. The key
+// whitelist below is not a boundary on its own: anyone who can write to the
+// vault repo could set a whitelisted key to any shape and the value went into
+// the store verbatim. Anything that fails its check is dropped and the rest of
+// the file still applies.
+const MAX_STR = 512
+const MAX_RECORD_KEYS = 500
+
+const isStr = (v: unknown): boolean => typeof v === 'string' && v.length <= MAX_STR
+const isStrOrNull = (v: unknown): boolean => v === null || isStr(v)
+const isBool = (v: unknown): boolean => typeof v === 'boolean'
+const isOneOf = (...allowed: string[]) => (v: unknown): boolean =>
+  typeof v === 'string' && allowed.includes(v)
+const isRecordOf = (check: (v: unknown) => boolean) => (v: unknown): boolean => {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false
+  const entries = Object.entries(v as Record<string, unknown>)
+  if (entries.length > MAX_RECORD_KEYS) return false
+  return entries.every(([k, val]) => k.length <= MAX_STR && check(val))
+}
+
+// Typed on VaultSettingKey so adding a vault-synced key without a check here
+// fails the build instead of shipping an unvalidated field.
+const VALUE_CHECKS: Record<VaultSettingKey, (v: unknown) => boolean> = {
+  folderSortMode: isOneOf(...FOLDER_SORT_MODES),
+  taskListDensity: isOneOf(...TASK_LIST_DENSITIES),
+  showHiddenFolders: isBool,
+  attachmentsFolder: isStr,
+  attachmentFilenamePattern: isStr,
+  dailyNotesFolder: isStr,
+  dailyNoteDateFormat: isStr,
+  weeklyNotesFolder: isStr,
+  weeklyNoteDateFormat: isStr,
+  monthlyNotesFolder: isStr,
+  monthlyNoteDateFormat: isStr,
+  templatesFolder: isStr,
+  dailyNoteTemplatePath: isStrOrNull,
+  weeklyNoteTemplatePath: isStrOrNull,
+  dailyNoteTemplateId: isStrOrNull,
+  weeklyNoteTemplateId: isStrOrNull,
+  trashMode: isOneOf(...TRASH_MODES),
+  trashFolderName: isStr,
+  confirmBulkDelete: isBool,
+  betaEnabled: isBool,
+  betaFlags: isRecordOf(isBool),
+  themeOverrides: isRecordOf(isStr),
+  fontText: isStr,
+  fontMono: isStr,
+  fontInterface: isStr,
+  vaultEncryptionEnabled: isBool,
+  vaultEncryptionSalt: isStrOrNull,
+  vaultEncryptionCanary: isStrOrNull,
+  defaultCommitMessage: isStr,
+}
+
 // Parse a raw blob fetched from the repo. Returns null on any error so
 // callers can skip the apply step gracefully — the user shouldn't see
 // their sync fail because a peer wrote a malformed JSON.
@@ -61,11 +118,14 @@ export function parseVaultSettings(raw: string): VaultSettingsFile | null {
     if (typeof o.updatedAt !== 'number') return null
     if (typeof o.vault !== 'object' || o.vault === null) return null
     // Whitelist-filter the vault payload so a malicious file can't slip
-    // in keys we don't intend to sync (e.g. aiApiKey).
+    // in keys we don't intend to sync (e.g. aiApiKey), then type-check each
+    // value so a whitelisted key can't carry an arbitrary shape.
     const vaultRaw = o.vault as Record<string, unknown>
     const vault: Partial<Pick<SettingsState, VaultSettingKey>> = {}
     for (const k of VAULT_SETTING_KEYS) {
-      if (k in vaultRaw) (vault as Record<string, unknown>)[k] = vaultRaw[k]
+      if (!(k in vaultRaw)) continue
+      if (!VALUE_CHECKS[k](vaultRaw[k])) continue
+      ;(vault as Record<string, unknown>)[k] = vaultRaw[k]
     }
     return { version: 1, updatedAt: o.updatedAt, vault }
   } catch {

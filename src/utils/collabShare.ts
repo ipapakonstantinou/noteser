@@ -1,3 +1,5 @@
+import { isValidCollabId } from './collabId'
+
 // Feature A — share-session links for live collaboration.
 //
 // A share link encodes the note's stable collab room id (its `collabId`, an
@@ -39,7 +41,8 @@ export function buildCollabShareLink(
 export function parseCollabParam(search: string): CollabParam | null {
   const params = new URLSearchParams(search)
   const collabId = params.get('collab')
-  if (!collabId) return null
+  // A link is an explicit user action, but it is still someone else's string.
+  if (!isValidCollabId(collabId)) return null
   const title = params.get('title')
   return { collabId, title: title && title.trim() !== '' ? title : null }
 }

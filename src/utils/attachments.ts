@@ -214,6 +214,57 @@ export function isAttachmentPath(path: string): boolean {
   return attachmentsFolder.matchesPath(path)
 }
 
+/** Thrown by putAttachmentAtPath rather than writing a path that a peer or a
+ *  repo could have aimed anywhere in the vault. */
+export class UnsafeAttachmentPathError extends Error {
+  constructor(path: string) {
+    super(`Refusing to store an attachment at an unsafe path: ${path}`)
+    this.name = 'UnsafeAttachmentPathError'
+  }
+}
+
+// Maximum length of a stored attachment path. Well past any real vault layout,
+// short of anything that would be a storage-abuse vector on its own.
+const MAX_ATTACHMENT_PATH_LEN = 400
+
+/**
+ * Is this path a well-formed relative vault path — no traversal, no absolute
+ * root, no empty or control-character segments?
+ *
+ * SHAPE only, deliberately: it does NOT require the attachments folder.
+ * `isAttachmentPath` is a `startsWith` over the CURRENT folder prefixes, so
+ * folder membership cannot be enforced on a write — a vault whose attachments
+ * folder was renamed twice still holds legitimate attachments under the older
+ * name, and re-writing one (sync apply refreshing a drifted file) must not be
+ * refused. Callers taking a path from an untrusted source combine the two:
+ * see collabExtension's receiveAttachment.
+ *
+ * Why shape matters at all: every stored path is pushed verbatim as a tree
+ * entry (syncPush step 3b), so `attachments/../../.github/workflows/pwn.yml`
+ * is a file the victim's next sync commits for them.
+ *
+ * Percent-encoding is REJECTED rather than decoded. Nothing downstream decodes
+ * a stored path — the IDB key, the git tree entry and `createObjectURL` all
+ * take it literally — so `%2e%2e/` cannot become `../` on its own; the only
+ * decoder in the app (`decodeAttachmentSrc`, for a markdown src) hands its
+ * result back through this same check. Refusing the escapes outright is
+ * therefore stricter than decoding them, and four lines instead of thirty.
+ * `%25` is in the set so a re-encoded `%252e` cannot slip past either.
+ */
+export function isSafeAttachmentPath(path: string): boolean {
+  // Runtime type check kept despite the TS signature: one caller is a Y.Map key
+  // from a collab peer, i.e. a trust boundary, not a value the compiler saw.
+  if (typeof path !== 'string') return false
+  if (path.length > MAX_ATTACHMENT_PATH_LEN) return false
+  if (/%(2e|2f|5c|25|00)/i.test(path)) return false          // encoded dot, separator or percent
+  if (path.includes('\\')) return false                      // backslash separator
+  if (/[\u0000-\u001f\u007f]/.test(path)) return false      // control chars, NUL included
+  // Covers the empty string, a leading "/", a trailing "/" and "//" too: each of
+  // those produces an empty segment.
+  return path.split('/').every(seg => seg !== '' && seg !== '.' && seg !== '..')
+}
+
+
 // Save a blob under a filename generated from the configured attachment
 // filename pattern (#124) — see utils/attachmentFilename.ts for the token
 // grammar and collision policy. New saves land under the currently-configured
@@ -263,6 +314,66 @@ export async function getAttachmentUrl(path: string): Promise<string | null> {
   const url = URL.createObjectURL(blob)
   urlCache.set(path, url)
   return url
+}
+
+// Extensions we are willing to hand a browser TAB, with the MIME to hand it.
+// A `blob:` URL opened top-level is a SAME-ORIGIN document, so this list is a
+// list of "types that cannot script": raster images and PDF (Chrome/Firefox
+// render it in the sandboxed viewer, not as a document script context).
+//
+// `svg` is deliberately absent even though it stays in the sync layer's
+// MIME_BY_EXT: an SVG in an `<img>` cannot run script or fetch, which is how
+// AttachmentImage renders it, but the same bytes opened as a top-level
+// document CAN — including reading this origin's localStorage, where the
+// GitHub token lives. So SVG (and anything unrecognised) downloads instead.
+const VIEWABLE_MIME_BY_EXT: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+  avif: 'image/avif',
+  pdf: 'application/pdf',
+}
+
+export interface AttachmentOpenTarget {
+  url: string
+  /** 'view' → safe to navigate a tab to. 'download' → must be saved, never
+   *  navigated: the type is either script-capable or unknown. */
+  mode: 'view' | 'download'
+  filename: string
+}
+
+/**
+ * Build a URL for opening an attachment outside the editor, with the type
+ * decided HERE rather than by whoever wrote the file.
+ *
+ * The stored blob's `type` is not trustworthy: a collab peer sets it verbatim
+ * (`AttachmentEntry.mime`), and the sync path takes it from the repo. Handing
+ * that to `window.open` lets a peer choose `text/html` — or ship an `.svg` —
+ * and get a same-origin document in the victim's tab.
+ *
+ * So the MIME comes from the file extension, the bytes are re-wrapped with it,
+ * and anything not on the viewable list is marked for download. Callers must
+ * honour `mode`.
+ */
+export async function getAttachmentOpenTarget(path: string): Promise<AttachmentOpenTarget | null> {
+  const blob = await getAttachmentBlob(path)
+  if (!blob) return null
+
+  const dotIdx = path.lastIndexOf('.')
+  const ext = dotIdx === -1 ? '' : path.slice(dotIdx + 1).toLowerCase()
+  const viewableMime = VIEWABLE_MIME_BY_EXT[ext]
+  // `slice`'s third argument re-types the blob without copying its bytes, so
+  // the URL carries OUR type instead of the stored one.
+  const typed = blob.slice(0, blob.size, viewableMime ?? 'application/octet-stream')
+
+  return {
+    url: URL.createObjectURL(typed),
+    mode: viewableMime ? 'view' : 'download',
+    filename: path.split('/').pop() || 'attachment',
+  }
 }
 
 export async function deleteAttachment(path: string): Promise<void> {
@@ -537,6 +648,10 @@ export async function putAttachmentAtPath(
   originalName: string = path.split('/').pop() ?? path,
   options?: { doNotSync?: boolean },
 ): Promise<void> {
+  // Every write lands here — the collab relay, the sync apply step and the
+  // feature-tour heal — and two of those carry a path from outside this
+  // device. Reject before the write rather than at each caller.
+  if (!isSafeAttachmentPath(path)) throw new UnsafeAttachmentPathError(path)
   // Preserve an existing record's doNotSync flag on overwrite (sync apply
   // re-writes a drifted attachment through this path and must not silently
   // strip the flag) unless the caller states it explicitly.

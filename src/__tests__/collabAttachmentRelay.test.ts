@@ -23,6 +23,10 @@ jest.mock('../utils/attachments', () => ({
   getAttachmentBlob: (path: string) => getAttachmentBlobMock(path),
   putAttachmentAtPath: (path: string, blob: Blob, name?: string) =>
     putAttachmentAtPathMock(path, blob, name),
+  // The real predicate — the point of the traversal case below is that the
+  // relay rejects with the same rule the storage layer enforces.
+  isSafeAttachmentPath: jest.requireActual('../utils/attachments').isSafeAttachmentPath,
+  isAttachmentPath: jest.requireActual('../utils/attachments').isAttachmentPath,
 }))
 
 import * as Y from 'yjs'
@@ -193,6 +197,40 @@ describe('collab attachment relay', () => {
     expect(b.attachments.has('attachments/huge.png')).toBe(false)
     expect(putAttachmentAtPathMock).not.toHaveBeenCalled()
     expect(warnSpy).toHaveBeenCalled()
+
+    warnSpy.mockRestore()
+    a.destroy()
+    b.destroy()
+  })
+
+  test('a peer-relayed path outside the attachments folder is dropped, not written', async () => {
+    const relay = makeRelay()
+    const a = makeBinding(relay)
+    const b = makeBinding(relay)
+    void b // the receiver under test
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
+
+    // A hostile peer sets the Y.Map key directly — shareAttachment is this
+    // device's own API, so the attack shape is a raw remote key. Both a
+    // traversal and a plain out-of-folder path must be refused.
+    a.attachments.set('attachments/../../.github/workflows/pwn.yml', {
+      data: btoa('name: pwn'),
+      mime: 'text/yaml',
+      name: 'pwn.yml',
+    })
+    a.attachments.set('.github/workflows/pwn2.yml', {
+      data: btoa('name: pwn2'),
+      mime: 'text/yaml',
+      name: 'pwn2.yml',
+    })
+    relay.flush()
+    await flushAsync()
+
+    expect(putAttachmentAtPathMock).not.toHaveBeenCalled()
+    expect(attachmentStore.size).toBe(0)
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('unsafe path'),
+    )
 
     warnSpy.mockRestore()
     a.destroy()
