@@ -13,7 +13,7 @@
   "dependencies": {
     "lib0": "^0.2.99",
     "y-protocols": "^1.0.6",
-    "yjs": "^13.6.30"
+    "yjs": "^13.6.32"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260708.1",
