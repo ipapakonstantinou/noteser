@@ -175,6 +175,14 @@ export const SETTINGS_CATALOG: readonly SettingsCatalogEntry[] = [
     keywords: ['autocorrect', 'spell', 'suggestion', 'keyboard', 'mobile'],
   },
   {
+    id: 'editor.pasteUrlAsLink',
+    categoryId: 'editor',
+    categoryLabel: 'Editor',
+    label: 'Paste URLs as titled links',
+    description: 'On: a pasted URL becomes [page title](url). Off: the URL is inserted as typed.',
+    keywords: ['paste', 'url', 'link', 'title', 'markdown', 'clipboard'],
+  },
+  {
     id: 'editor.reopenTabsOnStartup',
     categoryId: 'editor',
     categoryLabel: 'Editor',

@@ -19,6 +19,8 @@ export function EditorPanel() {
   const setNotesOpenInPreviewMode = useSettingsStore(s => s.setNotesOpenInPreviewMode)
   const editorAutocorrect = useSettingsStore(s => s.editorAutocorrect)
   const setEditorAutocorrect = useSettingsStore(s => s.setEditorAutocorrect)
+  const pasteUrlAsLink = useSettingsStore(s => s.pasteUrlAsLink)
+  const setPasteUrlAsLink = useSettingsStore(s => s.setPasteUrlAsLink)
   const reopenTabsOnStartup = useSettingsStore(s => s.reopenTabsOnStartup)
   const setReopenTabsOnStartup = useSettingsStore(s => s.setReopenTabsOnStartup)
   const collaborationMode = useSettingsStore(s => s.collaborationMode)
@@ -47,6 +49,15 @@ export function EditorPanel() {
         <SettingsCheckbox
           checked={editorAutocorrect}
           onChange={setEditorAutocorrect}
+        />
+      </Field>
+      <Field
+        label="Paste URLs as titled links"
+        description="On: a pasted URL becomes [page title](url). Off: the URL is inserted as typed."
+      >
+        <SettingsCheckbox
+          checked={pasteUrlAsLink}
+          onChange={setPasteUrlAsLink}
         />
       </Field>
       <Field
