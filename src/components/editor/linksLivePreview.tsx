@@ -288,21 +288,27 @@ export function linksLivePreviewField(deps: LinksLivePreviewDeps): StateField<De
   })
 }
 
+// Colour comes from the `obsidianLink` theme token (globals.css), so the
+// Appearance → Links picker recolours live preview and reading mode alike.
+// Unset, it falls through to the accent — today's look, unchanged.
+const LINK_COLOR = 'var(--color-obsidianLink)'
+const LINK_UNDERLINE = 'color-mix(in srgb, var(--color-obsidianLink) 50%, transparent)'
+
 const linksTheme = EditorView.baseTheme({
   '.cm-lp-link': {
-    color: 'hsl(217, 88%, 50%)',
+    color: LINK_COLOR,
     textDecoration: 'underline',
-    textDecorationColor: 'hsla(217, 88%, 50%, 0.5)',
+    textDecorationColor: LINK_UNDERLINE,
     cursor: 'pointer',
   },
-  '.cm-lp-link:hover': { textDecorationColor: 'hsl(217, 88%, 50%)' },
+  '.cm-lp-link:hover': { textDecorationColor: LINK_COLOR },
   '.cm-lp-wikilink': {
-    color: 'hsl(217, 88%, 50%)',
+    color: LINK_COLOR,
     textDecoration: 'underline',
-    textDecorationColor: 'hsla(217, 88%, 50%, 0.5)',
+    textDecorationColor: LINK_UNDERLINE,
     cursor: 'pointer',
   },
-  '.cm-lp-wikilink:hover': { textDecorationColor: 'hsl(217, 88%, 50%)' },
+  '.cm-lp-wikilink:hover': { textDecorationColor: LINK_COLOR },
   '.cm-lp-wikilink-missing': { color: '#f87171' },
 })
 

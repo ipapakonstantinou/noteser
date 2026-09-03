@@ -129,8 +129,8 @@ export const SETTINGS_CATALOG: readonly SettingsCatalogEntry[] = [
     categoryId: 'appearance',
     categoryLabel: 'Appearance',
     label: 'Individual tokens',
-    description: 'Per-token color overrides for fine-grained tweaks on top of the active preset.',
-    keywords: ['theme', 'color', 'token', 'override', 'css variable'],
+    description: 'Per-token color overrides for fine-grained tweaks on top of the active preset, including the link color.',
+    keywords: ['theme', 'color', 'token', 'override', 'css variable', 'link'],
   },
   {
     id: 'appearance.fontText',
