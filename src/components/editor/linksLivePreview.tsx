@@ -45,6 +45,36 @@ function openExternal(url: string): void {
   window.open(url, '_blank', 'noopener,noreferrer')
 }
 
+// ── Open-on-release bookkeeping (issue #300) ────────────────────────────────
+// Links used to navigate on mousedown, so a text selection that started on a
+// link navigated away instead of selecting. We record the press and only open
+// when the release lands on the SAME link, within a few pixels.
+
+/** How far the pointer may drift between press and release and still count as a click. */
+export const LINK_DRAG_SLOP_PX = 4
+
+export interface LinkPress {
+  x: number
+  y: number
+  /** Identity of the pressed link element. */
+  el: unknown
+}
+
+/** Pure decision: does this release open the link the press started on? */
+export function shouldOpenOnRelease(
+  press: LinkPress | null,
+  release: { x: number; y: number; el: unknown; button: number },
+): boolean {
+  if (!press || release.button !== 0) return false
+  if (release.el == null || release.el !== press.el) return false
+  return Math.hypot(release.x - press.x, release.y - press.y) < LINK_DRAG_SLOP_PX
+}
+
+// The single in-flight press. Only one pointer can be down on a link at a
+// time, so a module-level slot is enough for both the mark handler below and
+// the wikilink widget.
+let linkPress: LinkPress | null = null
+
 // ── External-link mark (bare URL / autolink / markdown-link text) ────────────
 // A plain mark decoration carrying the resolved href in a data attribute; the
 // shared mousedown handler reads it and opens the URL.
@@ -82,8 +112,18 @@ class WikilinkWidget extends WidgetType {
       : `Note not found: ${title}`
     if (!note) span.classList.add('cm-lp-wikilink-missing')
     // mousedown (not click): stop CodeMirror from moving the caret into the
-    // widget, then resolve + navigate. Matches the task-marker handler idiom.
+    // widget. Navigation waits for the release (issue #300).
     span.addEventListener('mousedown', e => {
+      e.preventDefault()
+      e.stopPropagation()
+      linkPress = e.button === 0 ? { x: e.clientX, y: e.clientY, el: span } : null
+    })
+    span.addEventListener('mouseup', e => {
+      const open = shouldOpenOnRelease(linkPress, {
+        x: e.clientX, y: e.clientY, el: span, button: e.button,
+      })
+      linkPress = null
+      if (!open) return
       e.preventDefault()
       e.stopPropagation()
       const resolved = findNoteByTitleOrAlias(this.deps.getActiveNotes(), title)
@@ -266,16 +306,37 @@ const linksTheme = EditorView.baseTheme({
   '.cm-lp-wikilink-missing': { color: '#f87171' },
 })
 
-// Shared mousedown handler for the external-link MARK decorations (bare URLs,
+// Shared click handlers for the external-link MARK decorations (bare URLs,
 // autolinks, markdown-link text). Wikilink widgets handle their own clicks.
 // Plain left-click opens the link — matching Obsidian's live-preview, where a
-// rendered link is clickable directly (no modifier needed).
+// rendered link is clickable directly (no modifier needed) — but only on
+// RELEASE, so dragging a selection off a link selects instead of navigating.
+function linkAt(event: MouseEvent): HTMLElement | null {
+  const target = event.target as HTMLElement | null
+  return (target?.closest?.('.cm-lp-link') as HTMLElement | null) ?? null
+}
+
 const externalLinkClickHandler = EditorView.domEventHandlers({
   mousedown(event) {
-    if (event.button !== 0) return false
-    const target = event.target as HTMLElement | null
-    const el = target?.closest?.('.cm-lp-link') as HTMLElement | null
-    if (!el) return false
+    // No preventDefault: CodeMirror still gets to start a selection here.
+    const el = event.button === 0 ? linkAt(event) : null
+    linkPress = el ? { x: event.clientX, y: event.clientY, el } : null
+    return false
+  },
+  mousemove(event) {
+    // Dragging away (or off the link) cancels the pending open.
+    if (!linkPress) return false
+    const moved = Math.hypot(event.clientX - linkPress.x, event.clientY - linkPress.y)
+    if (moved >= LINK_DRAG_SLOP_PX || linkAt(event) !== linkPress.el) linkPress = null
+    return false
+  },
+  mouseup(event) {
+    const el = linkAt(event)
+    const open = shouldOpenOnRelease(linkPress, {
+      x: event.clientX, y: event.clientY, el, button: event.button,
+    })
+    linkPress = null
+    if (!open || !el) return false
     const href = el.getAttribute('data-cm-lp-href')
     if (!href) return false
     event.preventDefault()

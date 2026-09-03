@@ -10,6 +10,9 @@
  * Follows the imagesLivePreview test pattern: real EditorState + the markdown
  * parser, no DOM. The wikilink resolution (findNoteByTitleOrAlias) only runs
  * inside the widget's toDOM, so an empty note set is fine here.
+ *
+ * The last two blocks DO mount a real EditorView, to pin the open-on-release
+ * click behaviour (issue #300).
  */
 
 // ── System-boundary mocks (before any import) ─────────────────────────────────
@@ -22,9 +25,11 @@ jest.mock('idb-keyval', () => ({
 
 import { EditorState } from '@codemirror/state'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import { Decoration } from '@codemirror/view'
+import { Decoration, EditorView } from '@codemirror/view'
 import {
+  linksLivePreview,
   linksLivePreviewField,
+  shouldOpenOnRelease,
   type LinksLivePreviewDeps,
 } from '../components/editor/linksLivePreview'
 
@@ -206,5 +211,123 @@ describe('linksLivePreview — produced decoration types', () => {
       cursor.next()
     }
     expect(found).toBe(true)
+  })
+})
+
+// ── Open-on-release (issue #300) ─────────────────────────────────────────────
+// A link must open when the mouse is RELEASED on it, not when it is pressed,
+// so a text selection that starts on a link selects instead of navigating.
+
+describe('shouldOpenOnRelease', () => {
+  const el = {} // stand-in for the link element (identity is all that matters)
+  const other = {}
+
+  test('press then release in place on the same link opens', () => {
+    expect(shouldOpenOnRelease(
+      { x: 10, y: 10, el },
+      { x: 11, y: 12, el, button: 0 },
+    )).toBe(true)
+  })
+
+  test('a 10 px drag before release does NOT open', () => {
+    expect(shouldOpenOnRelease(
+      { x: 10, y: 10, el },
+      { x: 20, y: 10, el, button: 0 },
+    )).toBe(false)
+  })
+
+  test('release without a recorded press does NOT open', () => {
+    expect(shouldOpenOnRelease(null, { x: 10, y: 10, el, button: 0 })).toBe(false)
+  })
+
+  test('releasing over a DIFFERENT link does NOT open', () => {
+    expect(shouldOpenOnRelease(
+      { x: 10, y: 10, el },
+      { x: 10, y: 10, el: other, button: 0 },
+    )).toBe(false)
+  })
+
+  test('releasing outside any link does NOT open', () => {
+    expect(shouldOpenOnRelease(
+      { x: 10, y: 10, el },
+      { x: 10, y: 10, el: null, button: 0 },
+    )).toBe(false)
+  })
+
+  test('the right button never opens', () => {
+    expect(shouldOpenOnRelease(
+      { x: 10, y: 10, el },
+      { x: 10, y: 10, el, button: 2 },
+    )).toBe(false)
+  })
+})
+
+describe('linksLivePreview external-link DOM handlers', () => {
+  let view: EditorView
+  let openSpy: jest.SpyInstance
+
+  function mouse(type: string, x: number, y: number, target: Element, button = 0): void {
+    target.dispatchEvent(new MouseEvent(type, {
+      bubbles: true, cancelable: true, clientX: x, clientY: y, button,
+    }))
+  }
+
+  function link(): HTMLElement {
+    const el = view.contentDOM.querySelector('.cm-lp-link')
+    if (!el) throw new Error('no .cm-lp-link rendered')
+    return el as HTMLElement
+  }
+
+  beforeAll(() => {
+    // jsdom has no layout: Range.getClientRects is missing, and CodeMirror's
+    // own mousedown handler (which now runs, since ours no longer swallows the
+    // press) calls it while placing the caret. Empty rects are enough.
+    const rect = new DOMRect(0, 0, 200, 16)
+    Range.prototype.getClientRects = () => ([rect] as unknown as DOMRectList)
+    Range.prototype.getBoundingClientRect = () => rect
+  })
+
+  beforeEach(() => {
+    openSpy = jest.spyOn(window, 'open').mockImplementation(() => null)
+    view = new EditorView({
+      state: EditorState.create({
+        doc: 'see https://example.com now\n',
+        selection: { anchor: 0 },
+        extensions: [markdown({ base: markdownLanguage }), linksLivePreview(deps)],
+      }),
+      parent: document.body,
+    })
+  })
+
+  afterEach(() => {
+    view.destroy()
+    openSpy.mockRestore()
+  })
+
+  test('press + release in place opens the URL', () => {
+    const a = link()
+    mouse('mousedown', 5, 5, a)
+    mouse('mouseup', 5, 5, a)
+    expect(openSpy).toHaveBeenCalledWith('https://example.com', '_blank', 'noopener,noreferrer')
+  })
+
+  test('mousedown alone does NOT open — the press only arms the release', () => {
+    mouse('mousedown', 5, 5, link())
+    expect(openSpy).not.toHaveBeenCalled()
+  })
+
+  test('a drag that starts on the link does NOT navigate', () => {
+    const a = link()
+    mouse('mousedown', 5, 5, a)
+    mouse('mousemove', 40, 5, a)
+    mouse('mouseup', 40, 5, a)
+    expect(openSpy).not.toHaveBeenCalled()
+  })
+
+  test('right-click never opens', () => {
+    const a = link()
+    mouse('mousedown', 5, 5, a, 2)
+    mouse('mouseup', 5, 5, a, 2)
+    expect(openSpy).not.toHaveBeenCalled()
   })
 })
