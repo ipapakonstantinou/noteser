@@ -1289,6 +1289,10 @@ export function CodeMirrorEditor({
           return true
         }
 
+        // From here on we'd be turning a URL the user pasted on its own into
+        // a titled link. The setting gates that; off → default paste.
+        if (!useSettingsStore.getState().pasteUrlAsLink) return false
+
         // Clipboard carried an HTML anchor (copying a link element does
         // this): use its text as the title, no network round-trip.
         const anchor = anchorFromHtml(event.clipboardData?.getData('text/html') ?? '')

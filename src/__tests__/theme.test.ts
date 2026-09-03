@@ -72,3 +72,21 @@ test('applyThemeOverrides ignores unknown keys silently', () => {
   // Nothing crashes; no known token is set.
   expect(document.documentElement.style.getPropertyValue('--obsidian-black')).toBe('')
 })
+
+test('the Links token exists and every preset keeps it in step with its accent', () => {
+  // Issue #300: link colour is its own picker, but a preset must not leave
+  // links pointing at the previous palette's accent.
+  const link = THEME_TOKENS.find(t => t.cssVar === 'obsidian-link')
+  expect(link).toBeTruthy()
+  expect(link!.label).toBe('Links')
+  expect(link!.tailwind).toBe('obsidianLink')
+  for (const preset of THEME_PRESETS) {
+    if (preset.id === 'default') continue
+    expect(preset.overrides['obsidian-link']).toBe(preset.overrides['obsidian-accent-purple'])
+  }
+})
+
+test('applyThemeOverrides writes the link token', () => {
+  applyThemeOverrides({ 'obsidian-link': '#ff0000' })
+  expect(document.documentElement.style.getPropertyValue('--obsidian-link')).toBe('#ff0000')
+})

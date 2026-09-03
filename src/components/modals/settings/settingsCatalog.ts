@@ -129,8 +129,8 @@ export const SETTINGS_CATALOG: readonly SettingsCatalogEntry[] = [
     categoryId: 'appearance',
     categoryLabel: 'Appearance',
     label: 'Individual tokens',
-    description: 'Per-token color overrides for fine-grained tweaks on top of the active preset.',
-    keywords: ['theme', 'color', 'token', 'override', 'css variable'],
+    description: 'Per-token color overrides for fine-grained tweaks on top of the active preset, including the link color.',
+    keywords: ['theme', 'color', 'token', 'override', 'css variable', 'link'],
   },
   {
     id: 'appearance.fontText',
@@ -173,6 +173,14 @@ export const SETTINGS_CATALOG: readonly SettingsCatalogEntry[] = [
     label: 'Autocorrect and word suggestions',
     description: 'Lets your keyboard autocorrect, auto-capitalisation, and predictive text suggestions work while you type.',
     keywords: ['autocorrect', 'spell', 'suggestion', 'keyboard', 'mobile'],
+  },
+  {
+    id: 'editor.pasteUrlAsLink',
+    categoryId: 'editor',
+    categoryLabel: 'Editor',
+    label: 'Paste URLs as titled links',
+    description: 'On: a pasted URL becomes [page title](url). Off: the URL is inserted as typed.',
+    keywords: ['paste', 'url', 'link', 'title', 'markdown', 'clipboard'],
   },
   {
     id: 'editor.reopenTabsOnStartup',

@@ -287,6 +287,12 @@ export interface SettingsState {
   // predictive-text strip while writing prose. Per-device — autocorrect is
   // a property of the keyboard you're typing on, not the vault.
   editorAutocorrect: boolean
+  // When true (default), pasting a bare URL inserts `[page title](url)` —
+  // the title is fetched from the page. When false the URL is inserted as
+  // typed. Pasting over a SELECTION always wraps it into a link either way,
+  // because the user picked the link text. Per-device — a typing habit, not
+  // vault content.
+  pasteUrlAsLink: boolean
   // ── Real-time collaboration ─────────────────────────────────────────────
   // Governs WHEN the editor opens a yjs WebSocket room. See the
   // CollaborationMode docs above. Default 'off' so beta is fast without
@@ -540,6 +546,7 @@ export interface SettingsState {
   setAiCommitMessages: (enabled: boolean) => void
   setNotesOpenInPreviewMode: (enabled: boolean) => void
   setEditorAutocorrect: (enabled: boolean) => void
+  setPasteUrlAsLink: (enabled: boolean) => void
   setCollaborationMode: (mode: CollaborationMode) => void
   setReopenTabsOnStartup: (enabled: boolean) => void
   setCalendarWeekStartDay: (day: CalendarWeekStartDay) => void
@@ -693,6 +700,7 @@ const DEFAULTS = {
   aiCommitMessages: false,
   notesOpenInPreviewMode: false,
   editorAutocorrect: true,
+  pasteUrlAsLink: true,
   collaborationMode: 'off' as CollaborationMode,
   reopenTabsOnStartup: true,
   calendarWeekStartDay: 1 as CalendarWeekStartDay,
@@ -870,6 +878,7 @@ export const useSettingsStore = create<SettingsState>()(
         setAiCommitMessages: (aiCommitMessages) => set({ aiCommitMessages }),
         setNotesOpenInPreviewMode: (notesOpenInPreviewMode) => set({ notesOpenInPreviewMode }),
         setEditorAutocorrect: (editorAutocorrect) => set({ editorAutocorrect }),
+        setPasteUrlAsLink: (pasteUrlAsLink) => set({ pasteUrlAsLink }),
         setCollaborationMode: (collaborationMode) => set({ collaborationMode }),
         setReopenTabsOnStartup: (reopenTabsOnStartup) => set({ reopenTabsOnStartup }),
         setCalendarWeekStartDay: (calendarWeekStartDay) => set({ calendarWeekStartDay }),
