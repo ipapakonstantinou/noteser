@@ -32,6 +32,7 @@ import {
   shouldOpenOnRelease,
   type LinksLivePreviewDeps,
 } from '../components/editor/linksLivePreview'
+import type { Note } from '../types'
 
 const deps: LinksLivePreviewDeps = {
   getActiveNotes: () => [],
@@ -219,45 +220,47 @@ describe('linksLivePreview — produced decoration types', () => {
 // so a text selection that starts on a link selects instead of navigating.
 
 describe('shouldOpenOnRelease', () => {
-  const el = {} // stand-in for the link element (identity is all that matters)
-  const other = {}
+  const key = 'https://example.com'
+  const other = 'https://other.example'
 
   test('press then release in place on the same link opens', () => {
     expect(shouldOpenOnRelease(
-      { x: 10, y: 10, el },
-      { x: 11, y: 12, el, button: 0 },
+      { x: 10, y: 10, key },
+      { x: 11, y: 12, key, button: 0 },
     )).toBe(true)
   })
 
   test('a 10 px drag before release does NOT open', () => {
     expect(shouldOpenOnRelease(
-      { x: 10, y: 10, el },
-      { x: 20, y: 10, el, button: 0 },
+      { x: 10, y: 10, key },
+      { x: 20, y: 10, key, button: 0 },
     )).toBe(false)
   })
 
   test('release without a recorded press does NOT open', () => {
-    expect(shouldOpenOnRelease(null, { x: 10, y: 10, el, button: 0 })).toBe(false)
+    expect(shouldOpenOnRelease(null, { x: 10, y: 10, key, button: 0 })).toBe(false)
   })
 
   test('releasing over a DIFFERENT link does NOT open', () => {
     expect(shouldOpenOnRelease(
-      { x: 10, y: 10, el },
-      { x: 10, y: 10, el: other, button: 0 },
+      { x: 10, y: 10, key },
+      { x: 10, y: 10, key: other, button: 0 },
     )).toBe(false)
   })
 
-  test('releasing outside any link does NOT open', () => {
+  test('releasing where the link no longer renders STILL opens', () => {
+    // reveal-on-cursor destroys the pressed span during the press, so a
+    // release over no link is the normal case for a click, not a miss.
     expect(shouldOpenOnRelease(
-      { x: 10, y: 10, el },
-      { x: 10, y: 10, el: null, button: 0 },
-    )).toBe(false)
+      { x: 10, y: 10, key },
+      { x: 10, y: 10, key: null, button: 0 },
+    )).toBe(true)
   })
 
   test('the right button never opens', () => {
     expect(shouldOpenOnRelease(
-      { x: 10, y: 10, el },
-      { x: 10, y: 10, el, button: 2 },
+      { x: 10, y: 10, key },
+      { x: 10, y: 10, key, button: 2 },
     )).toBe(false)
   })
 })
@@ -328,6 +331,95 @@ describe('linksLivePreview external-link DOM handlers', () => {
     const a = link()
     mouse('mousedown', 5, 5, a, 2)
     mouse('mouseup', 5, 5, a, 2)
+    expect(openSpy).not.toHaveBeenCalled()
+  })
+})
+
+// ── Regression: reveal-on-cursor destroys the pressed span (#302 / issue #300) ─
+// CodeMirror's own mousedown observer runs BEFORE our domEventHandlers, so the
+// press moves the caret into the link, `selectionTouches` fires, and the
+// `.cm-lp-link` element that received the mousedown is gone by mouseup.
+
+describe('linksLivePreview — link survives reveal-on-cursor between press and release', () => {
+  let view: EditorView
+  let openSpy: jest.SpyInstance
+
+  function mouse(type: string, x: number, y: number, target: Element, button = 0): void {
+    target.dispatchEvent(new MouseEvent(type, {
+      bubbles: true, cancelable: true, clientX: x, clientY: y, button,
+    }))
+  }
+
+  /** Whatever the pointer is over now — the link if it survived, else the line. */
+  function underPointer(): Element {
+    return view.contentDOM.querySelector('.cm-lp-link')
+      ?? view.contentDOM.firstElementChild as Element
+  }
+
+  beforeAll(() => {
+    const rect = new DOMRect(0, 0, 200, 16)
+    Range.prototype.getClientRects = () => ([rect] as unknown as DOMRectList)
+    Range.prototype.getBoundingClientRect = () => rect
+  })
+
+  beforeEach(() => {
+    openSpy = jest.spyOn(window, 'open').mockImplementation(() => null)
+    view = new EditorView({
+      state: EditorState.create({
+        doc: 'go [text](https://example.com) now\n',
+        selection: { anchor: 0 },
+        extensions: [markdown({ base: markdownLanguage }), linksLivePreview(deps)],
+      }),
+      parent: document.body,
+    })
+  })
+
+  afterEach(() => {
+    view.destroy()
+    openSpy.mockRestore()
+  })
+
+  test('the press really does destroy the rendered link element', () => {
+    // Pins the mechanism this regression test exists for.
+    const pressed = view.contentDOM.querySelector('.cm-lp-link')
+    expect(pressed).not.toBeNull()
+    mouse('mousedown', 5, 5, pressed!)
+    expect(view.contentDOM.querySelector('.cm-lp-link')).toBeNull()
+  })
+
+  test('clicking a markdown link opens it even though its span was re-rendered', () => {
+    mouse('mousedown', 5, 5, view.contentDOM.querySelector('.cm-lp-link')!)
+    mouse('mouseup', 5, 5, underPointer())
+    expect(openSpy).toHaveBeenCalledWith('https://example.com', '_blank', 'noopener,noreferrer')
+  })
+
+  test('a wikilink widget still navigates on press + release', () => {
+    // The widget swallows the mousedown, so its span survives — but it shares
+    // the same press slot, so pin it here too.
+    const nav = jest.fn()
+    const notes = [{ id: 'n1', title: 'My Note', content: '' }] as unknown as Note[]
+    const wikiView = new EditorView({
+      state: EditorState.create({
+        doc: 'go [[My Note]] now\n',
+        selection: { anchor: 0 },
+        extensions: [
+          markdown({ base: markdownLanguage }),
+          linksLivePreview({ getActiveNotes: () => notes, onWikilinkNavigate: nav }),
+        ],
+      }),
+      parent: document.body,
+    })
+    const widget = wikiView.contentDOM.querySelector('.cm-lp-wikilink')!
+    mouse('mousedown', 5, 5, widget)
+    mouse('mouseup', 5, 5, widget)
+    expect(nav).toHaveBeenCalledWith(expect.objectContaining({ id: 'n1' }))
+    wikiView.destroy()
+  })
+
+  test('a drag off a markdown link still selects instead of navigating (#300)', () => {
+    mouse('mousedown', 5, 5, view.contentDOM.querySelector('.cm-lp-link')!)
+    mouse('mousemove', 60, 5, underPointer())
+    mouse('mouseup', 60, 5, underPointer())
     expect(openSpy).not.toHaveBeenCalled()
   })
 })
