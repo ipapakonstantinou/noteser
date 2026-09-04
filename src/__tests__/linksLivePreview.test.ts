@@ -335,7 +335,7 @@ describe('linksLivePreview external-link DOM handlers', () => {
   })
 })
 
-// ── Regression: reveal-on-cursor destroys the pressed span (issue #304) ──────
+// ── Regression: reveal-on-cursor destroys the pressed span (#302 / issue #300) ─
 // CodeMirror's own mousedown observer runs BEFORE our domEventHandlers, so the
 // press moves the caret into the link, `selectionTouches` fires, and the
 // `.cm-lp-link` element that received the mousedown is gone by mouseup.
