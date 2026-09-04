@@ -27,6 +27,9 @@ export const THEME_TOKENS: readonly ThemeToken[] = [
   { cssVar: 'obsidian-text',            tailwind: 'obsidianText',           label: 'Text',               defaultColor: '#dadada' },
   { cssVar: 'obsidian-secondary-text',  tailwind: 'obsidianSecondaryText',  label: 'Secondary text',     defaultColor: '#bababa' },
   { cssVar: 'obsidian-accent-purple',   tailwind: 'obsidianAccentPurple',   label: 'Interactive accent', defaultColor: '#7b5cf5' },
+  // Links (issue #300). Unset by default, so links follow the accent —
+  // globals.css falls back through --obsidian-accent-purple.
+  { cssVar: 'obsidian-link',            tailwind: 'obsidianLink',           label: 'Links',              defaultColor: '#0f65f0' },
 ]
 
 // Pre-baked themes. Each one is a complete override map keyed by
@@ -61,6 +64,7 @@ export const THEME_PRESETS: readonly ThemePreset[] = [
       'obsidian-text':           '#1b1b1b',
       'obsidian-secondary-text': '#5a5a5a',
       'obsidian-accent-purple':  '#6b4cf0',
+      'obsidian-link':           '#6b4cf0',
     },
   },
   {
@@ -78,6 +82,7 @@ export const THEME_PRESETS: readonly ThemePreset[] = [
       'obsidian-text':           '#3b2f1e',
       'obsidian-secondary-text': '#695740',
       'obsidian-accent-purple':  '#8b5a2b',
+      'obsidian-link':           '#8b5a2b',
     },
   },
   {
@@ -95,6 +100,7 @@ export const THEME_PRESETS: readonly ThemePreset[] = [
       'obsidian-text':           '#eee8d5',
       'obsidian-secondary-text': '#93a1a1',
       'obsidian-accent-purple':  '#6c71c4',
+      'obsidian-link':           '#6c71c4',
     },
   },
 ]

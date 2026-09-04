@@ -16,6 +16,12 @@
     --obsidian-accent-purple,
     hsl(217, 88%, 50%)
   );
+  /* Links (th3m, issue #300). Unset by default so links follow the accent;
+     the Appearance "Links" picker sets --obsidian-link to break them apart. */
+  --color-obsidianLink: var(
+    --obsidian-link,
+    var(--obsidian-accent-purple, hsl(217, 88%, 50%))
+  );
   --color-noteserAccent: var(--obsidian-accent-purple, hsl(217, 88%, 50%));
 
   --shadow-obsidian: 0 2px 8px rgba(0, 0, 0, 0.3);
@@ -134,7 +140,7 @@
   }
 
   & a {
-    @apply text-obsidianAccentPurple hover:underline;
+    @apply text-obsidianLink hover:underline;
   }
 
   & strong {
