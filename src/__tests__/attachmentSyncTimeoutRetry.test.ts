@@ -213,6 +213,33 @@ describe('syncToGitHub — attachment push survives a stalled IndexedDB read', (
     expect(outcome2.result.attachmentSyncSkipped).toBeFalsy()
   })
 
+  // Attachments now stream in AFTER the sync (fillAttachmentsInBackground), so
+  // a push can fire while a fill is half done. Neither half may confuse the
+  // push: a banked image has localSha === the remote blob sha it came from, so
+  // 3b skips it, and one still in flight simply isn't in IDB yet (absence is
+  // never a delete — only an explicit tombstone is).
+  test('a background-fetched attachment is not re-uploaded, while a genuinely local one still is', async () => {
+    mockAttachmentState.paths = ['Files/fetched.png', 'Files/mine.png']
+    // Banked by the background fill: its sha is the remote blob's sha.
+    mockAttachmentState.shaByPath.set('Files/fetched.png', 'remote-blob-sha')
+    mockAttachmentState.blobByPath.set('Files/fetched.png', new Blob([new Uint8Array([1])], { type: 'image/png' }))
+    // Created locally by the user: not on the remote at all.
+    mockAttachmentState.shaByPath.set('Files/mine.png', 'local-only-sha')
+    mockAttachmentState.blobByPath.set('Files/mine.png', new Blob([new Uint8Array([2])], { type: 'image/png' }))
+    mockGetTreeMap.mockResolvedValue(new Map([['Files/fetched.png', 'remote-blob-sha']]))
+
+    const real = note({ id: 'n1', title: 'Real note', content: 'hello\n' })
+    await syncToGitHub({ provider: new GitHubProvider('tok'), repo: REPO, notes: [real], folders: [] })
+
+    const paths = postedTreeEntries().map(e => e.path)
+    expect(paths).not.toContain('Files/fetched.png')
+    expect(paths).toContain('Files/mine.png')
+    // An image the fill has NOT reached yet is absent from IDB — it must not
+    // be pushed as a deletion.
+    expect(paths).not.toContain('Files/notyet.png')
+    expect(mockCreateBlobBinary).toHaveBeenCalledTimes(1)
+  })
+
   test('tombstones are also left unconsumed this cycle (3c skipped alongside 3b)', async () => {
     mockAttachmentState.listTimesOut = true
     const real = note({ id: 'n1', title: 'Real note', content: 'hello\n' })

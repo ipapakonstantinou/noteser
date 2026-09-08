@@ -447,6 +447,12 @@ export interface AttachmentApplyCounts {
 
 export async function applyAttachmentClassifications(
   classifications: PullClassification[],
+  opts?: {
+    /** Cancels in-flight blob fetches (a superseding pull, or the watchdog). */
+    signal?: AbortSignal
+    /** Progress line, same shape as fillShellsInBackground's. */
+    onPhase?: (msg: string) => void
+  },
 ): Promise<AttachmentApplyCounts> {
   const counts: AttachmentApplyCounts = { created: 0, updated: 0, failed: 0 }
 
@@ -481,6 +487,10 @@ export async function applyAttachmentClassifications(
   // aborts the batch. The one exception is a caller abort (AbortError — the
   // watchdog or a user cancel): the sync is over, so stop instead of grinding
   // through the remaining blobs and reporting the cancellation as N failures.
+  const total = attachments.length
+  let done = 0
+  if (total > 0) opts?.onPhase?.(`Downloading images… (0 / ${total})`)
+
   await mapWithConcurrency(attachments, DEFAULT_CONCURRENCY, async (c) => {
     try {
       // Prefer the bytes already in memory from a zipball pull.
@@ -492,7 +502,7 @@ export async function applyAttachmentClassifications(
         mime = cached.mime
       } else {
         if (!token || !syncRepo) throw new Error('No token / repo for incremental attachment fetch')
-        bytes = await getBlobBytes(token, syncRepo.owner, syncRepo.name, c.remoteSha)
+        bytes = await getBlobBytes(token, syncRepo.owner, syncRepo.name, c.remoteSha, opts?.signal)
         mime = c.mime
       }
       // `.slice()` detaches from any SharedArrayBuffer typing so the Blob
@@ -505,6 +515,9 @@ export async function applyAttachmentClassifications(
       if ((err as Error | undefined)?.name === 'AbortError') throw err
       console.error(`Failed to apply attachment ${c.path}:`, err)
       counts.failed++
+    } finally {
+      done++
+      opts?.onPhase?.(`Downloading images… (${done} / ${total})`)
     }
   })
 

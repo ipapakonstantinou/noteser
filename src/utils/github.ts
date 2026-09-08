@@ -669,15 +669,20 @@ export async function createBlobBinary(
 // streams the bytes as-is: the default JSON reply base64-encodes them, which
 // is ~33% more on the wire (a 83 MiB image folder ships as ~111 MB) plus a
 // decode pass. Fall back to the base64 JSON shape if the Accept is ignored.
+// `signal` lets a caller cancel an in-flight blob (the background attachment
+// fill aborts its fetches when a newer pull supersedes it). githubFetch already
+// distinguishes a caller abort from its own timeout: the former propagates as
+// an AbortError without retrying.
 export async function getBlobBytes(
   token: string,
   owner: string,
   repo: string,
   sha: string,
+  signal?: AbortSignal,
 ): Promise<Uint8Array> {
   const res = await githubFetch(
     `https://api.github.com/repos/${owner}/${repo}/git/blobs/${sha}`,
-    { headers: { ...GH_HEADERS(token), 'Accept': 'application/vnd.github.raw' } },
+    { headers: { ...GH_HEADERS(token), 'Accept': 'application/vnd.github.raw' }, signal },
   )
   await ensureOk(res, `Read binary blob ${sha}`)
   if (!res.headers.get('content-type')?.includes('json')) {
