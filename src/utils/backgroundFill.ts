@@ -17,9 +17,10 @@
 
 import { useNoteStore, useGitHubStore } from '@/stores'
 import type { Note, SyncRepo } from '@/types'
+import type { PullClassification } from './githubSync'
 import { getBlobContent, gitBlobSha } from './github'
 import { serializeNote, parseNote } from './githubSync'
-import { bodyWithInlineTags } from './syncApply'
+import { bodyWithInlineTags, applyAttachmentClassifications } from './syncApply'
 import { decryptNoteContent, isEncryptedContent } from './vaultCrypto'
 import { getVaultKey, VaultLockedError } from './vaultKey'
 import { mapWithConcurrency, DEFAULT_CONCURRENCY } from './concurrency'
@@ -195,4 +196,45 @@ export async function fillShellsInBackground(
 /** Test hook: reset the in-flight guard between tests. */
 export function _resetFillInFlight(): void {
   fillInFlight = false
+}
+
+// ── Attachments ─────────────────────────────────────────────────────────────
+// Same fire-and-forget shape as fillShellsInBackground, for the binary half of
+// a pull. Attachments used to be applied INSIDE the watchdog-wrapped runSync:
+// a vault with a large image folder (measured: 175 images / 83.3 MiB) could not
+// finish the fetch inside SYNC_WATCHDOG_MS, so the whole sync timed out — notes
+// included — and every retry started over. Now the sync (tree, notes,
+// conflicts, push) completes as it did before attachments existed, and the
+// images stream in afterwards.
+//
+// Resume across reloads needs no extra state: syncPull classifies attachments
+// off IDB (listAttachmentPaths + getAttachmentGitSha), so whatever the last
+// fill banked is simply absent from the next pull's `attachmentCreated` set.
+// The startup auto-pull is therefore the resume, exactly as the startup
+// fillShellsInBackground kick-off is for note bodies.
+let attachmentFillController: AbortController | null = null
+
+export async function fillAttachmentsInBackground(
+  classifications: PullClassification[],
+  onPhase?: (msg: string) => void,
+): Promise<void> {
+  // A newer pull supersedes the one in flight: abort it so its blob fetches
+  // stop instead of racing the new batch for the same paths. Anything it had
+  // already banked stays banked.
+  attachmentFillController?.abort()
+  const controller = new AbortController()
+  attachmentFillController = controller
+  try {
+    await applyAttachmentClassifications(classifications, {
+      signal: controller.signal,
+      onPhase,
+    })
+  } catch {
+    // Aborted (superseded, or the page going away) or a hard failure. Never
+    // rethrow: a background fill must not fail the sync that started it. What
+    // was banked stays banked; the next pull re-classifies only what is still
+    // missing.
+  } finally {
+    if (attachmentFillController === controller) attachmentFillController = null
+  }
 }

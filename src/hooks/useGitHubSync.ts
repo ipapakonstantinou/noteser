@@ -13,12 +13,12 @@ import { syncToGitHub, pullFromGitHub } from '@/utils/githubSync'
 import type { PullClassification, SyncResult, GitPathUpdate } from '@/utils/githubSync'
 import { makeGitHostProvider } from '@/utils/gitHost'
 import { getValidGitHubToken, withTokenRefresh, ReconnectRequiredError } from '@/utils/tokenRefresh'
-import { applyNonConflicts, applyAttachmentClassifications } from '@/utils/syncApply'
-import { fillShellsInBackground } from '@/utils/backgroundFill'
+import { applyNonConflicts } from '@/utils/syncApply'
+import { fillShellsInBackground, fillAttachmentsInBackground } from '@/utils/backgroundFill'
 import { pendingStoreHydration } from '@/utils/ensureStoresHydrated'
 import { switchVault } from '@/utils/switchVault'
 import { notesKey } from '@/utils/repoStorage'
-import type { ApplyCounts, AttachmentApplyCounts } from '@/utils/syncApply'
+import type { ApplyCounts } from '@/utils/syncApply'
 import type { ConflictTabData } from '@/stores/workspaceStore'
 import type { SyncRepo } from '@/types'
 import {
@@ -207,10 +207,19 @@ async function runPull(
 // are skipped here — the caller opens them in the merge UI instead.
 async function runApply(
   classifications: PullClassification[],
-): Promise<{ notes: ApplyCounts; attachments: AttachmentApplyCounts }> {
+  onPhase?: (msg: string) => void,
+): Promise<{ notes: ApplyCounts; attachmentsQueued: number }> {
   const notes = await applyNonConflicts(classifications)
-  const attachments = await applyAttachmentClassifications(classifications)
-  return { notes, attachments }
+  // Attachments are NOT awaited: the binary fetch is the one part of an apply
+  // that can outlast SYNC_WATCHDOG_MS on a big vault, and awaiting it here used
+  // to time out the entire sync (notes and push included). Kicked off from
+  // runApply rather than from each of the four call sites so no path can
+  // forget it. See fillAttachmentsInBackground for the resume story.
+  void fillAttachmentsInBackground(classifications, onPhase)
+  const attachmentsQueued = classifications.filter(
+    c => c.kind === 'attachmentCreated' || c.kind === 'attachmentUpdated',
+  ).length
+  return { notes, attachmentsQueued }
 }
 
 // ── Step 3: PUSH ────────────────────────────────────────────────────────────
@@ -258,20 +267,20 @@ async function runPush(
 // Compose the human-readable status line shown in the sidebar's sync button.
 function formatSyncMessage(
   pulled: ApplyCounts,
-  attached: AttachmentApplyCounts,
+  attachmentsQueued: number,
   pushed: SyncResult,
 ): string {
   const totalPulled =
-    pulled.created + pulled.updated + pulled.deleted +
-    attached.created + attached.updated
+    pulled.created + pulled.updated + pulled.deleted + attachmentsQueued
   if (pushed.unchanged && totalPulled === 0) return 'Up to date'
 
   const parts: string[] = []
   if (pulled.created) parts.push(`↓${pulled.created} new`)
   if (pulled.updated) parts.push(`↓${pulled.updated} updated`)
   if (pulled.deleted) parts.push(`↓${pulled.deleted} removed`)
-  const attachTotal = attached.created + attached.updated
-  if (attachTotal) parts.push(`↓${attachTotal} image${attachTotal === 1 ? '' : 's'}`)
+  // Queued, not finished: the images stream in behind the sync and report
+  // their own "Downloading images… (n / m)" progress line.
+  if (attachmentsQueued) parts.push(`↓${attachmentsQueued} image${attachmentsQueued === 1 ? '' : 's'}`)
   if (pushed.created) parts.push(`↑${pushed.created} new`)
   if (pushed.updated) parts.push(`↑${pushed.updated} updated`)
   if (pushed.deleted) parts.push(`↑${pushed.deleted} deleted`)
@@ -299,19 +308,17 @@ function addSyncToast(toast: Omit<Toast, 'id' | 'source'>): void {
 // pretending we uploaded anything.
 function formatPullMessage(
   pulled: ApplyCounts,
-  attached: AttachmentApplyCounts,
+  attachmentsQueued: number,
 ): string {
   const totalPulled =
-    pulled.created + pulled.updated + pulled.deleted +
-    attached.created + attached.updated
+    pulled.created + pulled.updated + pulled.deleted + attachmentsQueued
   if (totalPulled === 0) return 'Up to date'
 
   const parts: string[] = []
   if (pulled.created) parts.push(`↓${pulled.created} new`)
   if (pulled.updated) parts.push(`↓${pulled.updated} updated`)
   if (pulled.deleted) parts.push(`↓${pulled.deleted} removed`)
-  const attachTotal = attached.created + attached.updated
-  if (attachTotal) parts.push(`↓${attachTotal} image${attachTotal === 1 ? '' : 's'}`)
+  if (attachmentsQueued) parts.push(`↓${attachmentsQueued} image${attachmentsQueued === 1 ? '' : 's'}`)
   if (pulled.autoMerged) parts.push(`auto-merged ${pulled.autoMerged}`)
   return `Pulled ${parts.join(' · ')}`
 }
@@ -333,6 +340,14 @@ export function useGitHubSync(): UseGitHubSyncResult {
   const BATCH_THRESHOLD = 3
 
   const [syncState, setSyncState] = useState<SyncState>({ kind: 'idle' })
+
+  // Progress line for the two fire-and-forget fills (note bodies, attachments).
+  // Only surfaces when nothing more important is showing, so a background fill
+  // can never overwrite a real sync status or an error — the status bar reads
+  // "Synced" for the notes while the images are still coming down.
+  const backgroundPhase = useCallback((msg: string) => {
+    setSyncState((prev) => (prev.kind === 'idle' ? { kind: 'running', message: msg } : prev))
+  }, [])
 
   // Defensive: clear any leftover `isSyncing: true` from a sync that never
   // reached its finally block (e.g. tab crash mid-pull, unmount during
@@ -401,7 +416,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
           // Apply everything that isn't in conflict; leave push for the user
           // to retry after they resolve the merge tabs.
           setSyncState({ kind: 'running', message: 'Applying changes…' })
-          await runApply(classifications)
+          await runApply(classifications, backgroundPhase)
           if (conflicts.length >= BATCH_THRESHOLD) {
             openMergeBatch(conflicts)
           } else {
@@ -414,7 +429,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
         }
 
         setSyncState({ kind: 'running', message: 'Applying changes…' })
-        const { notes: pullCounts, attachments: attachCounts } = await runApply(classifications)
+        const { notes: pullCounts, attachmentsQueued } = await runApply(classifications, backgroundPhase)
 
         // progressive-clone: stream shell bodies in the background. Fire AND
         // FORGET — we don't await, so the push below and the success toast
@@ -422,10 +437,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
         // (syncToGitHub drops contentLoaded===false), so an in-flight fill can
         // never race the push into an empty-body overwrite. Resumes on reload
         // via the startup kick-off in useAutoSync.
-        void fillShellsInBackground((msg) => {
-          // Only surface fill progress when nothing more important is showing.
-          setSyncState((prev) => (prev.kind === 'idle' ? { kind: 'running', message: msg } : prev))
-        })
+        void fillShellsInBackground(backgroundPhase)
 
         // AI commit messages: when the user has opted in AND didn't
         // pass a custom message via the SCM input, ask the model to
@@ -471,7 +483,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
         }
         recordSync(result.commitSha)
 
-        const okMessage = formatSyncMessage(pullCounts, attachCounts, result)
+        const okMessage = formatSyncMessage(pullCounts, attachmentsQueued, result)
         setSyncState({
           kind: 'ok',
           message: okMessage,
@@ -587,7 +599,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
           // isn't in conflict, open merge tabs (batch view above
           // BATCH_THRESHOLD) for the user to resolve.
           setSyncState({ kind: 'running', message: 'Applying changes…' })
-          await runApply(classifications)
+          await runApply(classifications, backgroundPhase)
           if (conflicts.length >= BATCH_THRESHOLD) {
             openMergeBatch(conflicts)
           } else {
@@ -600,14 +612,12 @@ export function useGitHubSync(): UseGitHubSyncResult {
         }
 
         setSyncState({ kind: 'running', message: 'Applying changes…' })
-        const { notes: pullCounts, attachments: attachCounts } = await runApply(classifications)
+        const { notes: pullCounts, attachmentsQueued } = await runApply(classifications, backgroundPhase)
 
         // progressive-clone: stream shell bodies in the background (fire and
         // forget). See runSync for the full rationale — pull-only never pushes,
         // so there's no race to worry about here at all.
-        void fillShellsInBackground((msg) => {
-          setSyncState((prev) => (prev.kind === 'idle' ? { kind: 'running', message: msg } : prev))
-        })
+        void fillShellsInBackground(backgroundPhase)
 
         // Record the pulled HEAD as the new baseline so lastCommitSha tracks
         // the remote after a pull-only too. Previously only runSync called
@@ -616,7 +626,7 @@ export function useGitHubSync(): UseGitHubSyncResult {
         // refetch both key off it.
         recordSync(latestCommitSha)
 
-        const okMessage = formatPullMessage(pullCounts, attachCounts)
+        const okMessage = formatPullMessage(pullCounts, attachmentsQueued)
         setSyncState({
           kind: 'ok',
           message: okMessage,

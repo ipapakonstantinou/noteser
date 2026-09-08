@@ -602,6 +602,105 @@ test('applyAttachmentClassifications: a single failed fetch is counted, not thro
   spy.mockRestore()
 })
 
+// Regression (83 MiB / 175-image vault, 08/09/2026): the apply used to await
+// the ENTIRE fetch batch before writing anything to IDB, so a watchdog abort
+// mid-batch banked zero attachments and every retry re-classified all 175 as
+// `attachmentCreated` and restarted from nothing — a permanent "Syncing…".
+// Each blob must now be persisted as it lands, and a caller abort must reject
+// the batch instead of being swallowed as N per-file failures.
+test('applyAttachmentClassifications: an AbortError mid-batch keeps the already-fetched blobs and propagates', async () => {
+  useGitHubStore.setState({ token: 'tok', syncRepo: REPO })
+  mockGetBlobBytes.mockImplementation(async (..._a: unknown[]) => {
+    const sha = _a[3] as string
+    if (sha === 'sha-b') {
+      // Macrotask tick: every pending microtask (i.e. a.png's IDB write on the
+      // fixed code) has drained by the time this rejects.
+      await new Promise(r => setTimeout(r, 0))
+      throw Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
+    }
+    return new Uint8Array([1, 2, 3])
+  })
+
+  const classifications: PullClassification[] = [
+    { kind: 'attachmentCreated', path: 'attachments/a.png', remoteSha: 'sha-a', mime: 'image/png' },
+    { kind: 'attachmentCreated', path: 'attachments/b.png', remoteSha: 'sha-b', mime: 'image/png' },
+    { kind: 'attachmentCreated', path: 'attachments/c.png', remoteSha: 'sha-c', mime: 'image/png' },
+  ]
+
+  await expect(applyAttachmentClassifications(classifications)).rejects.toMatchObject({
+    name: 'AbortError',
+  })
+  // The first blob is banked, so the next pull classifies it as present.
+  expect(mockPutAttachmentAtPath.mock.calls.map(call => call[0])).toContain('attachments/a.png')
+  // ...and the aborted one never is.
+  expect(mockPutAttachmentAtPath.mock.calls.map(call => call[0])).not.toContain('attachments/b.png')
+
+  mockGetBlobBytes.mockReset()
+  mockPutAttachmentAtPath.mockReset().mockResolvedValue(undefined)
+})
+
+// The fill runs in the background now, so it must be cancellable: a newer pull
+// (or the page going away) aborts the controller, and the batch has to stop
+// fetching while KEEPING what it already banked — that banked set is exactly
+// what shrinks the next pull's `attachmentCreated` list.
+test('applyAttachmentClassifications: an aborted signal stops the batch and keeps what was banked', async () => {
+  useGitHubStore.setState({ token: 'tok', syncRepo: REPO })
+  const controller = new AbortController()
+  // Cancel the moment the first image is banked.
+  mockPutAttachmentAtPath.mockImplementation(async (path: string) => {
+    if (path === 'attachments/a.png') controller.abort()
+  })
+  mockGetBlobBytes.mockImplementation(async (..._a: unknown[]) => {
+    const sha = _a[3] as string
+    // The signal must actually reach getBlobBytes — that is the wiring this
+    // asserts. Real githubFetch throws exactly this shape on a caller abort.
+    const signal = _a[4] as AbortSignal | undefined
+    if (signal?.aborted) throw Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
+    if (sha !== 'sha-a') {
+      // Park on a macrotask so the abort (a microtask behind a.png's write)
+      // has landed by the time these resume.
+      await new Promise(r => setTimeout(r, 0))
+      if (signal?.aborted) throw Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
+    }
+    return new Uint8Array([1, 2, 3])
+  })
+
+  const classifications: PullClassification[] = [
+    { kind: 'attachmentCreated', path: 'attachments/a.png', remoteSha: 'sha-a', mime: 'image/png' },
+    { kind: 'attachmentCreated', path: 'attachments/b.png', remoteSha: 'sha-b', mime: 'image/png' },
+    { kind: 'attachmentCreated', path: 'attachments/c.png', remoteSha: 'sha-c', mime: 'image/png' },
+  ]
+
+  await expect(
+    applyAttachmentClassifications(classifications, { signal: controller.signal }),
+  ).rejects.toMatchObject({ name: 'AbortError' })
+
+  const written = mockPutAttachmentAtPath.mock.calls.map(call => call[0])
+  expect(written).toEqual(['attachments/a.png'])
+  // Every getBlobBytes call carried the signal through.
+  for (const call of mockGetBlobBytes.mock.calls) expect(call[4]).toBe(controller.signal)
+
+  mockGetBlobBytes.mockReset()
+  mockPutAttachmentAtPath.mockReset().mockResolvedValue(undefined)
+})
+
+test('applyAttachmentClassifications: reports progress as it banks each image', async () => {
+  useGitHubStore.setState({ token: 'tok', syncRepo: REPO })
+  mockGetBlobBytes.mockResolvedValue(new Uint8Array([1]))
+  const phases: string[] = []
+
+  await applyAttachmentClassifications(
+    [
+      { kind: 'attachmentCreated', path: 'attachments/1.png', remoteSha: 's1', mime: 'image/png' },
+      { kind: 'attachmentCreated', path: 'attachments/2.png', remoteSha: 's2', mime: 'image/png' },
+    ],
+    { onPhase: (m) => phases.push(m) },
+  )
+
+  expect(phases[0]).toBe('Downloading images… (0 / 2)')
+  expect(phases[phases.length - 1]).toBe('Downloading images… (2 / 2)')
+})
+
 test('applyAttachmentClassifications: no attachment classifications → all-zero counts, no fetch', async () => {
   const counts = await applyAttachmentClassifications([
     { kind: 'remoteCreated', path: 'X.md', remoteSha: 's', remoteContent: 'x\n', tags: [], body: 'x\n' },
