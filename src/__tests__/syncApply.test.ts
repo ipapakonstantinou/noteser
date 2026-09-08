@@ -602,6 +602,43 @@ test('applyAttachmentClassifications: a single failed fetch is counted, not thro
   spy.mockRestore()
 })
 
+// Regression (83 MiB / 175-image vault, 08/09/2026): the apply used to await
+// the ENTIRE fetch batch before writing anything to IDB, so a watchdog abort
+// mid-batch banked zero attachments and every retry re-classified all 175 as
+// `attachmentCreated` and restarted from nothing — a permanent "Syncing…".
+// Each blob must now be persisted as it lands, and a caller abort must reject
+// the batch instead of being swallowed as N per-file failures.
+test('applyAttachmentClassifications: an AbortError mid-batch keeps the already-fetched blobs and propagates', async () => {
+  useGitHubStore.setState({ token: 'tok', syncRepo: REPO })
+  mockGetBlobBytes.mockImplementation(async (..._a: unknown[]) => {
+    const sha = _a[3] as string
+    if (sha === 'sha-b') {
+      // Macrotask tick: every pending microtask (i.e. a.png's IDB write on the
+      // fixed code) has drained by the time this rejects.
+      await new Promise(r => setTimeout(r, 0))
+      throw Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
+    }
+    return new Uint8Array([1, 2, 3])
+  })
+
+  const classifications: PullClassification[] = [
+    { kind: 'attachmentCreated', path: 'attachments/a.png', remoteSha: 'sha-a', mime: 'image/png' },
+    { kind: 'attachmentCreated', path: 'attachments/b.png', remoteSha: 'sha-b', mime: 'image/png' },
+    { kind: 'attachmentCreated', path: 'attachments/c.png', remoteSha: 'sha-c', mime: 'image/png' },
+  ]
+
+  await expect(applyAttachmentClassifications(classifications)).rejects.toMatchObject({
+    name: 'AbortError',
+  })
+  // The first blob is banked, so the next pull classifies it as present.
+  expect(mockPutAttachmentAtPath.mock.calls.map(call => call[0])).toContain('attachments/a.png')
+  // ...and the aborted one never is.
+  expect(mockPutAttachmentAtPath.mock.calls.map(call => call[0])).not.toContain('attachments/b.png')
+
+  mockGetBlobBytes.mockReset()
+  mockPutAttachmentAtPath.mockReset().mockResolvedValue(undefined)
+})
+
 test('applyAttachmentClassifications: no attachment classifications → all-zero counts, no fetch', async () => {
   const counts = await applyAttachmentClassifications([
     { kind: 'remoteCreated', path: 'X.md', remoteSha: 's', remoteContent: 'x\n', tags: [], body: 'x\n' },

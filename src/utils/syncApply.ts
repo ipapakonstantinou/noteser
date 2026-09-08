@@ -463,11 +463,25 @@ export async function applyAttachmentClassifications(
   // no-vercel-clone: fetch the attachment bytes with bounded concurrency
   // instead of one blob at a time — on a first clone of a vault with many
   // images the sequential getBlobBytes walk was a second contributor to the
-  // 45s watchdog blowout. Behaviour is otherwise identical: a single failed
-  // attachment is logged + counted as `failed`, never aborting the batch (so
-  // we catch INSIDE the mapper and return null rather than letting
-  // mapWithConcurrency reject the whole call on the first error).
-  const fetched = await mapWithConcurrency(attachments, DEFAULT_CONCURRENCY, async (c) => {
+  // 45s watchdog blowout.
+  //
+  // Each blob is BANKED (written to IDB) as soon as it lands, inside the
+  // mapper. It used to await the whole batch first and write afterwards, which
+  // made the apply all-or-nothing: a 175-image / 83 MiB vault never finished
+  // inside the 45s watchdog, so nothing was ever persisted and every retry
+  // re-classified all 175 as `attachmentCreated` and restarted from zero.
+  // syncPull classifies straight off IDB (listAttachmentPaths +
+  // getAttachmentGitSha, which recomputes the sha from the stored bytes — no
+  // manifest to keep in step), so a half-applied batch just means the next
+  // pull has fewer creates to do and the sync converges across retries.
+  // Write order is no longer input order; nothing depends on it (one write
+  // per distinct path).
+  //
+  // A single failed attachment is still logged + counted as `failed` and never
+  // aborts the batch. The one exception is a caller abort (AbortError — the
+  // watchdog or a user cancel): the sync is over, so stop instead of grinding
+  // through the remaining blobs and reporting the cancellation as N failures.
+  await mapWithConcurrency(attachments, DEFAULT_CONCURRENCY, async (c) => {
     try {
       // Prefer the bytes already in memory from a zipball pull.
       const cached = takeZipballAttachmentBytes(c.path)
@@ -481,32 +495,18 @@ export async function applyAttachmentClassifications(
         bytes = await getBlobBytes(token, syncRepo.owner, syncRepo.name, c.remoteSha)
         mime = c.mime
       }
-      return { c, bytes, mime }
-    } catch (err) {
-      console.error(`Failed to fetch attachment ${c.path}:`, err)
-      return null
-    }
-  })
-
-  // IDB writes are cheap and must stay deterministic — apply them in order.
-  for (const item of fetched) {
-    if (!item) {
-      counts.failed++
-      continue
-    }
-    const { c, bytes, mime } = item
-    try {
       // `.slice()` detaches from any SharedArrayBuffer typing so the Blob
       // constructor accepts the bytes as a BlobPart on strict TS configs.
-      const blob = new Blob([bytes.slice()], { type: mime })
-      await putAttachmentAtPath(c.path, blob)
+      await putAttachmentAtPath(c.path, new Blob([bytes.slice()], { type: mime }))
       if (c.kind === 'attachmentCreated') counts.created++
       else counts.updated++
     } catch (err) {
+      // Cancellation is not a per-file failure — let it reject the batch.
+      if ((err as Error | undefined)?.name === 'AbortError') throw err
       console.error(`Failed to apply attachment ${c.path}:`, err)
       counts.failed++
     }
-  }
+  })
 
   return counts
 }
