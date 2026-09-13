@@ -665,20 +665,29 @@ export async function createBlobBinary(
   return data.sha as string
 }
 
-// Fetch a blob's raw bytes by SHA. GitHub returns it base64-encoded for
-// binary content; we decode straight into a Uint8Array so the caller can
-// wrap it as a Blob with the correct MIME.
+// Fetch a blob's raw bytes by SHA. We ask for the `raw` media type so GitHub
+// streams the bytes as-is: the default JSON reply base64-encodes them, which
+// is ~33% more on the wire (a 83 MiB image folder ships as ~111 MB) plus a
+// decode pass. Fall back to the base64 JSON shape if the Accept is ignored.
+// `signal` lets a caller cancel an in-flight blob (the background attachment
+// fill aborts its fetches when a newer pull supersedes it). githubFetch already
+// distinguishes a caller abort from its own timeout: the former propagates as
+// an AbortError without retrying.
 export async function getBlobBytes(
   token: string,
   owner: string,
   repo: string,
   sha: string,
+  signal?: AbortSignal,
 ): Promise<Uint8Array> {
   const res = await githubFetch(
     `https://api.github.com/repos/${owner}/${repo}/git/blobs/${sha}`,
-    { headers: GH_HEADERS(token) },
+    { headers: { ...GH_HEADERS(token), 'Accept': 'application/vnd.github.raw' }, signal },
   )
   await ensureOk(res, `Read binary blob ${sha}`)
+  if (!res.headers.get('content-type')?.includes('json')) {
+    return new Uint8Array(await res.arrayBuffer())
+  }
   const data = await res.json()
   if (data.encoding === 'base64') return base64ToBytes(data.content)
   // Unexpected — UTF-8 encoding on a binary blob would corrupt non-ASCII

@@ -120,6 +120,40 @@ beforeEach(() => {
 })
 
 describe('useGitHubSync — runPullOnly', () => {
+  // The 83 MiB / 175-image regression, at the hook level: applying attachments
+  // used to be awaited INSIDE the watchdog-wrapped sync, so a slow image batch
+  // timed out the whole sync — notes included. The attachment fill is now fire
+  // and forget, so the sync must reach its terminal state while the images are
+  // still downloading. A never-resolving fetch stands in for "83 MiB over a
+  // slow link"; before the change this test would hit the watchdog instead.
+  test('resolves to a terminal sync state while the attachment fill is still running', async () => {
+    let fillStarted = false
+    applyAttachmentClassificationsMock.mockImplementation(() => {
+      fillStarted = true
+      return new Promise(() => {}) // never settles
+    })
+    pullFromGitHubMock.mockResolvedValue({
+      classifications: [
+        { kind: 'remoteCreated', path: 'a.md', remoteSha: 'sha1', remoteContent: '', tags: [], body: 'hi' },
+        { kind: 'attachmentCreated', path: 'Files/big.png', remoteSha: 'img1', mime: 'image/png' },
+      ],
+      latestCommitSha: 'commit-sha',
+    })
+    applyNonConflictsMock.mockReturnValue({ created: 1, updated: 0, deleted: 0, autoMerged: 0 })
+
+    const { result } = renderHook(() => useGitHubSync())
+    await act(async () => {
+      await result.current.runPullOnly()
+    })
+
+    expect(fillStarted).toBe(true)
+    expect(result.current.syncState.kind).toBe('ok')
+    if (result.current.syncState.kind === 'ok') {
+      // Queued, not finished — the count comes from the classifications.
+      expect(result.current.syncState.message).toMatch(/1 image/)
+    }
+  })
+
   test('pulls and applies, never pushes', async () => {
     pullFromGitHubMock.mockResolvedValue({
       classifications: [
