@@ -52,7 +52,7 @@
     "remark-gfm": "^4.0.1",
     "undici": "^8.11.2",
     "unist-util-visit": "^5.1.0",
-    "uuid": "^14.0.1",
+    "uuid": "^14.0.2",
     "y-codemirror.next": "^0.3.6",
     "y-websocket": "^3.1.0",
     "yjs": "^13.6.31",
