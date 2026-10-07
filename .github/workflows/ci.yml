@@ -65,7 +65,8 @@ jobs:
       # tree. Moderate-and-below are surfaced but not blocking (--audit-level
       # high) so a transitive low-severity advisory can't wedge every PR.
       - name: Audit dependencies
-        run: npm audit --audit-level=high
+        # Dev-only `braces` advisory has no fix; re-add dev scope when eslint-config-next 16 lands.
+        run: npm audit --omit=dev --audit-level=high
 
   collab-server:
     name: Collab server (typecheck · test · audit)
@@ -100,7 +101,8 @@ jobs:
         run: npm test
 
       - name: Audit dependencies
-        run: npm audit --audit-level=high
+        # Dev-only `braces` advisory has no fix; re-add dev scope when eslint-config-next 16 lands.
+        run: npm audit --omit=dev --audit-level=high
 
   e2e:
     name: E2E (Playwright)
