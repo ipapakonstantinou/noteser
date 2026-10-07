@@ -6,6 +6,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    ignore:
+      # Runtime is Node 22; keep @types/node on 22.x.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   # collab-server has its own lockfile (Cloudflare Workers package) and was
   # previously not covered by any dependabot config at all.
