@@ -1,17 +1,4 @@
-import { dirname } from 'path'
-import { fileURLToPath } from 'url'
-import { FlatCompat } from '@eslint/eslintrc'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
-
-// eslint-config-next 15.x ships eslintrc-format presets only (the flat
-// subpath exports like `eslint-config-next/core-web-vitals` arrive in
-// Next 16), so the migration off the deprecated `next lint` keeps
-// FlatCompat and just runs the ESLint CLI directly (`eslint .`).
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-})
+import nextCoreWebVitals from 'eslint-config-next/core-web-vitals'
 
 // Raw-HTML / XSS sink bans. These mirror the static-source security
 // guards in src/__tests__/markdownXssGuard.test.tsx (no rehype-raw, no
@@ -20,10 +7,10 @@ const compat = new FlatCompat({
 // regressions live in the editor / on every `npm run lint`, before a
 // contributor even runs the suite.
 //
-// NB: this block lives in its OWN flat-config object (NOT inside the
-// FlatCompat-wrapped next preset). Custom `rules` placed inside the
-// compat.extends() output get silently dropped; a top-level object in
-// the exported array applies cleanly to every linted file.
+// NB: this block lives in its OWN flat-config object (NOT merged into the
+// next preset's objects). Custom `rules` placed inside one of those
+// objects can get shadowed by a later, more specific one; a top-level
+// object in the exported array applies cleanly to every linted file.
 const xssSinkBans = {
   // Scope to production source only. Tests legitimately build DOM
   // fixtures via `.innerHTML =`, and the matching Jest guard
@@ -60,6 +47,21 @@ const xssSinkBans = {
   },
 }
 
+// eslint-config-next 16 bumps eslint-plugin-react-hooks 5.x -> 7.x, which
+// ships the new React Compiler rule set (rules-of-hooks/exhaustive-deps
+// are unaffected and still enforced). Adopting those rules means
+// reviewing ~90 pre-existing call sites for real behavior changes, which
+// is out of scope for this dependency-version fix — tracked separately.
+const reactCompilerRulesNotYetAdopted = {
+  rules: {
+    'react-hooks/set-state-in-effect': 'off',
+    'react-hooks/refs': 'off',
+    'react-hooks/static-components': 'off',
+    'react-hooks/immutability': 'off',
+    'react-hooks/purity': 'off',
+  },
+}
+
 const eslintConfig = [
   // Global ignores. `next lint` only covered the source dirs; the ESLint
   // CLI lints everything under `.`, so exclude build output and the
@@ -78,7 +80,8 @@ const eslintConfig = [
       'collab-server/**',
     ],
   },
-  ...compat.extends('next/core-web-vitals'),
+  ...nextCoreWebVitals,
+  reactCompilerRulesNotYetAdopted,
   xssSinkBans,
 ]
 
