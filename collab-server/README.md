@@ -45,9 +45,10 @@ you will see each other's cursors.
 - Workers **free plan** is enough: the config uses SQLite-backed Durable
   Objects (`new_sqlite_classes`), which the free tier includes.
   100k requests/day and 5 GB storage — a personal vault does not get
-  anywhere near either.
+  anywhere near either. Rooms use the WebSocket Hibernation API, so an
+  idle open tab does not burn the daily Durable Object duration limit.
 - Rooms persist their document to Durable Object storage (debounced
-  3 s, flushed when the last client leaves), so state survives object
+  3 s via a DO alarm, flushed when the last client leaves), so state survives object
   eviction. GitHub sync remains the source of truth for note bodies;
   this store only keeps live sessions converging.
 - Abuse limits (`src/limits.ts`) bound a single room: 1 MB max message

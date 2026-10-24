@@ -15,7 +15,8 @@
 // break older deployments.
 //
 // Persistence: the doc is folded into Durable Object storage (SQLite),
-// debounced while clients type and flushed when the last one leaves —
+// debounced via a DO alarm while clients type and flushed when the last
+// one leaves —
 // a room survives eviction/hibernation of the object. Note bodies are
 // ALSO still synced to GitHub by the app itself; this store only keeps
 // live sessions converging, it is not the source of truth.
@@ -70,29 +71,52 @@ interface AwarenessChange {
   removed: number[]
 }
 
+// Per-socket state that must survive hibernation (in-memory fields don't).
+// `awareness` is that peer's encoded awareness update, so a woken room can
+// still show its cursors to a joiner and clear them when it disconnects.
+interface Attachment {
+  ids: number[]
+  awareness: Uint8Array | null
+}
+
+function readAttachment(ws: WebSocket): Attachment {
+  return (ws.deserializeAttachment() as Attachment | null) ?? { ids: [], awareness: null }
+}
+
+// Uses the WebSocket Hibernation API: the runtime holds the sockets and
+// evicts the object while the room is idle, so an open-but-quiet tab no
+// longer bills Durable Object duration. On wake the constructor reruns:
+// the doc reloads from storage, presence rebuilds from socket attachments.
 export class YRoom {
   private readonly state: DurableObjectState
   private readonly doc = new Y.Doc()
   private readonly awareness: awarenessProtocol.Awareness
   private readonly limits: ReturnType<typeof resolveLimits>
-  // socket → awareness client ids announced over it, so a disconnect can
-  // clear exactly that peer's cursors for everyone else.
-  private readonly conns = new Map<WebSocket, Set<number>>()
-  // socket → its own message-rate window. Per-connection so one abusive
-  // peer can't burn through the budget of everyone else in the room.
+  // ponytail: rate windows live in memory, so a wake resets them; move them
+  // into the attachment if a flood spanning hibernations ever matters.
   private readonly rateLimiters = new Map<WebSocket, MessageRateLimiter>()
-  private persistTimer: ReturnType<typeof setTimeout> | null = null
+  private persistScheduled = false
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state
     this.limits = resolveLimits(env)
     this.awareness = new awarenessProtocol.Awareness(this.doc)
+    // Its 3s outdated-state timer would pin the object in memory forever.
+    // Peers' states are removed on socket close instead.
+    clearInterval(this.awareness._checkInterval)
     this.awareness.setLocalState(null) // the server is not a participant
 
     state.blockConcurrencyWhile(async () => {
       const stored = await state.storage.get('doc')
       if (stored instanceof Uint8Array) Y.applyUpdate(this.doc, stored)
     })
+
+    // Rebuild presence before the handlers are attached, so a wake doesn't
+    // re-broadcast every cursor.
+    for (const ws of state.getWebSockets()) {
+      const att = readAttachment(ws)
+      if (att.awareness) awarenessProtocol.applyAwarenessUpdate(this.awareness, att.awareness, ws)
+    }
 
     this.doc.on('update', (update: Uint8Array, origin: unknown) => {
       const encoder = encoding.createEncoder()
@@ -105,13 +129,7 @@ export class YRoom {
 
     this.awareness.on('update', (change: AwarenessChange, origin: unknown) => {
       const { added, updated, removed } = change
-      if (origin instanceof WebSocket) {
-        const owned = this.conns.get(origin)
-        if (owned) {
-          for (const id of added.concat(updated)) owned.add(id)
-          for (const id of removed) owned.delete(id)
-        }
-      }
+      if (origin) this.saveOwnedAwareness(origin as WebSocket, change)
       const encoder = encoding.createEncoder()
       encoding.writeVarUint(encoder, MESSAGE_AWARENESS)
       encoding.writeVarUint8Array(
@@ -130,7 +148,7 @@ export class YRoom {
     }
     // Cap concurrent sockets per room so one client can't force unbounded
     // fan-out/storage growth by opening connections in a loop.
-    if (isRoomFull(this.conns.size, this.limits)) {
+    if (isRoomFull(this.state.getWebSockets().length, this.limits)) {
       return new Response('Room is full', { status: 429 })
     }
     const pair = new WebSocketPair()
@@ -141,29 +159,8 @@ export class YRoom {
   }
 
   private accept(ws: WebSocket): void {
-    ws.accept()
-    this.conns.set(ws, new Set())
-    this.rateLimiters.set(ws, new MessageRateLimiter(this.limits))
-
-    ws.addEventListener('message', event => {
-      if (!(event.data instanceof ArrayBuffer)) return
-      if (isMessageTooLarge(event.data.byteLength, this.limits)) {
-        ws.close(1009, 'Message too large')
-        return
-      }
-      if (this.rateLimiters.get(ws)?.allow() === false) {
-        ws.close(1008, 'Rate limit exceeded')
-        return
-      }
-      try {
-        this.handleMessage(ws, new Uint8Array(event.data))
-      } catch {
-        // A malformed frame must not take the room down with it.
-      }
-    })
-    const drop = () => this.dropConnection(ws)
-    ws.addEventListener('close', drop)
-    ws.addEventListener('error', drop)
+    this.state.acceptWebSocket(ws)
+    ws.serializeAttachment({ ids: [], awareness: null } satisfies Attachment)
 
     // Sync step 1: send our state vector so the client replies with what
     // we're missing; the client sends its own step 1 symmetrically.
@@ -183,6 +180,43 @@ export class YRoom {
       )
       ws.send(encoding.toUint8Array(enc))
     }
+  }
+
+  webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void {
+    if (!(message instanceof ArrayBuffer)) return
+    if (isMessageTooLarge(message.byteLength, this.limits)) {
+      ws.close(1009, 'Message too large')
+      return
+    }
+    let limiter = this.rateLimiters.get(ws)
+    if (!limiter) this.rateLimiters.set(ws, (limiter = new MessageRateLimiter(this.limits)))
+    if (!limiter.allow()) {
+      ws.close(1008, 'Rate limit exceeded')
+      return
+    }
+    try {
+      this.handleMessage(ws, new Uint8Array(message))
+    } catch {
+      // A malformed frame must not take the room down with it.
+    }
+  }
+
+  webSocketClose(ws: WebSocket, code: number): void {
+    this.dropConnection(ws)
+    try {
+      ws.close(code) // finish the close handshake (compat date < 2026-04-07)
+    } catch {
+      // 1005/1006 can't be echoed back; the socket is gone either way.
+    }
+  }
+
+  webSocketError(ws: WebSocket): void {
+    this.dropConnection(ws)
+  }
+
+  async alarm(): Promise<void> {
+    this.persistScheduled = false
+    await this.persistNow()
   }
 
   private handleMessage(ws: WebSocket, data: Uint8Array): void {
@@ -210,34 +244,51 @@ export class YRoom {
     }
   }
 
-  private dropConnection(ws: WebSocket): void {
-    const owned = this.conns.get(ws)
-    if (!owned) return // already dropped (close + error both fire)
-    this.conns.delete(ws)
-    this.rateLimiters.delete(ws)
-    if (owned.size > 0) {
-      awarenessProtocol.removeAwarenessStates(this.awareness, [...owned], null)
+  // Track which awareness client ids this socket announced (so a disconnect
+  // clears exactly its cursors) plus their encoded state for a wake.
+  private saveOwnedAwareness(ws: WebSocket, { added, updated, removed }: AwarenessChange): void {
+    const owned = new Set(readAttachment(ws).ids)
+    for (const id of added.concat(updated)) owned.add(id)
+    for (const id of removed) owned.delete(id)
+    const ids = [...owned]
+    const live = ids.filter(id => this.awareness.states.has(id))
+    const awareness = live.length > 0 ? awarenessProtocol.encodeAwarenessUpdate(this.awareness, live) : null
+    try {
+      ws.serializeAttachment({ ids, awareness } satisfies Attachment)
+    } catch {
+      // Over the 16 KB attachment cap: keep the ids, lose presence on wake.
+      ws.serializeAttachment({ ids, awareness: null } satisfies Attachment)
     }
-    if (this.conns.size === 0) void this.persistNow()
+  }
+
+  // Idempotent: close and error can both fire for one socket.
+  private dropConnection(ws: WebSocket): void {
+    this.rateLimiters.delete(ws)
+    const owned = readAttachment(ws).ids
+    if (owned.length > 0) {
+      awarenessProtocol.removeAwarenessStates(this.awareness, owned, null)
+    }
+    if (this.state.getWebSockets().every(other => other === ws)) void this.persistNow()
   }
 
   private broadcast(payload: Uint8Array, exclude: unknown): void {
-    for (const ws of this.conns.keys()) {
+    for (const ws of this.state.getWebSockets()) {
       if (ws === exclude) continue
       try {
         ws.send(payload)
       } catch {
-        this.dropConnection(ws)
+        // Dead socket: the runtime delivers webSocketClose/Error for it.
       }
     }
   }
 
+  // An alarm, not setTimeout: a pending timer pins the object in memory.
+  // ponytail: edits from the last <3s are lost if the object is evicted
+  // before the alarm fires; clients re-send them on their next sync.
   private schedulePersist(): void {
-    if (this.persistTimer !== null) return
-    this.persistTimer = setTimeout(() => {
-      this.persistTimer = null
-      void this.persistNow()
-    }, PERSIST_DEBOUNCE_MS)
+    if (this.persistScheduled) return
+    this.persistScheduled = true
+    void this.state.storage.setAlarm(Date.now() + PERSIST_DEBOUNCE_MS)
   }
 
   private async persistNow(): Promise<void> {
