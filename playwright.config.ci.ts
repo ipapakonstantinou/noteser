@@ -46,5 +46,7 @@ export default defineConfig({
     url: 'http://localhost:3001',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    // Dummy collab transport, see playwright.config.ts.
+    env: { NEXT_PUBLIC_YJS_WS_URL: 'ws://127.0.0.1:9/e2e' },
   },
 })

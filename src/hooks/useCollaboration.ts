@@ -116,6 +116,14 @@ export function getCollabUrlForNote(noteId: string | null): string | null {
   return useActiveCollabStore.getState().isActive(noteId) ? url : null
 }
 
+// Share click / share-link open = explicit opt-in for THIS note, so it dials
+// from the default 'off' mode too ('off' → 'per-note'; other notes stay solo).
+export function joinLiveCollab(noteId: string): void {
+  const settings = useSettingsStore.getState()
+  if (settings.collaborationMode === 'off') settings.setCollaborationMode('per-note')
+  useActiveCollabStore.getState().activate(noteId)
+}
+
 export function useCollaboration(): CollabState {
   // The probe only dials when collaboration is in play at all: a transport is
   // configured AND the user's mode isn't 'off'. In 'off' mode the probe stays

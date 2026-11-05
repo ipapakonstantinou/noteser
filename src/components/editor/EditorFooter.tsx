@@ -7,7 +7,7 @@ import { useGitHubStore, useNoteStore, useUIStore, useSettingsStore, useFolderSt
 import { useToastStore } from '@/stores/toastStore'
 import { classifyPendingChanges, totalPendingCount } from '@/utils/syncChanges'
 import { computeStreakFromDateStrings, dailyDateSet } from '@/utils/dailyStreak'
-import { useCollaboration, getConfiguredUrl } from '@/hooks/useCollaboration'
+import { useCollaboration, getConfiguredUrl, joinLiveCollab } from '@/hooks/useCollaboration'
 import { buildCollabShareLink } from '@/utils/collabShare'
 import { useActiveCollabStore } from '@/stores/activeCollabStore'
 import { useHydration } from '@/hooks'
@@ -171,6 +171,8 @@ function ShareCollabButton({ noteId }: { noteId: string | null }) {
   const onShare = async () => {
     const collabId = useNoteStore.getState().ensureCollabId(noteId)
     if (!collabId) return
+    // Go live too, so the room holds this note before anyone opens the link.
+    joinLiveCollab(noteId)
     const note = useNoteStore.getState().notes.find(n => n.id === noteId)
     const origin = typeof window !== 'undefined' ? window.location.origin : ''
     const link = buildCollabShareLink(origin, collabId, note?.title)
