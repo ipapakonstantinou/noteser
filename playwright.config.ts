@@ -51,5 +51,8 @@ export default defineConfig({
     // Cold compile of the app takes ~13s the first time after `.next` is
     // wiped, so give it a generous startup window.
     timeout: 120_000,
+    // Dummy collab transport so the live-collab UI renders (e2e/collab-share).
+    // Nothing listens there; the default 'off' mode never dials it.
+    env: { NEXT_PUBLIC_YJS_WS_URL: 'ws://127.0.0.1:9/e2e' },
   },
 })
