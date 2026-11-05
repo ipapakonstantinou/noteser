@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import { EditorView, keymap, drawSelection, type Command } from '@codemirror/view'
+import { EditorView, ViewPlugin, keymap, drawSelection, type Command } from '@codemirror/view'
 import { Prec, Compartment } from '@codemirror/state'
 import { moveLineUp, moveLineDown, deleteLine, history } from '@codemirror/commands'
 import { toggleFold, foldAll, unfoldAll } from '@codemirror/language'
@@ -468,6 +468,13 @@ const renumberOnEdit = EditorView.updateListener.of((update) => {
       renumberInFlight.delete(update.view)
     }
   })
+})
+
+// Tab always indents: CM's tab-focus mode (Esc then Tab, Ctrl+M) is checked before any keymap, so clear it first.
+const tabAlwaysIndents = ViewPlugin.define((view) => {
+  const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Tab') view.setTabFocusMode(false) }
+  view.dom.addEventListener('keydown', onKeyDown, true)
+  return { destroy: () => view.dom.removeEventListener('keydown', onKeyDown, true) }
 })
 
 const obsidianTheme = EditorView.theme({
@@ -984,6 +991,7 @@ export function CodeMirrorEditor({
     // drawSelection() from defaults can't leave the selection invisible again.
     drawSelection(),
     renumberOnEdit,
+    tabAlwaysIndents,
     // Prec.highest ensures our bindings win over any conflicting default keymap.
     Prec.highest(keymap.of([
     {
