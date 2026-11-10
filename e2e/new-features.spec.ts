@@ -246,6 +246,7 @@ test('ribbon items follow the saved order (b3e7)', async ({ page }) => {
   expect(beforeIds).toContain('ribbon-item-templates')
   expect(beforeIds).toContain('ribbon-item-daily-note')
 
+  await page.waitForFunction(() => !!(window as unknown as { __noteser_test?: unknown }).__noteser_test)
   // Reorder via the store action exposed by testHooks: put templates
   // first. (Stale ids in the saved order are dropped; known ids are kept.)
   await page.evaluate(() => {
