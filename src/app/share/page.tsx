@@ -5,6 +5,7 @@ import Link from 'next/link'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
+  buildImportHref,
   decodeShareFragment,
   isShareLinkExpired,
   isShareLinkBurned,
@@ -125,11 +126,11 @@ export default function SharePage() {
           <h1 className="text-xl font-medium truncate">{note.title}</h1>
         </div>
         <div className="flex items-center gap-2 flex-none">
-          {/* Import passes the same fragment through to the main app — it
-              decodes + adds the note + opens it. Hash fragments stay
-              client-side so the payload never touches the server. */}
+          {/* Import passes the same fragment through to the main app's own
+              fragment (/#import=…) — it decodes + adds the note + opens it.
+              Never the query string: that reaches Vercel's logs. */}
           <Link
-            href={`/?import=${encodeURIComponent(fragment)}`}
+            href={buildImportHref(fragment)}
             data-testid="share-import-cta"
             className="text-sm px-3 py-1.5 bg-obsidianAccentPurple text-white rounded-sm hover:bg-obsidianAccentPurple/85 transition-colors"
           >

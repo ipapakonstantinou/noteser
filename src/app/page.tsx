@@ -289,17 +289,16 @@ export default function Home() {
     return useNoteStore.persist.onFinishHydration(tryOpen)
   }, [hydrated])
 
-  // Import-from-share: when the URL has `?import=<fragment>`, decode it
-  // (same format as /share), prompt the user, and add the note to their
-  // vault. Strips the param so a reload doesn't loop the prompt.
+  // Import-from-share: when the URL has `#import=<fragment>` (or the legacy
+  // `?import=`), decode it (same format as /share), prompt the user, and add
+  // the note to their vault. Strips it so a reload doesn't loop the prompt.
   useEffect(() => {
     if (!hydrated) return
     if (typeof window === 'undefined') return
-    const params = new URLSearchParams(window.location.search)
-    const importFrag = params.get('import')
-    if (!importFrag) return
-    void (async () => {
-      const { decodeShareFragment } = await import('@/utils/shareLink')
+    const run = async () => {
+      const { decodeShareFragment, readImportParam } = await import('@/utils/shareLink')
+      const importFrag = readImportParam(window.location.hash, window.location.search)
+      if (!importFrag) return
       const decoded = decodeShareFragment(importFrag)
       if (!decoded) {
         alert('Couldn\'t import — the link is malformed or from an incompatible version.')
@@ -318,7 +317,12 @@ export default function Home() {
         useWorkspaceStore.getState().openNote(created.id, { preview: false })
       }
       window.history.replaceState({}, '', window.location.pathname)
-    })()
+    }
+    void run()
+    // A fragment-only change (link pasted into an open tab) does not reload.
+    const onHash = () => void run()
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
   }, [hydrated])
 
   // Join-collab-session (Feature A): when the URL has `#collab=<id>` (or the

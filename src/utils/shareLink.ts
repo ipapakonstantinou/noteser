@@ -161,6 +161,17 @@ export function isShareLinkExpired(payload: SharePayload, now = Date.now()): boo
 
 // Helper for the UI: rough byte length of the encoded URL so we can warn
 // the user before they try to send a 50KB blob through Slack.
+// The /share "Import" hand-off into the app. Fragment, not query: a query
+// string reaches Vercel's request logs, and Link prefetch sends it unclicked.
+export function buildImportHref(fragment: string): string {
+  return `/#import=${encodeURIComponent(fragment)}`
+}
+
+// Reads `#import=`, then the pre-2026-11-15 `?import=` form.
+export function readImportParam(hash: string, search: string): string | null {
+  return new URLSearchParams(hash.replace(/^#/, '')).get('import') ?? new URLSearchParams(search).get('import')
+}
+
 export function estimateShareLinkSize(title: string, content: string): number {
   const json = JSON.stringify({ v: 2, title, content, ts: 0, expiresAt: 0, burn: false })
   // Base64 is ~4/3 the size of the source bytes, plus the prefix.

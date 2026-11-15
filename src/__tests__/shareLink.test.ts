@@ -14,7 +14,27 @@ import {
   isShareLinkBurned,
   markShareLinkBurned,
   shareLinkBurnKey,
+  buildImportHref,
+  readImportParam,
 } from '../utils/shareLink'
+
+describe('Import hand-off (/share -> app)', () => {
+  const frag = encodeShareLink('Secret plan', 'body with ?&#= chars', 'https://x.dev').split('#')[1]
+
+  test('puts the payload in the fragment, never the query string', () => {
+    const url = new URL(buildImportHref(frag), 'https://noteser.app')
+    expect(url.pathname).toBe('/')
+    expect(url.search).toBe('')
+    expect(readImportParam(url.hash, url.search)).toBe(frag)
+    expect(decodeShareFragment(readImportParam(url.hash, url.search)!)!.title).toBe('Secret plan')
+  })
+
+  test('still reads the legacy ?import= form, and nothing otherwise', () => {
+    expect(readImportParam('', `?import=${encodeURIComponent(frag)}`)).toBe(frag)
+    expect(readImportParam('#collab=abc', '')).toBeNull()
+    expect(readImportParam('', '')).toBeNull()
+  })
+})
 
 describe('encodeShareLink / decodeShareFragment', () => {
   test('round-trips ASCII title + content', () => {
