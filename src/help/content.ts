@@ -484,7 +484,7 @@ Noteser fetches the manifest, validates the v1 schema, fetches the bundle, SHA-2
 
 ## Writing a plugin
 
-The SDK is **not on npm yet**. Do not install a package called \`@noteser/plugin-sdk\` from the registry: the \`@noteser\` scope is not registered, so whatever answers to that name is not ours.
+The \`@noteser\` scope on npm belongs to the Noteser project, but the SDK is **not published yet**, so \`npm install @noteser/plugin-sdk\` will not find anything.
 
 The SDK is TypeScript types plus \`definePlugin\`, which returns its argument unchanged. To get the types, copy the \`packages/noteser-plugin-sdk/src\` folder of the [Noteser repo](https://github.com/ipapakonstantinou/noteser) into your plugin as \`noteser-plugin-sdk/\` and import it by relative path; your bundler inlines it. Or skip it and \`export default { ... }\` the same object, as the bundled plugins do.
 
