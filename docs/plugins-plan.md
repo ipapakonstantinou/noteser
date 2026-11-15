@@ -268,7 +268,7 @@ Resolved 2026-06-02:
 3. **Mermaid renderer ships the full `mermaid` npm package
    (~600 KB).** One-time install cost, all diagram types work.
 4. **SDK package name: `@noteser/plugin-sdk`.** Scoped under the
-   `@noteser` npm org (needs registering before week 4 publish).
+   `@noteser` npm org (registered 2026-11-15; the SDK is still unpublished).
    Opens room for `@noteser/cli`, `@noteser/themes`, etc. later.
 5. **Plugin-defined React components: v2 only.** v1 plugins use the
    host-provided component set (button / text / list / link /

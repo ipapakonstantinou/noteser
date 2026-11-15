@@ -4,10 +4,10 @@ TypeScript SDK for writing [Noteser](https://noteser.app) plugins.
 
 ## Install
 
-Not on npm yet. Do not `npm install @noteser/plugin-sdk` from the registry:
-the `@noteser` scope is not registered, so a package by that name would not
-be ours. This package is marked `"private": true` so it cannot be published
-by accident.
+The `@noteser` scope on npm belongs to the Noteser project, but this package
+is not published yet, so `npm install @noteser/plugin-sdk` will not find
+anything. It is marked `"private": true` so it cannot be published by
+accident.
 
 What works today: copy this folder's `src/` into your plugin as
 `noteser-plugin-sdk/` and import it by relative path; your bundler (esbuild,
