@@ -9,6 +9,13 @@ main = "src/index.ts"
 compatibility_date = "2026-01-01"
 routes = [{ pattern = "collab.noteser.app", custom_domain = true }]
 
+[vars]
+# Browser origins that may open a socket (README "Origin allowlist"): every
+# host serving a build whose CSP carries the ws source (prod: apex + its three
+# vercel.app aliases; dev branch: beta, dev + its alias), deployment URLs
+# (`*` = [a-z0-9]+, so no branch alias), local `npm run dev`. .dev.vars overrides.
+ALLOWED_ORIGINS = "https://noteser.app https://noteser.vercel.app https://noteser-ipapakonstantinous-projects.vercel.app https://noteser-git-main-ipapakonstantinous-projects.vercel.app https://beta.noteser.app https://dev.noteser.app https://noteser-git-dev-ipapakonstantinous-projects.vercel.app https://noteser-*-ipapakonstantinous-projects.vercel.app http://localhost:3001 http://127.0.0.1:3001"
+
 [[durable_objects.bindings]]
 name = "Y_ROOM"
 class_name = "YRoom"

@@ -37,6 +37,14 @@ model reflects that:
   in particular NOT `*.vercel.app`, which is a shared namespace anyone can
   get a subdomain on. Vercel preview deploys pass as same-origin, since
   the app calls its own `/api/*` with relative URLs.
+- **Collab worker Origin allow-list** (2026-11-15): the WebSocket upgrade
+  refuses any `Origin` not in `ALLOWED_ORIGINS` (`collab-server/wrangler.toml`:
+  noteser.app and its three vercel.app aliases, beta, dev and the dev alias,
+  per-deployment preview URLs, local dev), so a
+  foreign page cannot open sockets from a visitor's browser. A handshake
+  without `Origin` (non-browser client) passes; `Origin: null` does not.
+  Defence in depth only: the token is public and a script can send any
+  Origin, so the room id stays the credential.
 
 ### Token storage
 

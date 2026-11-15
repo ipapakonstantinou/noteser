@@ -36,10 +36,28 @@ export interface Env extends LimitsEnv {
   // Configure with `npx wrangler secret put AUTH_TOKEN` and bake the
   // same value into NEXT_PUBLIC_YJS_WS_URL (= wss://<host>/<token>).
   AUTH_TOKEN?: string
+  // Browser origins allowed to open a socket, space/comma separated; `*`
+  // stands for one run of [a-z0-9] (no hyphen, no dot). Unset = no check.
+  ALLOWED_ORIGINS?: string
 }
 
 const MESSAGE_SYNC = 0
 const MESSAGE_AWARENESS = 1
+
+// CSWSH guard, not auth: browsers always send Origin on a WebSocket
+// handshake and a page cannot remove it, so a missing header is a
+// non-browser client (which could forge any value anyway) and passes.
+// `Origin: null` (sandboxed iframe, file:, data:) is a page and fails.
+export function isOriginAllowed(origin: string | null, allowed: string | undefined): boolean {
+  const patterns = (allowed ?? '').split(/[\s,]+/).filter(Boolean)
+  if (patterns.length === 0 || origin === null) return true
+  const o = origin.toLowerCase()
+  return patterns.some(p =>
+    new RegExp(
+      '^' + p.toLowerCase().replace(/[.*+?^${}()|[\]\\/]/g, c => (c === '*' ? '[a-z0-9]+' : '\\' + c)) + '$',
+    ).test(o),
+  )
+}
 
 // Front door: validate the path, then hand the WebSocket upgrade to the
 // room's Durable Object. y-websocket appends "/<room>" to the base URL,
@@ -50,6 +68,9 @@ export default {
       return new Response('noteser collab server — connect with a y-websocket client.', {
         status: 200,
       })
+    }
+    if (!isOriginAllowed(request.headers.get('Origin'), env.ALLOWED_ORIGINS)) {
+      return new Response('Forbidden origin', { status: 403 })
     }
     const segments = new URL(request.url).pathname.split('/').filter(Boolean)
     const room = segments.length > 0 ? segments[segments.length - 1] : null

@@ -57,6 +57,37 @@ you will see each other's cursors.
   `MAX_MESSAGES_PER_WINDOW` / `WINDOW_MS` wrangler vars if a real
   workload needs different numbers.
 
+## Origin allowlist
+
+`ALLOWED_ORIGINS` (a `[vars]` entry in `wrangler.toml`) lists the browser
+origins that may open a socket; anything else gets `403 Forbidden origin`
+before a room is touched. Entries are full origins, space or comma
+separated, and `*` matches one run of `[a-z0-9]` (no hyphen, no dot),
+which is the shape of this project's Vercel deployment URLs. Unset or empty
+= no check.
+
+The list is every host that serves a noteser build whose CSP carries the
+collab ws source, read from the public responses on 2026-11-15: the
+production build on `noteser.app`, `noteser.vercel.app`,
+`noteser-ipapakonstantinous-projects.vercel.app` and
+`noteser-git-main-ipapakonstantinous-projects.vercel.app` (same build id),
+the dev-branch build on `beta.`, `dev.` and
+`noteser-git-dev-ipapakonstantinous-projects.vercel.app`, per-deployment URLs
+`noteser-<hash>-ipapakonstantinous-projects.vercel.app`, and local dev.
+Feature-branch aliases (`noteser-git-<branch>-…`) are refused: open a PR's
+deployment URL instead. `www.` only redirects. A new domain or alias on the
+Vercel project must be added here, or its live-collab tabs get 403 and retry.
+
+- A handshake with **no** `Origin` header passes: browsers always send one
+  on a WebSocket upgrade and a page cannot remove it, so a missing header
+  means a non-browser client (a script, a test), which could put any value
+  there anyway. The check stops foreign web pages, not determined clients.
+- `Origin: null` (sandboxed iframe, `file:`, `data:`) is refused.
+- The deployment wildcard admits `noteser-<letters/digits>-ipapakonstantinous-projects.vercel.app`.
+  A stranger who gets a Vercel project domain of exactly that shape would
+  pass; that only gives them what a non-browser client already has.
+- Local `wrangler dev` reads the same list; override it in `.dev.vars`.
+
 ## Security notes
 
 - `AUTH_TOKEN` is a *soft* gate: it ships inside the public client
