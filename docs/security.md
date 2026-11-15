@@ -119,6 +119,12 @@ model reflects that:
   the id means every device must agree on the new one through the same file;
   and the Durable Object keeps server-side state keyed on the id, so a leaked
   id also names durable server state.
+  - Shipped 2026-11-15: that state no longer lives forever. A room's stored
+    document is deleted after `ROOM_IDLE_DAYS` (30) with no connection
+    (collab-server README, "Room lifecycle"); rooms stored before that get
+    the same deadline from a one-off sweep that arms each of them
+    (`collab-server/scripts/sweep-rooms.mjs`). The id stays a credential for
+    as long as anyone holds the note live.
   - Shipped 2026-07-30 (the cheap half): ids are shape-checked as v4 UUIDs at
     every entry point — `parseNote` drops a non-conforming frontmatter value,
     `parseCollabParam` refuses a bogus `?collab=` link, and `serializeNote`

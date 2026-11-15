@@ -20,6 +20,10 @@
 // a room survives eviction/hibernation of the object. Note bodies are
 // ALSO still synced to GitHub by the app itself; this store only keeps
 // live sessions converging, it is not the source of truth.
+//
+// Lifecycle: when the last socket leaves, the same alarm is re-armed for
+// ROOM_IDLE_DAYS later; if nobody has joined by then the room's storage is
+// deleted. A later joiner finds an empty room and re-seeds it from its note.
 
 import * as Y from 'yjs'
 import * as syncProtocol from 'y-protocols/sync'
@@ -31,6 +35,12 @@ import { isMessageTooLarge, isRoomFull, MessageRateLimiter, resolveLimits, type 
 
 export interface Env extends LimitsEnv {
   Y_ROOM: DurableObjectNamespace
+  // Days a room may sit with no connection before its storage is deleted
+  // (default 30). Fractions work, for testing.
+  ROOM_IDLE_DAYS?: string
+  // Secret for the one-off /admin arm sweep of rooms stored before the idle
+  // alarm. Unset, or equal to AUTH_TOKEN, = the route answers 404.
+  ADMIN_TOKEN?: string
   // Optional shared secret. When set, connections must carry it as the
   // path segment BEFORE the room: wss://<host>/<AUTH_TOKEN>/<room>.
   // Configure with `npx wrangler secret put AUTH_TOKEN` and bake the
@@ -64,6 +74,7 @@ export function isOriginAllowed(origin: string | null, allowed: string | undefin
 // so the room is always the LAST path segment.
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    if (new URL(request.url).pathname.startsWith('/admin/')) return admin(request, env)
     if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response('noteser collab server — connect with a y-websocket client.', {
         status: 200,
@@ -84,7 +95,35 @@ export default {
   },
 }
 
+// POST /admin/rooms/<object id>/arm, Authorization: Bearer ADMIN_TOKEN: wakes
+// one Durable Object by its hex id (as the Cloudflare API lists it) and starts
+// its idle clock. A mis-set secret equal to the public AUTH_TOKEN keeps it off.
+async function admin(request: Request, env: Env): Promise<Response> {
+  const m = /^\/admin\/rooms\/([0-9a-f]{64})\/arm$/.exec(new URL(request.url).pathname)
+  const off = !env.ADMIN_TOKEN || env.ADMIN_TOKEN === env.AUTH_TOKEN
+  if (off || !m || request.method !== 'POST') return new Response('Not found', { status: 404 })
+  if (!sameSecret(request.headers.get('Authorization') ?? '', `Bearer ${env.ADMIN_TOKEN}`)) {
+    return new Response('Forbidden', { status: 403 })
+  }
+  let id: DurableObjectId
+  try {
+    id = env.Y_ROOM.idFromString(m[1])
+  } catch {
+    return new Response('Bad id', { status: 400 })
+  }
+  return env.Y_ROOM.get(id).fetch(new Request('https://room/admin/arm', { method: 'POST' }))
+}
+
+function sameSecret(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  return diff === 0
+}
+
 const PERSIST_DEBOUNCE_MS = 3_000
+const DAY_MS = 86_400_000
+const FROM_STORAGE = Symbol('storage')
 
 interface AwarenessChange {
   added: number[]
@@ -110,9 +149,10 @@ function readAttachment(ws: WebSocket): Attachment {
 // the doc reloads from storage, presence rebuilds from socket attachments.
 export class YRoom {
   private readonly state: DurableObjectState
-  private readonly doc = new Y.Doc()
-  private readonly awareness: awarenessProtocol.Awareness
+  private doc!: Y.Doc
+  private awareness!: awarenessProtocol.Awareness
   private readonly limits: ReturnType<typeof resolveLimits>
+  private readonly idleMs: number
   // ponytail: rate windows live in memory, so a wake resets them; move them
   // into the attachment if a flood spanning hibernations ever matters.
   private readonly rateLimiters = new Map<WebSocket, MessageRateLimiter>()
@@ -121,15 +161,13 @@ export class YRoom {
   constructor(state: DurableObjectState, env: Env) {
     this.state = state
     this.limits = resolveLimits(env)
-    this.awareness = new awarenessProtocol.Awareness(this.doc)
-    // Its 3s outdated-state timer would pin the object in memory forever.
-    // Peers' states are removed on socket close instead.
-    clearInterval(this.awareness._checkInterval)
-    this.awareness.setLocalState(null) // the server is not a participant
+    const days = Number(env.ROOM_IDLE_DAYS)
+    this.idleMs = (Number.isFinite(days) && days > 0 ? days : 30) * DAY_MS
+    this.load()
 
     state.blockConcurrencyWhile(async () => {
       const stored = await state.storage.get('doc')
-      if (stored instanceof Uint8Array) Y.applyUpdate(this.doc, stored)
+      if (stored instanceof Uint8Array) Y.applyUpdate(this.doc, stored, FROM_STORAGE)
     })
 
     // Rebuild presence before the handlers are attached, so a wake doesn't
@@ -138,8 +176,22 @@ export class YRoom {
       const att = readAttachment(ws)
       if (att.awareness) awarenessProtocol.applyAwarenessUpdate(this.awareness, att.awareness, ws)
     }
+    this.wire()
+  }
 
+  private load(): void {
+    this.doc = new Y.Doc()
+    this.awareness = new awarenessProtocol.Awareness(this.doc)
+    // Its 3s outdated-state timer would pin the object in memory forever.
+    // Peers' states are removed on socket close instead.
+    clearInterval(this.awareness._checkInterval)
+    this.awareness.setLocalState(null) // the server is not a participant
+  }
+
+  private wire(): void {
     this.doc.on('update', (update: Uint8Array, origin: unknown) => {
+      // Our own storage reloaded on wake: peers already have it, nothing to persist.
+      if (origin === FROM_STORAGE) return
       const encoder = encoding.createEncoder()
       encoding.writeVarUint(encoder, MESSAGE_SYNC)
       syncProtocol.writeUpdate(encoder, update)
@@ -165,6 +217,8 @@ export class YRoom {
 
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get('Upgrade') !== 'websocket') {
+      // Only the front door's authenticated /admin route sends these.
+      if (request.method === 'POST' && request.url.endsWith('/admin/arm')) return this.adminArm()
       return new Response('Expected WebSocket', { status: 426 })
     }
     // Cap concurrent sockets per room so one client can't force unbounded
@@ -182,6 +236,7 @@ export class YRoom {
   private accept(ws: WebSocket): void {
     this.state.acceptWebSocket(ws)
     ws.serializeAttachment({ ids: [], awareness: null } satisfies Attachment)
+    void this.state.storage.delete('expireAt') // someone is here: stop the idle clock
 
     // Sync step 1: send our state vector so the client replies with what
     // we're missing; the client sends its own step 1 symmetrically.
@@ -237,7 +292,41 @@ export class YRoom {
 
   async alarm(): Promise<void> {
     this.persistScheduled = false
+    if (this.state.getWebSockets().length === 0) {
+      const expireAt = await this.state.storage.get('expireAt')
+      if (typeof expireAt !== 'number') {
+        await this.armIdleExpiry() // the last socket went without a close (deploy, reset)
+      } else if (Date.now() >= expireAt) {
+        return this.wipe()
+      } else {
+        await this.state.storage.setAlarm(expireAt) // an early alarm must not lose the idle clock
+      }
+    }
     await this.persistNow()
+  }
+
+  private async adminArm(): Promise<Response> {
+    if (this.state.getWebSockets().length > 0) return new Response('in use, the last leave arms it')
+    if (typeof (await this.state.storage.get('expireAt')) !== 'number') await this.armIdleExpiry()
+    return new Response('armed')
+  }
+
+  // Only with no sockets: the in-memory doc is replaced, so nobody resyncs from it.
+  private async wipe(): Promise<void> {
+    await this.state.storage.deleteAll()
+    await this.state.storage.deleteAlarm()
+    this.persistScheduled = false
+    // Replaced, not destroyed: destroy() emits a 'local' awareness update into our handler.
+    this.load()
+    this.wire()
+  }
+
+  // Replaces any pending persist alarm; dropConnection flushes the doc first.
+  private async armIdleExpiry(): Promise<void> {
+    const at = Date.now() + this.idleMs
+    this.persistScheduled = false
+    await this.state.storage.put('expireAt', at)
+    await this.state.storage.setAlarm(at)
   }
 
   private handleMessage(ws: WebSocket, data: Uint8Array): void {
@@ -289,7 +378,12 @@ export class YRoom {
     if (owned.length > 0) {
       awarenessProtocol.removeAwarenessStates(this.awareness, owned, null)
     }
-    if (this.state.getWebSockets().every(other => other === ws)) void this.persistNow()
+    if (this.state.getWebSockets().every(other => other === ws)) {
+      void this.persistNow().catch(err => console.error('[collab] persist failed', err))
+      // Separate from the persist: a doc over the 2 MB value cap fails to
+      // persist (L1) but must still expire.
+      void this.armIdleExpiry()
+    }
   }
 
   private broadcast(payload: Uint8Array, exclude: unknown): void {

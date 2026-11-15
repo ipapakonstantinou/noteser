@@ -40,6 +40,46 @@ build time (`deriveCollabWsOrigin`). The status bar shows a green
 "Live: on" pill once connected; open the same note in two browsers and
 you will see each other's cursors.
 
+## Room lifecycle
+
+When the last client leaves a room, the room's alarm is set for
+`ROOM_IDLE_DAYS` later (default 30; set it under `[vars]` to change it,
+fractions work for tests). If nobody has joined by then, the room's storage
+is deleted and the next joiner finds an empty room, which its client seeds
+from its own copy of the note (GitHub sync stays the source of truth). If
+the last socket went without a close (deploy, runtime reset), the next
+alarm sets the deadline instead. 30 days because the server copy only keeps
+live sessions converging: a shorter period buys little privacy for a
+personal vault and makes the one known doubling case (below) likelier.
+
+- Known case: a tab that stayed open with its socket down for the whole
+  idle period still holds the old CRDT history. If another page re-seeds
+  the wiped room first, the merge can show the body twice. Nothing is
+  lost; the user deletes the extra copy (`src/__tests__/collabExtension.test.ts`,
+  "WIPED ROOM").
+- A document over the 2 MB storage value cap still fails to persist (as
+  before), now with a `[collab] persist failed` log line, and it still
+  expires on time.
+
+### One-off sweep of rooms from before the alarm
+
+Rooms stored before this version have no alarm and never wake by
+themselves. `scripts/sweep-rooms.mjs` lists the namespace's objects with
+the wrangler login and arms the idle clock on every one that holds data,
+through `POST /admin/rooms/<object id>/arm`. Nothing is deleted at sweep
+time: each room goes `ROOM_IDLE_DAYS` later unless someone joins it, so no
+usage data is needed. The route answers 404 unless the `ADMIN_TOKEN`
+secret is set, and also when it equals `AUTH_TOKEN`. A room with someone
+in it is left alone; its last leave arms it.
+
+```bash
+npx wrangler secret put ADMIN_TOKEN       # a new random value, not AUTH_TOKEN
+node scripts/sweep-rooms.mjs              # dry run: how many rooms hold data
+read -rs COLLAB_ADMIN_TOKEN && export COLLAB_ADMIN_TOKEN
+node scripts/sweep-rooms.mjs --apply      # arms each, prints a tally
+npx wrangler secret delete ADMIN_TOKEN    # close the route again
+```
+
 ## Costs and limits
 
 - Workers **free plan** is enough: the config uses SQLite-backed Durable
@@ -49,7 +89,8 @@ you will see each other's cursors.
   idle open tab does not burn the daily Durable Object duration limit.
 - Rooms persist their document to Durable Object storage (debounced
   3 s via a DO alarm, flushed when the last client leaves), so state survives object
-  eviction. GitHub sync remains the source of truth for note bodies;
+  eviction, and delete it after `ROOM_IDLE_DAYS` with nobody connected
+  (see "Room lifecycle"). GitHub sync remains the source of truth for note bodies;
   this store only keeps live sessions converging.
 - Abuse limits (`src/limits.ts`) bound a single room: 1 MB max message
   size, 20 max connections, 200 messages/second per connection. Override
