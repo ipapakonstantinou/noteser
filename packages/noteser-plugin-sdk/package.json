@@ -1,6 +1,7 @@
 {
   "name": "@noteser/plugin-sdk",
   "version": "0.1.0",
+  "private": true,
   "description": "TypeScript SDK for writing Noteser plugins. Exposes definePlugin(), the manifest schema, and the PluginCtx capability surface.",
   "license": "MIT",
   "author": "Noteser",
