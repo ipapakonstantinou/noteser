@@ -55,7 +55,7 @@ import { saveAttachment } from '@/utils/attachments'
 import { isBareUrl, anchorFromHtml, markdownLink, FETCHING_TITLE_PLACEHOLDER } from '@/utils/pasteLink'
 import { WikilinkAutocomplete } from './WikilinkAutocomplete'
 import { TagAutocomplete } from './TagAutocomplete'
-import { getCollabUrlForNote } from '@/hooks/useCollaboration'
+import { getCollabUrlForNote, onLiveSessionEnded, onLiveRoomDiverged } from '@/hooks/useCollaboration'
 import { useActiveCollabStore } from '@/stores/activeCollabStore'
 // Type-only import: erased at compile time, so it does NOT pull yjs /
 // y-websocket / y-codemirror.next into the editor bundle. The actual
@@ -758,13 +758,26 @@ export function CodeMirrorEditor({
   const githubUser = useGitHubStore(s => s.user)
   const githubUserRef = useRef(githubUser)
   useEffect(() => { githubUserRef.current = githubUser }, [githubUser])
+  // A new id (Stop live here, or sync bringing another device's) moves the binding off the old room.
+  const noteCollabId = useNoteStore(s => s.notes.find(n => n.id === noteId)?.collabId)
+  // The room this editor last had live for which note: a different room for
+  // the same note means the id changed under an open, live note. Cleared only
+  // when the note is not live at all: after an end or a declined room it stays,
+  // so the next id change still takes the compare path.
+  const liveRoomRef = useRef<{ noteId: string; room: string } | null>(null)
   useEffect(() => {
     const url = getCollabUrlForNote(noteId)
-    if (!url) return // dormant: identical to pre-Phase-B behaviour
+    if (!url) {
+      liveRoomRef.current = null
+      return // dormant: identical to pre-Phase-B behaviour
+    }
 
     // Mint (or reuse) the stable room id for this note.
     const room = useNoteStore.getState().ensureCollabId(noteId)
     if (!room) return
+    if (room !== noteCollabId) return // just minted: the store update re-runs this with it
+    const prev = liveRoomRef.current
+    const moved = prev !== null && prev.noteId === noteId && prev.room !== room
 
     // Capture the stable compartment locally so the cleanup closure doesn't
     // reach back through the ref (and so eslint is happy). The view, by
@@ -773,6 +786,25 @@ export function CodeMirrorEditor({
     const compartment = collabCompartmentRef.current
     let binding: CollabBinding | null = null
     let cancelled = false
+    // Empty the compartment first (so the editor drops the binding's plugins),
+    // then destroy the provider + doc to release the socket. The view is read
+    // FRESH: the keyed remount may have replaced it.
+    const detach = () => {
+      const view = cmRef.current?.view
+      if (view) {
+        try {
+          view.dispatch({ effects: compartment.reconfigure([]) })
+        } catch { /* view may already be torn down */ }
+      }
+      if (!binding) return
+      binding.destroy()
+      if (collabBindingRef.current === binding) collabBindingRef.current = null
+      binding = null // idempotent: the end and the cleanup can both get here
+    }
+    const onEnded = () => {
+      onLiveSessionEnded(noteId, room)
+      detach() // repo mode has no live switch to do it
+    }
 
     // The CodeMirror view is created during the keyed remount; it may not
     // exist on the very first effect tick. Poll a couple of microtasks for
@@ -796,6 +828,30 @@ export function CodeMirrorEditor({
       if (cancelled) return
       const freshView = cmRef.current?.view
       if (!freshView) return
+      if (moved) {
+        // Sync moved this open, live note to another room. Keep the editor's
+        // text on screen and the binding unplugged until the first sync, and
+        // seed nothing (an empty initialContent): join only a room that already
+        // holds exactly this text. Anything else, empty included, stays off.
+        const b = createCollabBinding({ url, room, initialContent: '', user: githubUserRef.current, onEnded })
+        binding = b
+        collabBindingRef.current = b
+        const onFirstSync = (isSynced: boolean) => {
+          if (!isSynced) return
+          b.provider.off?.('sync', onFirstSync)
+          const view = cmRef.current?.view
+          if (cancelled || !view) return
+          if (b.ytext.toString() === view.state.doc.toString()) {
+            view.dispatch({ effects: compartment.reconfigure(b.extension) })
+            liveRoomRef.current = { noteId, room }
+          } else {
+            detach()
+            onLiveRoomDiverged(noteId)
+          }
+        }
+        b.provider.on('sync', onFirstSync)
+        return
+      }
       const note = useNoteStore.getState().notes.find(n => n.id === noteId)
       // #186 anti-doubling: the shared Y.Text becomes the SINGLE source of
       // truth once the binding attaches — the seeder seeds it from the note
@@ -818,27 +874,17 @@ export function CodeMirrorEditor({
         room,
         initialContent: note?.content ?? '',
         user: githubUserRef.current,
+        onEnded,
       })
       collabBindingRef.current = binding
       freshView.dispatch({ effects: compartment.reconfigure(binding.extension) })
+      liveRoomRef.current = { noteId, room }
     }
     void attach(5)
 
     return () => {
       cancelled = true
-      // Empty the compartment first (so the editor drops the binding's
-      // plugins) then destroy the provider + doc to release the socket.
-      // Reading cmRef.current FRESH at teardown is intentional: we want the
-      // currently-mounted view, which the keyed remount may have replaced.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      const view = cmRef.current?.view
-      if (view) {
-        try {
-          view.dispatch({ effects: compartment.reconfigure([]) })
-        } catch { /* view may already be torn down */ }
-      }
-      binding?.destroy()
-      if (collabBindingRef.current === binding) collabBindingRef.current = null
+      detach()
       // On deactivation (collab toggled off mid-session), the editor keeps
       // whatever text the Y.Text last replayed into it — that IS the note's
       // current content, so a follow-up edit saves it locally as normal. We do
@@ -848,7 +894,7 @@ export function CodeMirrorEditor({
     // mid-session doesn't tear down the live document; the cursor label
     // updates on the next note open. Re-key on noteId AND collabEnabled so the
     // binding attaches/detaches when the user toggles collab for this note.
-  }, [noteId, collabEnabled])
+  }, [noteId, collabEnabled, noteCollabId])
 
   // Listen for "scroll to fragment" requests fired by the wikilink click
   // handler. The fragment is either a heading text or a `^block-id`; we

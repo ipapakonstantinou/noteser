@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid'
 import type { Note, Template, DEFAULT_TEMPLATES } from '@/types'
 import { idbStorage } from '@/utils/idbStorage'
 import { isValidCollabId } from '@/utils/collabId'
+import { useActiveCollabStore } from '@/stores/activeCollabStore'
 import {
   softDelete,
   permanentlyDelete,
@@ -294,7 +295,9 @@ export const useNoteStore = create<NoteState>()(
         // funnel both room readers use (CodeMirrorEditor's binding and the share
         // link in EditorFooter). An id no client could have minted is replaced with
         // one we did, which also stops the victim rejoining the attacker's room.
-        if (isValidCollabId(note.collabId)) return note.collabId
+        // A room this device saw end is replaced the same way (Stop live, 4410).
+        const ended = useActiveCollabStore.getState().endedRooms
+        if (isValidCollabId(note.collabId) && !ended.includes(note.collabId)) return note.collabId
         const collabId = uuidv4()
         set(state => ({
           notes: state.notes.map(n =>

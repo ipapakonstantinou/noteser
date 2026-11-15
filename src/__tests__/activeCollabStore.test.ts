@@ -18,7 +18,7 @@ beforeEach(() => {
 })
 
 describe('activeCollabStore Set semantics', () => {
-  test('activate / deactivate / toggle / isActive', () => {
+  test('activate / deactivate / isActive', () => {
     const s = useActiveCollabStore.getState()
     expect(s.isActive('n1')).toBe(false)
     s.activate('n1')
@@ -26,10 +26,16 @@ describe('activeCollabStore Set semantics', () => {
     // activate is idempotent.
     s.activate('n1')
     expect(useActiveCollabStore.getState().activeNoteIds.size).toBe(1)
-    expect(useActiveCollabStore.getState().toggle('n1')).toBe(false)
+    s.deactivate('n1')
     expect(useActiveCollabStore.getState().isActive('n1')).toBe(false)
-    expect(useActiveCollabStore.getState().toggle('n2')).toBe(true)
-    expect(useActiveCollabStore.getState().isActive('n2')).toBe(true)
+  })
+
+  test('ended rooms survive a reload, once each', () => {
+    useActiveCollabStore.setState({ endedRooms: [] })
+    useActiveCollabStore.getState().endRoom('r1')
+    useActiveCollabStore.getState().endRoom('r1')
+    const saved = JSON.parse(window.localStorage.getItem('noteser-active-collab') ?? '{}')
+    expect(saved.state.endedRooms).toEqual(['r1'])
   })
 })
 

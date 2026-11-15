@@ -32,11 +32,16 @@ interface ActiveCollabState {
   isActive: (noteId: string) => boolean
   // Turn collab on for a note (EditorFooter / context-menu toggle, share-link).
   activate: (noteId: string) => void
-  // Turn collab back off for a note.
+  // Turn collab back off for a note. "Stop live" goes through stopLiveCollab.
   deactivate: (noteId: string) => void
-  // Flip a note's active state, returning the new state.
-  toggle: (noteId: string) => boolean
+  // Room ids this device saw end (its own Stop, or the server's 4410). Never
+  // joined again: ensureCollabId mints a new id instead.
+  endedRooms: string[]
+  endRoom: (room: string) => void
 }
+
+// ponytail: keeps the last 200; an older ended id could be rejoined (it is an empty room by then).
+const MAX_ENDED_ROOMS = 200
 
 export const useActiveCollabStore = create<ActiveCollabState>()(
   persist(
@@ -56,12 +61,13 @@ export const useActiveCollabStore = create<ActiveCollabState>()(
           next.delete(noteId)
           return { activeNoteIds: next }
         }),
-      toggle: (noteId) => {
-        const nowActive = !get().activeNoteIds.has(noteId)
-        if (nowActive) get().activate(noteId)
-        else get().deactivate(noteId)
-        return nowActive
-      },
+      endedRooms: [],
+      endRoom: (room) =>
+        set((state) =>
+          state.endedRooms.includes(room)
+            ? state
+            : { endedRooms: [...state.endedRooms, room].slice(-MAX_ENDED_ROOMS) },
+        ),
     }),
     {
       name: 'noteser-active-collab',
@@ -72,11 +78,13 @@ export const useActiveCollabStore = create<ActiveCollabState>()(
       // serialized form is an array.
       partialize: (state) => ({
         activeNoteIds: Array.from(state.activeNoteIds),
+        endedRooms: state.endedRooms,
       }),
       merge: (persisted, current) => {
-        const raw = (persisted as { activeNoteIds?: unknown } | undefined)?.activeNoteIds
-        const ids = Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string') : []
-        return { ...current, activeNoteIds: new Set(ids) }
+        const p = persisted as { activeNoteIds?: unknown; endedRooms?: unknown } | undefined
+        const strings = (raw: unknown) =>
+          Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string') : []
+        return { ...current, activeNoteIds: new Set(strings(p?.activeNoteIds)), endedRooms: strings(p?.endedRooms) }
       },
     },
   ),

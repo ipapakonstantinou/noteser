@@ -21,7 +21,7 @@ import {
   SignalIcon,
   SignalSlashIcon,
 } from '@heroicons/react/24/outline'
-import { getConfiguredUrl } from '@/hooks/useCollaboration'
+import { getConfiguredUrl, stopLiveCollab } from '@/hooks/useCollaboration'
 import { useActiveCollabStore } from '@/stores/activeCollabStore'
 import { revealNote } from '@/utils/revealNote'
 import { useShallow } from 'zustand/react/shallow'
@@ -158,7 +158,7 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   // only when collaborationMode === 'per-note' AND the transport is configured.
   // In 'off'/'repo' modes there is nothing meaningful to toggle per note.
   const collaborationMode = useSettingsStore(s => s.collaborationMode)
-  const toggleCollab = useActiveCollabStore(s => s.toggle)
+  const activateCollab = useActiveCollabStore(s => s.activate)
   const collabActive = useActiveCollabStore(s =>
     isNote ? s.activeNoteIds.has(contextMenu.id) : false,
   )
@@ -449,7 +449,7 @@ export const ContextMenu = ({ contextMenu, onClose }: ContextMenuProps) => {
   }
 
   const handleToggleCollab = () => {
-    if (isNote) toggleCollab(contextMenu.id)
+    if (isNote) (collabActive ? stopLiveCollab : activateCollab)(contextMenu.id)
     onClose()
   }
 

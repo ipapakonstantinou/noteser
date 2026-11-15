@@ -58,6 +58,7 @@ import { GitHubProvider } from '../utils/gitHost/githubProvider'
 import { applyNonConflicts } from '../utils/syncApply'
 import { gitBlobSha } from '../utils/github'
 import { useNoteStore } from '../stores/noteStore'
+import { useActiveCollabStore } from '../stores/activeCollabStore'
 import type { Note, SyncRepo } from '@/types'
 
 const REPO: SyncRepo = { owner: 'me', name: 'vault', branch: 'main', isPrivate: false }
@@ -192,4 +193,41 @@ test('when local and remote hold DIFFERENT collabIds but identical bodies, the r
   // Repo's id wins so collaborators converge.
   expect(useNoteStore.getState().notes[0].collabId).toBe('ffffffff-ffff-4fff-8fff-ffffffffffff')
   expect(useNoteStore.getState().notes[0].content).toBe('Same body\n')
+})
+
+// H2 residual: after "Stop live" another device can push the OLD id back with
+// the same body, and the rule above hands it to this note again.
+test('a pull that hands back an id this device ended: the note takes it, but no join ever uses it', async () => {
+  const OLD = '2fc413e6-45e7-4a30-8eef-d71cb9c58744'
+  const rawOld = `---\ncollabId: ${OLD}\n---\nSame body\n`
+  const oldSha = await gitBlobSha(rawOld)
+  mockGetTreeMap.mockResolvedValue(new Map([['Note.md', oldSha]]))
+  mockGetBlobContent.mockResolvedValue(rawOld)
+  const first = await pullFromGitHub({ provider: new GitHubProvider('t'), repo: REPO, notes: [], folders: [] })
+  await applyNonConflicts(first.classifications)
+  const noteId = useNoteStore.getState().notes[0].id
+  expect(useNoteStore.getState().notes[0].collabId).toBe(OLD)
+
+  // Stop live on this device: the id is ended here and replaced.
+  useActiveCollabStore.getState().endRoom(OLD)
+  const fresh = useNoteStore.getState().ensureCollabId(noteId)
+  expect(fresh).not.toBe(OLD)
+
+  // Another device that slept through it pushes the old id, same body (here
+  // without the trailing newline, so the blob differs).
+  const rawBack = `---\ncollabId: ${OLD}\n---\nSame body`
+  const backSha = await gitBlobSha(rawBack)
+  mockGetTreeMap.mockResolvedValue(new Map([['Note.md', backSha]]))
+  mockGetBlobContent.mockImplementation(async (_t, _o, _n, sha: string) => (sha === backSha ? rawBack : rawOld))
+  const second = await pullFromGitHub({
+    provider: new GitHubProvider('t'), repo: REPO, notes: useNoteStore.getState().notes, folders: [],
+  })
+  expect(second.classifications[0]).toMatchObject({ kind: 'remoteUpdated', noteId, collabId: OLD })
+  await applyNonConflicts(second.classifications)
+  expect(useNoteStore.getState().notes[0].collabId).toBe(OLD) // the residual: repo wins
+
+  // But this device never joins it: the next join (editor binding, Share) mints a new id.
+  const next = useNoteStore.getState().ensureCollabId(noteId)
+  expect(next).not.toBe(OLD)
+  expect(useNoteStore.getState().notes[0].collabId).toBe(next) // which the next push publishes
 })
