@@ -61,6 +61,42 @@ personal vault and makes the one known doubling case (below) likelier.
   before), now with a `[collab] persist failed` log line, and it still
   expires on time.
 
+### Ending a session ("Stop live")
+
+A client ends a room with a one-byte binary frame, `100`. The worker then
+closes every socket in the room with code `4410`, deletes the room's
+document, and stores an `ended` marker with the usual idle deadline
+(`expireAt` + alarm, `ROOM_IDLE_DAYS`). y-websocket 3.1 and later treat
+4400-4499 as final, so no peer reconnects, and the noteser client turns live
+off for that note.
+
+While the marker exists, every new connection is accepted and at once closed
+with `4410`. A tab that slept through the stop therefore costs one request
+and cannot write its copy back into the room: the worker never sends it a
+sync step and never reads what it sends. When the deadline passes, the alarm
+deletes the marker with everything else, and the id becomes an ordinary
+empty room again. A refusal at the handshake (403/410) would be worse:
+y-websocket retries a failed handshake every 2.5 s, about 34.5k requests a
+day per stale tab against the free plan's 100k. Accept-then-close is the
+form of tombstone that the client stops on.
+
+- Any holder of a note room's id can send the frame. The id is the
+  credential, and a holder could already delete the note's text.
+- Only note rooms can be ended: the room name must be a v4 UUID, which is
+  what clients mint. The shared `__probe__` room, whose name ships in the
+  public bundle beside the public token, and any other non-UUID room ignore
+  the frame.
+- A frame that is not exactly that byte is ignored (type 100 with a
+  payload, a truncated varint); an oversized one hits the size cap like any
+  other.
+- An ended room answers `4410` even while closing sockets still count
+  toward the connection cap, so a stale tab never gets a retryable 429.
+- A worker from before this change ignores type 100 (unknown types fall
+  through), so a new client against an old worker only changes its own
+  room id; the old room keeps its copy until the idle expiry.
+- An empty document (never written, or just ended) is never persisted and
+  arms no idle alarm when the last socket leaves.
+
 ### One-off sweep of rooms from before the alarm
 
 Rooms stored before this version have no alarm and never wake by

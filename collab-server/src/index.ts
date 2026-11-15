@@ -11,6 +11,7 @@
 //   varUint messageType, then payload.
 //   0 = sync     y-protocols/sync: step1 / step2 / update
 //   1 = awareness y-protocols/awareness update (cursor presence)
+//   100 = end session (noteser only): the frame is exactly this one byte
 // Unknown message types are ignored so future client additions don't
 // break older deployments.
 //
@@ -24,6 +25,11 @@
 // Lifecycle: when the last socket leaves, the same alarm is re-armed for
 // ROOM_IDLE_DAYS later; if nobody has joined by then the room's storage is
 // deleted. A later joiner finds an empty room and re-seeds it from its note.
+// "Stop live" ends a room at once: storage deleted, every socket closed with
+// CLOSE_ENDED, which y-websocket >= 3.1 treats as final (no reconnect). An
+// `ended` marker then lives as long as the idle deadline: a tab that slept
+// through the stop is accepted and closed with the same code, so it cannot
+// write the note back into the room. Only note rooms (v4 UUIDs) can be ended.
 
 import * as Y from 'yjs'
 import * as syncProtocol from 'y-protocols/sync'
@@ -53,6 +59,13 @@ export interface Env extends LimitsEnv {
 
 const MESSAGE_SYNC = 0
 const MESSAGE_AWARENESS = 1
+// Not exported: workerd reads every named export of this module as an entrypoint.
+const MESSAGE_END_SESSION = 100
+// In y-websocket's 4400-4499 "permanent" range: peers stop retrying.
+const CLOSE_ENDED = 4410
+// What clients mint for note rooms. Anything else (the shared __probe__ room,
+// whose name ships in the public bundle) cannot be ended.
+const NOTE_ROOM = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 // CSWSH guard, not auth: browsers always send Origin on a WebSocket
 // handshake and a page cannot remove it, so a missing header is a
@@ -137,6 +150,7 @@ interface AwarenessChange {
 interface Attachment {
   ids: number[]
   awareness: Uint8Array | null
+  end?: boolean // joined a note room, so its end frame counts
 }
 
 function readAttachment(ws: WebSocket): Attachment {
@@ -221,21 +235,29 @@ export class YRoom {
       if (request.method === 'POST' && request.url.endsWith('/admin/arm')) return this.adminArm()
       return new Response('Expected WebSocket', { status: 426 })
     }
+    // Checked first: closing sockets still count toward the cap for a moment.
+    const ended = (await this.state.storage.get('ended')) === true
     // Cap concurrent sockets per room so one client can't force unbounded
     // fan-out/storage growth by opening connections in a loop.
-    if (isRoomFull(this.state.getWebSockets().length, this.limits)) {
+    if (!ended && isRoomFull(this.state.getWebSockets().length, this.limits)) {
       return new Response('Room is full', { status: 429 })
     }
     const pair = new WebSocketPair()
-    const client = pair[0]
-    const server = pair[1]
-    this.accept(server)
-    return new Response(null, { status: 101, webSocket: client })
+    if (ended) {
+      // Accept-then-close, not a refused handshake: y-websocket retries a
+      // refusal every 2.5 s but stops on 4410, so a stale tab costs one request.
+      pair[1].accept()
+      pair[1].close(CLOSE_ENDED, 'Session ended')
+    } else {
+      const room = new URL(request.url).pathname.split('/').filter(Boolean).pop() ?? ''
+      this.accept(pair[1], NOTE_ROOM.test(room))
+    }
+    return new Response(null, { status: 101, webSocket: pair[0] })
   }
 
-  private accept(ws: WebSocket): void {
+  private accept(ws: WebSocket, end: boolean): void {
     this.state.acceptWebSocket(ws)
-    ws.serializeAttachment({ ids: [], awareness: null } satisfies Attachment)
+    ws.serializeAttachment({ ids: [], awareness: null, end } satisfies Attachment)
     void this.state.storage.delete('expireAt') // someone is here: stop the idle clock
 
     // Sync step 1: send our state vector so the client replies with what
@@ -311,14 +333,30 @@ export class YRoom {
     return new Response('armed')
   }
 
-  // Only with no sockets: the in-memory doc is replaced, so nobody resyncs from it.
+  // No socket may stay on the old doc: callers have none, or have closed them all.
+  // Memory first, so a close that lands meanwhile finds an empty doc.
   private async wipe(): Promise<void> {
-    await this.state.storage.deleteAll()
-    await this.state.storage.deleteAlarm()
-    this.persistScheduled = false
     // Replaced, not destroyed: destroy() emits a 'local' awareness update into our handler.
     this.load()
     this.wire()
+    this.persistScheduled = false
+    await this.state.storage.deleteAll()
+    await this.state.storage.deleteAlarm()
+  }
+
+  // Anyone holding the room id may end the room: the id is the credential.
+  private async endSession(): Promise<void> {
+    for (const ws of this.state.getWebSockets()) {
+      try {
+        ws.close(CLOSE_ENDED, 'Session ended')
+      } catch {
+        // Already gone.
+      }
+    }
+    await this.wipe()
+    // Kept for one idle period; the alarm's wipe deletes it with the deadline.
+    await this.state.storage.put('ended', true)
+    await this.armIdleExpiry()
   }
 
   // Replaces any pending persist alarm; dropConnection flushes the doc first.
@@ -349,6 +387,10 @@ export class YRoom {
           ws,
         )
         break
+      case MESSAGE_END_SESSION:
+        // Exactly one byte, and only in a note room.
+        if (data.length === 1 && readAttachment(ws).end) void this.endSession()
+        break
       default:
         break // unknown message kind — ignore
     }
@@ -357,17 +399,18 @@ export class YRoom {
   // Track which awareness client ids this socket announced (so a disconnect
   // clears exactly its cursors) plus their encoded state for a wake.
   private saveOwnedAwareness(ws: WebSocket, { added, updated, removed }: AwarenessChange): void {
-    const owned = new Set(readAttachment(ws).ids)
+    const att = readAttachment(ws)
+    const owned = new Set(att.ids)
     for (const id of added.concat(updated)) owned.add(id)
     for (const id of removed) owned.delete(id)
     const ids = [...owned]
     const live = ids.filter(id => this.awareness.states.has(id))
     const awareness = live.length > 0 ? awarenessProtocol.encodeAwarenessUpdate(this.awareness, live) : null
     try {
-      ws.serializeAttachment({ ids, awareness } satisfies Attachment)
+      ws.serializeAttachment({ ...att, ids, awareness } satisfies Attachment)
     } catch {
       // Over the 16 KB attachment cap: keep the ids, lose presence on wake.
-      ws.serializeAttachment({ ids, awareness: null } satisfies Attachment)
+      ws.serializeAttachment({ ...att, ids, awareness: null } satisfies Attachment)
     }
   }
 
@@ -378,7 +421,8 @@ export class YRoom {
     if (owned.length > 0) {
       awarenessProtocol.removeAwarenessStates(this.awareness, owned, null)
     }
-    if (this.state.getWebSockets().every(other => other === ws)) {
+    // An empty doc (never written to, or just ended) has nothing to keep or expire.
+    if (this.doc.store.clients.size > 0 && this.state.getWebSockets().every(other => other === ws)) {
       void this.persistNow().catch(err => console.error('[collab] persist failed', err))
       // Separate from the persist: a doc over the 2 MB value cap fails to
       // persist (L1) but must still expire.
@@ -407,6 +451,7 @@ export class YRoom {
   }
 
   private async persistNow(): Promise<void> {
+    if (this.doc.store.clients.size === 0) return // nothing to keep (fresh, or just ended)
     await this.state.storage.put('doc', Y.encodeStateAsUpdate(this.doc))
   }
 }
