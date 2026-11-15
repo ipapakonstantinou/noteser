@@ -3,7 +3,8 @@
  *
  * Feature A (share-session link) unit tests:
  *   - buildCollabShareLink produces the right origin + collabId + encoded title.
- *   - parseCollabParam reads `?collab` / `&title` back, tolerating absence.
+ *   - parseCollabParam reads `#collab` / `&title` back (and the legacy
+ *     `?collab=` form), tolerating absence.
  *   - The join decision (create-or-open) seeds a joiner's note EMPTY so the
  *     collab binding never seeds local content over the wire.
  */
@@ -16,7 +17,7 @@ jest.mock('idb-keyval', () => ({
   keys: jest.fn(() => Promise.resolve([...idb.keys()])),
 }))
 
-import { buildCollabShareLink, parseCollabParam } from '../utils/collabShare'
+import { buildCollabShareLink, parseCollabParam, scrubShareSecrets } from '../utils/collabShare'
 import { useNoteStore } from '../stores/noteStore'
 
 beforeEach(() => {
@@ -30,28 +31,31 @@ describe('buildCollabShareLink', () => {
     const url = new URL(link)
     expect(url.origin).toBe('https://noteser.app')
     expect(url.pathname).toBe('/')
-    expect(url.searchParams.get('collab')).toBe('55555555-5555-4555-8555-555555555555')
-    expect(url.searchParams.get('title')).toBe('My Note: Draft')
+    // M3: the room id travels in the fragment, never in the query string.
+    expect(url.search).toBe('')
+    const frag = new URLSearchParams(url.hash.slice(1))
+    expect(frag.get('collab')).toBe('55555555-5555-4555-8555-555555555555')
+    expect(frag.get('title')).toBe('My Note: Draft')
   })
 
   test('omits the title param entirely when blank', () => {
     expect(buildCollabShareLink('https://noteser.app', '55555555-5555-4555-8555-555555555555')).toBe(
-      'https://noteser.app/?collab=55555555-5555-4555-8555-555555555555',
+      'https://noteser.app/#collab=55555555-5555-4555-8555-555555555555',
     )
     expect(buildCollabShareLink('https://noteser.app', '55555555-5555-4555-8555-555555555555', '   ')).toBe(
-      'https://noteser.app/?collab=55555555-5555-4555-8555-555555555555',
+      'https://noteser.app/#collab=55555555-5555-4555-8555-555555555555',
     )
   })
 
   test('tolerates a trailing slash on the origin', () => {
     expect(buildCollabShareLink('https://noteser.app/', '66666666-6666-4666-8666-666666666666')).toBe(
-      'https://noteser.app/?collab=66666666-6666-4666-8666-666666666666',
+      'https://noteser.app/#collab=66666666-6666-4666-8666-666666666666',
     )
   })
 
-  test('collab comes before title in the query string', () => {
+  test('collab comes before title in the fragment', () => {
     const link = buildCollabShareLink('https://x.dev', '66666666-6666-4666-8666-666666666666', 'Hello')
-    expect(link).toBe('https://x.dev/?collab=66666666-6666-4666-8666-666666666666&title=Hello')
+    expect(link).toBe('https://x.dev/#collab=66666666-6666-4666-8666-666666666666&title=Hello')
   })
 })
 
@@ -77,8 +81,26 @@ describe('parseCollabParam', () => {
 
   test('round-trips a built link', () => {
     const link = buildCollabShareLink('https://noteser.app', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'A Title')
-    const search = new URL(link).search
-    expect(parseCollabParam(search)).toEqual({ collabId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', title: 'A Title' })
+    expect(parseCollabParam(new URL(link).hash)).toEqual({ collabId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', title: 'A Title' })
+  })
+
+  test('still accepts a legacy query-string link and a bare fragment', () => {
+    const id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    expect(parseCollabParam(`?collab=${id}&title=Old`)).toEqual({ collabId: id, title: 'Old' })
+    expect(parseCollabParam(`#collab=${id}`)).toEqual({ collabId: id, title: null })
+    expect(parseCollabParam('#some-heading')).toBeNull()
+  })
+})
+
+describe('scrubShareSecrets (analytics beforeSend)', () => {
+  test('drops the fragment and the legacy collab/title params, keeps the rest', () => {
+    const id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    expect(scrubShareSecrets(`https://noteser.app/#collab=${id}&title=Secret`)).toBe('https://noteser.app/')
+    expect(scrubShareSecrets(`https://noteser.app/?collab=${id}&title=Secret&utm_source=x`)).toBe('https://noteser.app/?utm_source=x')
+    expect(scrubShareSecrets('https://noteser.app/share#eyJ0aXRsZSI6IngifQ')).toBe('https://noteser.app/share')
+    // The old /share Import hand-off put the whole note in the query string.
+    expect(scrubShareSecrets('https://noteser.app/?import=eyJ0aXRsZSI6IngifQ&utm_source=x')).toBe('https://noteser.app/?utm_source=x')
+    expect(scrubShareSecrets('not a url')).toBe('not a url')
   })
 })
 

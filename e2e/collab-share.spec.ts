@@ -49,10 +49,27 @@ test('Share puts the sharer in the room', async ({ page }) => {
   const room = await page.evaluate((noteId) =>
     window.__noteser_test!.stores.noteStore.getState().notes.find(n => n.id === noteId)!.collabId!, id)
   await expect.poll(() => sockets.some(u => u.endsWith(`/${room}`))).toBe(true)
+  // M3: the copied link carries the room id in the fragment only.
+  const link = await page.evaluate(() => navigator.clipboard.readText())
+  expect(new URL(link).search).toBe('')
+  expect(new URL(link).hash).toBe(`#collab=${room}&title=Shared`)
 })
 
-test('opening a share link puts the recipient in the room', async ({ page }) => {
+for (const [kind, path] of [
+  ['fragment', (room: string) => `/#collab=${room}&title=Joined`],
+  ['legacy query', (room: string) => `/?collab=${room}&title=Joined`],
+] as const) {
+  test(`opening a ${kind} share link puts the recipient in the room`, async ({ page }) => {
+    const room = randomUUID()
+    const sockets = await openRecordingSockets(page, path(room))
+    await expect.poll(() => sockets.some(u => u.endsWith(`/${room}`))).toBe(true)
+    await expect.poll(() => page.evaluate(() => location.search + location.hash)).toBe('')
+  })
+}
+
+test('a share link pasted into an open tab (fragment-only change) joins', async ({ page }) => {
   const room = randomUUID()
-  const sockets = await openRecordingSockets(page, `/?collab=${room}&title=Joined`)
+  const sockets = await openRecordingSockets(page, '/')
+  await page.evaluate(r => { location.hash = `collab=${r}` }, room)
   await expect.poll(() => sockets.some(u => u.endsWith(`/${room}`))).toBe(true)
 })

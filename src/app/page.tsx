@@ -321,7 +321,8 @@ export default function Home() {
     })()
   }, [hydrated])
 
-  // Join-collab-session (Feature A): when the URL has `?collab=<id>` open (or
+  // Join-collab-session (Feature A): when the URL has `#collab=<id>` (or the
+  // legacy `?collab=<id>`) open (or
   // create) the local note bound to that room. If a note with this collabId
   // already exists we just open it; otherwise we materialise an EMPTY local
   // note seeded with the collabId (+ the title from the link, if any) and let
@@ -334,7 +335,7 @@ export default function Home() {
     if (typeof window === 'undefined') return
     const open = async () => {
       const { parseCollabParam } = await import('@/utils/collabShare')
-      const parsed = parseCollabParam(window.location.search)
+      const parsed = parseCollabParam(window.location.hash) ?? parseCollabParam(window.location.search)
       if (!parsed) return
       const existing = useNoteStore.getState().notes.find(
         n => n.collabId === parsed.collabId && !n.isDeleted,
@@ -353,6 +354,10 @@ export default function Home() {
       window.history.replaceState({}, '', window.location.pathname)
     }
     void open()
+    // A link pasted into an already-open tab only changes the fragment: no reload.
+    const onHash = () => void open()
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
   }, [hydrated])
 
   // Migrate old data on first load. Async-yielding migration so a

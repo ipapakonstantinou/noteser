@@ -101,6 +101,14 @@ model reflects that:
   message size, connections per room, and messages per second (2026-07-06)
   to bound DoS/storage-bloat from a client that *does* have a room id, but
   none of that is confidentiality — treat a room id like a `/share` link.
+  - Shipped 2026-11-15: the share link carries the room id in the URL
+    fragment (`/#collab=<id>&title=…`); the old `/?collab=` links keep
+    working. Vercel Web Analytics reports the full `location.href`,
+    fragment included, so `src/components/ScrubbedAnalytics.tsx` strips the
+    fragment and the `collab`/`title`/`import` params in `beforeSend`, for
+    page views and custom events. Before 2026-11-15 the beacon carried the
+    `/share` fragment (the note), `?collab=` ids and `?import=` payloads
+    whenever the project's Analytics toggle was on.
 - **A committed `collabId` is a bearer credential in plaintext, and cannot be
   rotated.** `serializeNote` writes `collabId: <uuid>` into the note's
   frontmatter and the pull adopts the remote value ("repo wins", so
