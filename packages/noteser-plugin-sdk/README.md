@@ -4,14 +4,21 @@ TypeScript SDK for writing [Noteser](https://noteser.app) plugins.
 
 ## Install
 
-```bash
-npm install @noteser/plugin-sdk
-```
+Not on npm yet. Do not `npm install @noteser/plugin-sdk` from the registry:
+the `@noteser` scope is not registered, so a package by that name would not
+be ours. This package is marked `"private": true` so it cannot be published
+by accident.
+
+What works today: copy this folder's `src/` into your plugin as
+`noteser-plugin-sdk/` and import it by relative path; your bundler (esbuild,
+rollup, vite) inlines it. `definePlugin` returns its argument unchanged, so a
+plugin can also skip the SDK and `export default { ... }` the same object, as
+the bundled plugins in `public/plugins/` do.
 
 ## Quick start
 
 ```ts
-import { definePlugin } from '@noteser/plugin-sdk'
+import { definePlugin } from './noteser-plugin-sdk'
 
 export default definePlugin({
   id: 'word-count',
