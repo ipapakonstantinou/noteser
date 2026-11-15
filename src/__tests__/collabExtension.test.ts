@@ -315,3 +315,90 @@ describe('SEED RACE: concurrent empty clients must not double the body', () => {
     bindings.forEach(x => x.destroy())
   })
 })
+
+// M2 (2026-11-15): the server now deletes a room after ROOM_IDLE_DAYS idle, so
+// "empty room" is common. The server is a relay participant here; a wipe = a
+// fresh server doc. Reconnects exchange full state like sync step 1/2 does.
+describe('WIPED ROOM: clients that both hold the note rejoin an empty room', () => {
+  type Peer = { doc: Y.Doc; provider: FakeProvider }
+  function hub() {
+    let server = new Y.Doc()
+    let peers: Peer[] = []
+    const buffer: Array<{ from: Y.Doc; update: Uint8Array }> = []
+    const listen = (doc: Y.Doc) =>
+      doc.on('update', (u: Uint8Array, origin: unknown) => { if (origin !== 'relay') buffer.push({ from: doc, update: u }) })
+    listen(server)
+    const factory: ProviderFactory = (url, room, doc) => {
+      listen(doc)
+      const provider = new FakeProvider(url, room, doc)
+      peers.push({ doc, provider })
+      return provider
+    }
+    const flush = () => {
+      for (let guard = 0; buffer.length && guard < 100; guard++) {
+        for (const { from, update } of buffer.splice(0, buffer.length)) {
+          for (const d of [server, ...peers.map(p => p.doc)]) if (d !== from) Y.applyUpdate(d, update, 'relay')
+        }
+      }
+    }
+    // y-websocket sync step 1/2 on (re)connect, then the 'sync' event.
+    const join = (p: Peer) => {
+      Y.applyUpdate(server, Y.encodeStateAsUpdate(p.doc), p.doc) // the server rebroadcasts it
+      Y.applyUpdate(p.doc, Y.encodeStateAsUpdate(server), 'relay')
+      p.provider.fireSync(true)
+    }
+    const wipe = () => { server = new Y.Doc(); listen(server); peers = peers.filter(p => !p.provider.destroyed) }
+    const open = (body: string) =>
+      createCollabBinding({ url: 'wss://x', room: 'r', initialContent: body, user: null, providerFactory: factory })
+    return { open, join, flush, wipe, peer: (i: number) => peers[i], text: () => server.getText('content').toString() }
+  }
+  const body = '# 2026-11-15\n\n- [ ] ship M2\n'
+
+  test('two reloaded clients seeding a wiped room converge on one copy', () => {
+    const h = hub()
+    const first = [h.open(body), h.open(body)]
+    h.join(h.peer(0)); h.join(h.peer(1)); h.flush()
+    expect(h.text()).toBe(body)
+    first.forEach(b => b.destroy())
+    h.wipe()
+
+    // Both pages reloaded: fresh docs, both seed the empty room before anything crosses.
+    const again = [h.open(body), h.open(body)]
+    h.peer(0).provider.fireSync(true)
+    h.peer(1).provider.fireSync(true)
+    h.join(h.peer(0)); h.join(h.peer(1)); h.flush()
+    again.forEach(b => expect(b.ytext.toString()).toBe(body))
+    expect(h.text()).toBe(body)
+  })
+
+  test('two clients still holding the old history repopulate it without doubling', () => {
+    const h = hub()
+    const [a, b] = [h.open(body), h.open(body)]
+    h.join(h.peer(0)); h.join(h.peer(1)); h.flush()
+    a.ytext.insert(a.ytext.length, 'typed later\n'); h.flush()
+    const before = a.ytext.toString()
+    h.wipe() // tabs stayed open, sockets were down for the whole idle period
+    h.join(h.peer(0)); h.join(h.peer(1)); h.flush()
+    expect(a.ytext.toString()).toBe(before)
+    expect(b.ytext.toString()).toBe(before)
+    expect(h.text()).toBe(before)
+  })
+
+  // Residual, documented in docs/security.md: a tab that kept its old history
+  // through the whole idle period meets a page that reseeded the wiped room.
+  // Nothing is lost; the body can appear twice and stays for the user to trim.
+  test('old history meeting a fresh seed loses nothing (may double)', () => {
+    const h = hub()
+    const old = h.open(body)
+    h.join(h.peer(0)); h.flush()
+    old.ytext.insert(old.ytext.length, 'edit\n'); h.flush()
+    const kept = old.ytext.toString()
+    h.wipe()
+    const fresh = h.open(kept)
+    h.join(h.peer(1)); h.flush()
+    h.join(h.peer(0)); h.flush()
+    expect(fresh.ytext.toString()).toBe(old.ytext.toString())
+    expect(old.ytext.toString()).toContain(kept)
+    expect([kept, kept + kept]).toContain(old.ytext.toString())
+  })
+})
