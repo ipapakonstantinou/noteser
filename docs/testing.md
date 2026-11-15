@@ -25,7 +25,8 @@ npx jest -t "<pattern>"        # match by test name
 npm run test:watch             # watch mode
 npm run test:coverage          # coverage report
 
-npm run e2e                    # full Playwright run (headless, auto-boots dev server on :3001)
+npm run e2e                    # full Playwright run (headless, auto-boots dev server on :3001
+                               # and the collab worker on :8790; once: npm ci --prefix collab-server)
 npm run e2e:headed             # visible browser
 npx playwright test e2e/parity/<file>.spec.ts   # single spec
 npx playwright test --grep "<title>"            # match by test title

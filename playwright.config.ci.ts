@@ -41,12 +41,23 @@ export default defineConfig({
     },
   ],
 
-  webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:3001',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-    // Dummy collab transport, see playwright.config.ts.
-    env: { NEXT_PUBLIC_YJS_WS_URL: 'ws://127.0.0.1:9/e2e' },
-  },
+  webServer: [
+    {
+      // Local collab worker, see playwright.config.ts.
+      command: 'npx wrangler dev --ip 127.0.0.1 --port 8790 --var AUTH_TOKEN:e2e',
+      cwd: 'collab-server',
+      url: 'http://127.0.0.1:8790',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+      env: { WRANGLER_SEND_METRICS: 'false' },
+    },
+    {
+      command: 'npm run dev',
+      url: 'http://localhost:3001',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+      // Collab transport = the worker above, see playwright.config.ts.
+      env: { NEXT_PUBLIC_YJS_WS_URL: 'ws://127.0.0.1:8790/e2e' },
+    },
+  ],
 })

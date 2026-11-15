@@ -42,17 +42,29 @@ export default defineConfig({
     },
   ],
 
-  webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:3001',
-    // Don't re-spawn if a dev server is already running locally — speeds
-    // up the inner loop when you're iterating on a test.
-    reuseExistingServer: !process.env.CI,
-    // Cold compile of the app takes ~13s the first time after `.next` is
-    // wiped, so give it a generous startup window.
-    timeout: 120_000,
-    // Dummy collab transport so the live-collab UI renders (e2e/collab-share).
-    // Nothing listens there; the default 'off' mode never dials it.
-    env: { NEXT_PUBLIC_YJS_WS_URL: 'ws://127.0.0.1:9/e2e' },
-  },
+  webServer: [
+    {
+      // The real collab worker, local and account-free (`wrangler dev`), with a
+      // dummy token. Needs `npm ci --prefix collab-server` once.
+      command: 'npx wrangler dev --ip 127.0.0.1 --port 8790 --var AUTH_TOKEN:e2e',
+      cwd: 'collab-server',
+      url: 'http://127.0.0.1:8790',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+      env: { WRANGLER_SEND_METRICS: 'false' },
+    },
+    {
+      command: 'npm run dev',
+      url: 'http://localhost:3001',
+      // Don't re-spawn if a dev server is already running locally — speeds
+      // up the inner loop when you're iterating on a test.
+      reuseExistingServer: !process.env.CI,
+      // Cold compile of the app takes ~13s the first time after `.next` is
+      // wiped, so give it a generous startup window.
+      timeout: 120_000,
+      // Collab transport = the worker above (e2e/collab-share, e2e/collab-stop).
+      // The default 'off' mode never dials it.
+      env: { NEXT_PUBLIC_YJS_WS_URL: 'ws://127.0.0.1:8790/e2e' },
+    },
+  ],
 })

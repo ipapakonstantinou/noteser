@@ -128,6 +128,11 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
+      # The e2e config also starts the collab worker locally (`wrangler dev`),
+      # so the live-collab specs run against the real room code.
+      - name: Install collab-server dependencies
+        run: npm ci --prefix collab-server
+
       # e2e:ci boots `npm run dev` itself (Playwright webServer) and waits for
       # http://localhost:3001, so there is no separate "start server" step. It
       # runs the STABLE top-level specs only (playwright.config.ci.ts excludes
