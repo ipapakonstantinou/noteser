@@ -7,7 +7,7 @@ import { useGitHubStore, useNoteStore, useUIStore, useSettingsStore, useFolderSt
 import { useToastStore } from '@/stores/toastStore'
 import { classifyPendingChanges, totalPendingCount } from '@/utils/syncChanges'
 import { computeStreakFromDateStrings, dailyDateSet } from '@/utils/dailyStreak'
-import { useCollaboration, getConfiguredUrl, joinLiveCollab } from '@/hooks/useCollaboration'
+import { useCollaboration, getConfiguredUrl, joinLiveCollab, stopLiveCollab } from '@/hooks/useCollaboration'
 import { buildCollabShareLink } from '@/utils/collabShare'
 import { useActiveCollabStore } from '@/stores/activeCollabStore'
 import { useHydration } from '@/hooks'
@@ -220,7 +220,7 @@ function ShareCollabButton({ noteId }: { noteId: string | null }) {
 function LiveCollabToggle({ noteId }: { noteId: string | null }) {
   const mode = useSettingsStore(s => s.collaborationMode)
   const active = useActiveCollabStore(s => (noteId ? s.activeNoteIds.has(noteId) : false))
-  const toggle = useActiveCollabStore(s => s.toggle)
+  const activate = useActiveCollabStore(s => s.activate)
   // The WebSocket probe health, so the live button can show connecting/
   // retrying/unreachable on the SAME control instead of a separate pill.
   const { status, attempts } = useCollaboration()
@@ -251,10 +251,10 @@ function LiveCollabToggle({ noteId }: { noteId: string | null }) {
   return (
     <button
       type="button"
-      onClick={() => toggle(noteId)}
+      onClick={() => (active ? stopLiveCollab(noteId) : activate(noteId))}
       className={`flex items-center gap-1 transition-colors ${color}`}
       title={active
-        ? `Live collaboration is ON for this note (${label.replace(/^Live: /, '')}). Click to stop sharing edits and return to solo editing.`
+        ? `Live collaboration is ON for this note (${label.replace(/^Live: /, '')}). Click to end the session for everyone: people in it are disconnected, the note gets a new link, and old links no longer reach it. Your copy stays here.`
         : 'Turn ON live collaboration for this note. Edits sync in real time with anyone who has its share link. Other notes stay solo.'}
       data-testid="status-bar-collab-toggle"
       aria-pressed={active}

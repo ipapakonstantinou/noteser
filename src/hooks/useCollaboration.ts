@@ -16,6 +16,10 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useActiveCollabStore } from '@/stores/activeCollabStore'
+import { useNoteStore } from '@/stores/noteStore'
+import { useToastStore } from '@/stores/toastStore'
+import { isValidCollabId } from '@/utils/collabId'
+import { SYNC_REQUEST_EVENT } from '@/utils/events'
 
 export type CollabStatus = 'off' | 'connecting' | 'connected' | 'disconnected' | 'error'
 
@@ -122,6 +126,103 @@ export function joinLiveCollab(noteId: string): void {
   const settings = useSettingsStore.getState()
   if (settings.collaborationMode === 'off') settings.setCollaborationMode('per-note')
   useActiveCollabStore.getState().activate(noteId)
+}
+
+// collab-server MESSAGE_END_SESSION: the whole frame is this byte.
+const END_SESSION = 100
+const END_TIMEOUT_MS = 10_000
+
+// "Stop live", for everyone: live off here, the server ends the room (all
+// sockets closed with 4410, storage deleted) and the note gets a fresh id,
+// which sync carries to the owner's other devices. The id swap alone already
+// keeps old links away from future edits, so it never waits on the server.
+export function stopLiveCollab(noteId: string): void {
+  const active = useActiveCollabStore.getState()
+  active.deactivate(noteId)
+  const room = useNoteStore.getState().getNoteById(noteId)?.collabId
+  if (!isValidCollabId(room)) return
+  active.endRoom(room) // first: our own binding's 4410 then finds it ended and stays quiet
+  useNoteStore.getState().ensureCollabId(noteId) // replaces the ended id
+  // Push the new id now, before another device can push the old one back.
+  window.dispatchEvent(new Event(SYNC_REQUEST_EVENT))
+  sendEndOfSession(room)
+}
+
+// Its own socket, so it also works for a note no editor has open. "Ended for
+// everyone" only once the frame went out on an open socket; offline, a full
+// room (429) or a timeout get the other line.
+function sendEndOfSession(room: string): void {
+  let settled = false
+  const report = (sent: boolean) => {
+    if (settled) return
+    settled = true
+    useToastStore.getState().addToast(
+      sent
+        ? { kind: 'success', message: 'Live session ended for everyone. Old links no longer reach this note.' }
+        : {
+            kind: 'error',
+            message:
+              'Live is off and the note has a new link, but the old session could not be closed: anyone still in it stays there, without your new edits.',
+          },
+    )
+  }
+  const url = getConfiguredUrl()
+  let ws: WebSocket
+  try {
+    if (!url) throw new Error('no collab transport')
+    ws = new WebSocket(`${url.replace(/\/+$/, '')}/${room}`)
+  } catch {
+    report(false)
+    return
+  }
+  const timer = setTimeout(() => {
+    report(false)
+    ws.close()
+  }, END_TIMEOUT_MS)
+  ws.onopen = () => {
+    clearTimeout(timer)
+    try {
+      ws.send(new Uint8Array([END_SESSION]))
+      report(true)
+    } catch {
+      report(false)
+    }
+    ws.close()
+  }
+  ws.onclose = () => {
+    clearTimeout(timer)
+    report(false) // a no-op after onopen
+  }
+}
+
+// Live off for this note on this device, with one line for the user. Repo
+// mode has no per-note switch: the editor detaches the binding itself.
+function leaveLive(noteId: string, message: string): void {
+  useActiveCollabStore.getState().deactivate(noteId)
+  useToastStore.getState().addToast({ kind: 'info', message })
+}
+
+// The server ended this note's session (4410: live, or on a reconnect after
+// a sleep; y-websocket already stopped retrying). Never rejoin that id. The
+// note keeps its id until sync brings the stopper's new one, so that merge
+// stays clean.
+export function onLiveSessionEnded(noteId: string, room: string): void {
+  const active = useActiveCollabStore.getState()
+  if (active.endedRooms.includes(room)) return
+  active.endRoom(room)
+  leaveLive(
+    noteId,
+    useSettingsStore.getState().collaborationMode === 'repo'
+      ? 'This live session was ended. Your copy stays on this device, off live until the note gets a new link.'
+      : 'This live session was ended. Your copy of the note stays on this device.',
+  )
+}
+
+// Sync moved an open, live note to a room that does not hold exactly the
+// editor's text (empty included): stay off it, so the room never replaces
+// local text and local text never pre-fills another device's new room.
+export function onLiveRoomDiverged(noteId: string): void {
+  leaveLive(noteId, 'Live is off for this note: another device moved it to a new link. Your copy stays here.')
 }
 
 export function useCollaboration(): CollabState {

@@ -34,8 +34,10 @@ class FakeProvider implements ProviderLike {
   constructor(doc: Y.Doc) {
     this.awareness = new Awareness(doc)
   }
-  on(_event: 'sync', cb: (s: boolean) => void) { this.handlers.push(cb) }
-  off(_event: 'sync', cb: (s: boolean) => void) {
+  on(event: 'sync' | 'closed', cb: (arg: never) => void) {
+    if (event === 'sync') this.handlers.push(cb as (s: boolean) => void)
+  }
+  off(_event: 'sync' | 'closed', cb: (arg: never) => void) {
     this.handlers = this.handlers.filter(h => h !== cb)
   }
   destroy() { this.awareness.destroy() }

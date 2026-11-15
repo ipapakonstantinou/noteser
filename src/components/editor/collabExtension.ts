@@ -34,10 +34,15 @@ export interface AwarenessLike {
 // opening a socket.
 export interface ProviderLike {
   awareness: AwarenessLike
-  on: (event: 'sync', cb: (isSynced: boolean) => void) => void
-  off?: (event: 'sync', cb: (isSynced: boolean) => void) => void
+  // 'sync' passes isSynced; 'closed' passes { code } on a final close (y-websocket >= 3.1).
+  // Method syntax: test fakes that only take 'sync' still fit.
+  on(event: 'sync' | 'closed', cb: (arg: never) => void): void
+  off?(event: 'sync' | 'closed', cb: (arg: never) => void): void
   destroy: () => void
 }
+
+// collab-server CLOSE_ENDED: someone stopped the session; y-websocket does not reconnect.
+export const CLOSE_ENDED = 4410
 
 // Factory the binding uses to build a provider. Injectable so tests can
 // supply a fake; production uses `defaultProviderFactory` (real
@@ -105,6 +110,8 @@ export interface CreateCollabBindingOptions {
   user: GitHubUser | null
   // Injected for tests. Defaults to the real WebsocketProvider.
   providerFactory?: ProviderFactory
+  // Called when the server ends the session (close code 4410).
+  onEnded?: () => void
 }
 
 // Deterministic, pleasant cursor color derived from a string (login or a
@@ -167,6 +174,7 @@ export function createCollabBinding(
     initialContent,
     user,
     providerFactory = defaultProviderFactory,
+    onEnded,
   } = options
 
   const doc = new Y.Doc()
@@ -235,6 +243,11 @@ export function createCollabBinding(
     reconcileSeed()
   }
   provider.on('sync', onSync)
+
+  const onClosed = (event: { code: number }) => {
+    if (!destroyed && event.code === CLOSE_ENDED) onEnded?.()
+  }
+  provider.on('closed', onClosed)
 
   // React to remote seeds / text arriving so the elected collapser trims any
   // duplicate a concurrent seeder produced, converging to one copy.
@@ -317,6 +330,7 @@ export function createCollabBinding(
     if (destroyed) return
     destroyed = true
     provider.off?.('sync', onSync)
+    provider.off?.('closed', onClosed)
     try {
       ytext.unobserve(onChange)
       meta.unobserve(onChange)

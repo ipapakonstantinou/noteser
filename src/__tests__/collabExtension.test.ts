@@ -43,11 +43,18 @@ class FakeProvider implements ProviderLike {
     FakeProvider.last = this
   }
 
-  on(_event: 'sync', cb: (s: boolean) => void) {
-    this.syncHandlers.push(cb)
+  closedHandlers: Array<(e: { code: number }) => void> = []
+  on(event: 'sync' | 'closed', cb: (arg: never) => void) {
+    if (event === 'sync') this.syncHandlers.push(cb as (s: boolean) => void)
+    else this.closedHandlers.push(cb as (e: { code: number }) => void)
   }
-  off(_event: 'sync', cb: (s: boolean) => void) {
+  off(_event: 'sync' | 'closed', cb: (arg: never) => void) {
     this.syncHandlers = this.syncHandlers.filter(h => h !== cb)
+    this.closedHandlers = this.closedHandlers.filter(h => h !== cb)
+  }
+  // Test helper: simulate y-websocket's final close.
+  fireClosed(code: number) {
+    this.closedHandlers.forEach(h => h({ code }))
   }
   destroy() {
     this.destroyed = true

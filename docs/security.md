@@ -116,16 +116,66 @@ model reflects that:
     page views and custom events. Before 2026-11-15 the beacon carried the
     `/share` fragment (the note), `?collab=` ids and `?import=` payloads
     whenever the project's Analytics toggle was on.
-- **A committed `collabId` is a bearer credential in plaintext, and cannot be
-  rotated.** `serializeNote` writes `collabId: <uuid>` into the note's
+- **A committed `collabId` is a bearer credential in plaintext.**
+  `serializeNote` writes `collabId: <uuid>` into the note's
   frontmatter and the pull adopts the remote value ("repo wins", so
-  collaborators converge on one room). Consequences, none of them fixed:
+  collaborators converge on one room). Consequences:
   anyone who can read the repo — including anyone the vault is ever shared
   with, a fork, or a later collaborator who should have lost access — holds
-  read/write on that room forever; there is no rotation path, because changing
-  the id means every device must agree on the new one through the same file;
+  read/write on that room for as long as the id stays; the only way to
+  rotate it is "Stop live" (below), and the new id lands in the same file;
   and the Durable Object keeps server-side state keyed on the id, so a leaked
   id also names durable server state.
+  - Shipped 2026-11-15 (H2): **"Stop live" ends the session for everyone.**
+    The stopping device sends a one-byte end frame to the room. The worker
+    closes every socket with code 4410, deletes the room's document and keeps
+    an `ended` marker for one idle period (`ROOM_IDLE_DAYS`, cleared with the
+    deadline). While the marker exists, every new connection is accepted and
+    closed with 4410 at once. So a device that slept through the stop
+    reconnects, is told the session ended and cannot write its copy back into
+    the room. The earlier "no tombstone" reasoning was about refusing the
+    handshake, which y-websocket retries every 2.5 s; it stops on 4410, so a
+    stale tab costs one request.
+  - Each device that sees the end (its own Stop, or a 4410, live or on a
+    reconnect) turns live off for the note, says so in one line and records
+    the id as ended: it never joins that id again (`ensureCollabId` mints a
+    new one). In `repo` mode, where there is no per-note switch, the editor
+    detaches the binding itself, and the note stays off live until it gets a
+    new link: one that sync brings while it is open, joined only if its text
+    matches (next point), or a fresh one when the note is reopened.
+  - The stopping device also gives the note a new id at once and asks for a
+    sync, so the new id reaches the owner's other devices through the
+    frontmatter. "Ended for everyone" is only shown once the frame went out on
+    an open socket. Offline, a full room or no answer within 10 s gets a
+    different line: future edits are safe behind the new id, but anyone still
+    in the old room stays there until the idle deadline.
+  - When sync moves a note that is open and live on this device to another
+    room, the editor joins it only if the room already holds exactly the
+    editor's text. Otherwise, an empty room included, live goes off for the
+    note, the text stays, and one line says why. The room never replaces
+    local text, and local text never pre-fills another device's new room.
+  - Only note rooms (v4 UUIDs, what clients mint) can be ended. The shared
+    `__probe__` room, whose name ships in the public bundle, ignores the
+    frame, so nobody can loop it to make every open tab reconnect.
+  - Because the id is a bearer credential, **anyone who holds the link can
+    also end the session**, including a guest. They could already delete the
+    note's text, so this adds no capability.
+  - In `collaborationMode: 'repo'` the new id is written to the repo like the
+    old one. Stopping cuts off people who only had the link, not people who
+    can read the repo; that needs the redesign below (H1). Repo mode has no
+    Stop button.
+  - Residuals.
+    - A device that was offline during the stop learns the new id at its
+      next pull. If it pushes the old id first while the note bodies are
+      identical, the "repo wins" rule hands the old id back to the stopper's
+      note. A device that saw the end still refuses it and mints a new id
+      for its next join; the marker answers 4410 to any other device until
+      the deadline.
+    - Going live on purpose, or reopening a note in `repo` mode, still joins
+      the room as before: if the room holds a different version, that
+      version is what the editor shows (unchanged behaviour, not limited to
+      this feature).
+
   - Shipped 2026-11-15: that state no longer lives forever. A room's stored
     document is deleted after `ROOM_IDLE_DAYS` (30) with no connection
     (collab-server README, "Room lifecycle"); rooms stored before that get
@@ -203,6 +253,7 @@ not a sandbox.
 
 | Date | Change | Notes |
 |---|---|---|
+| 2026-11-15 | "Stop live" ends the room for everyone: the client sends a one-byte end frame (type 100); the worker closes every socket with 4410, deletes the room, and accepts-then-closes (4410) every later connection until the idle deadline; the note gets a new id; devices that saw the end never rejoin that id; a note moved by sync joins its new room only if the texts match; `__probe__` cannot be ended | review finding H2 and its review; any link holder can end a session; in `repo` mode it cuts off link-only guests, not repo readers (H1) |
 | 2026-11-15 | `/share` Import hand-off moved from `/?import=` to `/#import=` (legacy form still read); the analytics scrub drops `import` too | found in the review of the M1-M3 PR: the query string put whole notes into Vercel's request logs and the beacon |
 | 2026-11-15 | collab-server: room storage deleted after `ROOM_IDLE_DAYS` (30) with no connection, via the alarm the persist debounce already used; `/admin/rooms/<id>/arm` (new `ADMIN_TOKEN` secret, off when unset or equal to `AUTH_TOKEN`) + `scripts/sweep-rooms.mjs`, which arms the 69 pre-alarm rooms | review finding M2; L1 (>2 MB doc not persisted) unchanged except for a log line |
 | 2026-11-15 | Live-collab share link moved to the fragment (`/#collab=`), legacy `?collab=` still parsed; analytics `beforeSend` strips fragments + `collab`/`title` params | review finding M3; the analytics script posts `location.href`, so the fragment alone was not enough |
