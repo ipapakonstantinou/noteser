@@ -52,8 +52,15 @@ model reflects that:
   the same trust model the Obsidian Git plugin uses.
 - A successful XSS would exfiltrate either. Mitigation: keep the editor
   rendering path tight (see "Rendering" below).
-- The `/share` payload is in the URL fragment only — fragments never
-  reach the server, so hosting providers don't see shared content.
+- The `/share` payload travels in the URL fragment, which browsers leave
+  out of HTTP requests. Until 2026-11-15 two paths still sent it out: the
+  "Import to my vault" button moved it into the query string
+  (`/?import=`), which reaches Vercel's request logs (a Next `<Link>` can
+  even prefetch it before any click), and the analytics beacon reported
+  the full URL (see the analytics note under "Yjs collaboration token"
+  below). The hand-off is now `/#import=`, and
+  old `?import=` links still import. Anyone holding a link still holds the
+  content: there is no revocation (below).
 
 ### Rendering
 
