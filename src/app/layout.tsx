@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { headers } from 'next/headers'
-import { Analytics } from '@vercel/analytics/next'
+import { ScrubbedAnalytics } from '@/components/ScrubbedAnalytics'
 import { PwaProvider } from '@/components/pwa/PwaProvider'
 import { TooltipLayer } from '@/components/ui/TooltipLayer'
 import '@/styles/globals.css'
@@ -70,8 +70,9 @@ export default async function RootLayout({
             to actually record; the script is harmless until then. The
             @vercel/analytics/next entrypoint is automatically nonced
             by Next, so it satisfies the strict-dynamic CSP without
-            extra wiring. */}
-        <Analytics />
+            extra wiring. ScrubbedAnalytics drops URL fragments and
+            share-link params from what it reports. */}
+        <ScrubbedAnalytics />
       </body>
     </html>
   )
