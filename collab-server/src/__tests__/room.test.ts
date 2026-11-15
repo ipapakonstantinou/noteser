@@ -8,12 +8,17 @@ import * as awarenessProtocol from 'y-protocols/awareness'
 import * as encoding from 'lib0/encoding'
 import * as decoding from 'lib0/decoding'
 
-import worker, { YRoom, type Env } from '../index'
+import worker, * as entry from '../index'
+import { YRoom, type Env } from '../index'
 
 class FakeSocket {
   sent: Uint8Array[] = []
   closedWith: number | null = null
+  accepted = false // the plain (non-hibernating) accept the ended-room path uses
   private att: unknown = null
+  accept() {
+    this.accepted = true
+  }
   send(data: Uint8Array) {
     this.sent.push(data)
   }
@@ -65,10 +70,29 @@ async function wake(state: State, env = {}) {
   return room
 }
 
+// A socket in a note room (what fetch() does for a v4-UUID path).
 function connect(room: YRoom) {
   const ws = new FakeSocket()
-  ;(room as unknown as { accept(ws: unknown): void }).accept(ws)
+  ;(room as unknown as { accept(ws: unknown, end: boolean): void }).accept(ws, true)
   return ws
+}
+
+// The real fetch() upgrade path. Node has no WebSocketPair and refuses to
+// build a 101 Response, so both are stubbed for the call.
+async function join(room: YRoom, path: string) {
+  const ws = new FakeSocket()
+  vi.stubGlobal('WebSocketPair', function () {
+    return { 0: new FakeSocket(), 1: ws }
+  })
+  vi.stubGlobal('Response', function (_body: unknown, init: { status: number }) {
+    return { status: init.status }
+  })
+  try {
+    const res = await room.fetch(new Request(`https://room${path}`, { headers: { Upgrade: 'websocket' } }))
+    return Object.assign(ws, { status: res.status })
+  } finally {
+    vi.unstubAllGlobals()
+  }
 }
 
 const send = (room: YRoom, ws: FakeSocket, msg: Uint8Array) =>
@@ -113,6 +137,14 @@ function awarenessFrames(ws: FakeSocket): Record<number, unknown>[] {
 
 afterEach(() => {
   vi.useRealTimers()
+})
+
+// workerd treats each named export of the entry module as an entrypoint and
+// refuses to start on anything else (a const export failed `wrangler dev`).
+it('the entry module exports only handlers and classes', () => {
+  for (const [name, value] of Object.entries(entry)) {
+    expect([name, typeof value]).toEqual([name, name === 'default' ? 'object' : 'function'])
+  }
 })
 
 describe('YRoom hibernation', () => {
@@ -320,6 +352,165 @@ describe('YRoom idle expiry', () => {
     expect(await fresh({})).toBe(30 * 24)
     expect(await fresh({ ROOM_IDLE_DAYS: 'junk' })).toBe(30 * 24)
     expect(await fresh({ ROOM_IDLE_DAYS: '0.5' })).toBe(12)
+  })
+})
+
+// H2 (2026-11-15 review): "Stop live" ends the room for everyone.
+describe('YRoom end session', () => {
+  const DAY = 86_400_000
+  const ROOM = '/tok/2fc413e6-45e7-4a30-8eef-d71cb9c58744'
+  const flush = () => new Promise(r => setTimeout(r, 0))
+  const textOf = (room: YRoom) => (room as unknown as { doc: Y.Doc }).doc.getText('t').toString()
+  const END = new Uint8Array([100])
+  const keys = (state: State) => [...state.data.keys()].sort()
+  // What the runtime does after a server close: the peer echoes, webSocketClose runs.
+  const echoClose = (room: YRoom, ...sockets: FakeSocket[]) => {
+    for (const s of sockets) room.webSocketClose(s as unknown as WebSocket, s.closedWith ?? 1000)
+  }
+  const fire = async (state: State, room: YRoom) => {
+    state.consumeAlarm()
+    await room.alarm()
+  }
+
+  async function liveRoom(env: Record<string, string> = { ROOM_IDLE_DAYS: '2' }) {
+    const state = fakeState()
+    const room = await wake(state, env)
+    const a = connect(room)
+    const b = connect(room)
+    send(room, a, updateMessage('secret'))
+    await room.alarm() // persisted, as a real room would be
+    return { state, room, a, b }
+  }
+
+  async function ended() {
+    const live = await liveRoom()
+    send(live.room, live.a, END)
+    await flush()
+    echoClose(live.room, live.a, live.b)
+    await flush()
+    return live
+  }
+
+  it('closes every socket with 4410, deletes the room, keeps only the marker', async () => {
+    const { state, room, a, b } = await liveRoom()
+    send(room, b, END)
+    await flush()
+    expect([a.closedWith, b.closedWith]).toEqual([4410, 4410])
+    expect(keys(state)).toEqual(['ended', 'expireAt'])
+    expect(state.data.get('expireAt') as number - Date.now()).toBeGreaterThan(2 * DAY - 5_000)
+    expect(state.alarmAt()).toBe(state.data.get('expireAt'))
+    expect(textOf(room)).toBe('')
+  })
+
+  it('the close echoes add nothing back (no doc, no new deadline)', async () => {
+    const { state, room, a, b } = await liveRoom()
+    send(room, a, END)
+    await flush()
+    const deadline = state.data.get('expireAt')
+    await new Promise(r => setTimeout(r, 5)) // a re-arm now would move the deadline
+    echoClose(room, a, b)
+    await flush()
+    expect(keys(state)).toEqual(['ended', 'expireAt'])
+    expect(state.data.get('expireAt')).toBe(deadline)
+    expect(textOf(await wake(state))).toBe('')
+  })
+
+  it('memory first: a close that lands during the wipe cannot write the old doc back', async () => {
+    const { state, room, a, b } = await liveRoom()
+    send(room, a, END)
+    echoClose(room, a, b) // before the wipe's storage deletes have finished
+    await flush()
+    expect(state.data.has('doc')).toBe(false)
+    expect(textOf(await wake(state))).toBe('')
+  })
+
+  it('a tab that slept through the stop is accepted, closed with 4410, and writes nothing', async () => {
+    const { state, room } = await ended()
+    const stale = await join(room, ROOM)
+    expect(stale.status).toBe(101)
+    expect(stale.accepted).toBe(true)
+    expect(stale.closedWith).toBe(4410)
+    expect(stale.sent).toEqual([]) // no sync step: its copy is never asked for
+    expect(state.getWebSockets()).toEqual([])
+    expect(keys(state)).toEqual(['ended', 'expireAt'])
+  })
+
+  it('an ended room answers 4410, never 429, while closing sockets still count', async () => {
+    const state = fakeState()
+    const room = await wake(state, { MAX_CONNECTIONS_PER_ROOM: '2' })
+    const a = connect(room)
+    connect(room)
+    send(room, a, END)
+    await flush()
+    state.sockets.forEach(s => (s.closedWith = null)) // their close echoes have not arrived yet
+    const stale = await join(room, ROOM)
+    expect(stale.status).toBe(101)
+    expect(stale.closedWith).toBe(4410)
+  })
+
+  it('the marker goes with the idle deadline; then the id is an ordinary empty room', async () => {
+    const { state, room } = await ended()
+    const expireAt = state.data.get('expireAt') as number
+    await fire(state, room) // an early alarm keeps the marker
+    expect(keys(state)).toEqual(['ended', 'expireAt'])
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(expireAt + 1)
+    await fire(state, room)
+    expect(keys(state)).toEqual([])
+    const c = await join(room, ROOM)
+    expect(c.closedWith).toBeNull()
+    expect(c.accepted).toBe(false) // a normal, hibernatable join
+    send(room, c, updateMessage('new note'))
+    expect(textOf(room)).toBe('new note')
+  })
+
+  it('a note-room socket can still end the room after its awareness changed, and after a wake', async () => {
+    const state = fakeState()
+    const room = await wake(state)
+    const a = connect(room)
+    const b = connect(room)
+    send(room, a, awarenessMessage(7, { user: 'a' })) // rewrites a's attachment
+    const woken = await wake(state)
+    send(woken, a, END)
+    await flush()
+    expect([a.closedWith, b.closedWith]).toEqual([4410, 4410])
+  })
+
+  it('the shared probe room, or any non-note room, cannot be ended', async () => {
+    for (const path of ['/tok/__probe__', '/tok/secreview-20261115-not-a-uuid-e94228c9b34b']) {
+      const state = fakeState()
+      const room = await wake(state)
+      const p = await join(room, path)
+      const q = await join(room, path)
+      send(room, p, updateMessage('x'))
+      send(room, p, END)
+      await flush()
+      expect([p.closedWith, q.closedWith]).toEqual([null, null])
+      expect(state.data.has('ended')).toBe(false)
+      expect(textOf(room)).toBe('x')
+    }
+  })
+
+  it('ignores a malformed or oversized end frame and keeps serving', async () => {
+    const { state, room, a, b } = await liveRoom({ MAX_MESSAGE_BYTES: '64' })
+    send(room, a, new Uint8Array([100, 0])) // right type, wrong length
+    send(room, a, new Uint8Array([0xe4])) // truncated varUint
+    room.webSocketMessage(a as unknown as WebSocket, 'd') // text frame
+    await flush()
+    expect([a.closedWith, b.closedWith]).toEqual([null, null])
+    const big = new Uint8Array(65)
+    big[0] = 100
+    send(room, b, big)
+    await flush()
+    expect(b.closedWith).toBe(1009) // the size cap, for the sender only
+    expect(a.closedWith).toBeNull()
+    expect(state.data.has('ended')).toBe(false)
+    expect(state.data.get('doc')).toBeInstanceOf(Uint8Array)
+    expect(textOf(room)).toBe('secret')
+    const before = a.sent.length
+    const c = connect(room)
+    send(room, c, updateMessage('!'))
+    expect(a.sent.length).toBe(before + 1) // still relaying
   })
 })
 
