@@ -14,8 +14,13 @@ import { MIN_GROUP_HEIGHT, SETTINGS_PERSIST_VERSION } from '../src/stores/settin
 const waitForTestHooks = (page: Page) =>
   page.waitForFunction(() => typeof window.__noteser_test !== 'undefined', undefined, { timeout: 10_000 })
 
-async function seed(page: Page, heights: [number | null, number | null]) {
-  await page.addInitScript(({ heights, version }) => {
+type Heights = [number | null, number | null]
+type Side = 'left' | 'right'
+
+// Calendar over files on the left. With `right`, properties over
+// backlinks on the right too (else the default single right group).
+async function seed(page: Page, heights: Heights, right?: Heights) {
+  await page.addInitScript(({ heights, right, version }) => {
     try { window.localStorage.clear() } catch { /* ignore */ }
     try {
       for (const name of ['noteser', 'keyval-store']) indexedDB.deleteDatabase(name)
@@ -27,11 +32,21 @@ async function seed(page: Page, heights: [number | null, number | null]) {
           { id: 'g-top', tabs: ['calendar'], activeTab: 'calendar', collapsed: false, height: heights[0] },
           { id: 'g-files', tabs: ['files'], activeTab: 'files', collapsed: false, height: heights[1] },
         ],
+        ...(right && {
+          rightSidebarGroups: [
+            { id: 'r-top', tabs: ['properties'], activeTab: 'properties', collapsed: false, height: right[0] },
+            { id: 'r-bottom', tabs: ['backlinks'], activeTab: 'backlinks', collapsed: false, height: right[1] },
+          ],
+        }),
       },
       version,
     }))
-  }, { heights, version: SETTINGS_PERSIST_VERSION })
+  }, { heights, right, version: SETTINGS_PERSIST_VERSION })
 }
+
+const handleOf = (page: Page, side: Side) => page
+  .getByTestId(side === 'left' ? 'sidebar-stack' : 'right-sidebar-stack')
+  .getByTestId('sidebar-group-resize-handle')
 
 // Distance from the last group's bottom edge to the stack's bottom edge.
 const gapBelowLastGroup = (page: Page) => page.evaluate(() => {
@@ -41,11 +56,13 @@ const gapBelowLastGroup = (page: Page) => page.evaluate(() => {
   return Math.abs(stack.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom)
 })
 
-const storedHeights = (page: Page) => page.evaluate(() =>
-  window.__noteser_test!.stores.settingsStore.getState().sidebarGroups.map(g => g.height ?? null))
+const storedHeights = (page: Page, side: Side = 'left') => page.evaluate((side) => {
+  const s = window.__noteser_test!.stores.settingsStore.getState()
+  return (side === 'left' ? s.sidebarGroups : s.rightSidebarGroups).map(g => g.height ?? null)
+}, side)
 
-async function dragHandle(page: Page, dy: number) {
-  const box = (await page.getByTestId('sidebar-group-resize-handle').boundingBox())!
+async function dragHandle(page: Page, dy: number, side: Side = 'left') {
+  const box = (await handleOf(page, side).boundingBox())!
   const x = box.x + box.width / 2
   const y = box.y + box.height / 2
   await page.mouse.move(x, y)
@@ -73,7 +90,7 @@ test('drag at 720px tall, then grow the window: the file tree reaches the bottom
   await seed(page, [null, null])
   await page.goto('/')
   await waitForTestHooks(page)
-  await expect(page.getByTestId('sidebar-group-resize-handle')).toBeVisible()
+  await expect(handleOf(page, 'left')).toBeVisible()
 
   await dragHandle(page, 100)
   await expect.poll(() => storedHeights(page)).toEqual([expect.any(Number), expect.any(Number)])
@@ -95,7 +112,7 @@ test('keyboard End right after a step leaves the filling group its minimum', asy
   await seed(page, [null, null])
   await page.goto('/')
   await waitForTestHooks(page)
-  const handle = page.getByTestId('sidebar-group-resize-handle')
+  const handle = handleOf(page, 'left')
   // Wait until the handle has measured the stack (valuemax is -80 before).
   await expect.poll(async () => Number(await handle.getAttribute('aria-valuemax'))).toBeGreaterThan(500)
 
@@ -107,3 +124,16 @@ test('keyboard End right after a step leaves the filling group its minimum', asy
   await expect.poll(async () => (await page.getByTestId('sidebar-group').last().boundingBox())!.height)
     .toBeGreaterThanOrEqual(MIN_GROUP_HEIGHT - 8)
 })
+
+for (const side of ['left', 'right'] as const) {
+  test(`double-click on the grip line resets both groups (${side})`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 1400 })
+    await seed(page, [361, 256], [300, 200])
+    await page.goto('/')
+    await waitForTestHooks(page)
+
+    // The element centre is the 2px grip line drawn in the middle.
+    await handleOf(page, side).dblclick()
+    await expect.poll(() => storedHeights(page, side)).toEqual([null, null])
+  })
+}

@@ -192,8 +192,10 @@ export const GroupResizeHandle = ({
           : 'hover:bg-obsidianAccentPurple/30 focus-visible:bg-obsidianAccentPurple/30'
       } transition-colors`}
     >
+      {/* pointer-events-none: the grip unmounts on mousedown, and a click
+          that starts on a removed node never fires (no dblclick reset). */}
       {!dragging && (
-        <span className="block w-8 h-[2px] rounded-full bg-obsidianBorder group-hover:bg-obsidianAccentPurple/80 group-focus-visible:bg-obsidianAccentPurple/80 transition-colors" />
+        <span className="pointer-events-none block w-8 h-[2px] rounded-full bg-obsidianBorder group-hover:bg-obsidianAccentPurple/80 group-focus-visible:bg-obsidianAccentPurple/80 transition-colors" />
       )}
     </div>
   )
