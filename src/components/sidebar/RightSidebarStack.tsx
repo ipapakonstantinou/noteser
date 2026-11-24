@@ -10,6 +10,7 @@ import {
 import { RightInterGroupDropZone } from './RightInterGroupDropZone'
 import { RightSidebarGroup } from './RightSidebarGroup'
 import { GroupResizeHandle } from './GroupResizeHandle'
+import { groupLayoutModes } from './groupLayout'
 import { TabContextMenu } from './TabContextMenu'
 import {
   createRightGroupWithTab,
@@ -112,6 +113,7 @@ export const RightSidebarStack = () => {
     const persisted = groups.find(g => g.id === groupId)?.height
     return typeof persisted === 'number' ? persisted : 0
   }, [groups])
+  const layoutModes = groupLayoutModes(groups, draftHeights)
 
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-y-auto" data-testid="right-sidebar-stack">
@@ -121,18 +123,7 @@ export const RightSidebarStack = () => {
         </div>
       )}
       {groups.map((g, idx) => {
-        const hasExplicit = (g.height != null) || (g.id in draftHeights)
-        const lastExpandedIdx = (() => {
-          for (let i = groups.length - 1; i >= 0; i--) {
-            if (!groups[i].collapsed && groups[i].height == null && !(groups[i].id in draftHeights)) {
-              return i
-            }
-          }
-          return -1
-        })()
-        const layoutMode: 'fill' | 'fixed' | 'auto' = hasExplicit
-          ? 'fixed'
-          : (idx === lastExpandedIdx ? 'fill' : 'auto')
+        const layoutMode = layoutModes[idx]
         const draft = draftHeights[g.id]
         const next = groups[idx + 1]
         const showHandleBelow =
@@ -170,7 +161,11 @@ export const RightSidebarStack = () => {
               <GroupResizeHandle
                 ariaLabel={`Resize group ${g.activeTab ?? g.id}`}
                 aboveHeight={draft ?? measureGroupHeight(g.id)}
-                belowHeight={draftHeights[next.id] ?? measureGroupHeight(next.id)}
+                // A fill neighbour gets what the pair leaves, measured: its
+                // draft goes stale once the window resizes.
+                belowHeight={layoutModes[idx + 1] === 'fill'
+                  ? measureGroupHeight(g.id) + measureGroupHeight(next.id) - (draft ?? measureGroupHeight(g.id))
+                  : draftHeights[next.id] ?? measureGroupHeight(next.id)}
                 onResize={(nextAbove, nextBelow) => {
                   setDraftHeights(prev => ({
                     ...prev,
