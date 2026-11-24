@@ -181,7 +181,7 @@ export function TooltipLayer() {
       document.removeEventListener('keydown', onKeyDown, true)
       document.removeEventListener('mousedown', dismiss, true)
       window.removeEventListener('scroll', dismiss, true)
-      window.removeEventListener('blur-sm', dismiss)
+      window.removeEventListener('blur', dismiss)
       clearTimer()
     }
   }, [clearTimer, hide])

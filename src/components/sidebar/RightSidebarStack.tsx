@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSettingsStore, type SidebarGroupState } from '@/stores'
 import {
   RIGHT_KNOWN_IDS,
@@ -83,7 +83,7 @@ export const RightSidebarStack = () => {
       window.removeEventListener('dragend', onEnd)
       window.removeEventListener('drop', onEnd)
       window.removeEventListener('mouseup', onEnd)
-      window.removeEventListener('blur-sm', onEnd)
+      window.removeEventListener('blur', onEnd)
     }
   }, [])
 
@@ -100,7 +100,8 @@ export const RightSidebarStack = () => {
   }
   const closeTabMenu = () => setTabMenu(null)
 
-  // Inter-group resize state — same shape as SidebarStack.
+  // Inter-group resize state — same shape as SidebarStack (refs on each
+  // RightSidebarGroup's own box, not the wrapper holding the handle).
   const groupRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const setGroupRef = useCallback((id: string) => (el: HTMLDivElement | null) => {
     if (el) groupRefs.current[id] = el
@@ -129,14 +130,10 @@ export const RightSidebarStack = () => {
         const showHandleBelow =
           next != null && !g.collapsed && !next.collapsed
 
-        // Same fix as SidebarStack: the wrapper has to be a flex
-        // column so SidebarGroup's `flex-1` (fill mode) actually
-        // stretches to fill the remaining vertical space.
-        const wrapperClass = layoutMode === 'fill'
-          ? 'flex-1 min-h-0 flex flex-col'
-          : 'shrink-0 flex flex-col'
+        // No wrapper element, same as SidebarStack: the group is a flex
+        // item of the stack, so it can shrink on a short window.
         return (
-          <div key={g.id} ref={setGroupRef(g.id)} className={wrapperClass}>
+          <Fragment key={g.id}>
             <RightInterGroupDropZone
               active={dragActive}
               onDropId={(id) => {
@@ -152,6 +149,7 @@ export const RightSidebarStack = () => {
               }}
             />
             <RightSidebarGroup
+              ref={setGroupRef(g.id)}
               group={g}
               layoutMode={layoutMode}
               draftHeight={draft}
@@ -160,12 +158,13 @@ export const RightSidebarStack = () => {
             {showHandleBelow && (
               <GroupResizeHandle
                 ariaLabel={`Resize group ${g.activeTab ?? g.id}`}
+                // ARIA values only. A fill neighbour gets what the pair
+                // leaves: its draft goes stale once the window resizes.
                 aboveHeight={draft ?? measureGroupHeight(g.id)}
-                // A fill neighbour gets what the pair leaves, measured: its
-                // draft goes stale once the window resizes.
                 belowHeight={layoutModes[idx + 1] === 'fill'
                   ? measureGroupHeight(g.id) + measureGroupHeight(next.id) - (draft ?? measureGroupHeight(g.id))
                   : draftHeights[next.id] ?? measureGroupHeight(next.id)}
+                measure={() => ({ above: measureGroupHeight(g.id), below: measureGroupHeight(next.id) })}
                 onResize={(nextAbove, nextBelow) => {
                   setDraftHeights(prev => ({
                     ...prev,
@@ -187,7 +186,7 @@ export const RightSidebarStack = () => {
                 }}
               />
             )}
-          </div>
+          </Fragment>
         )
       })}
       {groups.length > 0 && (

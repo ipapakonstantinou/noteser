@@ -14,7 +14,8 @@ There are **three** test layers. Use the cheapest one that can prove the thing:
 | Live GitHub sync | Jest, real network | `src/__tests__/e2eSyncLive.test.ts` | slowest | Only when you touch sync logic. Needs a token. Not in the default loop. |
 
 CI (`.github/workflows/ci.yml`) gates `main`/`dev` on **lint → typecheck →
-`npm test` → build**. Playwright is **not** in CI — E2E is run on demand.
+`npm test` → build**, plus the stable top-level Playwright specs (`npm run e2e:ci`,
+`playwright.config.ci.ts`, which skips `e2e/parity/**`). Parity specs run on demand.
 
 ## Commands
 

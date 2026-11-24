@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSettingsStore, type SidebarTabId, type SidebarGroupState } from '@/stores'
 import { SIDEBAR_PANEL_DRAG_MIME } from './SidebarSection'
 import { InterGroupDropZone } from './InterGroupDropZone'
@@ -96,7 +96,7 @@ export const SidebarStack = ({ onRightClick }: Props) => {
       window.removeEventListener('dragend', onEnd)
       window.removeEventListener('drop', onEnd)
       window.removeEventListener('mouseup', onEnd)
-      window.removeEventListener('blur-sm', onEnd)
+      window.removeEventListener('blur', onEnd)
     }
   }, [])
 
@@ -117,10 +117,9 @@ export const SidebarStack = ({ onRightClick }: Props) => {
   const closeTabMenu = () => setTabMenu(null)
 
   // ── Inter-group resize state ─────────────────────────────────────────
-  // Refs onto each group's outer wrapper so we can read the actual
-  // pixel height before a drag starts (works whether the group is
-  // currently using flex-1 or an explicit height — both flow through
-  // the DOM). Stored as a record keyed by group id so reorders /
+  // Refs onto each SidebarGroup's own box (not its wrapper, which also
+  // holds the 8px handle) so we can read the actual pixel height when a
+  // gesture starts. Stored as a record keyed by group id so reorders /
   // group-id changes don't leak stale refs.
   const groupRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const setGroupRef = useCallback((id: string) => (el: HTMLDivElement | null) => {
@@ -171,16 +170,11 @@ export const SidebarStack = ({ onRightClick }: Props) => {
         const showHandleBelow =
           next != null && !g.collapsed && !next.collapsed
 
-        // The wrapper has to be a flex column itself so the
-        // SidebarGroup's `flex-1` (fill mode) actually grows to the
-        // remaining vertical space instead of collapsing to content
-        // height. When THIS wrapper is the fill target, give it
-        // flex-1 too so it stretches inside the SidebarStack flexbox.
-        const wrapperClass = layoutMode === 'fill'
-          ? 'flex-1 min-h-0 flex flex-col'
-          : 'shrink-0 flex flex-col'
+        // No wrapper element: drop zone, group and handle are flex items
+        // of the stack itself, so a group can shrink on a short window
+        // (to MIN_GROUP_HEIGHT) while the handle keeps its own height.
         return (
-          <div key={g.id} ref={setGroupRef(g.id)} className={wrapperClass}>
+          <Fragment key={g.id}>
             <InterGroupDropZone
               active={dragActive}
               onDropId={(id) => {
@@ -196,6 +190,7 @@ export const SidebarStack = ({ onRightClick }: Props) => {
               }}
             />
             <SidebarGroup
+              ref={setGroupRef(g.id)}
               group={g}
               layoutMode={layoutMode}
               draftHeight={draft}
@@ -205,12 +200,13 @@ export const SidebarStack = ({ onRightClick }: Props) => {
             {showHandleBelow && (
               <GroupResizeHandle
                 ariaLabel={`Resize group ${g.activeTab ?? g.id}`}
+                // ARIA values only. A fill neighbour gets what the pair
+                // leaves: its draft goes stale once the window resizes.
                 aboveHeight={draft ?? measureGroupHeight(g.id)}
-                // A fill neighbour gets what the pair leaves, measured: its
-                // draft goes stale once the window resizes.
                 belowHeight={layoutModes[idx + 1] === 'fill'
                   ? measureGroupHeight(g.id) + measureGroupHeight(next.id) - (draft ?? measureGroupHeight(g.id))
                   : draftHeights[next.id] ?? measureGroupHeight(next.id)}
+                measure={() => ({ above: measureGroupHeight(g.id), below: measureGroupHeight(next.id) })}
                 onResize={(nextAbove, nextBelow) => {
                   setDraftHeights(prev => ({
                     ...prev,
@@ -236,7 +232,7 @@ export const SidebarStack = ({ onRightClick }: Props) => {
                 }}
               />
             )}
-          </div>
+          </Fragment>
         )
       })}
       {/* Trailing zone — drop here to spawn a new group at the very
