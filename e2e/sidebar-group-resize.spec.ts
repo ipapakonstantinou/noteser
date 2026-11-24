@@ -109,15 +109,19 @@ test('drag at 720px tall, then grow the window: the file tree reaches the bottom
 
 // Wait until the stack has re-rendered with real measurements, so a test
 // never starts from the pre-hydration numbers.
-const waitForMeasured = (page: Page) => expect.poll(async () =>
-  Number(await handleOf(page, 'left').getAttribute('aria-valuemax'))).toBeGreaterThan(500)
+const waitForMeasured = (page: Page, side: Side = 'left') => expect.poll(async () =>
+  Number(await handleOf(page, side).getAttribute('aria-valuemax'))).toBeGreaterThan(500)
 
-const groupHeights = (page: Page) => page.evaluate(() => {
-  const stack = document.querySelector('[data-testid="sidebar-stack"]')!
-  const [top, bottom] = [...stack.querySelectorAll('[data-testid="sidebar-group"]')]
-    .map(el => el.getBoundingClientRect().height)
-  return { top, bottom, overflow: stack.scrollHeight - stack.clientHeight }
-})
+// Rendered heights of a two-group stack, its overflow, and the gap under
+// the last group.
+const groupHeights = (page: Page, side: Side = 'left') => page.evaluate((side) => {
+  const prefix = side === 'left' ? '' : 'right-'
+  const stack = document.querySelector(`[data-testid="${prefix}sidebar-stack"]`)!
+  const groups = [...stack.querySelectorAll(`[data-testid="${prefix}sidebar-group"]`)]
+  const [top, bottom] = groups.map(el => el.getBoundingClientRect().height)
+  const gap = stack.getBoundingClientRect().bottom - groups[groups.length - 1].getBoundingClientRect().bottom
+  return { top, bottom, overflow: stack.scrollHeight - stack.clientHeight, gap: Math.abs(gap) }
+}, side)
 
 test('the first drag after load moves the boundary by exactly the drag', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 1400 })
@@ -175,3 +179,42 @@ for (const side of ['left', 'right'] as const) {
     await expect.poll(() => storedHeights(page, side)).toEqual([null, null])
   })
 }
+
+// Drag the upper group to about 1000px at 1280x1400, then shrink the
+// window to 600: stored heights are preferred sizes, not hard ones.
+async function dragTo1000ThenShrink(page: Page, side: Side) {
+  await page.setViewportSize({ width: 1280, height: 1400 })
+  await seed(page, [null, null], [null, null])
+  await page.goto('/')
+  await waitForTestHooks(page)
+  await waitForMeasured(page, side)
+  await dragHandle(page, 1000 - (await groupHeights(page, side)).top, side)
+  await expect.poll(async () => Math.abs((await groupHeights(page, side)).top - 1000)).toBeLessThanOrEqual(1)
+  const stored = (await storedHeights(page, side))[0]
+  await page.setViewportSize({ width: 1280, height: 600 })
+  return stored
+}
+
+for (const side of ['left', 'right'] as const) {
+  test(`short window: both groups keep the minimum, no overflow, and the drag comes back (${side})`, async ({ page }) => {
+    const stored = await dragTo1000ThenShrink(page, side)
+
+    await expect.poll(async () => (await groupHeights(page, side)).bottom).toBeGreaterThanOrEqual(MIN_GROUP_HEIGHT)
+    expect((await groupHeights(page, side)).overflow).toBeLessThanOrEqual(1)
+    expect((await storedHeights(page, side))[0]).toBe(stored)
+
+    await page.setViewportSize({ width: 1280, height: 1400 })
+    await expect.poll(async () => Math.abs((await groupHeights(page, side)).top - stored!)).toBeLessThanOrEqual(1)
+    expect((await groupHeights(page, side)).gap).toBeLessThan(1)
+  })
+}
+
+test('short window: a drag up moves the boundary from where it is drawn', async ({ page }) => {
+  await dragTo1000ThenShrink(page, 'left')
+  // Precondition: the upper group is drawn smaller than its stored 1000px.
+  await expect.poll(async () => (await groupHeights(page)).top).toBeLessThan(900)
+  const shown = (await groupHeights(page)).top
+
+  await dragHandle(page, -100)
+  await expect.poll(async () => Math.abs((await groupHeights(page)).top - (shown - 100))).toBeLessThanOrEqual(1)
+})

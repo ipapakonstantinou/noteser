@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSettingsStore, type SidebarTabId, type SidebarGroupState } from '@/stores'
 import { SIDEBAR_PANEL_DRAG_MIME } from './SidebarSection'
 import { InterGroupDropZone } from './InterGroupDropZone'
@@ -170,16 +170,11 @@ export const SidebarStack = ({ onRightClick }: Props) => {
         const showHandleBelow =
           next != null && !g.collapsed && !next.collapsed
 
-        // The wrapper has to be a flex column itself so the
-        // SidebarGroup's `flex-1` (fill mode) actually grows to the
-        // remaining vertical space instead of collapsing to content
-        // height. When THIS wrapper is the fill target, give it
-        // flex-1 too so it stretches inside the SidebarStack flexbox.
-        const wrapperClass = layoutMode === 'fill'
-          ? 'flex-1 min-h-0 flex flex-col'
-          : 'shrink-0 flex flex-col'
+        // No wrapper element: drop zone, group and handle are flex items
+        // of the stack itself, so a group can shrink on a short window
+        // (to MIN_GROUP_HEIGHT) while the handle keeps its own height.
         return (
-          <div key={g.id} className={wrapperClass}>
+          <Fragment key={g.id}>
             <InterGroupDropZone
               active={dragActive}
               onDropId={(id) => {
@@ -237,7 +232,7 @@ export const SidebarStack = ({ onRightClick }: Props) => {
                 }}
               />
             )}
-          </div>
+          </Fragment>
         )
       })}
       {/* Trailing zone — drop here to spawn a new group at the very

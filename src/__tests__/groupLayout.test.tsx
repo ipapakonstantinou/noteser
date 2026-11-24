@@ -76,12 +76,12 @@ describe('groupLayoutModes', () => {
   })
 })
 
-// The stack wrapper AND the group itself must both flex-grow; the group
-// must carry no inline height (it would win over flex-1).
+// The group is a flex item of the stack itself: it must flex-grow and
+// carry no inline height (it would win over flex-1).
 function expectFills(el: HTMLElement) {
   expect(el.style.height).toBe('')
   expect(el).toHaveClass('flex-1')
-  expect(el.parentElement).toHaveClass('flex-1')
+  expect(el.parentElement).toHaveAttribute('data-testid', expect.stringMatching(/sidebar-stack$/))
 }
 
 describe('SidebarStack: the last expanded group fills the stack', () => {

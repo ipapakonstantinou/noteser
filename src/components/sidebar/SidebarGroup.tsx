@@ -3,7 +3,7 @@
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
 import { PinnedMiniStrip } from './PinnedMiniStrip'
 import { PANELS, PanelBody, type PanelRightClick } from './sidebarPanelRegistry'
-import { useSettingsStore, useUIStore, type SidebarTabId, type SidebarGroupState } from '@/stores'
+import { useSettingsStore, useUIStore, MIN_GROUP_HEIGHT, type SidebarTabId, type SidebarGroupState } from '@/stores'
 import { moveTabToGroup, moveTabAcrossSidebars } from './sidebarGroupActions'
 
 // One leaf-model group: a horizontal tab strip + the active tab's
@@ -78,20 +78,25 @@ export const SidebarGroup = ({
 
   // Resolve layout. Collapsed groups always shrink to content (no body
   // is rendered, so explicit height would just leave a vertical gap).
-  // Otherwise the layoutMode prop steers between flex-fill and an
-  // explicit pixel height.
+  // Otherwise the layoutMode prop steers between flex-fill and a pixel
+  // height. That height is a preferred size: on a short window a fixed
+  // group shrinks, but neither it nor the fill group goes below
+  // MIN_GROUP_HEIGHT; the stack scrolls only when the floors don't fit.
+  const fill = !isCollapsed && layoutMode === 'fill'
   const explicitHeight = !isCollapsed && layoutMode === 'fixed'
     ? (draftHeight ?? group.height ?? undefined)
     : undefined
-  const wrapperClass = !isCollapsed && layoutMode === 'fill'
-    ? 'flex-1 min-h-0 flex flex-col border-t border-obsidianBorder'
-    : 'shrink-0 flex flex-col border-t border-obsidianBorder'
+  const wrapperClass = fill
+    ? 'flex-1 flex flex-col border-t border-obsidianBorder'
+    : explicitHeight != null
+      ? 'flex flex-col border-t border-obsidianBorder'
+      : 'shrink-0 flex flex-col border-t border-obsidianBorder'
 
   return (
     <div
       ref={ref}
       className={wrapperClass}
-      style={explicitHeight != null ? { height: explicitHeight } : undefined}
+      style={fill || explicitHeight != null ? { height: explicitHeight, minHeight: MIN_GROUP_HEIGHT } : undefined}
       data-testid="sidebar-group"
       data-group-id={group.id}
       data-collapsed={isCollapsed ? 'true' : 'false'}

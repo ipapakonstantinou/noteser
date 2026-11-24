@@ -7,7 +7,7 @@ import {
   rightPanelDef,
   type RightSidebarTabId,
 } from './rightPanelRegistry'
-import { useSettingsStore, useUIStore, type SidebarGroupState } from '@/stores'
+import { useSettingsStore, useUIStore, MIN_GROUP_HEIGHT, type SidebarGroupState } from '@/stores'
 import { moveTabToRightGroup } from './rightSidebarGroupActions'
 import { moveTabAcrossSidebars } from './sidebarGroupActions'
 
@@ -59,18 +59,22 @@ export const RightSidebarGroup = ({
     setLastFocusedRightGroupId(group.id)
   }
 
+  // Same preferred-size layout as SidebarGroup (floor MIN_GROUP_HEIGHT).
+  const fill = !isCollapsed && layoutMode === 'fill'
   const explicitHeight = !isCollapsed && layoutMode === 'fixed'
     ? (draftHeight ?? group.height ?? undefined)
     : undefined
-  const wrapperClass = !isCollapsed && layoutMode === 'fill'
-    ? 'flex-1 min-h-0 flex flex-col border-t border-obsidianBorder'
-    : 'shrink-0 flex flex-col border-t border-obsidianBorder'
+  const wrapperClass = fill
+    ? 'flex-1 flex flex-col border-t border-obsidianBorder'
+    : explicitHeight != null
+      ? 'flex flex-col border-t border-obsidianBorder'
+      : 'shrink-0 flex flex-col border-t border-obsidianBorder'
 
   return (
     <div
       ref={ref}
       className={wrapperClass}
-      style={explicitHeight != null ? { height: explicitHeight } : undefined}
+      style={fill || explicitHeight != null ? { height: explicitHeight, minHeight: MIN_GROUP_HEIGHT } : undefined}
       data-testid="right-sidebar-group"
       data-group-id={group.id}
       data-collapsed={isCollapsed ? 'true' : 'false'}

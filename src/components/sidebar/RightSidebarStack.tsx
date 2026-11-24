@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSettingsStore, type SidebarGroupState } from '@/stores'
 import {
   RIGHT_KNOWN_IDS,
@@ -130,14 +130,10 @@ export const RightSidebarStack = () => {
         const showHandleBelow =
           next != null && !g.collapsed && !next.collapsed
 
-        // Same fix as SidebarStack: the wrapper has to be a flex
-        // column so SidebarGroup's `flex-1` (fill mode) actually
-        // stretches to fill the remaining vertical space.
-        const wrapperClass = layoutMode === 'fill'
-          ? 'flex-1 min-h-0 flex flex-col'
-          : 'shrink-0 flex flex-col'
+        // No wrapper element, same as SidebarStack: the group is a flex
+        // item of the stack, so it can shrink on a short window.
         return (
-          <div key={g.id} className={wrapperClass}>
+          <Fragment key={g.id}>
             <RightInterGroupDropZone
               active={dragActive}
               onDropId={(id) => {
@@ -190,7 +186,7 @@ export const RightSidebarStack = () => {
                 }}
               />
             )}
-          </div>
+          </Fragment>
         )
       })}
       {groups.length > 0 && (
