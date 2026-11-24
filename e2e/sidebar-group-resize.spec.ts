@@ -1,12 +1,18 @@
 import { test, expect, type Page } from '@playwright/test'
-import { waitForTestHooks } from './_helpers'
-import { MIN_GROUP_HEIGHT, SETTINGS_PERSIST_VERSION } from '../../src/stores/settingsStore'
+import { MIN_GROUP_HEIGHT, SETTINGS_PERSIST_VERSION } from '../src/stores/settingsStore'
 
-// Bug-repro: a drag on the handle between two sidebar groups stores a px
-// height for BOTH of them. Nothing filled the stack after that, so a
-// taller window left dead space under the file tree (it stopped a few
-// rows down with its own scrollbar). The last expanded group must always
-// fill the stack, including for heights already stored in localStorage.
+// Stacked sidebar groups and the resize handle between them, measured in
+// a real layout (jsdom has none).
+//
+// A drag on the handle stores a px height for BOTH groups. Nothing filled
+// the stack after that, so a taller window left dead space under the file
+// tree (#430). The last expanded group must always fill the stack,
+// including for heights already stored in localStorage.
+
+// The folder tree is server-rendered, so wait for hydration before using
+// the store hooks.
+const waitForTestHooks = (page: Page) =>
+  page.waitForFunction(() => typeof window.__noteser_test !== 'undefined', undefined, { timeout: 10_000 })
 
 async function seed(page: Page, heights: [number | null, number | null]) {
   await page.addInitScript(({ heights, version }) => {
