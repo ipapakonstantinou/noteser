@@ -83,7 +83,7 @@ export const RightSidebarStack = () => {
       window.removeEventListener('dragend', onEnd)
       window.removeEventListener('drop', onEnd)
       window.removeEventListener('mouseup', onEnd)
-      window.removeEventListener('blur-sm', onEnd)
+      window.removeEventListener('blur', onEnd)
     }
   }, [])
 
