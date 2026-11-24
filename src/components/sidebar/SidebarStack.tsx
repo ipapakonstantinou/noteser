@@ -6,6 +6,7 @@ import { SIDEBAR_PANEL_DRAG_MIME } from './SidebarSection'
 import { InterGroupDropZone } from './InterGroupDropZone'
 import { SidebarGroup } from './SidebarGroup'
 import { GroupResizeHandle } from './GroupResizeHandle'
+import { groupLayoutModes } from './groupLayout'
 import { TabContextMenu } from './TabContextMenu'
 import {
   KNOWN_IDS,
@@ -144,6 +145,8 @@ export const SidebarStack = ({ onRightClick }: Props) => {
     return typeof persisted === 'number' ? persisted : 0
   }, [groups])
 
+  const layoutModes = groupLayoutModes(groups, draftHeights)
+
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-y-auto" data-testid="sidebar-stack">
       {groups.length === 0 && (
@@ -155,30 +158,9 @@ export const SidebarStack = ({ onRightClick }: Props) => {
         </div>
       )}
       {groups.map((g, idx) => {
-        // Layout assignment:
-        //   - A group with an explicit `height` (or in-flight draft) is
-        //     'fixed' so the user's drag value wins.
-        //   - The LAST expanded group with no explicit height is
-        //     'fill' so leftover vertical space lands there cleanly.
-        //   - Everything else is 'auto' (size to content / flex-shrink).
         // Collapsed groups always size to content; the SidebarGroup
         // component ignores the layoutMode in that branch.
-        const hasExplicit = (g.height != null) || (g.id in draftHeights)
-        // Find the index of the LAST expanded group (the trailing fill
-        // target). We treat both explicit and auto groups as candidates
-        // but prefer auto + last so explicit-height users see their
-        // values respected.
-        const lastExpandedIdx = (() => {
-          for (let i = groups.length - 1; i >= 0; i--) {
-            if (!groups[i].collapsed && groups[i].height == null && !(groups[i].id in draftHeights)) {
-              return i
-            }
-          }
-          return -1
-        })()
-        const layoutMode: 'fill' | 'fixed' | 'auto' = hasExplicit
-          ? 'fixed'
-          : (idx === lastExpandedIdx ? 'fill' : 'auto')
+        const layoutMode = layoutModes[idx]
         const draft = draftHeights[g.id]
 
         // The resize handle between THIS group and the next one only
@@ -224,7 +206,11 @@ export const SidebarStack = ({ onRightClick }: Props) => {
               <GroupResizeHandle
                 ariaLabel={`Resize group ${g.activeTab ?? g.id}`}
                 aboveHeight={draft ?? measureGroupHeight(g.id)}
-                belowHeight={draftHeights[next.id] ?? measureGroupHeight(next.id)}
+                // A fill neighbour gets what the pair leaves, measured: its
+                // draft goes stale once the window resizes.
+                belowHeight={layoutModes[idx + 1] === 'fill'
+                  ? measureGroupHeight(g.id) + measureGroupHeight(next.id) - (draft ?? measureGroupHeight(g.id))
+                  : draftHeights[next.id] ?? measureGroupHeight(next.id)}
                 onResize={(nextAbove, nextBelow) => {
                   setDraftHeights(prev => ({
                     ...prev,
