@@ -45,11 +45,14 @@ function resolvePair(nextAbove: number, total: number): { above: number; below: 
 // emit deltas. That keeps the handle reusable on both the LEFT and
 // RIGHT sidebars (Change B) with zero coupling to the registry.
 export interface GroupResizeHandleProps {
-  // Current pixel height of the group ABOVE this handle. Used as the
-  // starting reference point for the drag arithmetic.
+  // Pixel heights of the groups ABOVE and BELOW this handle, as of the
+  // last render. Only feed the ARIA values; gestures use `measure`.
   aboveHeight: number
-  // Current pixel height of the group BELOW. Same role as aboveHeight.
   belowHeight: number
+  // Reads both groups' rendered heights. Every gesture (mouse, touch,
+  // key) starts from it: render-time numbers can be stale (a reset or a
+  // window resize since) and must not include the handle itself.
+  measure: () => { above: number; below: number }
   // Called continuously while dragging with the candidate next heights
   // for the two adjacent groups (already clamped to MIN_GROUP_HEIGHT).
   // The caller persists by calling its `setGroupHeight` setter.
@@ -64,6 +67,7 @@ export interface GroupResizeHandleProps {
 export const GroupResizeHandle = ({
   aboveHeight,
   belowHeight,
+  measure,
   onResize,
   onReset,
   ariaLabel = 'Resize groups',
@@ -126,7 +130,7 @@ export const GroupResizeHandle = ({
     if (e.button !== 0) return
     e.preventDefault()
     e.stopPropagation()
-    startRef.current = { y: e.clientY, above: aboveHeight, below: belowHeight }
+    startRef.current = { y: e.clientY, ...measure() }
     setDragging(true)
   }
 
@@ -137,7 +141,7 @@ export const GroupResizeHandle = ({
     const t = e.touches[0]
     if (!t) return
     e.stopPropagation()
-    startRef.current = { y: t.clientY, above: aboveHeight, below: belowHeight }
+    startRef.current = { y: t.clientY, ...measure() }
     setDragging(true)
   }
 
@@ -146,15 +150,16 @@ export const GroupResizeHandle = ({
   // push the boundary to either extreme within the pair's budget.
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      const total = aboveHeight + belowHeight
+      const start = measure()
+      const total = start.above + start.below
       const step = e.shiftKey ? KEY_STEP_LARGE : KEY_STEP
       let targetAbove: number
       switch (e.key) {
         case 'ArrowDown':
-          targetAbove = aboveHeight + step
+          targetAbove = start.above + step
           break
         case 'ArrowUp':
-          targetAbove = aboveHeight - step
+          targetAbove = start.above - step
           break
         case 'Home':
           targetAbove = MIN_GROUP_HEIGHT
@@ -169,17 +174,21 @@ export const GroupResizeHandle = ({
       const { above, below } = resolvePair(targetAbove, total)
       onResize(above, below)
     },
-    [aboveHeight, belowHeight, onResize],
+    [measure, onResize],
   )
+
+  // Clamped so min <= now <= max holds before the first measurement too.
+  const valueMax = Math.max(MIN_GROUP_HEIGHT, Math.round(aboveHeight + belowHeight - MIN_GROUP_HEIGHT))
+  const valueNow = Math.min(valueMax, Math.max(MIN_GROUP_HEIGHT, Math.round(aboveHeight)))
 
   return (
     <div
       role="separator"
       aria-orientation="horizontal"
       aria-label={ariaLabel}
-      aria-valuenow={Math.round(aboveHeight)}
+      aria-valuenow={valueNow}
       aria-valuemin={MIN_GROUP_HEIGHT}
-      aria-valuemax={Math.round(aboveHeight + belowHeight - MIN_GROUP_HEIGHT)}
+      aria-valuemax={valueMax}
       tabIndex={0}
       onMouseDown={onMouseDown}
       onTouchStart={onTouchStart}

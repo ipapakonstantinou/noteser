@@ -107,22 +107,60 @@ test('drag at 720px tall, then grow the window: the file tree reaches the bottom
   await expect.poll(() => gapBelowLastGroup(page)).toBeLessThan(1)
 })
 
-test('keyboard End right after a step leaves the filling group its minimum', async ({ page }) => {
+// Wait until the stack has re-rendered with real measurements, so a test
+// never starts from the pre-hydration numbers.
+const waitForMeasured = (page: Page) => expect.poll(async () =>
+  Number(await handleOf(page, 'left').getAttribute('aria-valuemax'))).toBeGreaterThan(500)
+
+const groupHeights = (page: Page) => page.evaluate(() => {
+  const stack = document.querySelector('[data-testid="sidebar-stack"]')!
+  const [top, bottom] = [...stack.querySelectorAll('[data-testid="sidebar-group"]')]
+    .map(el => el.getBoundingClientRect().height)
+  return { top, bottom, overflow: stack.scrollHeight - stack.clientHeight }
+})
+
+test('the first drag after load moves the boundary by exactly the drag', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 1400 })
+  await seed(page, [361, 256])
+  await page.goto('/')
+  await waitForTestHooks(page)
+  await waitForMeasured(page)
+
+  await dragHandle(page, -60)
+  await expect.poll(async () => Math.abs((await topHeight(page)) - 301)).toBeLessThanOrEqual(1)
+})
+
+test('a drag right after a double-click reset moves the boundary by exactly the drag', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 1400 })
+  await seed(page, [361, 256])
+  await page.goto('/')
+  await waitForTestHooks(page)
+  await waitForMeasured(page)
+
+  await handleOf(page, 'left').dblclick()
+  await expect.poll(() => storedHeights(page)).toEqual([null, null])
+  const before = await topHeight(page)
+  await dragHandle(page, 200)
+  await expect.poll(async () => Math.abs((await topHeight(page)) - (before + 200))).toBeLessThanOrEqual(1)
+})
+
+test('keyboard: 16 and 64 px steps, End and Home stop at exactly the minimum', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 1400 })
   await seed(page, [null, null])
   await page.goto('/')
   await waitForTestHooks(page)
-  const handle = handleOf(page, 'left')
-  // Wait until the handle has measured the stack (valuemax is -80 before).
-  await expect.poll(async () => Number(await handle.getAttribute('aria-valuemax'))).toBeGreaterThan(500)
+  await waitForMeasured(page)
+  await handleOf(page, 'left').focus()
+  const start = await groupHeights(page)
 
-  await handle.focus()
+  await page.keyboard.press('ArrowDown')
+  await expect.poll(async () => (await groupHeights(page)).top - start.top).toBe(16)
   await page.keyboard.press('Shift+ArrowDown')
+  await expect.poll(async () => (await groupHeights(page)).top - start.top).toBe(16 + 64)
   await page.keyboard.press('End')
-  // The handle's own 8px counts in the upper group's measured height, so
-  // the floor lands at MIN_GROUP_HEIGHT - 8 for the group below.
-  await expect.poll(async () => (await page.getByTestId('sidebar-group').last().boundingBox())!.height)
-    .toBeGreaterThanOrEqual(MIN_GROUP_HEIGHT - 8)
+  await expect.poll(() => groupHeights(page)).toMatchObject({ bottom: MIN_GROUP_HEIGHT, overflow: 0 })
+  await page.keyboard.press('Home')
+  await expect.poll(async () => (await groupHeights(page)).top).toBe(MIN_GROUP_HEIGHT)
 })
 
 for (const side of ['left', 'right'] as const) {

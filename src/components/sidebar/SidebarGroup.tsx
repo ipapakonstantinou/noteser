@@ -30,10 +30,12 @@ export interface SidebarGroupProps {
   // of an in-flight drag (smooth feedback without committing every frame).
   layoutMode?: 'fill' | 'fixed' | 'auto'
   draftHeight?: number
+  // The group's own box, which the resize handle measures.
+  ref?: React.Ref<HTMLDivElement>
 }
 
 export const SidebarGroup = ({
-  group, onTabContextMenu, onRightClick, layoutMode = 'auto', draftHeight,
+  group, onTabContextMenu, onRightClick, layoutMode = 'auto', draftHeight, ref,
 }: SidebarGroupProps) => {
   const setGroupActiveTab = useSettingsStore(s => s.setGroupActiveTab)
   const removeTabFromGroup = useSettingsStore(s => s.removeTabFromGroup)
@@ -87,6 +89,7 @@ export const SidebarGroup = ({
 
   return (
     <div
+      ref={ref}
       className={wrapperClass}
       style={explicitHeight != null ? { height: explicitHeight } : undefined}
       data-testid="sidebar-group"

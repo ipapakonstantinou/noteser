@@ -42,6 +42,7 @@ function renderHandle(overrides: Partial<React.ComponentProps<typeof GroupResize
     <GroupResizeHandle
       aboveHeight={ABOVE}
       belowHeight={BELOW}
+      measure={() => ({ above: ABOVE, below: BELOW })}
       onResize={onResize}
       onReset={onReset}
       {...overrides}
@@ -193,6 +194,46 @@ describe('GroupResizeHandle — keyboard', () => {
     const { onResize } = renderHandle()
     fireEvent.keyDown(getHandle(), { key: 'a' })
     expect(onResize).not.toHaveBeenCalled()
+  })
+})
+
+describe('GroupResizeHandle: gestures start from measure(), not the render-time props', () => {
+  // The props say 200/200; the groups really are 300/100 (props measured
+  // before a reset committed, or including the handle's own height).
+  const measure = () => ({ above: 300, below: 100 })
+
+  test('mouse drag', () => {
+    const { onResize } = renderHandle({ measure })
+    fireEvent.mouseDown(getHandle(), { button: 0, clientY: 100 })
+    fireEvent.mouseMove(window, { clientY: 110 })
+    expect(onResize).toHaveBeenLastCalledWith(310, 90)
+    fireEvent.mouseUp(window)
+  })
+
+  test('touch drag', () => {
+    const { onResize } = renderHandle({ measure })
+    fireEvent.touchStart(getHandle(), { touches: [{ clientY: 100 }] })
+    fireEvent.touchMove(window, { touches: [{ clientY: 110 }] })
+    expect(onResize).toHaveBeenLastCalledWith(310, 90)
+    fireEvent.touchEnd(window)
+  })
+
+  test('keyboard', () => {
+    const { onResize } = renderHandle({ measure })
+    fireEvent.keyDown(getHandle(), { key: 'ArrowDown' })
+    expect(onResize).toHaveBeenLastCalledWith(316, 84)
+    fireEvent.keyDown(getHandle(), { key: 'End' })
+    expect(onResize).toHaveBeenLastCalledWith(400 - MIN_GROUP_HEIGHT, MIN_GROUP_HEIGHT)
+  })
+})
+
+describe('GroupResizeHandle: ARIA values', () => {
+  test('stay valid (min <= now <= max) for a pair not measured yet', () => {
+    renderHandle({ aboveHeight: 0, belowHeight: 0 })
+    const [min, now, max] = ['aria-valuemin', 'aria-valuenow', 'aria-valuemax']
+      .map(a => Number(getHandle().getAttribute(a)))
+    expect(min).toBeLessThanOrEqual(now)
+    expect(now).toBeLessThanOrEqual(max)
   })
 })
 

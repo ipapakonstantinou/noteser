@@ -100,7 +100,8 @@ export const RightSidebarStack = () => {
   }
   const closeTabMenu = () => setTabMenu(null)
 
-  // Inter-group resize state — same shape as SidebarStack.
+  // Inter-group resize state — same shape as SidebarStack (refs on each
+  // RightSidebarGroup's own box, not the wrapper holding the handle).
   const groupRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const setGroupRef = useCallback((id: string) => (el: HTMLDivElement | null) => {
     if (el) groupRefs.current[id] = el
@@ -136,7 +137,7 @@ export const RightSidebarStack = () => {
           ? 'flex-1 min-h-0 flex flex-col'
           : 'shrink-0 flex flex-col'
         return (
-          <div key={g.id} ref={setGroupRef(g.id)} className={wrapperClass}>
+          <div key={g.id} className={wrapperClass}>
             <RightInterGroupDropZone
               active={dragActive}
               onDropId={(id) => {
@@ -152,6 +153,7 @@ export const RightSidebarStack = () => {
               }}
             />
             <RightSidebarGroup
+              ref={setGroupRef(g.id)}
               group={g}
               layoutMode={layoutMode}
               draftHeight={draft}
@@ -160,12 +162,13 @@ export const RightSidebarStack = () => {
             {showHandleBelow && (
               <GroupResizeHandle
                 ariaLabel={`Resize group ${g.activeTab ?? g.id}`}
+                // ARIA values only. A fill neighbour gets what the pair
+                // leaves: its draft goes stale once the window resizes.
                 aboveHeight={draft ?? measureGroupHeight(g.id)}
-                // A fill neighbour gets what the pair leaves, measured: its
-                // draft goes stale once the window resizes.
                 belowHeight={layoutModes[idx + 1] === 'fill'
                   ? measureGroupHeight(g.id) + measureGroupHeight(next.id) - (draft ?? measureGroupHeight(g.id))
                   : draftHeights[next.id] ?? measureGroupHeight(next.id)}
+                measure={() => ({ above: measureGroupHeight(g.id), below: measureGroupHeight(next.id) })}
                 onResize={(nextAbove, nextBelow) => {
                   setDraftHeights(prev => ({
                     ...prev,

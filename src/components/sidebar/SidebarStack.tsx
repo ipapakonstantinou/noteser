@@ -117,10 +117,9 @@ export const SidebarStack = ({ onRightClick }: Props) => {
   const closeTabMenu = () => setTabMenu(null)
 
   // ── Inter-group resize state ─────────────────────────────────────────
-  // Refs onto each group's outer wrapper so we can read the actual
-  // pixel height before a drag starts (works whether the group is
-  // currently using flex-1 or an explicit height — both flow through
-  // the DOM). Stored as a record keyed by group id so reorders /
+  // Refs onto each SidebarGroup's own box (not its wrapper, which also
+  // holds the 8px handle) so we can read the actual pixel height when a
+  // gesture starts. Stored as a record keyed by group id so reorders /
   // group-id changes don't leak stale refs.
   const groupRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const setGroupRef = useCallback((id: string) => (el: HTMLDivElement | null) => {
@@ -180,7 +179,7 @@ export const SidebarStack = ({ onRightClick }: Props) => {
           ? 'flex-1 min-h-0 flex flex-col'
           : 'shrink-0 flex flex-col'
         return (
-          <div key={g.id} ref={setGroupRef(g.id)} className={wrapperClass}>
+          <div key={g.id} className={wrapperClass}>
             <InterGroupDropZone
               active={dragActive}
               onDropId={(id) => {
@@ -196,6 +195,7 @@ export const SidebarStack = ({ onRightClick }: Props) => {
               }}
             />
             <SidebarGroup
+              ref={setGroupRef(g.id)}
               group={g}
               layoutMode={layoutMode}
               draftHeight={draft}
@@ -205,12 +205,13 @@ export const SidebarStack = ({ onRightClick }: Props) => {
             {showHandleBelow && (
               <GroupResizeHandle
                 ariaLabel={`Resize group ${g.activeTab ?? g.id}`}
+                // ARIA values only. A fill neighbour gets what the pair
+                // leaves: its draft goes stale once the window resizes.
                 aboveHeight={draft ?? measureGroupHeight(g.id)}
-                // A fill neighbour gets what the pair leaves, measured: its
-                // draft goes stale once the window resizes.
                 belowHeight={layoutModes[idx + 1] === 'fill'
                   ? measureGroupHeight(g.id) + measureGroupHeight(next.id) - (draft ?? measureGroupHeight(g.id))
                   : draftHeights[next.id] ?? measureGroupHeight(next.id)}
+                measure={() => ({ above: measureGroupHeight(g.id), below: measureGroupHeight(next.id) })}
                 onResize={(nextAbove, nextBelow) => {
                   setDraftHeights(prev => ({
                     ...prev,

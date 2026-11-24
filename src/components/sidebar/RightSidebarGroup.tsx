@@ -19,10 +19,12 @@ export interface RightSidebarGroupProps {
   onTabContextMenu: (id: RightSidebarTabId, e: React.MouseEvent) => void
   layoutMode?: 'fill' | 'fixed' | 'auto'
   draftHeight?: number
+  // The group's own box, which the resize handle measures.
+  ref?: React.Ref<HTMLDivElement>
 }
 
 export const RightSidebarGroup = ({
-  group, onTabContextMenu, layoutMode = 'auto', draftHeight,
+  group, onTabContextMenu, layoutMode = 'auto', draftHeight, ref,
 }: RightSidebarGroupProps) => {
   const setRightGroupActiveTab = useSettingsStore(s => s.setRightGroupActiveTab)
   const setRightSidebarGroups = useSettingsStore(s => s.setRightSidebarGroups)
@@ -66,6 +68,7 @@ export const RightSidebarGroup = ({
 
   return (
     <div
+      ref={ref}
       className={wrapperClass}
       style={explicitHeight != null ? { height: explicitHeight } : undefined}
       data-testid="right-sidebar-group"
