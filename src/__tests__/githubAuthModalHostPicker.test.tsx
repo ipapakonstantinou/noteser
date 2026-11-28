@@ -3,7 +3,8 @@
  *
  * Tests for the host-selection step added to GitHubAuthModal (Task 2).
  * Covers:
- *   - the modal opens to a host picker ("Choose your git host")
+ *   - the picker shows only GitHub; the gear ("Other git hosts") reveals
+ *     Codeberg + Forgejo, and a non-GitHub connection opens with them shown
  *   - Codeberg PAT path: calls makeGitHostProvider, stores host + baseUrl
  *   - self-hosted Forgejo: rejects submit when base URL is missing
  */
@@ -79,9 +80,33 @@ beforeEach(() => {
   useUIStore.setState({ modal: { type: 'github-auth' } })
 })
 
-it('shows the host picker first', () => {
+const showOtherHosts = () =>
+  fireEvent.click(screen.getByRole('button', { name: 'Other git hosts' }))
+
+it('shows only GitHub until the gear reveals the other hosts', () => {
   render(<GitHubAuthModal />)
-  expect(screen.getByText(/choose your git host/i)).toBeInTheDocument()
+  expect(screen.getByTestId('host-pick-github')).toBeInTheDocument()
+  expect(screen.queryByTestId('host-pick-codeberg')).not.toBeInTheDocument()
+  expect(screen.queryByTestId('host-pick-forgejo')).not.toBeInTheDocument()
+  const gear = screen.getByRole('button', { name: 'Other git hosts' })
+  expect(gear).toHaveAttribute('aria-expanded', 'false')
+
+  fireEvent.click(gear)
+  expect(gear).toHaveAttribute('aria-expanded', 'true')
+  expect(screen.getByTestId('host-pick-codeberg')).toBeInTheDocument()
+  expect(screen.getByTestId('host-pick-forgejo')).toBeInTheDocument()
+
+  fireEvent.click(gear)
+  expect(screen.queryByTestId('host-pick-codeberg')).not.toBeInTheDocument()
+})
+
+it('opens with the other hosts shown when the connection is not GitHub', () => {
+  useGitHubStore.setState({ host: 'forgejo', baseUrl: 'https://codeberg.org' })
+  render(<GitHubAuthModal />)
+  expect(screen.getByTestId('host-pick-codeberg')).toBeInTheDocument()
+  expect(
+    screen.getByRole('button', { name: 'Other git hosts' })
+  ).toHaveAttribute('aria-expanded', 'true')
 })
 
 it('connects a Codeberg vault via PAT and stores host+baseUrl', async () => {
@@ -92,6 +117,7 @@ it('connects a Codeberg vault via PAT and stores host+baseUrl', async () => {
     avatarUrl: ''
   })
   render(<GitHubAuthModal />)
+  showOtherHosts()
   fireEvent.click(screen.getByTestId('host-pick-codeberg'))
   fireEvent.change(screen.getByTestId('forgejo-pat-input'), {
     target: { value: 'pat-x' }
@@ -104,6 +130,7 @@ it('connects a Codeberg vault via PAT and stores host+baseUrl', async () => {
 
 it('requires a base URL for self-hosted Forgejo', async () => {
   render(<GitHubAuthModal />)
+  showOtherHosts()
   fireEvent.click(screen.getByTestId('host-pick-forgejo'))
   fireEvent.change(screen.getByTestId('forgejo-pat-input'), {
     target: { value: 'pat-x' }
@@ -120,6 +147,7 @@ it('rejects a base URL without an http(s) scheme', async () => {
   // validation always runs — a type="url" input would let the browser
   // silently block submit and our inline error would never show.
   render(<GitHubAuthModal />)
+  showOtherHosts()
   fireEvent.click(screen.getByTestId('host-pick-forgejo'))
   fireEvent.change(screen.getByTestId('forgejo-baseurl-input'), {
     target: { value: 'notaurl' }

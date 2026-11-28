@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ArrowTopRightOnSquareIcon, CheckCircleIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline'
+import { ArrowTopRightOnSquareIcon, CheckCircleIcon, Cog6ToothIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline'
 import { Modal, Button, Input } from '@/components/ui'
 import { useUIStore, useGitHubStore } from '@/stores'
 import { startDeviceFlow, pollForToken, fetchGitHubUserAndScopes, DeviceFlowError, type DeviceFlowStart } from '@/utils/github'
@@ -28,6 +28,8 @@ export const GitHubAuthModal = () => {
   // Step state: 'pick' is the initial host picker; 'github' is the device-flow
   // + GitHub-PAT path; 'forgejo' is the Forgejo/Codeberg PAT form.
   const [step, setStep] = useState<'pick' | 'github' | 'forgejo'>('pick')
+  // Codeberg / Forgejo sit behind the gear; GitHub is the one default choice.
+  const [showOtherHosts, setShowOtherHosts] = useState(false)
 
   // GitHub device-flow / PAT state
   const [status, setStatus] = useState<Status>({ kind: 'requesting' })
@@ -51,6 +53,8 @@ export const GitHubAuthModal = () => {
     abortRef.current?.abort()
     abortRef.current = null
     setStep('pick')
+    // Non-reactive read: picking GitHub sets host, which must not re-run this reset.
+    setShowOtherHosts(useGitHubStore.getState().host !== 'github')
     setUsePat(false)
     setPatValue('')
     setPatError(null)
@@ -267,17 +271,33 @@ export const GitHubAuthModal = () => {
       {/* ── Host picker ────────────────────────────────────────────────── */}
       {step === 'pick' && (
         <div className="space-y-4">
-          <p className="text-sm text-obsidianSecondaryText">Choose your git host to connect your vault.</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm text-obsidianSecondaryText">Sync your vault with a git repository.</p>
+            <button
+              type="button"
+              onClick={() => setShowOtherHosts(v => !v)}
+              aria-label="Other git hosts"
+              aria-expanded={showOtherHosts}
+              title="Other git hosts"
+              className="p-1 rounded-sm text-obsidianSecondaryText hover:bg-obsidianHighlight transition-colors aria-expanded:text-obsidianAccentPurple"
+            >
+              <Cog6ToothIcon className="w-5 h-5" />
+            </button>
+          </div>
           <div className="flex flex-col gap-3">
             <Button variant="primary" data-testid="host-pick-github" onClick={handlePickGitHub}>
               GitHub
             </Button>
-            <Button variant="secondary" data-testid="host-pick-codeberg" onClick={handlePickCodeberg}>
-              Codeberg
-            </Button>
-            <Button variant="secondary" data-testid="host-pick-forgejo" onClick={handlePickForgejo}>
-              Forgejo / Gitea (self-hosted)
-            </Button>
+            {showOtherHosts && (
+              <>
+                <Button variant="secondary" data-testid="host-pick-codeberg" onClick={handlePickCodeberg}>
+                  Codeberg
+                </Button>
+                <Button variant="secondary" data-testid="host-pick-forgejo" onClick={handlePickForgejo}>
+                  Forgejo / Gitea (self-hosted)
+                </Button>
+              </>
+            )}
           </div>
         </div>
       )}
