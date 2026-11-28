@@ -27,8 +27,9 @@ Copy the token — Codeberg shows it only once.
 ## 2. Connect the vault
 
 1. In noteser, open the sync panel (Source control icon in the sidebar) and
-   click **Connect** — the "Connect a vault" dialog opens with the host picker.
-2. Pick **Codeberg**.
+   click **Connect** — the "Connect a vault" dialog opens. It shows only
+   **GitHub** at first.
+2. Click the gear icon (_Other git hosts_) in the dialog, then pick **Codeberg**.
 3. Paste your access token and press <kbd>Enter</kbd> (or _Connect with token_).
 4. The repo picker opens with your Codeberg repositories:
    - pick an existing repo to use as the vault, **or**
@@ -89,8 +90,9 @@ What to expect with Obsidian content:
 
 Two differences from the Codeberg preset:
 
-1. In the host picker choose **Forgejo / Gitea (self-hosted)** and enter your
-   server's base URL (e.g. `https://git.example.com`) alongside the token.
+1. In the "Connect a vault" dialog click the gear icon (_Other git hosts_),
+   choose **Forgejo / Gitea (self-hosted)** and enter your server's base URL
+   (e.g. `https://git.example.com`) alongside the token.
    Create the token on _your_ instance under Settings → Applications, with the
    same scopes as above.
 2. **Allow-list your instance in the Content-Security-Policy.** The browser
